@@ -468,6 +468,45 @@ function isWaypointTile(w: IsoWorld, x: number, y: number): boolean {
   return w.npcSpawns.some((s) => s.waypoints.some((wp) => wp.tx === x && wp.ty === y));
 }
 
+/** BUILD 997: shared blocking-rect checks, so a custom upload's
+ *  footprint validates exactly like a built-in blocking item and the
+ *  two can never drift apart. The rect is an explicit tile rect
+ *  (x0..x1, y0..y1); terrain, generated, placed, player, NPC and
+ *  waypoint rules are the same ones validatePlacement applies to
+ *  houses/stalls/trees. Paths and grass never use this (they are
+ *  walkable decor with their own rules). */
+export function validateBlockingRect(
+  w: IsoWorld,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): { ok: true } | { ok: false; reason: string } {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (x < 0 || y < 0 || x >= w.w || y >= w.h) return { ok: false, reason: 'outside the map' };
+      const terrain = terrainAt(w, x, y);
+      if (terrain === 'water') return { ok: false, reason: 'water' };
+      if (terrain === 'dirt') return { ok: false, reason: 'a path or road' };
+      if (terrain === 'sand') return { ok: false, reason: 'the town square' };
+      const gen = generatedBlock(w, x, y);
+      if (gen) return { ok: false, reason: gen };
+      const pl = placedBlock(w, x, y);
+      if (pl) return { ok: false, reason: pl };
+    }
+  }
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (x === playerTile.x && y === playerTile.y) return { ok: false, reason: 'where you are standing' };
+      if (npcTiles.some((n) => n.x === x && n.y === y)) return { ok: false, reason: 'where someone is standing' };
+      if (isWaypointTile(w, x, y)) return { ok: false, reason: 'an NPC walking route' };
+    }
+  }
+  return { ok: true };
+}
+
 /**
  * Validate a placement whose tap landed on tile (tx, ty).
  * Houses are 3x3 centred on the tap; stalls are 2x1 (tap + east);
@@ -489,6 +528,12 @@ export function validatePlacement(
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
 ): PlaceResult {
+  // BUILD 997: custom items never validate here — their footprint
+  // comes from the uploaded mesh, not from a fixed kind shape, so
+  // validateCustomPlacement (customAssets.ts) owns them. A caller
+  // passing 'custom' here is a bug, and failing loudly beats placing
+  // a 1x1 tile for a 3x3 mesh.
+  if ((kind as string) === 'custom') return { ok: false, reason: 'use validateCustomPlacement' };
   const tiles: Array<{ x: number; y: number }> = [];
   if (kind === 'house') {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) tiles.push({ x: tx + dx, y: ty + dy });
@@ -567,6 +612,22 @@ export function movePlacement(
   const index = list ? list.findIndex((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1) : -1;
   if (index < 0 || !list) return { ok: false, reason: 'item not found' };
   const [lifted] = list.splice(index, 1);
+  // BUILD 997: custom items move by rect, not by kind shape — the
+  // destination rect keeps the item's own dims, min corner on the
+  // destination tap tile, validated with the shared blocking rules.
+  if (item.kind === 'custom') {
+    const wTiles = item.x1 - item.x0 + 1;
+    const hTiles = item.y1 - item.y0 + 1;
+    const res = validateBlockingRect(w, destTx, destTy, destTx + wTiles - 1, destTy + hTiles - 1, playerTile, npcTiles);
+    if (!res.ok) {
+      list.splice(Math.min(index, list.length), 0, lifted);
+      return { ok: false, reason: res.reason };
+    }
+    const customItem: PlacedItem = { kind: 'custom', assetId: item.assetId, x0: destTx, y0: destTy, x1: destTx + wTiles - 1, y1: destTy + hTiles - 1 };
+    const at = Math.min(index, list.length);
+    list.splice(at, 0, customItem);
+    return { ok: true, item: customItem, index: at };
+  }
   const result = validatePlacement(w, item.kind, destTx, destTy, playerTile, npcTiles);
   if (!result.ok) {
     list.splice(Math.min(index, list.length), 0, lifted);
@@ -614,6 +675,14 @@ export function placedStallRects(w: IsoWorld): Array<{ x0: number; y0: number; x
   return placementsOf(w)
     .filter((p) => p.kind === 'stall')
     .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1 }));
+}
+
+/** Placed custom-upload rects (BUILD 997), with their asset ids, for
+ *  rendering and grass-tuft blocking. */
+export function placedCustomRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; assetId: string | undefined }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'custom')
+    .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, assetId: p.assetId }));
 }
 
 /** Placed grass tiles (BUILD 985). Single tiles, like placed paths. */

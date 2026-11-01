@@ -123,7 +123,12 @@ export function uniquifyName(existing: string[], base: string): string {
 /** Capture the placed items fully inside a selection rect, as chunk
  *  items relative to the rect's min corner. The rect is normalized
  *  (drag direction does not matter). Generated content is never
- *  captured — only w.placements is scanned. */
+ *  captured — only w.placements is scanned. BUILD 997: custom-upload
+ *  items are also NOT captured — paste validates through the
+ *  built-in kinds only, so a captured custom item would paste as a
+ *  shape mismatch; excluding it keeps the save preview count (which
+ *  reads this function) honest. Asset-aware paste is the follow-up,
+ *  not a silent partial capture. */
 export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: number; y1: number }): ChunkItem[] {
   const x0 = Math.min(rect.x0, rect.x1);
   const y0 = Math.min(rect.y0, rect.y1);
@@ -131,6 +136,7 @@ export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: nu
   const y1 = Math.max(rect.y0, rect.y1);
   const out: ChunkItem[] = [];
   for (const p of placementsOf(w)) {
+    if (p.kind === 'custom') continue;
     if (p.x0 >= x0 && p.y0 >= y0 && p.x1 <= x1 && p.y1 <= y1) {
       out.push({ kind: p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0 });
     }

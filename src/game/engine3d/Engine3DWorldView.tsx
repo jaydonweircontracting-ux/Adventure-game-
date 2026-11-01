@@ -19,6 +19,7 @@ import {
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
+import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 
@@ -252,7 +253,7 @@ export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
 
 // Exported for standalone build-verification asserts (synthetic render
 // proofs); the game itself calls it internally only.
-export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null): Float32Array {
+export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Float32Array {
   const data: Vertex = [];
   // BUILD 988 distance fog, BAKED (not shader-side): every emitted
   // vertex colour is mixed toward the horizon colour by ground-plane
@@ -375,6 +376,24 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // deliberate Build-panel choice is never silently converted.
   for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) treeAt(x,stall.y0);
   for(const stall of placedStallRects(world)) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  // BUILD 997: uploaded custom meshes — static vertex-colour
+  // triangles in the world buffer (like placed stalls, not the
+  // per-frame actor buffer: uploads never move on their own). Mesh
+  // local coords are centred XZ with base y=0 (1 unit = 1 tile), so
+  // the mesh centres on the placement rect's centre. A placement
+  // whose asset is gone renders nothing (delete removes copies
+  // first, so this is defensive only).
+  for(const p of (world.placements??[])) if(p.kind==='custom'){
+    if(p.x1<minX||p.x0>maxX||p.y1<minY||p.y0>maxY)continue;
+    const asset=customAssets.find(a=>a.id===p.assetId);if(!asset)continue;
+    const ccx=(p.x0+p.x1+1)/2,ccz=(p.y0+p.y1+1)/2;
+    for(let i=0;i<asset.indices.length;i+=3){
+      const a=asset.indices[i]*3,b=asset.indices[i+1]*3,c=asset.indices[i+2]*3;
+      triV([ccx+asset.positions[a],asset.positions[a+1],ccz+asset.positions[a+2]],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
+        [ccx+asset.positions[b],asset.positions[b+1],ccz+asset.positions[b+2]],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
+        [ccx+asset.positions[c],asset.positions[c+1],ccz+asset.positions[c+2]],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
+    }
+  }
   // BUILD 983 town look (reference match): varied low-poly houses —
   // stone-block ground floors, dark timber framing, plaster upper walls,
   // steep pitched roofs, small square windows (some warm-lit), open
@@ -611,7 +630,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const saveSelectionRef=useRef<{x0:number;y0:number;x1:number;y1:number;count:number}|null>(null);
   saveSelectionRef.current=saveSelection;
   const [chunkName,setChunkName]=useState('');
-  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean;saveAreaMode:boolean;pasteName:string|null}>({palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null});
+  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean;saveAreaMode:boolean;pasteName:string|null;customAssetId:string|null}>({palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null});
   // BUILD 996: chunk library. Lazy-loaded from localStorage (key
   // ag-3d-templates-v1, separate from world saves); every change
   // persists via the effect below. templatesRef mirrors it for the
@@ -621,6 +640,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const templatesRef=useRef<ChunkTemplate[]>(templates);
   templatesRef.current=templates;
   useEffect(()=>{saveTemplates(templates);},[templates]);
+  // BUILD 997: custom GLB uploads. Same pattern as templates: lazy
+  // load from localStorage (key ag-3d-custom-assets-v1, separate from
+  // world saves), every change persists via the effect below, and
+  // customAssetsRef mirrors it for the render-loop closures (which
+  // capture refs, not state). customSelection is the armed upload
+  // (asset id, or null); it mirrors into buildRef.customAssetId like
+  // every other tool. Uploading is library state, never a world
+  // change or undo entry; placing an upload is a normal `place`
+  // entry, and deleting an upload removes its placed copies at once
+  // (also not undoable — same as deleting a chunk).
+  const [customAssets,setCustomAssets]=useState<CustomAsset[]>(()=>loadCustomAssets());
+  const customAssetsRef=useRef<CustomAsset[]>(customAssets);
+  customAssetsRef.current=customAssets;
+  useEffect(()=>{saveCustomAssets(customAssets);},[customAssets]);
+  const [customSelection,setCustomSelection]=useState<string|null>(null);
   // BUILD 989: Walk suspension. Suspension is a separate flag from the
   // tool itself: Walk pauses taps (they walk) while the preserved
   // selection stays stored in buildRef; tapping Walk again resumes it.
@@ -655,6 +689,42 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
   const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  // BUILD 997: display name for a placed item — built-in kinds use
+  // the catalog label; a custom item uses its upload's name (or a
+  // fallback when the upload is gone). Used by Move/Remove messages
+  // so they never index KIND_META with 'custom' (which has no entry
+  // and would crash the preview/message path).
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<string,string>)[item.kind]??item.kind;
+  const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
+  // BUILD 997: upload a .glb file picked in the panel. Every failure
+  // is a message, never a crash: bad magic, wrong version, external
+  // buffers, non-triangle geometry, oversize file or full library
+  // all reject before anything is stored. The input resets so the
+  // same file can be picked again after a rejection.
+  const handleCustomUpload=async(e:{target:{files:FileList|null;value:string}})=>{
+    const file=e.target.files&&e.target.files[0];
+    e.target.value='';
+    if(!file)return;
+    if(file.size>MAX_FILE_BYTES){setMessage('Upload failed: file is over 1 MB');return;}
+    let buf:ArrayBuffer;
+    try{buf=await file.arrayBuffer();}catch{setMessage('Upload failed: could not read the file');return;}
+    const res=parseGlbUpload(buf,file.name);
+    if(!res.ok){setMessage('Upload failed: '+res.reason);return;}
+    const existing=customAssetsRef.current;
+    const name=uniquifyAssetName(existing.map(a=>a.name),res.asset.name);
+    const next=[...existing,{...res.asset,name}];
+    if(JSON.stringify(next).length>MAX_LIBRARY_JSON){setMessage('Upload failed: custom library is full (2 MB cap)');return;}
+    setCustomAssets(next);
+    setMessage('Uploaded \''+name+'\' — pick it in Custom, then tap the ground to place it');
+  };
+  const deleteCustomAsset=(asset:CustomAsset)=>{
+    const world=stateRef.current.world;
+    const n=removeCustomAssetPlacements(world,asset.id);
+    setCustomAssets(prev=>prev.filter(a=>a.id!==asset.id));
+    if(customSelection===asset.id){setCustomSelection(null);buildRef.current={...buildRef.current,customAssetId:null};}
+    if(n>0){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);}
+    setMessage('Deleted upload \''+asset.name+'\''+(n>0?' (removed '+n+' placed cop'+(n===1?'y':'ies')+')':''));
+  };
   // BUILD 995: scrollable asset catalog (Sims/Forge-style). Categories
   // group the five placeable kinds; tiles reuse each kind's own mesh
   // colours as the preview swatch (path = dirt tan + cobble grey,
@@ -665,7 +735,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   // Category selection is panel UI state: it persists while the view
   // is mounted (minimize keeps it, like the tool selection); only the
   // tool itself is cleared by close.
-  type CatalogCategory='all'|'terrain'|'buildings'|'plants'|'props';
+  type CatalogCategory='all'|'terrain'|'buildings'|'plants'|'props'|'custom';
   const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
     {id:'terrain',label:'Terrain',kinds:['path','grass']},
     {id:'buildings',label:'Buildings',kinds:['house']},
@@ -932,7 +1002,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const proj=projectTileCenter(Math.round(destination.x),Math.round(destination.y));if(!proj){el.style.display='none';return;}
       el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
       const label=movePreviewLabelRef.current;
-      if(label)label.textContent='Move '+KIND_META[moveDragging.item.kind].label;
+      if(label)label.textContent='Move '+placementLabel(moveDragging.item);
     };
     // BUILD 995: the caller (pointer-up) already cleared moveDragging
     // and hid the preview before calling, so the dragged item arrives
@@ -951,7 +1021,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       if(same)return; // dropped where it started: no change, no history
       saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
       pushHistory({kind:'move',oldItem:drag.item,newItem:res.item,index:res.index});
-      setMessage('Moved '+res.item.kind);
+      setMessage('Moved '+placementLabel(res.item));
     };
     // BUILD 996: save-area drag helpers (effect-local, like the
     // Remove/Move previews — they need pickGround/projectTileCenter).
@@ -1060,7 +1130,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         // BUILD 990: while inside, Build placement/removal is disabled —
         // taps move only, even with a tool selected (the Enter button
         // is separate UI, so entry works regardless of the active tool).
-        const toolActive=!insideHutRef.current&&!walkRef.current&&(build.palette||build.removeMode||build.pasteName);
+        const toolActive=!insideHutRef.current&&!walkRef.current&&(build.palette||build.customAssetId||build.removeMode||build.pasteName);
         if(toolActive){
           // BUILD 984: a build-mode tap places or removes instead of
           // moving. Build taps never set moveTarget.
@@ -1106,10 +1176,25 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
               const snapped=findRemovableNear(world,destination.x,destination.y);
               const res=snapped?removeAt(world,snapped.tx,snapped.ty):null;
               if(!res){setMessage('Nothing to remove here');}
-              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+res.item.kind);}
+              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+placementLabel(res.item));}
               else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
               else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
               else{saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
+            } else if(build.customAssetId){
+              // BUILD 997: an armed upload places with its mesh
+              // footprint (min corner on the tapped tile) under the
+              // same blocking rules as houses — one undo entry, like
+              // any other placement.
+              const asset=customAssetsRef.current.find(a=>a.id===build.customAssetId);
+              if(!asset){setMessage('That upload is gone');}
+              else{
+                const player=stateRef.current.position;
+                const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
+                const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+                const result=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles);
+                if(!result.ok){setMessage('Cannot place here: '+result.reason);}
+                else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+asset.name);}
+              }
             } else if(build.palette){
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
@@ -1175,7 +1260,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
       // the player moves >8 tiles from the last build centre.
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
-      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player,insideHutRef.current);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // Sky gradient pass (identity matrix, depth off), then the world.
       gl.disable(gl.DEPTH_TEST);
@@ -1303,6 +1388,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // BUILD 996 test hooks: chunk library, save selection, armed
       // paste template (probes only — no gameplay effect).
       getTemplates:()=>JSON.parse(JSON.stringify(templatesRef.current)),
+      // BUILD 997 test hook (read-only): uploaded custom assets.
+      getCustomAssets:()=>JSON.parse(JSON.stringify(customAssetsRef.current)),
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
       getPlayer:()=>({...stateRef.current.position}),
@@ -1423,9 +1510,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         button is rendered while the panel is open. Move, Save area,
         and Paste count as tools for all three buttons, exactly like
         palette and Remove. */}
-    {!buildOpen&&(palette||removeMode||moveMode||saveAreaMode||pasteName)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName)?'Resume '+toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName):'Resume'):'Walk'}</button>}
-    {!buildOpen&&((palette||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
-    {!buildOpen&&((palette||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
+    {!buildOpen&&(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(walkToolLabel()?'Resume '+walkToolLabel():'Resume'):'Walk'}</button>}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
     {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
         house door is within one tile (nearest door wins); Exit shows
         only while inside. Centered at bottom:110 — clear of the
@@ -1460,25 +1547,50 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
-        {(['all','terrain','buildings','plants','props'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props'}[cat]}</button>)}
+        {(['all','terrain','buildings','plants','props','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props',custom:'Custom'}[cat]}</button>)}
       </div>
       <div data-testid="build-catalog-list" style={{maxHeight:280,overflowY:'auto',marginTop:10,paddingRight:2}}>
         {CATALOG_SECTIONS.filter(sec=>catalogCategory==='all'||catalogCategory===sec.id).map(sec=><div key={sec.id}>
           <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>{sec.label}</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
-            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
+            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
               <span style={{display:'block',height:26,borderRadius:6,background:KIND_META[kind].swatch,marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
               {KIND_META[kind].label}
             </button>)}
           </div>
         </div>)}
+        {/* BUILD 997: Custom category — uploaded .glb models as
+            catalog tiles (swatch = the model's mean colour), plus the
+            upload picker. Selecting an upload arms it like any
+            palette kind; tapping the ground places it with its mesh
+            footprint. Deleting an upload removes its placed copies
+            at once and is not undoable. */}
+        {(catalogCategory==='all'||catalogCategory==='custom')&&<div>
+          <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>Custom</div>
+          {customAssets.length===0
+            ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — upload a .glb file below.</div>
+            : <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
+                {customAssets.map(a=><div key={a.id} style={{display:'flex',flexDirection:'column',gap:6}}>
+                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
+                    <span style={{display:'block',height:26,borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
+                    {a.name}
+                  </button>
+                  <button type="button" data-testid="build-custom-delete" aria-label={'Delete '+a.name} onClick={()=>deleteCustomAsset(a)} style={{padding:'8px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:12}}>Delete</button>
+                </div>)}
+              </div>}
+          <div style={{marginTop:8}}>
+            <label style={{fontSize:12,opacity:.85}}>Upload a .glb model (max 1 MB)</label>
+            <input type="file" accept=".glb" data-testid="build-custom-upload" onChange={handleCustomUpload} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
+            <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Renders as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures.</div>
+          </div>
+        </div>}
       </div>
-      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
-      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next,saveAreaMode:false,pasteName:null};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next){setPalette(null);setCustomSelection(null);}setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       {/* BUILD 996: saved chunks (build templates). Save area arms the
           rectangle drag; the naming row appears after a selection
           finalizes (panel reopens if minimized, so the row is
@@ -1489,8 +1601,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
           world changes). */}
       <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid #8c9b8d'}}>
         <div style={{fontSize:13,fontWeight:700}}>Saved chunks</div>
-        <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Turn Save area on, then drag a rectangle on the ground — or tap one tile — to select it. Name it and save it as a chunk. Tap a saved chunk, then tap the ground to stamp it there (its corner lands on the tapped tile); items that cannot fit are skipped and reported, never blocking the rest. One Undo removes a whole paste. Chunks save only what you placed — generated houses, paths, and trees are not captured.</div>
-        <button type="button" data-testid="build-save-area-toggle" onClick={()=>{const next=!saveAreaMode;setSaveAreaMode(next);if(next){setPalette(null);setRemoveMode(false);setMoveMode(false);setPasteName(null);}setSaveSelection(null);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next,pasteName:next?null:pasteName};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:saveAreaMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Save area: {saveAreaMode?'On':'Off'}</button>
+        <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Turn Save area on, then drag a rectangle on the ground — or tap one tile — to select it. Name it and save it as a chunk. Tap a saved chunk, then tap the ground to stamp it there (its corner lands on the tapped tile); items that cannot fit are skipped and reported, never blocking the rest. One Undo removes a whole paste. Chunks save only what you placed — generated houses, paths, and trees are not captured, and custom uploads are not captured yet.</div>
+        <button type="button" data-testid="build-save-area-toggle" onClick={()=>{const next=!saveAreaMode;setSaveAreaMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setPasteName(null);}setSaveSelection(null);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next,pasteName:next?null:pasteName,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:saveAreaMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Save area: {saveAreaMode?'On':'Off'}</button>
         {saveSelection&&<div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
           <div style={{fontSize:12}}>Area {(saveSelection.x1-saveSelection.x0+1)}×{(saveSelection.y1-saveSelection.y0+1)} · {saveSelection.count} placed item{saveSelection.count===1?'':'s'}</div>
           <input type="text" data-testid="build-chunk-name-input" value={chunkName} onChange={e=>setChunkName(e.target.value)} placeholder={'Chunk '+(templates.length+1)} style={{display:'block',width:'100%',marginTop:8,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:14,boxSizing:'border-box'}} />
@@ -1502,7 +1614,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         {templates.length===0
           ? <div style={{fontSize:12,opacity:.7,marginTop:10}}>No saved chunks yet.</div>
           : <div style={{marginTop:10}}>{templates.map(t=><div key={t.name} style={{display:'flex',gap:8,marginTop:6}}>
-              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next};setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
+              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next,customAssetId:next?null:buildRef.current.customAssetId};setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
               <button type="button" data-testid="build-chunk-delete" aria-label={'Delete '+t.name} onClick={()=>{setTemplates(prev=>prev.filter(x=>x.name!==t.name));if(pasteName===t.name){setPasteName(null);buildRef.current={...buildRef.current,pasteName:null};}setMessage('Deleted chunk \''+t.name+'\'');}} style={{padding:'10px 12px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:13}}>×</button>
             </div>)}</div>}
       </div>

@@ -30,7 +30,7 @@
 
 import { GRASS_MESHES, type BakedGrassMesh } from './grassMeshes';
 import type { IsoWorld } from '../iso/isoWorld';
-import { placedHutRects, placedStallRects, placedTreeTiles } from './placements';
+import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles } from './placements';
 
 export type V3 = [number, number, number];
 
@@ -184,6 +184,11 @@ function blockedTiles(world: IsoWorld): Set<string> {
     for (let x = s.x0; x <= s.x1; x++) blocked.add(key(x, s.y0));
   }
   for (const t of placedTreeTiles(world)) blocked.add(key(t.tx, t.ty));
+  // BUILD 997: custom-upload rects are solid geometry too — no tuft
+  // may poke through an uploaded mesh.
+  for (const c of placedCustomRects(world)) {
+    for (let x = c.x0; x <= c.x1; x++) for (let y = c.y0; y <= c.y1; y++) blocked.add(key(x, y));
+  }
   return blocked;
 }
 
