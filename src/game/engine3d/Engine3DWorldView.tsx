@@ -49,7 +49,9 @@ function savedPosition(world: IsoWorld): Position {
  * the 3D view's world snapshot. A fixed transform keeps the whole town inside
  * the 200x200 3D map and keeps the layout deterministic across sessions.
  */
-function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
+// Exported for standalone build-verification asserts (crate/stall counts
+// in the adapted world); the game itself calls it internally only.
+export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   const world: IsoWorld = {
     ...source,
     terrain: { ...source.terrain },
@@ -171,7 +173,9 @@ function savedNpcActors(world: IsoWorld): NpcActor3D[] {
   return world.npcSpawns.map(npc => ({ name: npc.name, x: npc.x, y: npc.y, waypoint: 0, hp: 100, alive: true }));
 }
 
-function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
+// Exported for standalone build-verification asserts (synthetic render
+// proofs); the game itself calls it internally only.
+export function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   const data: Vertex = [];
   const tri = (a: Vec3, b: Vec3, c: Vec3, color: Vec3) => {
     for (const p of [a, b, c]) data.push(...p, ...color);
@@ -220,9 +224,33 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
       }
     }
   }
+  // BUILD 986: houseBox moved above the stall loop so the shared tree
+  // renderer below can serve stalls and crates too (same scope, same
+  // code — only its position in the function changed).
+  const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
+    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],color.map(v=>v*.78) as Vec3);
+    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.88) as Vec3);
+    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.72) as Vec3);
+  };
+  // BUILD 986: the exact 983 tapered-tier tree (trunk + 3 shrinking
+  // foliage tiers), shared by real trees, converted crates and converted
+  // generated stalls — one renderer, never a second tree.
+  const treeAt=(tx:number,ty:number)=>{
+    houseBox(tx+.5,ty+.5,.22,1.1,.22,0,[.36,.23,.12]);
+    houseBox(tx+.5,ty+.5,1.15,.9,1.15,1.0,[.13,.30,.14]);
+    houseBox(tx+.5,ty+.5,.85,.7,.85,1.7,[.16,.34,.16]);
+    houseBox(tx+.5,ty+.5,.55,.6,.55,2.2,[.19,.37,.18]);
+  };
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
-  for(const stall of [...world.stalls, ...placedStallRects(world)]) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  // BUILD 986: generated/authored stalls render as 983 trees, not brown
+  // counter cubes. Stall data + collision are untouched; only the mesh
+  // changes. User-PLACED stalls keep the brown counter cube below — a
+  // deliberate Build-panel choice is never silently converted.
+  for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) treeAt(x,stall.y0);
+  for(const stall of placedStallRects(world)) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
   // BUILD 983 town look (reference match): varied low-poly houses —
   // stone-block ground floors, dark timber framing, plaster upper walls,
   // steep pitched roofs, small square windows (some warm-lit), open
@@ -234,13 +262,6 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   // This renderer uses vertex colours only (no textures), so the FBX
   // atlas trap does not apply here; the generated native geometry is
   // the single source of truth for buildings in this mode.
-  const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
-    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
-    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
-    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],color.map(v=>v*.78) as Vec3);
-    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.88) as Vec3);
-    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.72) as Vec3);
-  };
   type FaceDir='north'|'south'|'west'|'east';
   // A flat rect centred on a face: a = position along the face, y = centre
   // height, fixed = the face plane coordinate (proud of the wall).
@@ -382,11 +403,9 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   for(const t of [...world.trees, ...placedTreeTiles(world)]) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
     // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
     // tiers) instead of the old single green cube. Visual only — same
-    // tile, same collision, same positions.
-    houseBox(t.tx+.5,t.ty+.5,.22,1.1,.22,0,[.36,.23,.12]);
-    houseBox(t.tx+.5,t.ty+.5,1.15,.9,1.15,1.0,[.13,.30,.14]);
-    houseBox(t.tx+.5,t.ty+.5,.85,.7,.85,1.7,[.16,.34,.16]);
-    houseBox(t.tx+.5,t.ty+.5,.55,.6,.55,2.2,[.19,.37,.18]);
+    // tile, same collision, same positions. BUILD 986: now the shared
+    // treeAt renderer (identical geometry).
+    treeAt(t.tx,t.ty);
   }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
   // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x
@@ -397,7 +416,10 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   emitNaturalGrass(triV, world, effTerrain, minX, maxX, minY, maxY);
   emitPlacedGrass(triV, world, minX, maxX, minY, maxY);
   for(const r of world.rocks) if(r.tx>=minX&&r.tx<=maxX&&r.ty>=minY&&r.ty<=maxY) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
-  for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) cube(c.tx+.5,c.ty+.5,.65,.7,.65,[.48,.29,.13]);
+  // BUILD 986: generated/authored crates + layout prop placeholders render
+  // as 983 trees, not brown cubes. Data untouched — the wood interaction
+  // still finds and removes the crate entry (see the E-key handler).
+  for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) treeAt(c.tx,c.ty);
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
@@ -747,7 +769,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
-        if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
+        if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
         if(rock){world.rocks=world.rocks.filter(c=>c!==rock);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
