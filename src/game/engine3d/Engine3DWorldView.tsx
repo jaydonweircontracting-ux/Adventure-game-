@@ -10,8 +10,9 @@ import {
 } from './townLook';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
-  validatePlacement, removeAt, removeAlongStroke, findRemovableNear, applyUndo, addPlacement, walkableWithPlacements,
-  type PaletteKind, type UndoEntry,
+  validatePlacement, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
+  createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
+  type PaletteKind, type UndoEntry, type BuildHistory,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
@@ -560,27 +561,38 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const [removeMode,setRemoveMode]=useState(false);
   const [placedCount,setPlacedCount]=useState(0);
   const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean}>({palette:null,removeMode:false});
-  // BUILD 989: Walk suspension + single-step undo. Suspension is a
-  // separate flag from the tool itself: Walk pauses taps (they walk)
-  // while the preserved selection stays stored in buildRef; tapping
-  // Walk again resumes it. Suspension lives ONLY while minimized —
-  // reopening the panel resumes the tool, closing clears suspension
-  // with everything else. Undo is one session-only slot in a ref: it
-  // reverses the last Build-panel change, is consumed on use, is
-  // replaced by the next change, and is NOT saved (after a reload the
-  // button is disabled until a new change happens in that session).
+  // BUILD 989: Walk suspension. Suspension is a separate flag from the
+  // tool itself: Walk pauses taps (they walk) while the preserved
+  // selection stays stored in buildRef; tapping Walk again resumes it.
+  // Suspension lives ONLY while minimized — reopening the panel
+  // resumes the tool, closing clears suspension with everything else.
+  // BUILD 991: unlimited Undo + Redo stacks (MS Paint style). Every
+  // Build-panel change pushes one inverse entry onto the undo stack
+  // and clears the redo stack; each Undo tap pops one entry, applies
+  // its inverse, and pushes it onto redo; each Redo tap replays one
+  // entry forward. A whole stroke = one entry, so one tap undoes a
+  // whole drag. Both stacks are session-only refs (never saved):
+  // after a reload both buttons are disabled until a new change that
+  // session. Closing the panel clears NEITHER stack (989 rule kept).
+  // Undo/Redo stay available while inside a house (990): they are
+  // world-level edits, not interior edits.
   const [walkSuspended,setWalkSuspended]=useState(false);
   const walkRef=useRef(false);
+  const historyRef=useRef<BuildHistory>(createBuildHistory());
   const [undoAvailable,setUndoAvailable]=useState(false);
-  const undoRef=useRef<UndoEntry|null>(null);
+  const [redoAvailable,setRedoAvailable]=useState(false);
   const setWalk=(v:boolean)=>{walkRef.current=v;setWalkSuspended(v);};
-  const setUndoSlot=(entry:UndoEntry|null)=>{undoRef.current=entry;setUndoAvailable(entry!==null);};
+  const syncHistory=()=>{setUndoAvailable(historyRef.current.undo.length>0);setRedoAvailable(historyRef.current.redo.length>0);};
+  const pushHistory=(entry:UndoEntry)=>{recordBuildChange(historyRef.current,entry);syncHistory();};
   const doUndo=()=>{
-    const entry=undoRef.current; if(!entry) return;
     const world=stateRef.current.world;
-    const msg=applyUndo(world,entry);
-    setUndoSlot(null);
-    saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
+    const msg=undoBuildChange(world,historyRef.current);if(msg===null)return;
+    syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
+  };
+  const doRedo=()=>{
+    const world=stateRef.current.world;
+    const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
+    syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
   const toolLabel=(p:PaletteKind|null,rm:boolean)=>rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 990: interior occupancy — session-only. insideHut is the hut
@@ -771,7 +783,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     // sets, no wood) and flags a world rebuild, so the vertex buffer
     // refreshes on the very next animation frame — no waiting for a
     // window rebuild or diagnostic cycle. The whole stroke occupies
-    // ONE undo slot (finalized on release). (3) AIMING PREVIEW — on
+    // ONE undo-stack entry (finalized on release). (3) AIMING PREVIEW — on
     // touch-down and on every drag point, a gold ring + label marks
     // the snapped tile about to be removed (or hides when nothing
     // removable is within tolerance), so the user aims before lifting.
@@ -814,7 +826,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       if(entries.length===0)return;
       const world=stateRef.current.world;
       saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
-      setUndoSlot({kind:'stroke',entries});
+      pushHistory({kind:'stroke',entries});
       setMessage('Removed '+entries.length+(entries.length===1?' item':' items'));
     };
     const paintRemoveAt=(clientX:number,clientY:number)=>{
@@ -878,25 +890,25 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
               // BUILD 989: full chain — placed > generated house (whole
               // rect) > generated tree (real tree and/or crate on the
               // tile, one tap) > generated path tile. Every successful
-              // change occupies the single undo slot (replacing any
-              // older one); failed taps touch neither world nor slot.
+              // change pushes onto the undo stack and clears the redo
+              // stack (BUILD 991); failed taps touch neither world nor stacks.
               // Refinement: the tap SNAPS to the nearest removable tile
               // within 1.5 tiles (findRemovableNear) instead of demanding
               // an exact tile hit — the exact tile still wins ties.
               const snapped=findRemovableNear(world,destination.x,destination.y);
               const res=snapped?removeAt(world,snapped.tx,snapped.ty):null;
               if(!res){setMessage('Nothing to remove here');}
-              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setUndoSlot({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+res.item.kind);}
-              else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
-              else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
-              else{saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
+              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+res.item.kind);}
+              else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
+              else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
+              else{saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
             } else if(build.palette){
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
               const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
               const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
-              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setUndoSlot({kind:'place',item:result.item});setMessage('Placed '+result.item.kind);}
+              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+result.item.kind);}
             }
           }
         } else {
@@ -1169,16 +1181,19 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
         the Street view toggle (top:58), and the diagnostic (bottom-left). */}
     <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
-    {/* BUILD 989 minimized cluster: fixed stack above Build (Walk at
-        bottom:76, Undo at bottom:138) so positions never shift. Walk
+    {/* BUILD 989 minimized cluster, extended by 991: fixed stack above
+        Build (Walk at bottom:76, Undo at bottom:138, Redo at
+        bottom:200 — same 62px step) so positions never shift. Walk
         shows only when a tool is active (taps already walk otherwise);
-        Undo shows when a tool is active (greyed until a change exists)
-        or when an undo exists; with neither, only Build shows. Walk
-        suspends the tool (label flips to Resume <tool>); Undo reverses
-        the last change regardless of suspension. Neither button is
-        rendered while the panel is open. */}
+        Undo and Redo show when a tool is active or either stack is
+        non-empty; with neither, only Build shows. Each is enabled iff
+        its stack is non-empty, else disabled + dimmed. Walk suspends
+        the tool (label flips to Resume <tool>); Undo/Redo work
+        regardless of suspension and while inside a house. Neither
+        button is rendered while the panel is open. */}
     {!buildOpen&&(palette||removeMode)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode)?'Resume '+toolLabel(palette,removeMode):'Resume'):'Walk'}</button>}
-    {!buildOpen&&((palette||removeMode)||undoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {!buildOpen&&((palette||removeMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {!buildOpen&&((palette||removeMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
     {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
         house door is within one tile (nearest door wins); Exit shows
         only while inside. Centered at bottom:110 — clear of the
@@ -1202,7 +1217,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
         <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo restores the whole drag). Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, and Undo reverses your last change.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo.</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
         {(['path','house','tree','stall','grass'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'}[kind]}</button>)}
       </div>

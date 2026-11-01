@@ -202,12 +202,15 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
   return null;
 }
 
-/** BUILD 989: single-step undo. One slot only — the last Build-panel
- *  change. `place` = a placement to delete; `unplace` = a placed item
- *  to restore at its exact index; `unhouse`/`unpath`/`untree` = a
- *  generated removal to reverse (removed-set entry dropped, content
- *  restored). Movement, E-key harvest, and tool selection changes are
- *  NOT changes and never occupy the slot. */
+/** BUILD 989: undo entries. One entry per Build-panel change (a whole
+ *  stroke = one `stroke` entry). `place` = a placement to delete;
+ *  `unplace` = a placed item to restore at its exact index;
+ *  `unhouse`/`unpath`/`untree` = a generated removal to reverse
+ *  (removed-set entry dropped, content restored). BUILD 991: entries
+ *  are the unit of the undo AND redo stacks (see BuildHistory below)
+ *  — the same entry undoes via applyUndo and redoes via applyRedo.
+ *  Movement, E-key harvest, and tool selection changes are NOT
+ *  changes and never enter the stacks. */
 export type UndoEntry =
   | { kind: 'place'; item: PlacedItem }
   | { kind: 'unplace'; item: PlacedItem; index: number }
@@ -314,6 +317,94 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       return 'Restored tree';
     }
   }
+}
+
+/** BUILD 991: re-apply the FORWARD action an UndoEntry undoes, so a
+ *  popped undo entry becomes a redo entry. Every branch is idempotent
+ *  (re-adding content already present is skipped, re-removing content
+ *  already gone is a no-op), so a stale entry cannot duplicate or
+ *  delete anything. Stroke sub-entries replay in FORWARD order (the
+ *  order they were removed), mirroring applyUndo's reverse order. */
+export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
+  switch (entry.kind) {
+    case 'stroke': {
+      for (const sub of entry.entries) applyRedo(w, sub);
+      const n = entry.entries.length;
+      return 'Redid ' + n + (n === 1 ? ' removal' : ' removals');
+    }
+    case 'place': {
+      if (!w.placements) w.placements = [];
+      const item = entry.item;
+      const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+      if (!exists) w.placements.push(item);
+      return 'Re-placed ' + item.kind;
+    }
+    case 'unplace': {
+      removeExactPlacement(w, entry.item);
+      return 'Removed ' + entry.item.kind;
+    }
+    case 'unhouse': {
+      const rect = entry.rect;
+      w.huts = w.huts.filter((h) => !(h.x0 === rect.x0 && h.y0 === rect.y0 && h.x1 === rect.x1 && h.y1 === rect.y1));
+      if (!w.removedHuts) w.removedHuts = [];
+      if (!w.removedHuts.some((r) => r.x0 === rect.x0 && r.y0 === rect.y0 && r.x1 === rect.x1 && r.y1 === rect.y1)) {
+        w.removedHuts.push({ x0: rect.x0, y0: rect.y0, x1: rect.x1, y1: rect.y1 });
+      }
+      return 'Removed house';
+    }
+    case 'unpath': {
+      const key = terrainKey(entry.x, entry.y);
+      delete w.terrain[key];
+      if (!w.removedPaths) w.removedPaths = [];
+      if (!w.removedPaths.includes(key)) w.removedPaths.push(key);
+      return 'Removed path';
+    }
+    case 'untree': {
+      const tree = entry.tree;
+      if (tree) {
+        const idx = w.trees.findIndex((t) => t.tx === tree.tx && t.ty === tree.ty);
+        if (idx >= 0) w.trees.splice(idx, 1);
+        const key = terrainKey(tree.tx, tree.ty);
+        if (!w.removedTrees) w.removedTrees = [];
+        if (!w.removedTrees.includes(key)) w.removedTrees.push(key);
+      }
+      const crate = entry.crate;
+      if (crate) {
+        const idx = w.crates.findIndex((c) => c.tx === crate.tx && c.ty === crate.ty);
+        if (idx >= 0) w.crates.splice(idx, 1);
+        const key = terrainKey(crate.tx, crate.ty);
+        if (!w.removedCrates) w.removedCrates = [];
+        if (!w.removedCrates.includes(key)) w.removedCrates.push(key);
+      }
+      return 'Removed tree';
+    }
+  }
+}
+
+/** BUILD 991: undo + redo stacks (MS Paint style). The undo stack
+ *  holds inverse entries (newest last); the redo stack holds entries
+ *  popped by undo, ready to replay forward. A new build action pushes
+ *  onto undo and CLEARS redo — there is no branching timeline. Both
+ *  stacks are session-only (created per mount, never saved): after a
+ *  reload both start empty until a new change that session. Entries —
+ *  not world snapshots — are the stack unit, for a measured reason:
+ *  the renderer reads the live world arrays (huts/trees/crates/
+ *  terrain), and the adapter never re-stamps real trees, so restoring
+ *  removed-sets alone could not bring back a removed house or tree;
+ *  the 989 inverse entries already restore exactly, and cost one
+ *  small record per action (one per stroke), never a world copy and
+ *  never a vertex buffer — so the stacks are uncapped and a long
+ *  session's history costs kilobytes, not megabytes. */
+export type BuildHistory = { undo: UndoEntry[]; redo: UndoEntry[] };
+export function createBuildHistory(): BuildHistory { return { undo: [], redo: [] }; }
+export function recordBuildChange(h: BuildHistory, entry: UndoEntry): void { h.undo.push(entry); h.redo.length = 0; }
+export function undoBuildChange(w: IsoWorld, h: BuildHistory): string | null {
+  const entry = h.undo.pop(); if (!entry) return null;
+  const msg = applyUndo(w, entry); h.redo.push(entry); return msg;
+}
+export function redoBuildChange(w: IsoWorld, h: BuildHistory): string | null {
+  const entry = h.redo.pop(); if (!entry) return null;
+  const msg = applyRedo(w, entry); h.undo.push(entry); return msg;
 }
 
 /** Non-terrain generated block on a tile (walls, buildings, stalls, trees, rocks, crates). */
