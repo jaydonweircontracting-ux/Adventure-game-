@@ -3,10 +3,15 @@ import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoW
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, rpgAnchorFor, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import {
-  houseDesignFor, streetSlabsFor, cobbleSquaresFor, castlePeaks, farHouses,
-  SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, PLASTERS,
+  houseDesignFor, streetSlabsFor, cobbleSquaresFor,
+  SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
   GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
 } from './townLook';
+import {
+  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
+  validatePlacement, removePlacementAt, addPlacement, walkableWithPlacements,
+  type PaletteKind,
+} from './placements';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -31,7 +36,7 @@ function savedPosition(world: IsoWorld): Position {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const p = JSON.parse(raw) as Position;
-      if (Number.isFinite(p.x) && Number.isFinite(p.y) && isWalkableWorld(world, world.crates, Math.round(p.x), Math.round(p.y))) return p;
+      if (Number.isFinite(p.x) && Number.isFinite(p.y) && walkableWithPlacements(world, world.crates, Math.round(p.x), Math.round(p.y))) return p;
     }
   } catch { /* use the world's authored spawn */ }
   return { x: world.playerStart.tx, y: world.playerStart.ty };
@@ -181,8 +186,11 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   };
   const minX=Math.max(0,Math.floor(center.x)-22), maxX=Math.min(world.w-1,Math.floor(center.x)+22);
   const minY=Math.max(0,Math.floor(center.y)-22), maxY=Math.min(world.h-1,Math.floor(center.y)+22);
+  // BUILD 984: placed paths render exactly like generated dirt roads.
+  const placedPaths=placedPathKeys(world);
+  const effTerrain=(x:number,y:number)=>placedPaths.has(terrainKey(x,y))?'dirt':terrainAt(world,x,y);
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
-    const terrain=terrainAt(world,x,y);
+    const terrain=effTerrain(x,y);
     const c=COLORS[terrain]||COLORS.grass;
     const shade=((x*13+y*7)&3)*.012;
     quad([x,0,y],[x+1,0,y],[x+1,0,y+1],[x,0,y+1],[c[0]+shade,c[1]+shade,c[2]+shade]);
@@ -196,7 +204,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
         quad([x+s.dx,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz+s.d],[x+s.dx,sy,y+s.dz+s.d],[s.shade,s.shade,s.shade*.96]);
       }
     } else if(terrain==='grass'||terrain==='stone'){
-      const nearDirt=(x>0&&terrainAt(world,x-1,y)==='dirt')||(x<world.w-1&&terrainAt(world,x+1,y)==='dirt')||(y>0&&terrainAt(world,x,y-1)==='dirt')||(y<world.h-1&&terrainAt(world,x,y+1)==='dirt');
+      const nearDirt=(x>0&&effTerrain(x-1,y)==='dirt')||(x<world.w-1&&effTerrain(x+1,y)==='dirt')||(y>0&&effTerrain(x,y-1)==='dirt')||(y<world.h-1&&effTerrain(x,y+1)==='dirt');
       if(nearDirt){
         quad([x,.018,y],[x+1,.018,y],[x+1,.018,y+1],[x,.018,y+1],COBBLE_GAP);
         for(const sq of cobbleSquaresFor(x,y)){
@@ -207,7 +215,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   }
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
-  for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  for(const stall of [...world.stalls, ...placedStallRects(world)]) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
   // BUILD 983 town look (reference match): varied low-poly houses —
   // stone-block ground floors, dark timber framing, plaster upper walls,
   // steep pitched roofs, small square windows (some warm-lit), open
@@ -256,7 +264,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     }
   };
   const warmTint=(c:Vec3):Vec3=>[Math.min(1,c[0]*1.04),Math.min(1,c[1]*1.0),Math.min(1,c[2]*.94)];
-  for(const hut of world.huts) {
+  for(const hut of [...world.huts, ...placedHutRects(world)]) {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
@@ -364,7 +372,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
       quad([chX-.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ+.19],[chX-.19,ridgeY+.8,chZ+.19],[.15,.14,.12]);
     }
   }
-  for(const t of world.trees) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
+  for(const t of [...world.trees, ...placedTreeTiles(world)]) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
     // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
     // tiers) instead of the old single green cube. Visual only — same
     // tile, same collision, same positions.
@@ -375,26 +383,9 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   }
   for(const r of world.rocks) if(r.tx>=minX&&r.tx<=maxX&&r.ty>=minY&&r.ty<=maxY) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
   for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) cube(c.tx+.5,c.ty+.5,.65,.7,.65,[.48,.29,.13]);
-  // BUILD 983 backdrop: distant jagged castle/rock silhouette + far
-  // red-roofed houses. These are NOT culled by the 45×45 window — they
-  // sit beyond the map edge so they read as the far distance in every
-  // street view. Castle peaks are tall narrow pyramids; far houses are
-  // small stone/plaster boxes with red pitched roofs.
-  for(const p of castlePeaks()){
-    const x0=p.x-p.w/2,x1=p.x+p.w/2,z0=p.z-p.d/2,z1=p.z+p.d/2;
-    const col:Vec3=[p.shade,p.shade*1.08,p.shade*1.3];
-    quad([x0,0,z1],[x1,0,z1],[x1,p.h,z1],[x0,p.h,z1],col);
-    quad([x1,0,z0],[x0,0,z0],[x0,p.h,z0],[x1,p.h,z0],col.map(v=>v*.8) as Vec3);
-    tri([x0,0,z0],[x1,0,z0],[p.x,p.h+3.5,p.z],col.map(v=>v*.9) as Vec3);
-    tri([x1,0,z1],[x0,0,z1],[p.x,p.h+3.5,p.z],col.map(v=>v*.7) as Vec3);
-  }
-  for(const fh of farHouses()){
-    houseBox(fh.x,fh.z,fh.w,1.6,fh.d,0,PLASTERS[0]);
-    const e=.15,x0=fh.x-fh.w/2-e,x1=fh.x+fh.w/2+e,z0=fh.z-fh.d/2-e,z1=fh.z+fh.d/2+e;
-    const roof:Vec3=[0.56,0.21,0.15];
-    quad([x0,1.6,z1],[x1,1.6,z1],[x1,2.9,fh.z],[x0,2.9,fh.z],roof);
-    quad([x0,1.6,z0],[x0,2.9,fh.z],[x1,2.9,fh.z],[x1,1.6,z0],roof.map(v=>v*.85) as Vec3);
-  }
+  // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
+  // houses) was removed at the user's request — no skyline, no foot
+  // houses. The blue sky gradient pass above is unchanged.
   return new Float32Array(data);
 }
 
@@ -414,10 +405,19 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
+  // BUILD 984 placement tool. The ref mirrors the state for the
+  // render-loop closures (which capture refs, not state).
+  const [buildOpen,setBuildOpen]=useState(false);
+  const [palette,setPalette]=useState<PaletteKind|null>(null);
+  const [removeMode,setRemoveMode]=useState(false);
+  const [placedCount,setPlacedCount]=useState(0);
+  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean}>({palette:null,removeMode:false});
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
     const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
+    if(!world.placements)world.placements=[];
+    setPlacedCount(world.placements.length);
     npcActorsRef.current=savedNpcActors(world);
     // This mode uses the generated Daggerfall-inspired cottage meshes below.
     // Do not load or render the separately uploaded FBX house pack here.
@@ -483,15 +483,25 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const walkableAt=(x:number,y:number)=>{
       const gx=Math.round(x),gy=Math.round(y);
       if(npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42))return false;
-      return isWalkableWorld(world,world.crates,gx,gy);
+      return walkableWithPlacements(world,world.crates,gx,gy);
     };
     const pickGround=(clientX:number,clientY:number)=>{
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
       const nx=((clientX-rect.left)/rect.width)*2-1,ny=1-((clientY-rect.top)/rect.height)*2;
       const p=stateRef.current.position;
       const tx=p.x+.5,tz=p.y+.5,ty=.8;
-      const eyeX=tx+Math.sin(yaw)*zoom*Math.cos(pitch),eyeZ=tz+Math.cos(yaw)*zoom*Math.cos(pitch),eyeY=ty+zoom*Math.sin(pitch);
-      const forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];
+      // BUILD 984: street view uses the eye-level camera, not the orbit
+      // camera — the old code always used orbit math, so street-view
+      // taps mis-picked (BUILD 983 delta #4). Branching here fixes both
+      // street-view tap-to-move and placement taps.
+      let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
+      if(streetViewRef.current){
+        eyeX=tx;eyeZ=tz;eyeY=1.6;
+        forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];
+      } else {
+        eyeX=tx+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=tz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=ty+zoom*Math.sin(pitch);
+        forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];
+      }
       const right=[Math.cos(yaw),0,-Math.sin(yaw)];
       const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
       const scale=Math.tan(Math.PI/6),aspect=rect.width/rect.height;
@@ -520,7 +530,35 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     };
     const up=(e:PointerEvent)=>{const wasTap=pointers.size===1&&drag&&!gestureMoved&&Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)<=10;
       pointers.delete(e.pointerId);drag=false;pinchDistance=0;
-      if(wasTap){const destination=pickGround(e.clientX,e.clientY);if(destination&&walkableAt(destination.x,destination.y)){moveTarget=destination;setMessage('Walking to destination');}else if(destination){setMessage('That destination is blocked');}}
+      if(wasTap){
+        const build=buildRef.current;
+        if(build.palette||build.removeMode){
+          // BUILD 984: a build-mode tap places or removes instead of
+          // moving. Build taps never set moveTarget.
+          const destination=pickGround(e.clientX,e.clientY);
+          if(!destination){setMessage('Tap the ground to place');}
+          else{
+            const world=stateRef.current.world;
+            const tx=Math.floor(destination.x),ty=Math.floor(destination.y);
+            if(build.removeMode){
+              const removed=removePlacementAt(world,tx,ty);
+              if(removed){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage('Removed '+removed.kind);}
+              else setMessage('Nothing placed here');
+            } else if(build.palette){
+              const player=stateRef.current.position;
+              const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
+              const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+              const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
+              if(!result.ok){setMessage('Cannot place here: '+result.reason);}
+              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage('Placed '+result.item.kind);}
+            }
+          }
+        } else {
+          const destination=pickGround(e.clientX,e.clientY);
+          if(destination&&walkableAt(destination.x,destination.y)){moveTarget=destination;setMessage('Walking to destination');}
+          else if(destination){setMessage('That destination is blocked');}
+        }
+      }
       if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
     };
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
@@ -674,7 +712,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       }
       raf=requestAnimationFrame(draw);
     };
-    const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&isWalkableWorld(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
+    const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
     const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();const p=stateRef.current.position;
       if(k==='f'||k===' '){
         const target=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
@@ -711,6 +749,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       setLookPitch:(v:number)=>{lookPitch=v},
       setStreetView:(v:boolean)=>{streetViewRef.current=v;setStreetViewOn(v)},
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
+      getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
+      getPlayer:()=>({...stateRef.current.position}),
     };
     draw();
     const npcTimer=window.setInterval(()=>{
@@ -726,19 +766,33 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         const nx=Math.round(actor.x+sx),ny=Math.round(actor.y+sy);
         const player=stateRef.current.position;
         const occupied=(Math.round(player.x)===nx&&Math.round(player.y)===ny)||actors.some((other,j)=>j!==i&&Math.round(other.x)===nx&&Math.round(other.y)===ny);
-        if(!occupied&&isWalkableWorld(world,world.crates,nx,ny)){actor.x=nx;actor.y=ny;if(nx===target.tx&&ny===target.ty)actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;}
+        if(!occupied&&walkableWithPlacements(world,world.crates,nx,ny)){actor.x=nx;actor.y=ny;if(nx===target.tx&&ny===target.ty)actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;}
       });
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
     return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
-  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(isWalkableWorld(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
+  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
     <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack</div></div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
+    {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
+        the Street view toggle (top:58), and the diagnostic (bottom-left). */}
+    <button type="button" data-testid="build-toggle" onClick={()=>setBuildOpen(v=>!v)} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:buildOpen?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
+    {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
+      <strong style={{display:'block',fontSize:15}}>Build — free, no resource cost</strong>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then a placed item, to take it back down.</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+        {(['path','house','tree','stall'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall'}[kind]}</button>)}
+      </div>
+      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);buildRef.current={palette:next?null:palette,removeMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-close" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};}} style={{display:'block',width:'100%',marginTop:8,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Done</button>
+      <div data-testid="build-count" style={{fontSize:12,opacity:.85,marginTop:10}}>Placed: {placedCount}</div>
+      <div style={{fontSize:11,opacity:.7,marginTop:6,lineHeight:1.4}}>Placed houses are decorative for now — no interior yet. Placed items show in 3D mode; the 2.5D view does not show them yet.</div>
+    </div>}
   </div>;
 }

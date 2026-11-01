@@ -54,8 +54,6 @@ export const DOOR_WOOD: Rgb = [0.26, 0.16, 0.09];
 export const DIRT_TAN: Rgb = [0.74, 0.57, 0.31];
 /** Flanking cobble/paver grey and its dark gaps. */
 export const COBBLE_GAP: Rgb = [0.38, 0.38, 0.36];
-/** Distant castle/rock slate. */
-export const CASTLE_SLATE: Rgb = [0.24, 0.27, 0.33];
 /** Clear blue sky: zenith and horizon. */
 export const SKY_TOP: Rgb = [0.36, 0.62, 0.92];
 export const SKY_HORIZON: Rgb = [0.78, 0.87, 0.96];
@@ -171,43 +169,6 @@ export function cobbleSquaresFor(tileX: number, tileY: number): CobbleSquare[] {
     }
   }
   return squares;
-}
-
-/** One jagged peak of the distant north castle/rock silhouette. */
-export interface CastlePeak {
-  x: number;
-  z: number;
-  w: number;
-  h: number;
-  d: number;
-  shade: number;
-}
-/** Fixed ridge north of town (z small = north), centred on the town core.
- *  Drawn unculled: it must read at the vanishing point of any north-
- *  looking street, not just inside the 45x45 ground window. */
-export function castlePeaks(): CastlePeak[] {
-  const xs = [78, 86, 94, 101, 109, 117, 125];
-  const hs = [10, 14, 9, 15, 11, 13, 9];
-  const ws = [6, 5, 7, 6, 5, 6, 5];
-  return xs.map((x, i) => ({
-    x, z: 24, w: ws[i], h: hs[i], d: 6, shade: 0.22 + (i % 3) * 0.03,
-  }));
-}
-
-/** Tiny red-roofed houses at the castle foot, for the far distance. */
-export interface FarHouse {
-  x: number;
-  z: number;
-  w: number;
-  d: number;
-}
-export function farHouses(): FarHouse[] {
-  return [
-    { x: 88, z: 33, w: 3, d: 2.5 },
-    { x: 97, z: 35, w: 2.5, d: 2.5 },
-    { x: 106, z: 33, w: 3, d: 2.5 },
-    { x: 114, z: 36, w: 2.5, d: 2 },
-  ];
 }
 
 /** True when a colour is in the forbidden lavender/pink family (the

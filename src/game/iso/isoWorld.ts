@@ -6,6 +6,12 @@ export type Terrain = 'grass' | 'dirt' | 'sand' | 'stone' | 'water';
 
 export interface HutRect { x0: number; y0: number; x1: number; y1: number; doorX?: number; doorY?: number }
 export interface StallRect { x0: number; y0: number; x1: number }
+/** Player-placed item (BUILD 984, 3D mode). Houses/stalls are rects;
+ *  paths/trees are single tiles (x0 === x1, y0 === y1). Kept separate
+ *  from the generated huts/stalls/trees so the 3D adapter's layout
+ *  filter (which rebuilds generated lots near town on every load) can
+ *  never delete placed work. Old saves load with none. */
+export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall'; x0: number; y0: number; x1: number; y1: number }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
 export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }
@@ -23,6 +29,7 @@ export interface IsoWorld {
   crates: TilePoint[];
   npcSpawns: NpcSpawn[];
   playerStart: TilePoint;
+  placements?: PlacedItem[];
 }
 
 export interface Clipboard {
