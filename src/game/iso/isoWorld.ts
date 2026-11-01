@@ -40,6 +40,22 @@ export interface IsoWorld {
    *  removed. The adapter's road/plaza rasterizer skips these keys, so
    *  removed paths stay gone across reloads. Old saves load with none. */
   removedPaths?: string[];
+  /** BUILD 989: terrain keys ("x,y") of generated trees the user removed
+   *  via Remove. The adapter copies source trees verbatim (it never
+   *  re-stamps trees), so plain deletion would already persist — the set
+   *  mirrors 987's removedHuts/removedPaths as belt-and-braces symmetry,
+   *  and the adapter skips these keys when filtering trees. Old saves
+   *  load with none. */
+  removedTrees?: string[];
+  /** BUILD 989: terrain keys ("x,y") of crates the user removed via Remove
+   *  (crates render as trees since 986, so a removed visible tree may
+   *  secretly be a crate). MANDATORY, not optional: the adapter's prop
+   *  loop re-pushes layout props as crates on every load, so plain
+   *  deletion would resurrect prop crates — the loop skips these keys.
+   *  Authored crates do not regenerate, but recording them too covers
+   *  the case where a layout prop shares the tile. Old saves load with
+   *  none. */
+  removedCrates?: string[];
 }
 
 export interface Clipboard {

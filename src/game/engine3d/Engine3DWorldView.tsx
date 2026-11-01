@@ -10,8 +10,8 @@ import {
 } from './townLook';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
-  validatePlacement, removePlacementAt, removeGeneratedAt, addPlacement, walkableWithPlacements,
-  type PaletteKind,
+  validatePlacement, removeAt, removeAlongStroke, findRemovableNear, applyUndo, addPlacement, walkableWithPlacements,
+  type PaletteKind, type UndoEntry,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import type { Face8 } from '../iso/isoSprites';
@@ -98,6 +98,12 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   // BUILD 987: paths the user removed stay removed — the road/plaza
   // rasterizer below would otherwise re-stamp them on every load.
   const removedPathKeys = new Set(world.removedPaths ?? []);
+  // BUILD 989: trees and crates the user removed stay removed. Trees are
+  // copied verbatim below (never re-stamped), so the tree set is
+  // belt-and-braces; the crate set is MANDATORY because the prop loop
+  // below re-pushes layout props as crates on every load.
+  const removedTreeKeys = new Set(world.removedTrees ?? []);
+  const removedCrateKeys = new Set(world.removedCrates ?? []);
   const setTerrain = (x: number, y: number, terrain: 'dirt' | 'sand') => {
     if (removedPathKeys.has(terrainKey(x, y))) return;
     if (x >= 0 && y >= 0 && x < world.w && y < world.h) world.terrain[terrainKey(x, y)] = terrain;
@@ -154,7 +160,7 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
     if (!prop.solid || world.huts.some(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1)) continue;
     if (prop.kind === 'stall') {
       world.stalls.push({ x0: x, y0: y, x1: Math.min(world.w - 1, x + 1) });
-    } else if (!world.crates.some(c => c.tx === x && c.ty === y)) {
+    } else if (!world.crates.some(c => c.tx === x && c.ty === y) && !removedCrateKeys.has(terrainKey(x, y))) {
       world.crates.push({ tx: x, ty: y });
     }
   }
@@ -162,7 +168,7 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   // Remove harvestables accidentally placed under the new building footprints.
   const insideBuilding = (x: number, y: number) => world.huts.some(h =>
     x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
-  world.trees = world.trees.filter(t => !insideBuilding(t.tx, t.ty));
+  world.trees = world.trees.filter(t => !insideBuilding(t.tx, t.ty) && !removedTreeKeys.has(terrainKey(t.tx, t.ty)));
   world.rocks = world.rocks.filter(t => !insideBuilding(t.tx, t.ty));
   world.crates = world.crates.filter(t => !insideBuilding(t.tx, t.ty));
 
@@ -516,6 +522,36 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const [removeMode,setRemoveMode]=useState(false);
   const [placedCount,setPlacedCount]=useState(0);
   const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean}>({palette:null,removeMode:false});
+  // BUILD 989: Walk suspension + single-step undo. Suspension is a
+  // separate flag from the tool itself: Walk pauses taps (they walk)
+  // while the preserved selection stays stored in buildRef; tapping
+  // Walk again resumes it. Suspension lives ONLY while minimized —
+  // reopening the panel resumes the tool, closing clears suspension
+  // with everything else. Undo is one session-only slot in a ref: it
+  // reverses the last Build-panel change, is consumed on use, is
+  // replaced by the next change, and is NOT saved (after a reload the
+  // button is disabled until a new change happens in that session).
+  const [walkSuspended,setWalkSuspended]=useState(false);
+  const walkRef=useRef(false);
+  const [undoAvailable,setUndoAvailable]=useState(false);
+  const undoRef=useRef<UndoEntry|null>(null);
+  const setWalk=(v:boolean)=>{walkRef.current=v;setWalkSuspended(v);};
+  const setUndoSlot=(entry:UndoEntry|null)=>{undoRef.current=entry;setUndoAvailable(entry!==null);};
+  const doUndo=()=>{
+    const entry=undoRef.current; if(!entry) return;
+    const world=stateRef.current.world;
+    const msg=applyUndo(world,entry);
+    setUndoSlot(null);
+    saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
+  };
+  const toolLabel=(p:PaletteKind|null,rm:boolean)=>rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  // BUILD 989 refinement: aiming preview for Remove mode. A plain div
+  // positioned by direct DOM writes (never React state per pointermove
+  // — that would re-render the whole view at pointer frequency). It
+  // sits in the same fixed container as the canvas, so container-
+  // relative coordinates from projectTileCenter line up exactly.
+  const removePreviewRef=useRef<HTMLDivElement|null>(null);
+  const removePreviewLabelRef=useRef<HTMLSpanElement|null>(null);
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
@@ -653,9 +689,89 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const keys=new Set<string>();
     const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();}canvas.setPointerCapture?.(e.pointerId)};
+    // BUILD 989 refinement: Remove targeting. (1) TAP TOLERANCE — taps
+    // snap via findRemovableNear (1.5 tiles), so a fat-finger tap next
+    // to a small orbit tile still lands. (2) DRAG-TO-REMOVE — while
+    // Remove mode is active (and not Walk-suspended), a drag paints
+    // removals instead of orbiting the camera; that camera-vs-remove
+    // conflict is why drags previously felt unresponsive. Each painted
+    // tile applies removeAt immediately (same precedence, removed
+    // sets, no wood) and flags a world rebuild, so the vertex buffer
+    // refreshes on the very next animation frame — no waiting for a
+    // window rebuild or diagnostic cycle. The whole stroke occupies
+    // ONE undo slot (finalized on release). (3) AIMING PREVIEW — on
+    // touch-down and on every drag point, a gold ring + label marks
+    // the snapped tile about to be removed (or hides when nothing
+    // removable is within tolerance), so the user aims before lifting.
+    // projectTileCenter inverts pickGround with the same camera basis
+    // (forward/right/up, same FOV), so ring and pick agree exactly.
+    const projectTileCenter=(tx:number,ty:number)=>{
+      const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
+      const p=stateRef.current.position;const px=p.x+.5,pz=p.y+.5,py=.8;
+      let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
+      if(streetViewRef.current){eyeX=px;eyeZ=pz;eyeY=1.6;forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];}
+      else{eyeX=px+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=pz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=py+zoom*Math.sin(pitch);forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];}
+      const right=[Math.cos(yaw),0,-Math.sin(yaw)];
+      const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
+      const scale=Math.tan(WORLD_FOV_RAD/2),aspect=rect.width/rect.height;
+      const vx=tx+.5-eyeX,vy=0-eyeY,vz=ty+.5-eyeZ;
+      const depth=vx*forward[0]+vy*forward[1]+vz*forward[2];if(depth<=0)return null;
+      const nx=(vx*right[0]+vy*right[1]+vz*right[2])/(depth*scale*aspect);
+      const ny=(vx*up[0]+vy*up[1]+vz*up[2])/(depth*scale);
+      if(Math.abs(nx)>1||Math.abs(ny)>1)return null;
+      return {cx:(nx+1)/2*rect.width,cy:(1-ny)/2*rect.height};
+    };
+    const hideRemovePreview=()=>{const el=removePreviewRef.current;if(el)el.style.display='none';};
+    const showRemovePreview=(clientX:number,clientY:number)=>{
+      const el=removePreviewRef.current;if(!el){return;}
+      const destination=pickGround(clientX,clientY);
+      const snapped=destination?findRemovableNear(stateRef.current.world,destination.x,destination.y):null;
+      const proj=snapped?projectTileCenter(snapped.tx,snapped.ty):null;
+      if(!snapped||!proj){el.style.display='none';return;}
+      el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
+      const label=removePreviewLabelRef.current;
+      if(label)label.textContent='Remove '+({placed:'placed item',house:'house',tree:'tree',path:'path'} as Record<string,string>)[snapped.kind];
+    };
+    let removeDragging=false;
+    let removeStrokeEntries:UndoEntry[]=[];
+    let removeStrokeTiles=new Set<string>();
+    let removeStrokeRects:Array<{x0:number;y0:number;x1:number;y1:number}>=[];
+    const finalizeRemoveStroke=()=>{
+      const entries=removeStrokeEntries;
+      removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];
+      if(entries.length===0)return;
+      const world=stateRef.current.world;
+      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+      setUndoSlot({kind:'stroke',entries});
+      setMessage('Removed '+entries.length+(entries.length===1?' item':' items'));
+    };
+    const paintRemoveAt=(clientX:number,clientY:number)=>{
+      const destination=pickGround(clientX,clientY);if(!destination)return;
+      const world=stateRef.current.world;
+      const snapped=findRemovableNear(world,destination.x,destination.y);if(!snapped)return;
+      const key=terrainKey(snapped.tx,snapped.ty);
+      if(removeStrokeTiles.has(key))return;
+      if(removeStrokeRects.some((r)=>snapped.tx>=r.x0&&snapped.tx<=r.x1&&snapped.ty>=r.y0&&snapped.ty<=r.y1))return;
+      removeStrokeTiles.add(key);
+      const one=removeAlongStroke(world,[{x:snapped.tx,y:snapped.ty}]);
+      if(!one)return;
+      for(const entry of one.entries){
+        removeStrokeEntries.push(entry);
+        if(entry.kind==='unhouse')removeStrokeRects.push({x0:entry.rect.x0,y0:entry.rect.y0,x1:entry.rect.x1,y1:entry.rect.y1});
+        else if(entry.kind==='unplace')removeStrokeRects.push({x0:entry.item.x0,y0:entry.item.y0,x1:entry.item.x1,y1:entry.item.y1});
+      }
+      needsWorldRebuild.current=true;
+      showRemovePreview(clientX,clientY);
+    };
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;return;}if(!drag)return;
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}return;}
+      if(removeDragging){
+        if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
+        paintRemoveAt(e.clientX,e.clientY);
+        return;
+      }
+      if(!drag)return;
       if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
       if(!gestureMoved)return;
       yaw+=(e.clientX-lx)*.008;
@@ -665,9 +781,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     };
     const up=(e:PointerEvent)=>{const wasTap=pointers.size===1&&drag&&!gestureMoved&&Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)<=10;
       pointers.delete(e.pointerId);drag=false;pinchDistance=0;
-      if(wasTap){
+      const wasRemoveDrag=removeDragging;removeDragging=false;hideRemovePreview();
+      if(wasRemoveDrag&&removeStrokeEntries.length>0){finalizeRemoveStroke();}
+      else if(wasTap){
         const build=buildRef.current;
-        if(build.palette||build.removeMode){
+        // BUILD 989: Walk suspension pauses the tool without clearing
+        // it — a suspended tap walks exactly like a no-tool tap. The
+        // walk branch below is the only other path, so suspended taps
+        // and no-tool taps behave identically. D-pad movement never
+        // consults buildRef, so it always walks regardless.
+        const toolActive=!walkRef.current&&(build.palette||build.removeMode);
+        if(toolActive){
           // BUILD 984: a build-mode tap places or removes instead of
           // moving. Build taps never set moveTarget.
           const destination=pickGround(e.clientX,e.clientY);
@@ -676,22 +800,28 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
             const world=stateRef.current.world;
             const tx=Math.floor(destination.x),ty=Math.floor(destination.y);
             if(build.removeMode){
-              // BUILD 987: placed items first (existing behavior), then
-              // generated house (whole rect), then generated path tile.
-              const removed=removePlacementAt(world,tx,ty);
-              if(removed){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage('Removed '+removed.kind);}
-              else{
-                const gen=removeGeneratedAt(world,tx,ty);
-                if(gen){saveWorld(world);needsWorldRebuild.current=true;setMessage(gen.kind==='house'?'Removed house':'Removed path');}
-                else setMessage('Nothing to remove here');
-              }
+              // BUILD 989: full chain — placed > generated house (whole
+              // rect) > generated tree (real tree and/or crate on the
+              // tile, one tap) > generated path tile. Every successful
+              // change occupies the single undo slot (replacing any
+              // older one); failed taps touch neither world nor slot.
+              // Refinement: the tap SNAPS to the nearest removable tile
+              // within 1.5 tiles (findRemovableNear) instead of demanding
+              // an exact tile hit — the exact tile still wins ties.
+              const snapped=findRemovableNear(world,destination.x,destination.y);
+              const res=snapped?removeAt(world,snapped.tx,snapped.ty):null;
+              if(!res){setMessage('Nothing to remove here');}
+              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setUndoSlot({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+res.item.kind);}
+              else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
+              else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
+              else{saveWorld(world);needsWorldRebuild.current=true;setUndoSlot({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
             } else if(build.palette){
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
               const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
               const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
-              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage('Placed '+result.item.kind);}
+              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setUndoSlot({kind:'place',item:result.item});setMessage('Placed '+result.item.kind);}
             }
           }
         } else {
@@ -902,6 +1032,11 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
       getPlayer:()=>({...stateRef.current.position}),
+      // BUILD 989 refinement: project a tile centre to container pixel
+      // coordinates (same math as the Remove aiming preview), so the
+      // browser harness can tap/drag exact tiles instead of guessing
+      // pixel offsets. Test-only; no gameplay effect.
+      projectTile:(tx:number,ty:number)=>projectTileCenter(tx,ty),
       // BUILD 987 test hook (read-only): adapted-world summary for the
       // browser harness — hut rects, dirt keys, removed sets, placements.
       getWorldSummary:()=>({
@@ -910,6 +1045,12 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         removedHuts: stateRef.current.world.removedHuts??[],
         removedPaths: stateRef.current.world.removedPaths??[],
         placements: JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
+        // BUILD 989: trees, crates, and their removed sets for the
+        // browser harness (tree/crate-tree removal + undo proofs).
+        trees: stateRef.current.world.trees.map(t=>({tx:t.tx,ty:t.ty})),
+        crates: stateRef.current.world.crates.map(t=>({tx:t.tx,ty:t.ty})),
+        removedTrees: stateRef.current.world.removedTrees??[],
+        removedCrates: stateRef.current.world.removedCrates??[],
       }),
     };
     draw();
@@ -942,14 +1083,33 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
     {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
         the Street view toggle (top:58), and the diagnostic (bottom-left). */}
-    <button type="button" data-testid="build-toggle" onClick={()=>setBuildOpen(v=>!v)} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
-    {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
+    <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
+    {/* BUILD 989 minimized cluster: fixed stack above Build (Walk at
+        bottom:76, Undo at bottom:138) so positions never shift. Walk
+        shows only when a tool is active (taps already walk otherwise);
+        Undo shows when a tool is active (greyed until a change exists)
+        or when an undo exists; with neither, only Build shows. Walk
+        suspends the tool (label flips to Resume <tool>); Undo reverses
+        the last change regardless of suspension. Neither button is
+        rendered while the panel is open. */}
+    {!buildOpen&&(palette||removeMode)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode)?'Resume '+toolLabel(palette,removeMode):'Resume'):'Walk'}</button>}
+    {!buildOpen&&((palette||removeMode)||undoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {/* BUILD 989 refinement: Remove aiming preview — gold ring + label
+        at the snapped tile about to be removed. Positioned by direct
+        DOM writes from the pointer handlers (never React state), so it
+        tracks the finger with no re-render lag; pointerEvents none so
+        it never eats a tap. Hidden unless a drag/touch-down is active
+        over a removable tile within tolerance. */}
+    <div ref={removePreviewRef} data-testid="build-remove-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',transform:'translate(-50%,-50%)',width:52,height:52,border:'3px solid #ffd94d',borderRadius:'50%',boxShadow:'0 0 0 2px rgba(0,0,0,.55)'}}>
+      <span ref={removePreviewLabelRef} style={{position:'absolute',left:'50%',top:56,transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
+    </div>
+    {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, or house to take it down. Minimize (—) keeps your tool; close (×) clears it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo restores the whole drag). Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, and Undo reverses your last change.</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
         {(['path','house','tree','stall','grass'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'}[kind]}</button>)}
       </div>

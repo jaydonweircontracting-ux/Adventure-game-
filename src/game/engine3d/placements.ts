@@ -23,14 +23,34 @@ export function addPlacement(w: IsoWorld, item: PlacedItem): void {
   w.placements.push(item);
 }
 
-/** Remove the placed item covering (x, y), if any. Returns it, else null. */
-export function removePlacementAt(w: IsoWorld, x: number, y: number): PlacedItem | null {
+/** Remove the placed item covering (x, y), if any. Returns it plus its
+ *  list index (BUILD 989: undo restores a removed placed item at its
+ *  exact index, because first-match removal is order-sensitive for
+ *  path+grass stacks), else null. */
+export function takePlacementAt(w: IsoWorld, x: number, y: number): { item: PlacedItem; index: number } | null {
   const list = w.placements;
   if (!list) return null;
   const idx = list.findIndex((p) => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
   if (idx < 0) return null;
-  const [removed] = list.splice(idx, 1);
-  return removed;
+  const [item] = list.splice(idx, 1);
+  return { item, index: idx };
+}
+
+/** Remove the placed item covering (x, y), if any. Returns it, else null. */
+export function removePlacementAt(w: IsoWorld, x: number, y: number): PlacedItem | null {
+  const taken = takePlacementAt(w, x, y);
+  return taken ? taken.item : null;
+}
+
+/** Remove the placed item exactly equal to `item` (kind + rect), if
+ *  present. BUILD 989: undo of a placement. Returns true when removed. */
+export function removeExactPlacement(w: IsoWorld, item: PlacedItem): boolean {
+  const list = w.placements;
+  if (!list) return false;
+  const idx = list.findIndex((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+  if (idx < 0) return false;
+  list.splice(idx, 1);
+  return true;
 }
 
 /** BUILD 987: remove a GENERATED thing at (x, y) — a whole hut rect or
@@ -43,18 +63,19 @@ export function removePlacementAt(w: IsoWorld, x: number, y: number): PlacedItem
  *  grass-tuft blocking and rendering all derive from huts/terrain, so
  *  they update from this one mutation. Returns what was removed. */
 export type GeneratedRemoval =
-  | { kind: 'house'; rect: HutRect }
+  | { kind: 'house'; rect: HutRect; index: number }
   | { kind: 'path'; x: number; y: number };
 
 export function removeGeneratedAt(w: IsoWorld, x: number, y: number): GeneratedRemoval | null {
   const hut = hutAt(w, x, y);
   if (hut) {
+    const index = w.huts.indexOf(hut);
     w.huts = w.huts.filter((h) => h !== hut);
     if (!w.removedHuts) w.removedHuts = [];
     if (!w.removedHuts.some((r) => r.x0 === hut.x0 && r.y0 === hut.y0 && r.x1 === hut.x1 && r.y1 === hut.y1)) {
       w.removedHuts.push({ x0: hut.x0, y0: hut.y0, x1: hut.x1, y1: hut.y1 });
     }
-    return { kind: 'house', rect: hut };
+    return { kind: 'house', rect: hut, index };
   }
   if (terrainAt(w, x, y) === 'dirt') {
     const key = terrainKey(x, y);
@@ -64,6 +85,235 @@ export function removeGeneratedAt(w: IsoWorld, x: number, y: number): GeneratedR
     return { kind: 'path', x, y };
   }
   return null;
+}
+
+/** BUILD 989: remove a GENERATED visible tree at (x, y). Since 986 every
+ *  crate renders as a tree, so a visible tree may secretly be a crate
+ *  entry — and a tile may hold both a real tree and a crate. Visually
+ *  indistinguishable trees must behave identically, so ONE tap removes
+ *  BOTH entries on the tile (the visible tree is fully gone, not
+ *  secretly replaced by the stacked entry). This is deletion, NOT
+ *  harvest: no wood is granted here — E-key remains the harvest path.
+ *  Real trees are recorded in removedTrees (belt-and-braces; the adapter
+ *  copies trees verbatim, so plain deletion would already persist).
+ *  Crates are recorded in removedCrates (MANDATORY: the adapter's prop
+ *  loop re-pushes layout props as crates on every load). Returns what
+ *  was removed, or null when the tile holds no tree and no crate. */
+export type GeneratedTreeRemoval = {
+  tree: { tx: number; ty: number } | null; treeIndex: number;
+  crate: { tx: number; ty: number } | null; crateIndex: number;
+};
+
+export function removeGeneratedTreeAt(w: IsoWorld, x: number, y: number): GeneratedTreeRemoval | null {
+  const treeIndex = w.trees.findIndex((t) => t.tx === x && t.ty === y);
+  const crateIndex = w.crates.findIndex((c) => c.tx === x && c.ty === y);
+  if (treeIndex < 0 && crateIndex < 0) return null;
+  let tree: { tx: number; ty: number } | null = null;
+  let crate: { tx: number; ty: number } | null = null;
+  if (treeIndex >= 0) {
+    [tree] = w.trees.splice(treeIndex, 1);
+    const key = terrainKey(x, y);
+    if (!w.removedTrees) w.removedTrees = [];
+    if (!w.removedTrees.includes(key)) w.removedTrees.push(key);
+  }
+  if (crateIndex >= 0) {
+    [crate] = w.crates.splice(crateIndex, 1);
+    const key = terrainKey(x, y);
+    if (!w.removedCrates) w.removedCrates = [];
+    if (!w.removedCrates.includes(key)) w.removedCrates.push(key);
+  }
+  return { tree, treeIndex, crate, crateIndex };
+}
+
+/** BUILD 989 refinement: what removeAt WOULD remove at (x, y), without
+ *  mutating anything — the snap/paint/preview probe. Returns the kind
+ *  only; the view calls removeAt on the snapped tile to do the work,
+ *  so probe and action can never disagree about precedence. */
+export type RemovableKind = 'placed' | 'house' | 'tree' | 'path';
+
+export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKind | null {
+  if (w.placements && w.placements.some((p) => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1)) return 'placed';
+  if (hutAt(w, x, y)) return 'house';
+  if (w.trees.some((t) => t.tx === x && t.ty === y) || w.crates.some((c) => c.tx === x && c.ty === y)) return 'tree';
+  if (terrainAt(w, x, y) === 'dirt') return 'path';
+  return null;
+}
+
+/** BUILD 989 refinement: Remove tap tolerance, in world tiles. Phone
+ *  orbit tiles are small, so exact-tile hits are fiddly: a Remove tap
+ *  (or drag point) snaps to the NEAREST removable tile whose centre is
+ *  within this distance of the picked continuous point. 1.5 tiles
+ *  covers the tapped tile (max centre distance 0.71) plus its
+ *  neighbours, without reaching two tiles away. Nearest wins; the
+ *  tapped tile wins exact ties (so a tap squarely on a removable tile
+ *  never jumps to a neighbour). Within one tile, precedence is the
+ *  removeAt order (placed > house > tree > path), via peekRemovableAt.
+ *  Nothing removable within tolerance => null => the view keeps the
+ *  "Nothing to remove here" message. */
+export const REMOVE_TAP_TOLERANCE = 1.5;
+
+export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance: number = REMOVE_TAP_TOLERANCE): { tx: number; ty: number; kind: RemovableKind; dist: number } | null {
+  const baseX = Math.floor(fx), baseY = Math.floor(fy);
+  const radius = Math.ceil(tolerance) + 1;
+  let best: { tx: number; ty: number; kind: RemovableKind; dist: number } | null = null;
+  for (let ty = baseY - radius; ty <= baseY + radius; ty++) {
+    for (let tx = baseX - radius; tx <= baseX + radius; tx++) {
+      if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) continue;
+      const kind = peekRemovableAt(w, tx, ty);
+      if (!kind) continue;
+      const dist = Math.hypot(tx + 0.5 - fx, ty + 0.5 - fy);
+      if (dist > tolerance) continue;
+      const isExact = tx === baseX && ty === baseY;
+      if (!best || dist < best.dist - 1e-9 || (Math.abs(dist - best.dist) <= 1e-9 && isExact && !(best.tx === baseX && best.ty === baseY))) {
+        best = { tx, ty, kind, dist };
+      }
+    }
+  }
+  return best;
+}
+
+/** BUILD 989: the full Remove-mode chain in one pure function, so the
+ *  precedence is asserted standalone instead of living only in the
+ *  view's tap handler. Order: placed item > generated house (whole
+ *  rect) > generated tree (real tree and/or crate on the tile) >
+ *  generated path (dirt tile). A tree standing on dirt therefore takes
+ *  two taps (tree, then path), mirroring 987's hut-over-dirt two-tap.
+ *  Generated stalls are NOT removed here (not asked): a stall tile
+ *  with no tree/crate/house falls through to the path step, which
+ *  preserves 987's edge (dirt under a stall is removed, the stall
+ *  stands on grass). */
+export type RemoveAtResult =
+  | { kind: 'placed'; item: PlacedItem; index: number }
+  | { kind: 'house'; rect: HutRect; index: number }
+  | { kind: 'tree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
+  | { kind: 'path'; x: number; y: number };
+
+export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | null {
+  const placed = takePlacementAt(w, x, y);
+  if (placed) return { kind: 'placed', item: placed.item, index: placed.index };
+  if (hutAt(w, x, y)) {
+    const gen = removeGeneratedAt(w, x, y);
+    if (gen && gen.kind === 'house') return { kind: 'house', rect: gen.rect, index: gen.index };
+  }
+  const tr = removeGeneratedTreeAt(w, x, y);
+  if (tr) return { kind: 'tree', tree: tr.tree, treeIndex: tr.treeIndex, crate: tr.crate, crateIndex: tr.crateIndex };
+  const gen = removeGeneratedAt(w, x, y);
+  if (gen && gen.kind === 'path') return { kind: 'path', x, y };
+  return null;
+}
+
+/** BUILD 989: single-step undo. One slot only — the last Build-panel
+ *  change. `place` = a placement to delete; `unplace` = a placed item
+ *  to restore at its exact index; `unhouse`/`unpath`/`untree` = a
+ *  generated removal to reverse (removed-set entry dropped, content
+ *  restored). Movement, E-key harvest, and tool selection changes are
+ *  NOT changes and never occupy the slot. */
+export type UndoEntry =
+  | { kind: 'place'; item: PlacedItem }
+  | { kind: 'unplace'; item: PlacedItem; index: number }
+  | { kind: 'unhouse'; rect: HutRect; index: number }
+  | { kind: 'unpath'; x: number; y: number }
+  | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
+  | { kind: 'stroke'; entries: UndoEntry[] };
+
+/** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
+ *  each tile of a stroke, in order, with the SAME precedence,
+ *  removed-set persistence, and no-wood rule as tap-remove (it IS
+ *  removeAt, per tile). Rules: a tile already visited by this stroke
+ *  is skipped (a tree standing on dirt still takes a SECOND stroke
+ *  for the path underneath, exactly like the two-tap rule — one stroke
+ *  never silently strips two layers); a tile inside a house/placed
+ *  rect already removed by this stroke is skipped (house rect removed
+ *  ONCE, however many of its tiles the stroke crosses). Returns null
+ *  when the stroke removed nothing, so an empty drag never occupies
+ *  the undo slot. The caller stores the whole stroke as ONE undo
+ *  entry, so one Undo restores everything the stroke removed. */
+export function removeAlongStroke(w: IsoWorld, tiles: Array<{ x: number; y: number }>): { entries: UndoEntry[]; removed: number } | null {
+  const visited = new Set<string>();
+  const removedRects: Array<{ x0: number; y0: number; x1: number; y1: number }> = [];
+  const entries: UndoEntry[] = [];
+  for (const t of tiles) {
+    const key = terrainKey(t.x, t.y);
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (removedRects.some((r) => t.x >= r.x0 && t.x <= r.x1 && t.y >= r.y0 && t.y <= r.y1)) continue;
+    const res = removeAt(w, t.x, t.y);
+    if (!res) continue;
+    if (res.kind === 'placed') {
+      entries.push({ kind: 'unplace', item: res.item, index: res.index });
+      removedRects.push({ x0: res.item.x0, y0: res.item.y0, x1: res.item.x1, y1: res.item.y1 });
+    } else if (res.kind === 'house') {
+      entries.push({ kind: 'unhouse', rect: res.rect, index: res.index });
+      removedRects.push({ x0: res.rect.x0, y0: res.rect.y0, x1: res.rect.x1, y1: res.rect.y1 });
+    } else if (res.kind === 'tree') {
+      entries.push({ kind: 'untree', tree: res.tree, treeIndex: res.treeIndex, crate: res.crate, crateIndex: res.crateIndex });
+    } else {
+      entries.push({ kind: 'unpath', x: res.x, y: res.y });
+    }
+  }
+  if (entries.length === 0) return null;
+  return { entries, removed: entries.length };
+}
+
+/** Reverse exactly one UndoEntry. Restores are exact (original indices,
+ *  removed-set cleanup, terrain restore) and idempotent: re-adding
+ *  content that is already present is skipped, so a stale entry cannot
+ *  duplicate anything. Returns the user-facing message. */
+export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
+  switch (entry.kind) {
+    case 'stroke': {
+      // Reverse order: restores exact indices best (later removals
+      // restored first), and every sub-restore is already idempotent,
+      // so a stale stroke entry cannot duplicate anything.
+      for (let i = entry.entries.length - 1; i >= 0; i--) applyUndo(w, entry.entries[i]);
+      const n = entry.entries.length;
+      return 'Undid ' + n + (n === 1 ? ' removal' : ' removals');
+    }
+    case 'place': {
+      removeExactPlacement(w, entry.item);
+      return 'Undid placed ' + entry.item.kind;
+    }
+    case 'unplace': {
+      if (!w.placements) w.placements = [];
+      const item = entry.item;
+      const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+      if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, item);
+      return 'Restored ' + item.kind;
+    }
+    case 'unhouse': {
+      const rect = entry.rect;
+      if (w.removedHuts) w.removedHuts = w.removedHuts.filter((r) => !(r.x0 === rect.x0 && r.y0 === rect.y0 && r.x1 === rect.x1 && r.y1 === rect.y1));
+      if (!w.huts.some((h) => h.x0 === rect.x0 && h.y0 === rect.y0 && h.x1 === rect.x1 && h.y1 === rect.y1)) {
+        w.huts.splice(Math.min(entry.index, w.huts.length), 0, rect);
+      }
+      return 'Restored house';
+    }
+    case 'unpath': {
+      const key = terrainKey(entry.x, entry.y);
+      if (w.removedPaths) w.removedPaths = w.removedPaths.filter((k) => k !== key);
+      w.terrain[key] = 'dirt';
+      return 'Restored path';
+    }
+    case 'untree': {
+      const tree = entry.tree;
+      if (tree) {
+        const key = terrainKey(tree.tx, tree.ty);
+        if (w.removedTrees) w.removedTrees = w.removedTrees.filter((k) => k !== key);
+        if (!w.trees.some((t) => t.tx === tree.tx && t.ty === tree.ty)) {
+          w.trees.splice(Math.min(entry.treeIndex, w.trees.length), 0, tree);
+        }
+      }
+      const crate = entry.crate;
+      if (crate) {
+        const key = terrainKey(crate.tx, crate.ty);
+        if (w.removedCrates) w.removedCrates = w.removedCrates.filter((k) => k !== key);
+        if (!w.crates.some((c) => c.tx === crate.tx && c.ty === crate.ty)) {
+          w.crates.splice(Math.min(entry.crateIndex, w.crates.length), 0, crate);
+        }
+      }
+      return 'Restored tree';
+    }
+  }
 }
 
 /** Non-terrain generated block on a tile (walls, buildings, stalls, trees, rocks, crates). */
