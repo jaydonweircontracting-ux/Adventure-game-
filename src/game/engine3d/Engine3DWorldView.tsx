@@ -19,6 +19,7 @@ import {
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
+import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -205,20 +206,47 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   return world;
 }
 
-function savedNpcActors(world: IsoWorld): NpcActor3D[] {
+// BUILD 993: the 2.5D Mosslight roster replaces the 4 demo placeholders.
+// Migration: a save containing 'Bram' (a demo-only name) is a demo-era
+// save — its positions are discarded and the roster starts at home
+// doorsteps. A roster-era save restores positions for matching names when
+// the tile is still walkable and outside every hut; looted residents stay
+// gone (the demo behavior, unchanged). The waypoint field is legacy and
+// ignored — schedules recompute destinations from the clock every tick.
+// Exported for standalone build-verification asserts (migration proofs).
+export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
+  const statics = buildStaticAnchors(world);
+  const anchors = buildAnchors(world, statics);
+  const homeTile = (homeKey: string) => anchors.points[homeKey] ?? anchors.plaza;
+  const startAtHome = (npc: { name: string; homeKey: string }): NpcActor3D => {
+    const t = homeTile(npc.homeKey);
+    return { name: npc.name, x: t.x, y: t.y, waypoint: 0, hp: 100, alive: true };
+  };
+  const insideHut = (x: number, y: number) => world.huts.some((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
   try {
     const raw = localStorage.getItem(NPC_SAVE_KEY);
     if (raw) {
       const saved = JSON.parse(raw) as NpcActor3D[];
-      if (Array.isArray(saved)) return world.npcSpawns.filter(npc => !saved.some(a => a.name === npc.name && a.looted)).map((npc, i) => {
-        const actor = saved.find(a => a.name === npc.name) || saved[i];
-        return actor && Number.isFinite(actor.x) && Number.isFinite(actor.y)
-          ? { name: npc.name, x: actor.x, y: actor.y, waypoint: Number.isFinite(actor.waypoint) ? actor.waypoint : 0, hp: Number.isFinite(actor.hp) ? actor.hp : 100, alive: actor.alive !== false }
-          : { name: npc.name, x: npc.x, y: npc.y, waypoint: 0, hp: 100, alive: true };
-      });
+      if (Array.isArray(saved) && !saved.some((a) => a && a.name === 'Bram')) {
+        const out: NpcActor3D[] = [];
+        for (const npc of ROSTER_3D) {
+          const s = saved.find((a) => a && a.name === npc.name);
+          if (s && !s.looted && Number.isFinite(s.x) && Number.isFinite(s.y)) {
+            const tx = Math.round(s.x);
+            const ty = Math.round(s.y);
+            if (!insideHut(tx, ty) && walkableWithPlacements(world, world.crates, tx, ty)) {
+              out.push({ name: npc.name, x: s.x, y: s.y, waypoint: 0, hp: Number.isFinite(s.hp) ? s.hp : 100, alive: s.alive !== false });
+              continue;
+            }
+          }
+          if (s && s.looted) continue; // looted residents stay gone
+          out.push(startAtHome(npc));
+        }
+        return out;
+      }
     }
-  } catch { /* use authored NPC spawn positions */ }
-  return world.npcSpawns.map(npc => ({ name: npc.name, x: npc.x, y: npc.y, waypoint: 0, hp: 100, alive: true }));
+  } catch { /* fall through to homes */ }
+  return ROSTER_3D.map((npc) => startAtHome(npc));
 }
 
 // Exported for standalone build-verification asserts (synthetic render
@@ -562,6 +590,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
+  // BUILD 993: the 3D day clock (1 game minute per real second while the
+  // view is mounted, persisted so phases survive reloads). Default 08:00.
+  const clockRef=useRef(loadClock());
   // BUILD 984 placement tool. The ref mirrors the state for the
   // render-loop closures (which capture refs, not state).
   const [buildOpen,setBuildOpen]=useState(false);
@@ -644,6 +675,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     if(!world.placements)world.placements=[];
     setPlacedCount(world.placements.length);
     npcActorsRef.current=savedNpcActors(world);
+    // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
+    // are built once per world load; hut-derived anchors resolve live per
+    // tick inside buildAnchors, so mid-session house removals fall back.
+    const staticAnchors=buildStaticAnchors(world);
     // This mode uses the generated Daggerfall-inspired cottage meshes below.
     // Do not load or render the separately uploaded FBX house pack here.
     const html=document.documentElement,body=document.body;
@@ -1057,12 +1092,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
           gl.bindTexture(gl.TEXTURE_2D,tex);
           gl.drawArrays(gl.TRIANGLES,0,6);
         };
-        const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number)=>{
+        const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number,scale=1)=>{
           const im=rpgSprite(base,'Idle',face,frameIndex);
           if(!im?.complete||im.naturalWidth===0)return;
           const tex=spriteTextureFor(base+'|Idle|'+face+'|'+frameIndex,im);
           if(!tex)return;
-          const half=.34,height=1.42,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
+          const half=.34*scale,height=1.42*scale,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
           const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
           blitSprite([...left,...right,...topRight,...left,...topRight,...topLeft],[0,1,1,1,1,0,0,1,1,0,0,0],tex);
         };
@@ -1070,7 +1105,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const npcBases:RpgBase[]=['BaseHumanMale','BaseElf','BaseDwarf','BaseHumanBlank','BaseShaman','BaseSkeleton','BaseAhoul'];
         npcActorsRef.current.forEach((npc,index)=>{
           if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
-          drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
+          // BUILD 993: children render at 0.7 scale (the 979 iso rule).
+          const scale=rosterArchetype(npc.name)==='child'?0.7:1;
+          drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4,scale);
         });
         // BUILD 983: in first person the camera IS the player — hide the
         // player billboard or it fills the frame. NPC sprites still draw.
@@ -1156,6 +1193,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
       getPlayer:()=>({...stateRef.current.position}),
+      // BUILD 993 test hooks: day clock read/set + NPC teleport (probes
+      // only — no gameplay effect). setClock persists like the live clock.
+      getClock:()=>({...clockRef.current}),
+      setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
+      setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;}},
       // BUILD 989 refinement: project a tile centre to container pixel
       // coordinates (same math as the Remove aiming preview), so the
       // browser harness can tap/drag exact tiles instead of guessing
@@ -1176,28 +1218,74 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         crates: stateRef.current.world.crates.map(t=>({tx:t.tx,ty:t.ty})),
         removedTrees: stateRef.current.world.removedTrees??[],
         removedCrates: stateRef.current.world.removedCrates??[],
+        // BUILD 993: day clock + roster positions for schedule probes.
+        clockMinutes: clockRef.current.minutes,
+        clockDay: clockRef.current.day,
+        npcs: npcActorsRef.current.map(n=>({name:n.name,x:n.x,y:n.y,alive:n.alive})),
       }),
     };
     draw();
+    // BUILD 993: the day clock advances 1 game minute per real second
+    // while the view is mounted, persisted so phases survive reloads.
+    const clockTimer=window.setInterval(()=>{
+      const c=clockRef.current;let minutes=c.minutes+1,day=c.day;
+      if(minutes>=1440){minutes-=1440;day+=1;}
+      clockRef.current={minutes,day};saveClock(clockRef.current);
+    },1000);
+    // BUILD 993: roster NPCs walk their 2.5D schedules. Destinations
+    // recompute from the clock every tick (anchors resolve hut doorsteps
+    // LIVE, so a removed home/workplace falls back to the plaza at once);
+    // movement follows a cached A* path (1 tile/900ms, the demo speed),
+    // replanned when the destination changes or a path tile becomes
+    // unwalkable. A pathless NPC waits and retries planning (a sealed
+    // destination never teleports); an occupied next tile waits a tick
+    // without replanning. At a destination the NPC stands still until
+    // the next phase retargets.
+    const npcByName=new Map(ROSTER_3D.map((n,i)=>[n.name,i]));
+    // Path state per NPC (session-only, never saved).
+    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number}>();
     const npcTimer=window.setInterval(()=>{
       const actors=npcActorsRef.current;
+      const clock=clockRef.current;
+      const anchors=buildAnchors(world,staticAnchors);
       actors.forEach((actor,i)=>{
         if(!actor.alive)return;
-        const authored=world.npcSpawns.find(n=>n.name===actor.name);
-        if(!authored?.waypoints.length)return;
-        const target=authored.waypoints[((actor.waypoint%authored.waypoints.length)+authored.waypoints.length)%authored.waypoints.length];
-        const dx=target.tx-actor.x,dy=target.ty-actor.y;
-        if(Math.abs(dx)<0.05&&Math.abs(dy)<0.05){actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;return;}
-        const sx=Math.abs(dx)>=Math.abs(dy)?Math.sign(dx):0,sy=sx===0?Math.sign(dy):0;
-        const nx=Math.round(actor.x+sx),ny=Math.round(actor.y+sy);
+        const idx=npcByName.get(actor.name);if(idx===undefined)return;
+        const sched=scheduleTileFor(ROSTER_3D[idx],idx,anchors,clock.minutes,clock.day,world);
+        const cx=Math.round(actor.x),cy=Math.round(actor.y);
+        if(cx===sched.tx&&cy===sched.ty){npcPath.delete(actor.name);return;}
+        const destKey=sched.tx+','+sched.ty;
+        let w=npcPath.get(actor.name);
+        if(!w||w.dest!==destKey){
+          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0};
+          npcPath.set(actor.name,w);
+        }
+        if(w.path.length===0){
+          // No route (sealed): wait, retry planning occasionally in case
+          // the world changed (a placed item removed).
+          w.noPathTicks++;
+          if(w.noPathTicks>=11){
+            w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
+            w.index=0;w.noPathTicks=0;
+          }
+          return;
+        }
+        const next=w.path[w.index];
+        if(!next){npcPath.delete(actor.name);return;}
+        if(!npcWalkable(world,next.x,next.y)){
+          // Path tile became unwalkable (placed item / removal): replan.
+          w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
+          w.index=0;w.noPathTicks=0;
+          return;
+        }
         const player=stateRef.current.position;
-        const occupied=(Math.round(player.x)===nx&&Math.round(player.y)===ny)||actors.some((other,j)=>j!==i&&Math.round(other.x)===nx&&Math.round(other.y)===ny);
-        if(!occupied&&walkableWithPlacements(world,world.crates,nx,ny)){actor.x=nx;actor.y=ny;if(nx===target.tx&&ny===target.ty)actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;}
+        const occupied=(Math.round(player.x)===next.x&&Math.round(player.y)===next.y)||actors.some((other,j)=>j!==i&&Math.round(other.x)===next.x&&Math.round(other.y)===next.y);
+        if(!occupied){actor.x=next.x;actor.y=next.y;w.index++;}
       });
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);spriteTexCache.forEach(t=>gl.deleteTexture(t));spriteTexCache.clear();if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);spriteTexCache.forEach(t=>gl.deleteTexture(t));spriteTexCache.clear();if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
