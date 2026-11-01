@@ -197,13 +197,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '982';
+const BUILD_NUMBER = '983';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '983': 'The 3D town now looks like the medieval street it should be: houses have stone-block ground floors, dark timber framing, cream and tan plaster upper walls, and steep brown and red-tiled roofs, two or three stories tall, with small square windows — some warmly lit — and a few open-front shops with timber posts. The main street is a tan dirt path scattered with stone slabs and flanked by grey cobble, running toward a distant jagged castle silhouette with small red-roofed houses at its foot, under a clear blue sky. Tap the Street view button in 3D mode to walk the street at eye level.',
   '982': 'Mosslight now has a real bank building on the south road: a stone facade with a tall red roof, its own door, and a gold bank pin on the minimap. Brand the merchant minds the bank in the mornings and his market stall after lunch — talk to him at the bank (or anywhere you meet him) to deposit coins, withdraw, or store and take back gear, exactly as before, now with a place to go with it.',
   '981': 'Add a selectable independent 3D WebGL mode in Debug and Options, keep it separate from 2D/2.5D rendering, map player and NPC coordinates correctly, and prevent the 2.5D preference from overriding 3D mode.',
   '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',

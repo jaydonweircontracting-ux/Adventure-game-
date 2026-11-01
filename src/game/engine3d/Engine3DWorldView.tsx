@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, rpgAnchorFor, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
+import {
+  houseDesignFor, streetSlabsFor, cobbleSquaresFor, castlePeaks, farHouses,
+  SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, PLASTERS,
+  GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
+} from './townLook';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -16,7 +21,7 @@ function readSaved<T>(key: string, fallback: T): T {
   try { const value = localStorage.getItem(key); return value ? { ...fallback, ...JSON.parse(value) } : fallback; } catch { return fallback; }
 }
 const COLORS: Record<string, Vec3> = {
-  grass: [0.25, 0.43, 0.23], dirt: [0.47, 0.36, 0.23], sand: [0.68, 0.59, 0.39],
+  grass: [0.31, 0.41, 0.22], dirt: DIRT_TAN, sand: [0.68, 0.59, 0.39],
   stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
 };
 type Position = { x: number; y: number };
@@ -181,21 +186,39 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     const c=COLORS[terrain]||COLORS.grass;
     const shade=((x*13+y*7)&3)*.012;
     quad([x,0,y],[x+1,0,y],[x+1,0,y+1],[x,0,y+1],[c[0]+shade,c[1]+shade,c[2]+shade]);
+    // BUILD 983 street: scattered stone slabs on dirt, grey cobble shoulders
+    // on grass/stone tiles beside a dirt tile. Overlays sit slightly above
+    // the ground (slabs staggered per index) so nothing z-fights.
+    if(terrain==='dirt'){
+      const slabs=streetSlabsFor(x,y);
+      for(let i=0;i<slabs.length;i++){
+        const s=slabs[i],sy=.03+i*.002;
+        quad([x+s.dx,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz+s.d],[x+s.dx,sy,y+s.dz+s.d],[s.shade,s.shade,s.shade*.96]);
+      }
+    } else if(terrain==='grass'||terrain==='stone'){
+      const nearDirt=(x>0&&terrainAt(world,x-1,y)==='dirt')||(x<world.w-1&&terrainAt(world,x+1,y)==='dirt')||(y>0&&terrainAt(world,x,y-1)==='dirt')||(y<world.h-1&&terrainAt(world,x,y+1)==='dirt');
+      if(nearDirt){
+        quad([x,.018,y],[x+1,.018,y],[x+1,.018,y+1],[x,.018,y+1],COBBLE_GAP);
+        for(const sq of cobbleSquaresFor(x,y)){
+          quad([x+sq.dx,.022,y+sq.dz],[x+sq.dx+sq.size,.022,y+sq.dz],[x+sq.dx+sq.size,.022,y+sq.dz+sq.size],[x+sq.dx,.022,y+sq.dz+sq.size],[sq.shade,sq.shade,sq.shade*.97]);
+        }
+      }
+    }
   }
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
   for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
-  // Daggerfall-inspired town architecture: restrained plaster/stone walls,
-  // dark timber, steep weathered roofs, stone plinths and narrow dark windows.
-  // Avoid the bright rainbow palette and preserve the chunky low-poly silhouette.
-  const houseWallColors: Vec3[] = [
-    [.66,.58,.43], [.60,.61,.51], [.70,.64,.51], [.55,.54,.47],
-    [.68,.57,.44], [.62,.59,.49], [.72,.66,.54], [.57,.59,.49]
-  ];
-  const roofColors: Vec3[] = [
-    [.35,.16,.12], [.25,.28,.29], [.31,.23,.17], [.28,.27,.21],
-    [.38,.18,.15], [.27,.28,.29], [.34,.22,.16], [.29,.27,.22]
-  ];
+  // BUILD 983 town look (reference match): varied low-poly houses —
+  // stone-block ground floors, dark timber framing, plaster upper walls,
+  // steep pitched roofs, small square windows (some warm-lit), open
+  // colonnade fronts on some lots. Designs come from townLook.ts, seeded
+  // by hut coordinates (stable across rebuilds and cameras — the old
+  // code cycled colours by visible-window order, so houses changed
+  // colour while panning). Layout is never moved: footprints, doors and
+  // collision come from world.huts exactly as the layout produced them.
+  // This renderer uses vertex colours only (no textures), so the FBX
+  // atlas trap does not apply here; the generated native geometry is
+  // the single source of truth for buildings in this mode.
   const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
     const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
     quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
@@ -203,51 +226,186 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.88) as Vec3);
     quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.72) as Vec3);
   };
-  let houseIndex=0;
+  type FaceDir='north'|'south'|'west'|'east';
+  // A flat rect centred on a face: a = position along the face, y = centre
+  // height, fixed = the face plane coordinate (proud of the wall).
+  const faceRect=(face:FaceDir,a:number,wA:number,y:number,h:number,fixed:number,color:Vec3)=>{
+    const a0=a-wA/2,a1=a+wA/2,y0=y-h/2,y1=y+h/2;
+    if(face==='south')quad([a0,y0,fixed],[a1,y0,fixed],[a1,y1,fixed],[a0,y1,fixed],color);
+    else if(face==='north')quad([a1,y0,fixed],[a0,y0,fixed],[a0,y1,fixed],[a1,y1,fixed],color);
+    else if(face==='west')quad([fixed,y0,a1],[fixed,y0,a0],[fixed,y1,a0],[fixed,y1,a1],color);
+    else quad([fixed,y0,a0],[fixed,y0,a1],[fixed,y1,a1],[fixed,y1,a0],color);
+  };
+  // Mortar joints for one stone ground-floor face: horizontal courses plus
+  // staggered vertical joints, drawn proud of the stone box.
+  const stoneJoints=(face:FaceDir,cx:number,cz:number,w:number,d:number)=>{
+    const fixed=face==='south'?cz+d/2+.008:face==='north'?cz-d/2-.008:face==='west'?cx-w/2-.008:cx+w/2+.008;
+    const span=face==='south'||face==='north'?w:d;
+    const a0=face==='south'||face==='north'?cx-w/2:cz-d/2;
+    const courses=3,courseH=GROUND_FLOOR_H/courses,blockW=.85;
+    for(let c=0;c<courses;c++){
+      const y0=c*courseH,y1=(c+1)*courseH;
+      if(c>0)faceRect(face,a0+span/2,span,y0,.035,fixed,MORTAR);
+      const joints=Math.max(1,Math.round(span/blockW));
+      const step=span/joints,offset=(c%2)*step/2;
+      for(let j=0;j<=joints;j++){
+        const a=a0+offset+j*step;
+        if(a<=a0+.02||a>=a0+span-.02)continue;
+        faceRect(face,a,.035,(y0+y1)/2,courseH-.035,fixed,MORTAR);
+      }
+    }
+  };
+  const warmTint=(c:Vec3):Vec3=>[Math.min(1,c[0]*1.04),Math.min(1,c[1]*1.0),Math.min(1,c[2]*.94)];
   for(const hut of world.huts) {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
-    const wallH=Math.min(2.65,1.75+Math.min(w,d)*.12),ridgeY=wallH+.8;
-    const modelIndex=houseIndex++%20;
-    // Always keep visible buildings while FBX assets load. If a model is
-    // still pending or fails, draw the detailed native cottage for that lot;
-    // successful FBX models replace their matching fallback on the next rebuild.
-    // This 3D mode intentionally uses the generated Daggerfall-inspired
-    // cottages below, not the separately uploaded FBX house pack. That pack
-    // has incompatible texture/material assumptions and was causing the tan
-    // blobs and distorted proportions. Keep the generated native geometry as
-    // the single source of truth for buildings in this mode.
-    const wall=houseWallColors[modelIndex%houseWallColors.length],roof=roofColors[modelIndex%roofColors.length];
-    houseBox(x,z,w,wallH,d,0,wall);
-    // Two sloped roof planes meet at a ridge, with a slight eave overhang.
-    const x0=x-w/2-.16,x1=x+w/2+.16,z0=z-d/2-.16,z1=z+d/2+.16;
-    const ridgeZ=z-d*.08;
-    quad([x0,wallH,z0],[x1,wallH,z0],[x1,ridgeY,ridgeZ],[x0,ridgeY,ridgeZ],roof);
-    quad([x0,wallH,z1],[x0,ridgeY,ridgeZ],[x1,ridgeY,ridgeZ],[x1,wallH,z1],roof.map(v=>Math.min(1,v*1.13)) as Vec3);
-    // Timber gables close the front and back ends of the pitched roof.
-    tri([x-w*.48,wallH,z1],[x+w*.48,wallH,z1],[x,ridgeY,z1-.04],[wall.map(v=>Math.min(1,v*1.12)) as Vec3][0]);
-    tri([x-w*.48,wallH,z0],[x,ridgeY,z0+.04],[x+w*.48,wallH,z0],wall.map(v=>v*.82) as Vec3);
-    // Front door and two small blue-glass windows.
-    const doorX=x,frontZ=z+d/2+.012;
-    houseBox(doorX,frontZ,.48,1.02,.06,0,[.22,.12,.075]);
-    houseBox(doorX-.62,frontZ,.39,.48,.055,1.05,[.24,.47,.58]);
-    houseBox(doorX+.62,frontZ,.39,.48,.055,1.05,[.24,.47,.58]);
-    // Dark timber crossbars make the windows read clearly at normal zoom.
-    houseBox(doorX-.62,frontZ-.012,.055,.48,.07,1.05,[.18,.16,.12]);
-    houseBox(doorX+.62,frontZ-.012,.055,.48,.07,1.05,[.18,.16,.12]);
+    const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
+    const hDoorY=(hut as {doorY?:number}).doorY ?? hut.y1;
+    const design=houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY);
+    const topY=GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
+    const span=design.roofAxis==='x'?d:w;
+    const ridgeY=topY+roofRise(span);
+    const face=design.doorFace;
+    const faceFixed=face==='south'?z+d/2:face==='north'?z-d/2:face==='west'?x-w/2:x+w/2;
+    const faceOut=face==='south'||face==='east'?1:-1;
+    const facePlane=(o:number)=>faceFixed+faceOut*o;
+    const aC=face==='south'||face==='north'?x:z;
+    const spanA=face==='south'||face==='north'?w:d;
+    // Soft contact shadow + sun-side blob (no shadow maps in this
+    // renderer; darkened ground quads ground the volumes instead).
+    quad([x-w/2-.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z+d/2+.45+.35],[x-w/2-.45+.25,.005,z+d/2+.45+.35],[.28,.27,.24]);
+    quad([x-w/2-.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z+d/2+.15+.15],[x-w/2-.15+.12,.008,z+d/2+.15+.15],[.2,.19,.17]);
+    // Stone ground floor + mortar joints on all faces.
+    houseBox(x,z,w,GROUND_FLOOR_H,d,0,design.stone);
+    (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d));
+    if(design.openFront){
+      // Dark shopfront interior on the door face, timber posts + beam in
+      // front of it, door offset to one side on the dark face.
+      faceRect(face,aC,spanA-.3,GROUND_FLOOR_H/2,GROUND_FLOOR_H-.14,facePlane(.01),[.12,.1,.08]);
+      const posts=3;
+      for(let i=0;i<posts;i++){
+        const a=aC-spanA/2+spanA*(i+1)/(posts+1);
+        if(face==='south'||face==='north')houseBox(a,facePlane(.06),.14,GROUND_FLOOR_H,.14,0,design.timber);
+        else houseBox(facePlane(.06),a,.14,GROUND_FLOOR_H,.14,0,design.timber);
+      }
+      if(face==='south'||face==='north')houseBox(x,facePlane(.06),w,.14,.14,GROUND_FLOOR_H-.14,design.timber);
+      else houseBox(facePlane(.06),z,.14,.14,d,GROUND_FLOOR_H-.14,design.timber);
+      faceRect(face,aC+spanA*.28,.52,.53,1.06,facePlane(.03),DOOR_WOOD);
+    } else {
+      // Door + timber lintel + stone step on the door face.
+      faceRect(face,aC,.52,.53,1.06,facePlane(.02),DOOR_WOOD);
+      faceRect(face,aC,.72,GROUND_FLOOR_H+.06,.12,facePlane(.02),design.timber);
+      if(face==='south')houseBox(x,z+d/2+.15,.72,.12,.3,0,design.stone);
+      else if(face==='north')houseBox(x,z-d/2-.15,.72,.12,.3,0,design.stone);
+      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,.72,0,design.stone);
+      else houseBox(x+w/2+.15,z,.12,.12,.72,0,design.stone);
+    }
+    // Upper floors: plaster boxes + timber corner posts + floor beams.
+    for(let s=1;s<design.stories;s++){
+      const y0=GROUND_FLOOR_H+(s-1)*UPPER_FLOOR_H;
+      houseBox(x,z,w,UPPER_FLOOR_H,d,y0,design.plaster);
+    }
+    const po=.06;
+    houseBox(x-w/2+po,z-d/2+po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
+    houseBox(x+w/2-po,z-d/2+po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
+    houseBox(x-w/2+po,z+d/2-po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
+    houseBox(x+w/2-po,z+d/2-po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
+    for(let s=0;s<design.stories-1;s++){
+      const y=GROUND_FLOOR_H+s*UPPER_FLOOR_H;
+      houseBox(x,z+d/2+.01,w,.13,.07,y-.065,design.timber);
+      houseBox(x,z-d/2-.01,w,.13,.07,y-.065,design.timber);
+      houseBox(x-w/2-.01,z,.07,.13,d,y-.065,design.timber);
+      houseBox(x+w/2+.01,z,.07,.13,d,y-.065,design.timber);
+    }
+    // Small square windows: 2 on the door face per upper floor, 1 on each
+    // side face per upper floor, 1 on the back per upper floor. Lit flags
+    // cycle through the design's 8 slots.
+    let winSlot=0;
+    const win=(f:FaceDir,a:number,y:number)=>{
+      const fixed=f==='south'?z+d/2:f==='north'?z-d/2:f==='west'?x-w/2:x+w/2;
+      const out=f==='south'||f==='east'?1:-1;
+      const lit=design.lit[winSlot%8];winSlot++;
+      faceRect(f,a,.46,y,.56,fixed+out*.015,design.timber);
+      faceRect(f,a,.34,y,.44,fixed+out*.03,lit?GLASS_LIT:GLASS_DARK);
+    };
+    for(let s=1;s<design.stories;s++){
+      const yC=GROUND_FLOOR_H+(s-1)*UPPER_FLOOR_H+UPPER_FLOOR_H/2;
+      win(face,aC-spanA*.22,yC);
+      win(face,aC+spanA*.22,yC);
+      const sideA=face==='south'||face==='north'?z:x;
+      const sideL:FaceDir=face==='south'?'west':face==='north'?'east':face==='west'?'north':'south';
+      const sideR:FaceDir=face==='south'?'east':face==='north'?'west':face==='west'?'south':'north';
+      win(sideL,sideA,yC);
+      win(sideR,sideA,yC);
+      const back:FaceDir=face==='south'?'north':face==='north'?'south':face==='west'?'east':'west';
+      win(back,aC,yC);
+    }
+    // Steep pitched roof (ridge along the longer side), eaves overhang,
+    // timber gables at the ridge ends, ridge beam, optional chimney.
+    const e=.18;
+    const x0=x-w/2-e,x1=x+w/2+e,z0=z-d/2-e,z1=z+d/2+e;
+    if(design.roofAxis==='x'){
+      quad([x0,topY,z1],[x1,topY,z1],[x1,ridgeY,z],[x0,ridgeY,z],warmTint(design.roof));
+      quad([x0,topY,z0],[x0,ridgeY,z],[x1,ridgeY,z],[x1,topY,z0],design.roof.map(v=>v*.85) as Vec3);
+      tri([x-w/2,topY,z-d/2],[x-w/2,topY,z+d/2],[x-w/2,ridgeY,z],design.plaster);
+      tri([x+w/2,topY,z+d/2],[x+w/2,topY,z-d/2],[x+w/2,ridgeY,z],design.plaster.map(v=>v*.85) as Vec3);
+      houseBox(x,z,w+2*e,.1,.1,ridgeY,design.timber);
+    } else {
+      quad([x1,topY,z1],[x1,topY,z0],[x,ridgeY,z0],[x,ridgeY,z1],warmTint(design.roof));
+      quad([x0,topY,z0],[x0,topY,z1],[x,ridgeY,z1],[x,ridgeY,z0],design.roof.map(v=>v*.85) as Vec3);
+      tri([x-w/2,topY,z-d/2],[x+w/2,topY,z-d/2],[x,ridgeY,z-d/2],design.plaster);
+      tri([x+w/2,topY,z+d/2],[x-w/2,topY,z+d/2],[x,ridgeY,z+d/2],design.plaster.map(v=>v*.85) as Vec3);
+      houseBox(x,z,.1,.1,d+2*e,ridgeY,design.timber);
+    }
+    if(design.chimney){
+      const chX=design.roofAxis==='x'?x+w*.28:x;
+      const chZ=design.roofAxis==='x'?z:z+d*.28;
+      houseBox(chX,chZ,.35,1.1,.35,ridgeY-.3,design.stone);
+      quad([chX-.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ+.19],[chX-.19,ridgeY+.8,chZ+.19],[.15,.14,.12]);
+    }
   }
   for(const t of world.trees) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
-    cube(t.tx+.5,t.ty+.5,.22,1.3,.22,[.36,.23,.12]);
-    cube(t.tx+.5,t.ty+.5,1.05,1.45,1.05,[.12,.36,.16]);
+    // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
+    // tiers) instead of the old single green cube. Visual only — same
+    // tile, same collision, same positions.
+    houseBox(t.tx+.5,t.ty+.5,.22,1.1,.22,0,[.36,.23,.12]);
+    houseBox(t.tx+.5,t.ty+.5,1.15,.9,1.15,1.0,[.13,.30,.14]);
+    houseBox(t.tx+.5,t.ty+.5,.85,.7,.85,1.7,[.16,.34,.16]);
+    houseBox(t.tx+.5,t.ty+.5,.55,.6,.55,2.2,[.19,.37,.18]);
   }
   for(const r of world.rocks) if(r.tx>=minX&&r.tx<=maxX&&r.ty>=minY&&r.ty<=maxY) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
   for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) cube(c.tx+.5,c.ty+.5,.65,.7,.65,[.48,.29,.13]);
+  // BUILD 983 backdrop: distant jagged castle/rock silhouette + far
+  // red-roofed houses. These are NOT culled by the 45×45 window — they
+  // sit beyond the map edge so they read as the far distance in every
+  // street view. Castle peaks are tall narrow pyramids; far houses are
+  // small stone/plaster boxes with red pitched roofs.
+  for(const p of castlePeaks()){
+    const x0=p.x-p.w/2,x1=p.x+p.w/2,z0=p.z-p.d/2,z1=p.z+p.d/2;
+    const col:Vec3=[p.shade,p.shade*1.08,p.shade*1.3];
+    quad([x0,0,z1],[x1,0,z1],[x1,p.h,z1],[x0,p.h,z1],col);
+    quad([x1,0,z0],[x0,0,z0],[x0,p.h,z0],[x1,p.h,z0],col.map(v=>v*.8) as Vec3);
+    tri([x0,0,z0],[x1,0,z0],[p.x,p.h+3.5,p.z],col.map(v=>v*.9) as Vec3);
+    tri([x1,0,z1],[x0,0,z1],[p.x,p.h+3.5,p.z],col.map(v=>v*.7) as Vec3);
+  }
+  for(const fh of farHouses()){
+    houseBox(fh.x,fh.z,fh.w,1.6,fh.d,0,PLASTERS[0]);
+    const e=.15,x0=fh.x-fh.w/2-e,x1=fh.x+fh.w/2+e,z0=fh.z-fh.d/2-e,z1=fh.z+fh.d/2+e;
+    const roof:Vec3=[0.56,0.21,0.15];
+    quad([x0,1.6,z1],[x1,1.6,z1],[x1,2.9,fh.z],[x0,2.9,fh.z],roof);
+    quad([x0,1.6,z0],[x0,2.9,fh.z],[x1,2.9,fh.z],[x1,1.6,z0],roof.map(v=>v*.85) as Vec3);
+  }
   return new Float32Array(data);
 }
 
 export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
+  // BUILD 983 street view: ground-level camera matching the reference
+  // street shot. The ref is what the render loop reads; the state only
+  // drives the toggle button label.
+  const [streetViewOn,setStreetViewOn]=useState(false);
+  const streetViewRef=useRef(false);
   const [position,setPosition]=useState<Position>(()=>savedPosition(applyMosslightTownLayout(loadWorld())));
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
@@ -300,8 +458,18 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
     if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
-    gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.45,.63,.76,1);
+    gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(SKY_HORIZON[0],SKY_HORIZON[1],SKY_HORIZON[2],1);
+    // BUILD 983 sky gradient: a static clip-space quad (horizon colour at
+    // the bottom, clear blue at the top) drawn with depth off before the
+    // world, so the world draws over it. Same vertex-colour program.
+    const skyBuffer=gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
+      -1,-1,1,...SKY_HORIZON, 1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP,
+      -1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP, -1,1,1,...SKY_TOP,
+    ]),gl.STATIC_DRAW);
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
+    let lookPitch=.08,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     const pointers=new Map<number,{x:number;y:number}>();let pinchDistance=0;
     // Continuous click-to-move target, in the same free world-space units as
     // the base game's tapMove system (not tile-by-tile stepping).
@@ -345,7 +513,10 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;return;}if(!drag)return;
       if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
       if(!gestureMoved)return;
-      yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY;
+      yaw+=(e.clientX-lx)*.008;
+      if(streetViewRef.current)lookPitch=Math.max(-.3,Math.min(.5,lookPitch+(e.clientY-ly)*.006));
+      else pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));
+      lx=e.clientX;ly=e.clientY;
     };
     const up=(e:PointerEvent)=>{const wasTap=pointers.size===1&&drag&&!gestureMoved&&Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)<=10;
       pointers.delete(e.pointerId);drag=false;pinchDistance=0;
@@ -404,8 +575,18 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
       player=stateRef.current.position;
-      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false}
+      // BUILD 983: the old code only rebuilt on resize/interactions, so
+      // the 45×45 window went stale after walking ~20 tiles. Rebuild when
+      // the player moves >8 tiles from the last build centre.
+      if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
+      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      // Sky gradient pass (identity matrix, depth off), then the world.
+      gl.disable(gl.DEPTH_TEST);
+      gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+      gl.uniformMatrix4fv(mLoc,false,new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]));
+      gl.drawArrays(gl.TRIANGLES,0,6);
+      gl.enable(gl.DEPTH_TEST);
       // Orbit around the player's tile center, not its top-left grid corner.
       // Keeping the camera target and orbit origin aligned prevents the player
       // sprite drifting sideways while the camera rotates; pitch now controls
@@ -413,7 +594,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const targetX=player.x+.5,targetZ=player.y+.5,targetY=.8;
       const horizontal=zoom*Math.cos(pitch);
       const ex=targetX+Math.sin(yaw)*horizontal,ez=targetZ+Math.cos(yaw)*horizontal,ey=targetY+zoom*Math.sin(pitch);
-      const mat=mul(perspective(Math.PI/3,w/h,.1,120),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
+      // BUILD 983 street view: eye-level camera at the player, looking
+      // along yaw with a slight up/down look pitch (yaw 0 faces north,
+      // toward the castle backdrop). Far plane 200 so the castle ridge
+      // (z=24, ~100 tiles north of town) stays inside the frustum.
+      const mat=streetViewRef.current
+        ? mul(perspective(Math.PI/3,w/h,.1,200),lookAt([targetX,1.6,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,1.6+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
+        : mul(perspective(Math.PI/3,w/h,.1,200),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
@@ -448,6 +635,9 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
           if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
           drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
         });
+        // BUILD 983: in street view the camera IS the player — hide the
+        // player billboard or it fills the frame. NPC sprites still draw.
+        if(!streetViewRef.current){
         const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
         const anim:RpgAnim=moving?'Walk':'Idle';
         const frameCount=moving?11:4;
@@ -480,6 +670,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
         gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
         gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
+        }
       }
       raf=requestAnimationFrame(draw);
     };
@@ -514,6 +705,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // never quantize movement into one-tile jumps.
     };
     window.addEventListener('keydown',action);
+    // BUILD 983 screenshot harness: drive the street camera without UI.
+    (window as any).__ag3dTest={
+      setYaw:(v:number)=>{yaw=v},
+      setLookPitch:(v:number)=>{lookPitch=v},
+      setStreetView:(v:boolean)=>{streetViewRef.current=v;setStreetViewOn(v)},
+      setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
+    };
     draw();
     const npcTimer=window.setInterval(()=>{
       const actors=npcActorsRef.current;
@@ -533,7 +731,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(isWalkableWorld(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
@@ -541,5 +739,6 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
     <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack</div></div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
+    <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
   </div>;
 }
