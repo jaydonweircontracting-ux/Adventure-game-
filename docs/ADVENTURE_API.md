@@ -21,6 +21,11 @@ it is not Unity's C# API and does not require converting the project to Unity.
 - System registration, lookup, manifest listing, and safe unregister.
 - An instance-scoped typed event bus using the existing bounded
   `WorldEventBus` and `CoreWorldEvents` vocabulary.
+- `createAdventureRuntime()` adapters for the existing deterministic world
+  clock, terrain/landscape queries, persistent civilization simulation, and
+  graphics-mode contract.
+- Automatic civilization catch-up on in-game day changes, published as a
+  typed `economy.civilization-advanced` event.
 
 This is the foundation, not a claim that all domains below are already wired.
 Existing game modules remain authoritative until an adapter is implemented
@@ -44,6 +49,24 @@ and tested for that domain.
 | Platform | Input, accessibility, achievements and optional integrations |
 | Analytics | Opt-in diagnostics, performance and simulation metrics |
 | Tools | Debug console, editor, inspection and safe development commands |
+
+## Runtime usage
+
+```ts
+import { createAdventureRuntime } from '@/game/api';
+
+const runtime = createAdventureRuntime({ worldSeed: 847291583 });
+runtime.world.advance(1);
+const localTerrain = runtime.terrain.sample(120, 90);
+const settlements = runtime.civilization.settlementsInChunk(
+  runtime.civilization.state,
+  { x: 8, y: 7 },
+);
+
+// The existing civilization simulation advances automatically as world days roll over.
+// Dispose when this runtime is torn down (tests, editor preview, isolated sim).
+runtime.dispose();
+```
 
 ## API usage
 
