@@ -58,13 +58,13 @@ export default function AdventureLiveAPIControlCenter({
     <div style={{ overflowY: 'auto', padding: 12, display: 'grid', gap: 10, alignContent: 'start' }}>
       <div style={section}>
         <strong>Live world</strong>
-        <div style={{ fontSize: 12, marginTop: 6 }}>Day {record(world.clock).day ?? '—'} · {record(world.clock).season ?? '—'} · Tick {record(world.clock).tick ?? '—'}</div>
-        <div style={muted}>Player chunk: ({record(world.chunk).x ?? '—'}, {record(world.chunk).y ?? '—'})</div>
+        <div style={{ fontSize: 12, marginTop: 6 }}>Day {String(record(world.clock).day ?? '—') ?? '—'} · {String(record(world.clock).season ?? '—') ?? '—'} · Tick {String(record(world.clock).tick ?? '—') ?? '—'}</div>
+        <div style={muted}>Player chunk: ({String(record(world.chunk).x ?? '—') ?? '—'}, {String(record(world.chunk).y ?? '—') ?? '—'})</div>
         <pre style={pre}>{pretty(snapshot.world)}</pre>
       </div>
       <div style={section}>
         <strong>Player state</strong>
-        <div style={muted}>Level {player.level ?? '—'} · {String(player.className ?? 'Adventurer')} · HP {player.hp ?? '—'} · XP {player.xp ?? '—'}</div>
+        <div style={muted}>Level {String(player.level ?? '—') ?? '—'} · {String(String(player.className ?? '—') ?? 'Adventurer')} · HP {String(player.hp ?? '—') ?? '—'} · XP {String(player.xp ?? '—') ?? '—'}</div>
         <pre style={pre}>{pretty(snapshot.player)}</pre>
       </div>
       <div style={section}>
