@@ -60,7 +60,7 @@ export function createAdventureLiveBridge(providers: AdventureLiveProviders): Ad
       rockDensity: rockDensityAt(x, y),
       landUse: landUseAt(x, y),
       water: waterAt(x, y),
-      region: regionForChunk({ x: Math.floor(x / 280), y: Math.floor(y / 280) }),
+      region: regionForChunk(Math.floor(x / 280), Math.floor(y / 280)),
     }),
   })));
   registerSnapshot('player.live', 'player', 'Read-only access to the active player position, health, level and attributes', providers.player);
