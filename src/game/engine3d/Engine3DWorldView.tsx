@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
-import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, NPC_SPEED } from './villagers';
+import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
+import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import {
   houseDesignFor, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
@@ -220,9 +221,31 @@ export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
   const statics = buildStaticAnchors(world);
   const anchors = buildAnchors(world, statics);
   const homeTile = (homeKey: string) => anchors.points[homeKey] ?? anchors.plaza;
+  // BUILD 998: never spawn/restore two figures on one tile. Several
+  // roster NPCs share a homeKey (cottage-6 holds four), so bare
+  // doorstep starts stacked up to four figures on one tile — the
+  // visible "standing inside each other" the 993 probe caught (47
+  // NPCs, 46 distinct tiles). The first roster NPC keeps its tile
+  // exactly; later duplicates nudge to the nearest NPC-walkable free
+  // tile (spiral, radius 8). Fallback keeps the tile rather than
+  // failing the load.
+  const usedTiles = new Set<string>();
+  const dedupTile = (tx: number, ty: number): { x: number; y: number } => {
+    const key = tx + ',' + ty;
+    if (!usedTiles.has(key)) { usedTiles.add(key); return { x: tx, y: ty }; }
+    for (let radius = 1; radius <= 8; radius++) for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+      const x = tx + dx, y = ty + dy;
+      if (usedTiles.has(x + ',' + y) || !npcWalkable(world, x, y)) continue;
+      usedTiles.add(x + ',' + y);
+      return { x, y };
+    }
+    return { x: tx, y: ty };
+  };
   const startAtHome = (npc: { name: string; homeKey: string }): NpcActor3D => {
     const t = homeTile(npc.homeKey);
-    return { name: npc.name, x: t.x, y: t.y, waypoint: 0, hp: 100, alive: true };
+    const d = dedupTile(t.x, t.y);
+    return { name: npc.name, x: d.x, y: d.y, waypoint: 0, hp: 100, alive: true };
   };
   const insideHut = (x: number, y: number) => world.huts.some((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
   try {
@@ -237,7 +260,9 @@ export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
             const tx = Math.round(s.x);
             const ty = Math.round(s.y);
             if (!insideHut(tx, ty) && walkableWithPlacements(world, world.crates, tx, ty)) {
-              out.push({ name: npc.name, x: s.x, y: s.y, waypoint: 0, hp: Number.isFinite(s.hp) ? s.hp : 100, alive: s.alive !== false });
+              const d = dedupTile(tx, ty);
+              const nudged = d.x !== tx || d.y !== ty;
+              out.push({ name: npc.name, x: nudged ? d.x : s.x, y: nudged ? d.y : s.y, waypoint: 0, hp: Number.isFinite(s.hp) ? s.hp : 100, alive: s.alive !== false });
               continue;
             }
           }
@@ -821,7 +846,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){setMessage('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));return;}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){setMessage('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));return;}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
-    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!;
+    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
     if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -873,19 +898,49 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       if(x!==s.px||z!==s.pz){s.yaw=Math.atan2(x-s.px,z-s.pz);s.lastMove=now;}
       s.px=x;s.pz=z;
       if(traveling){s.phase+=stepDist*PHASE_PER_UNIT;}
-      else{const target=Math.round(s.phase/(2*Math.PI))*2*Math.PI;s.phase+=(target-s.phase)*Math.min(1,dtMs/1000*6);}
+      else{s.phase=easePhaseToNeutral(s.phase,dtMs);}
       return {yaw:s.yaw,phase:s.phase};
     };
+    // BUILD 998: interpolated NPC render state + per-figure GPU slots
+    // (see npcMotion.ts). Render positions are tile coords (floats)
+    // gliding toward logical tiles; slot counts are constant per
+    // figure (specs are seeded per name), so each figure owns a fixed
+    // vertex range in the actor buffer and only dirty slots re-emit +
+    // re-upload. slotUploaded tracks the last uploaded pose per slot
+    // (roster order, player last); actorSlotsAllocated gates the one
+    // full-size buffer allocation on the first draw frame.
+    type NpcRenderState={x:number;y:number;yaw:number;phase:number};
+    const npcRender=new Map<string,NpcRenderState>();
+    const slotByName=new Map<string,number>();
+    const figureSlotCounts:number[]=[];
+    ROSTER_3D.forEach((n,i)=>{slotByName.set(n.name,i);const scratch:number[]=[];emitVillager(scratch,0,0,0,0,villagerSpecFor(n.name),rosterArchetype(n.name)==='child');figureSlotCounts.push(scratch.length/6);});
+    const playerSlot=ROSTER_3D.length;
+    {const scratch:number[]=[];emitVillager(scratch,0,0,0,0,PLAYER_SPEC,false);figureSlotCounts.push(scratch.length/6);}
+    const figureSlots=figureSlotLayout(figureSlotCounts);
+    const figureScratch=new Float32Array(Math.max(...figureSlotCounts)*6);
+    const slotUploaded=new Map<number,FigurePoseKey>();
+    let actorSlotsAllocated=false;
+    let motionStats={emitted:0,reused:0,drawn:0};
     const walkableAt=(x:number,y:number)=>{
       const gx=Math.round(x),gy=Math.round(y);
       // BUILD 990: inside the entered hut, every rect tile is walkable
       // (interior furniture is visual only — interiors.ts). The NPC
       // proximity check still applies; NPCs never enter (their
       // movement uses walkableWithPlacements unchanged).
+      // BUILD 998: proximity uses RENDER positions (what the player
+      // sees) when available, falling back to logical tiles — the
+      // player can no longer walk through a gliding figure, and can
+      // stand on a tile a figure is gliding away from.
+      const npcNear=(n:{name:string;alive:boolean;x:number;y:number})=>{
+        if(!n.alive)return false;
+        const r=npcRender.get(n.name);
+        const nx=r?r.x:n.x,ny=r?r.y:n.y;
+        return Math.hypot(nx-x,ny-y)<.42;
+      };
       const inside=insideHutRef.current;
       if(inside&&interiorWalkable(inside,gx,gy))
-        return !npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42);
-      if(npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42))return false;
+        return !npcActorsRef.current.some(npcNear);
+      if(npcActorsRef.current.some(npcNear))return false;
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
     const pickGround=(clientX:number,clientY:number)=>{
@@ -1219,7 +1274,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const mul=(a:number[],b:number[])=>{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o};
     const upload=(buffer:WebGLBuffer,data:Float32Array)=>{gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12)};
     const draw=()=>{
-      const now=performance.now(),dt=Math.min(.05,Math.max(0,(now-lastFrameTime)/1000));lastFrameTime=now;
+      const now=performance.now(),rawDt=Math.max(0,(now-lastFrameTime)/1000);lastFrameTime=now;
+      const dt=Math.min(.05,rawDt);
+      // BUILD 998: NPC glide uses real frame time (capped at 0.25s),
+      // NOT the 0.05s physics clamp above. The logical clock ticks in
+      // real time (900ms); at low frame rates the clamped dt would
+      // glide slower than the clock (0.89 tiles/s at 16fps), so render
+      // would fall behind until the snap rule fired — a self-inflicted
+      // tile jump. dtNpc keeps pace down to ~4fps; below that the snap
+      // rule is the correct backstop.
+      const dtNpc=Math.min(.25,rawDt);
       // Smooth, non-grid movement with collision checks along the path. A tap
       // gives a continuous world-space destination and walking stops on release
       // of the path target, like the 2.5D game's tap-to-move behaviour.
@@ -1295,28 +1359,47 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // compile + program link checks above, and the diagnostic still
       // reports the vertex count every rebuild.
       gl.drawArrays(gl.TRIANGLES,0,worldVertCount);
-      const actors:number[]=[];
-      const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
-      for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
-      // BUILD 994: procedural low-poly villagers replace the billboard
-      // sprites (the packs are 2D PNGs — see villagers.ts). Figures are
-      // world-space triangles in this same actor buffer, so they
-      // depth-test against houses like any other geometry, in both
-      // cameras. Same 22-tile cull the sprites used; dead/looted NPCs
-      // keep the corpse rule above. NPCs move 1 tile per 900ms tick
-      // (993), so an NPC counts as traveling while it moved within the
-      // last 1000ms and its phase advances at the nominal 1.11 u/s;
-      // the player moves continuously, so its phase advances by the
-      // distance actually walked. Idle figures ease to neutral.
+      // BUILD 998: interpolated NPC motion + per-figure GPU slots (see
+      // npcMotion.ts). Logical tiles come from the 900ms timer; figures
+      // glide toward them at the demo speed, phase follows distance
+      // actually traveled, yaw turns smoothly, and only slots whose
+      // pose changed re-emit + re-upload (bufferSubData). Idle figures
+      // cost zero emission and zero upload per frame. Corpses keep a
+      // small separate buffer (few verts, full upload is negligible).
+      // Same 22-tile cull the sprites used; figures still depth-test
+      // against houses like any other geometry, in both cameras.
+      if(!actorSlotsAllocated){gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.bufferData(gl.ARRAY_BUFFER,figureSlots.totalVerts*24,gl.DYNAMIC_DRAW);actorSlotsAllocated=true;}
+      gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+      let emitted=0,reused=0,drawn=0;
+      const emitFigureSlot=(slot:number,cx:number,cz:number,yaw:number,phase:number,spec:VillagerSpec,child:boolean,rx:number,rz:number)=>{
+        const key:FigurePoseKey={x:rx,z:rz,yaw,phase};
+        if(!poseKeyEquals(slotUploaded.get(slot)??null,key)){
+          const tmp:number[]=[];
+          emitVillager(tmp,cx,cz,yaw,phase,spec,child);
+          figureScratch.set(tmp);
+          gl.bufferSubData(gl.ARRAY_BUFFER,figureSlots.offsets[slot]*24,figureScratch.subarray(0,figureSlotCounts[slot]*6));
+          slotUploaded.set(slot,key);
+          emitted++;
+        } else reused++;
+        gl.drawArrays(gl.TRIANGLES,figureSlots.offsets[slot],figureSlotCounts[slot]);
+        drawn++;
+      };
       const nowMs=performance.now();
       for(const npc of npcActorsRef.current){
-        if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)continue;
-        const nx=npc.x+.5,nz=npc.y+.5;
-        const prev=figureState.get(npc.name);
-        const moved=!prev||prev.px!==nx||prev.pz!==nz;
-        const traveling=moved||(prev!==undefined&&nowMs-prev.lastMove<1000);
-        const pose=figurePose(npc.name,nx,nz,nowMs,dt*1000,traveling,traveling?NPC_SPEED*dt:0);
-        emitVillager(actors,nx,nz,pose.yaw,pose.phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child');
+        if(npc.looted||!npc.alive)continue;
+        const slot=slotByName.get(npc.name);if(slot===undefined)continue;
+        if(Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)continue;
+        const target={x:npc.x,y:npc.y};
+        let st=npcRender.get(npc.name);
+        if(!st){st={x:target.x,y:target.y,yaw:Math.PI,phase:0};npcRender.set(npc.name,st);}
+        else if(needsRenderSnap({x:st.x,y:st.y},target)){st.x=target.x;st.y=target.y;}
+        const step=advanceRenderPos({x:st.x,y:st.y},target,dtNpc);
+        const moved=step.dist>0;
+        let yaw=st.yaw;
+        if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
+        const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
+        st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y);
       }
       // BUILD 992: in first person the camera IS the player — hide the
       // player figure or it fills the frame. NPC figures still draw.
@@ -1325,12 +1408,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const prev=figureState.get('__player');
         const dist=prev?Math.hypot(px-prev.px,pz-prev.pz):0;
         const pose=figurePose('__player',px,pz,nowMs,dt*1000,dist>0,dist);
-        emitVillager(actors,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false);
+        emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y);
       }
-      // BUILD 988: skip the actor upload + draw when there are no
-      // actors (the common case) instead of uploading an empty buffer
-      // every frame.
-      if(actors.length){upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);}
+      motionStats={emitted,reused,drawn};
+      const corpseVerts:number[]=[];
+      const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])corpseVerts.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
+      for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
+      if(corpseVerts.length){upload(corpseBuffer,new Float32Array(corpseVerts));gl.drawArrays(gl.TRIANGLES,0,corpseVerts.length/6);}
       raf=requestAnimationFrame(draw);
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
@@ -1398,6 +1482,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       getClock:()=>({...clockRef.current}),
       setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
       setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;}},
+      // BUILD 998 test hooks: interpolated render tile coords (floats)
+      // for motion proofs, and last-frame slot upload stats (emitted vs
+      // reused vs drawn) for the caching proof.
+      getNpcRenderPos:(name:string)=>{const r=npcRender.get(name);return r?{x:r.x,y:r.y}:null;},
+      getMotionStats:()=>({...motionStats}),
       // BUILD 989 refinement: project a tile centre to container pixel
       // coordinates (same math as the Remove aiming preview), so the
       // browser harness can tap/drag exact tiles instead of guessing
@@ -1442,8 +1531,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // without replanning. At a destination the NPC stands still until
     // the next phase retargets.
     const npcByName=new Map(ROSTER_3D.map((n,i)=>[n.name,i]));
-    // Path state per NPC (session-only, never saved).
-    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number}>();
+    // Path state per NPC (session-only, never saved). blockedTicks
+    // counts consecutive ticks behind the same occupied tile (998).
+    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number;blockedTicks:number}>();
     const npcTimer=window.setInterval(()=>{
       const actors=npcActorsRef.current;
       const clock=clockRef.current;
@@ -1457,7 +1547,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const destKey=sched.tx+','+sched.ty;
         let w=npcPath.get(actor.name);
         if(!w||w.dest!==destKey){
-          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0};
+          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0,blockedTicks:0};
           npcPath.set(actor.name,w);
         }
         if(w.path.length===0){
@@ -1475,17 +1565,30 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         if(!npcWalkable(world,next.x,next.y)){
           // Path tile became unwalkable (placed item / removal): replan.
           w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
-          w.index=0;w.noPathTicks=0;
+          w.index=0;w.noPathTicks=0;w.blockedTicks=0;
           return;
         }
         const player=stateRef.current.position;
         const occupied=(Math.round(player.x)===next.x&&Math.round(player.y)===next.y)||actors.some((other,j)=>j!==i&&Math.round(other.x)===next.x&&Math.round(other.y)===next.y);
-        if(!occupied){actor.x=next.x;actor.y=next.y;w.index++;}
+        if(!occupied){actor.x=next.x;actor.y=next.y;w.index++;w.blockedTicks=0;}
+        else{
+          // BUILD 998: persistent-block rule — wait briefly (a leader
+          // one tick ahead, a player stepping aside), then replan with
+          // the blocking tile excluded so head-on and standing blocks
+          // route around instead of deadlocking. A failed replan falls
+          // into the sealed wait + 11-tick retry (empty path below).
+          w.blockedTicks++;
+          if(blockedAction(w.blockedTicks)==='replan'){
+            const detour=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty},4000,new Set([next.x+','+next.y]));
+            if(detour){w.path=detour;w.index=0;w.blockedTicks=0;w.noPathTicks=0;}
+            else{w.path=[];w.index=0;w.blockedTicks=0;w.noPathTicks=0;}
+          }
+        }
       });
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>

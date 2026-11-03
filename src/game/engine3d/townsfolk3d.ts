@@ -256,12 +256,17 @@ export function quantizeTile(world: IsoWorld, tx: number, ty: number, maxRadius 
  * the start tile; [] when already there. The open list is a linear
  * min-scan — town routes are tens of tiles, and maxNodes caps sealed
  * scans — so plans stay cheap at phase-change frequency.
+ * BUILD 998: `extraBlocked` excludes tiles by "x,y" key — the
+ * persistent-block rule replans with the blocking tile excluded, so a
+ * head-on or standing blocker is routed around instead of waited on
+ * forever. Excluding the destination itself yields null (sealed).
  */
 export function planPathNpc(
   world: IsoWorld,
   from: { x: number; y: number },
   to: { x: number; y: number },
   maxNodes = 4000,
+  extraBlocked?: ReadonlySet<string>,
 ): { x: number; y: number }[] | null {
   if (from.x === to.x && from.y === to.y) return [];
   const key = (x: number, y: number) => x + ',' + y;
@@ -294,7 +299,8 @@ export function planPathNpc(
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (closed.has(nk) || !npcWalkable(world, nx, ny)) continue;
+      if (closed.has(nk) || (extraBlocked && extraBlocked.has(nk))) continue;
+      if (!npcWalkable(world, nx, ny)) continue;
       const g = cur.g + 1;
       if (g < (gScore.get(nk) ?? Infinity)) {
         gScore.set(nk, g);
