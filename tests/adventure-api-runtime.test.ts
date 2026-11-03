@@ -27,6 +27,16 @@ assert.equal(world.getClock().tick, start.tick + 11);
 assert.equal(timeEvents, 11);
 assert.throws(() => world.setSimulationSpeed(3), /unsupported simulation speed/);
 
+let civAdvances = 0;
+const stopCiv = api.events.subscribe('economy.civilization-advanced', (event) => {
+  civAdvances += 1;
+  assert.ok(event.payload.settlements > 0);
+});
+world.setSimulationSpeed(1);
+world.advance(120);
+assert.ok(civAdvances >= 1, 'civilization should advance automatically on a new world day');
+assert.ok(civilization.state.lastSimDay >= 2);
+
 const sample = terrain.sample(100, 100);
 assert.ok(Number.isFinite(sample.landform));
 assert.ok(Number.isFinite(sample.moisture));
@@ -47,6 +57,7 @@ assert.equal(graphics.isSupportedMode('vr'), false);
 
 stopTime();
 stopDay();
+stopCiv();
 runtime.dispose();
 assert.equal(api.getSystemCount(), 0);
 
