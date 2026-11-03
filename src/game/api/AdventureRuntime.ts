@@ -25,6 +25,28 @@ import {
   type CivChunk,
 } from '../civilization';
 import { GRAPHICS_MODE_OPTIONS, type GraphicsMode } from '../engine3d/engine3d';
+import { getArchetype, NPC_ARCHETYPES, type NPCArchetypeId } from '../npcArchetypes';
+import {
+  createDefaultMood,
+  applyMoodEvent,
+  advanceMoodTime,
+  moodSummary,
+  isValidMood,
+  type NPCMood,
+  type MoodEvent,
+} from '../npcMood';
+import {
+  getDirection,
+  isAdjacentTarget,
+  isAdjacentAndFacing,
+  getAttackHitbox,
+  entityRect,
+  isEntityInHitbox,
+  isInMeleeArc,
+  traceLineBlocked,
+  type CombatPoint,
+  type CombatDirection,
+} from '../combat';
 
 export interface AdventureRuntimeOptions {
   readonly worldSeed?: number;
