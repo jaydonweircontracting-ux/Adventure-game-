@@ -36,6 +36,24 @@ import {
   type MoodEvent,
 } from '../npcMood';
 import {
+  ItemRng,
+  ITEM_BASES,
+  ITEM_QUALITIES,
+  ITEM_QUALITY_ORDER,
+  AFFIXES,
+  generateItem,
+  totalEquipmentStats,
+  equipItem,
+  unequipItem,
+  generatedItemWeight,
+  carriedWeight,
+  carryCapacity,
+  encumbranceTier,
+  type GeneratedItem,
+  type ItemQuality,
+  type ItemStats,
+} from '../items';
+import {
   findPath,
   pathTo,
   pathToDoor,
@@ -119,6 +137,22 @@ export interface AdventureNavigationService {
   isOnFieldRoad: typeof isOnFieldRoad;
 }
 
+export interface AdventureItemService {
+  readonly bases: typeof ITEM_BASES;
+  readonly qualities: typeof ITEM_QUALITIES;
+  readonly qualityOrder: typeof ITEM_QUALITY_ORDER;
+  readonly affixes: typeof AFFIXES;
+  createRng: (seed: number) => ItemRng;
+  generate: typeof generateItem;
+  equipmentStats: typeof totalEquipmentStats;
+  equip: typeof equipItem;
+  unequip: typeof unequipItem;
+  itemWeight: typeof generatedItemWeight;
+  carriedWeight: typeof carriedWeight;
+  carryCapacity: typeof carryCapacity;
+  encumbrance: typeof encumbranceTier;
+}
+
 export interface AdventureCombatService {
   direction: typeof getDirection;
   isAdjacent: typeof isAdjacentTarget;
@@ -138,6 +172,7 @@ export interface AdventureRuntime {
   readonly graphics: AdventureGraphicsService;
   readonly npc: AdventureNPCPsychologyService;
   readonly navigation: AdventureNavigationService;
+  readonly items: AdventureItemService;
   readonly combat: AdventureCombatService;
   dispose: () => void;
 }
@@ -248,6 +283,22 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
     isOnFieldRoad,
   };
 
+  const items: AdventureItemService = {
+    bases: ITEM_BASES,
+    qualities: ITEM_QUALITIES,
+    qualityOrder: ITEM_QUALITY_ORDER,
+    affixes: AFFIXES,
+    createRng: (seed) => new ItemRng(seed),
+    generate: generateItem,
+    equipmentStats: totalEquipmentStats,
+    equip: equipItem,
+    unequip: unequipItem,
+    itemWeight: generatedItemWeight,
+    carriedWeight,
+    carryCapacity,
+    encumbrance: encumbranceTier,
+  };
+
   const combat: AdventureCombatService = {
     direction: getDirection,
     isAdjacent: isAdjacentTarget,
@@ -291,6 +342,12 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
       description: 'Existing obstacle-aware A* paths, doorway routing, movement steps and stuck recovery',
     }, navigation),
     api.registerSystem({
+      id: 'economy.items',
+      domain: 'economy',
+      version: '1.0.0',
+      description: 'Existing deterministic item generation, equipment stats, carry weight and encumbrance rules',
+    }, items),
+    api.registerSystem({
       id: 'combat.geometry',
       domain: 'combat',
       version: '1.0.0',
@@ -312,6 +369,7 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
     graphics,
     npc,
     navigation,
+    items,
     combat,
     dispose() {
       subscriptions.forEach((unsubscribe) => unsubscribe());
