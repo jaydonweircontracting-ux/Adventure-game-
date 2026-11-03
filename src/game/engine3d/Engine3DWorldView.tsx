@@ -26,6 +26,7 @@ import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interior
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
+import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 
 type Vec3 = [number, number, number];
@@ -684,6 +685,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const sprintHeldRef=useRef(false);
   const staminaRef=useRef<StaminaState>({...FULL_STAMINA});
   const sprintingRef=useRef(false);
+  // BUILD 1004: swipe-gesture tracking refs (pointerId-gated, so a
+  // second finger never hijacks a swipe already in progress; each
+  // resets on pointerup/pointercancel, and a vertical panel scroll
+  // cancels the panel tracker via pointercancel from the browser).
+  const panelSwipeRef=useRef<{id:number;x:number;y:number;fired:boolean}|null>(null);
+  const edgeSwipeRef=useRef<{id:number;x:number;y:number}|null>(null);
+  const handleSwipeRef=useRef<{id:number;x:number;y:number}|null>(null);
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
@@ -781,6 +789,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   // and would crash the preview/message path).
   const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
+  // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
+  // the minimized-cluster quick button both call this, so the two can
+  // never diverge. Body is the panel toggle's original handler, moved
+  // verbatim: turning Remove on clears any palette/custom choice and
+  // Move/Save/Paste; turning it off keeps the palette it displaced.
+  const toggleRemove=()=>{const next=!removeMode;setRemoveMode(next);if(next){setPalette(null);setCustomSelection(null);}setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};};
+  // BUILD 1004: "build UI is minimized" — panel hidden but a tool
+  // still armed. Only in this state do the right-edge strip swipe and
+  // the minimized handle reopen the panel; a full close (×) clears
+  // the tools, so nothing reopens until Build is tapped again.
+  const buildMinimized=!buildOpen&&!!(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName);
   // BUILD 997: upload a .glb file picked in the panel. Every failure
   // is a message, never a crash: bad magic, wrong version, external
   // buffers, non-triangle geometry, oversize file or full library
@@ -1837,7 +1856,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
-  return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
+  return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
+    // BUILD 1004: right-edge strip swipe to reopen the Build panel.
+    // Gated hard so ordinary canvas drags never reopen it: only while
+    // build UI is minimized (panel hidden, tool still armed), only
+    // when the drag STARTS in the 28px right-edge strip, only when it
+    // starts on a non-button (cluster/Build/Exit buttons are excluded,
+    // the handle has its own handlers), and only on a predominantly
+    // LEFTWARD swipe. Never preventDefaults or stops propagation, so
+    // orbit/pinch/placement drags proceed untouched unless they
+    // qualify as this exact gesture.
+    onPointerDown={(e)=>{if(buildOpen||!buildMinimized)return;if(e.target instanceof Element&&e.target.closest('button'))return;if(e.clientX<window.innerWidth-EDGE_STRIP_PX)return;edgeSwipeRef.current={id:e.pointerId,x:e.clientX,y:e.clientY};}}
+    onPointerMove={(e)=>{const s=edgeSwipeRef.current;if(!s||s.id!==e.pointerId)return;if(classifySwipe(e.clientX-s.x,e.clientY-s.y)==='left'){edgeSwipeRef.current=null;setBuildOpen(true);}}}
+    onPointerUp={(e)=>{if(edgeSwipeRef.current?.id===e.pointerId)edgeSwipeRef.current=null;}}
+    onPointerCancel={(e)=>{if(edgeSwipeRef.current?.id===e.pointerId)edgeSwipeRef.current=null;}}
+  >
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
     <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div>{/* BUILD 1003: stamina HUD — bar + number, green normally, red + "Tired" while exhausted. */}<div style={{marginTop:3}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:120,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired — walk to recover':''}</div><div style={{opacity:.8,marginTop:3}}>{firstPersonOn?'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint':'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint'}</div></div>
@@ -1873,6 +1906,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         still releases cleanly; green while sprint-moving, dimmed +
         "Tired" while exhausted (forced walk until 25 stamina). */}
     <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{e.currentTarget.setPointerCapture(e.pointerId);sprintHeldRef.current=true;}} onPointerUp={()=>{sprintHeldRef.current=false;}} onPointerCancel={()=>{sprintHeldRef.current=false;}} onLostPointerCapture={()=>{sprintHeldRef.current=false;}} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:sprintingUi?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':'Sprint'}</button>
+    {/* BUILD 1004: Remove quick toggle — the SAME toggleRemove the
+        panel's Remove button calls, so the two can never diverge.
+        Renders in the minimized cluster (same visibility rule as
+        Undo/Redo) at the next fixed slot (bottom:324, same 62px
+        step), green while Remove is on, so Remove flips without
+        opening the panel at all. Hidden while the panel is open,
+        where the panel's own toggle is the path; it sits under the
+        panel's footprint exactly like Sprint does. */}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-remove-quick-toggle" onClick={toggleRemove} style={{position:'absolute',right:12,bottom:324,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:removeMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>Remove</button>}
+    {/* BUILD 1004: minimized handle — a visible tab at the right edge
+        while build UI is minimized (panel hidden, tool still armed),
+        clear of the cluster (cluster top is bottom:376, handle spans
+        bottom:392–448). Tap it, or drag it sideways, to reopen the
+        panel; the right-edge strip swipe reopens it too. */}
+    {buildMinimized&&<button type="button" data-testid="build-swipe-handle" title="Swipe or tap to reopen Build" onClick={()=>setBuildOpen(true)} onPointerDown={(e)=>{handleSwipeRef.current={id:e.pointerId,x:e.clientX,y:e.clientY};}} onPointerMove={(e)=>{const s=handleSwipeRef.current;if(!s||s.id!==e.pointerId)return;const d=classifySwipe(e.clientX-s.x,e.clientY-s.y,SWIPE_HANDLE_MIN_PX);if(d==='left'||d==='right'){handleSwipeRef.current=null;setBuildOpen(true);}}} onPointerUp={(e)=>{if(handleSwipeRef.current?.id===e.pointerId)handleSwipeRef.current=null;}} onPointerCancel={(e)=>{if(handleSwipeRef.current?.id===e.pointerId)handleSwipeRef.current=null;}} style={{position:'absolute',right:0,bottom:392,zIndex:4,width:30,height:56,padding:0,border:'1px solid #c4d1bd',borderRight:'none',borderRadius:'9px 0 0 9px',background:'#526d42',color:'#fff',fontWeight:700,fontSize:20,touchAction:'none'}}>‹</button>}
     {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
         house door is within one tile (nearest door wins); Exit shows
         only while inside. Centered at bottom:110 — clear of the
@@ -1903,7 +1951,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     <div ref={savePreviewRef} data-testid="build-save-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px dashed #ffd94d',borderRadius:6,boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
       <span ref={savePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
     </div>
-    {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',touchAction:'pan-y',overscrollBehavior:'contain',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
+    {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',touchAction:'pan-y',overscrollBehavior:'contain',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}
+      // BUILD 1004: sideways swipe on the open panel minimizes it —
+      // exactly the minimize button's state (setBuildOpen(false)
+      // only, tool kept). Vertical drags keep scrolling natively:
+      // the browser cancels the pointer stream (pointercancel) and
+      // the tracker resets, and the dominance rule in classifySwipe
+      // would reject them anyway. Taps (small displacement) never
+      // fire; a swipe that unmounts the panel cannot also click a
+      // button inside it, since the button is gone by pointerup.
+      onPointerDown={(e)=>{panelSwipeRef.current={id:e.pointerId,x:e.clientX,y:e.clientY,fired:false};}}
+      onPointerMove={(e)=>{const s=panelSwipeRef.current;if(!s||s.id!==e.pointerId||s.fired)return;const d=classifySwipe(e.clientX-s.x,e.clientY-s.y);if(d==='left'||d==='right'){s.fired=true;setBuildOpen(false);}}}
+      onPointerUp={(e)=>{if(panelSwipeRef.current?.id===e.pointerId)panelSwipeRef.current=null;}}
+      onPointerCancel={(e)=>{if(panelSwipeRef.current?.id===e.pointerId)panelSwipeRef.current=null;}}
+    >
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
@@ -1949,7 +2010,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
           </div>
         </div>}
       </div>
-      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next){setPalette(null);setCustomSelection(null);}setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-remove-toggle" onClick={toggleRemove} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
       <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       {/* BUILD 996: saved chunks (build templates). Save area arms the
           rectangle drag; the naming row appears after a selection
