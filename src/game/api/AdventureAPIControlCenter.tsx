@@ -13,6 +13,8 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
   const [sampleY, setSampleY] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [demoMood, setDemoMood] = useState(() => runtime.npc.createMood());
+  const [itemSeed, setItemSeed] = useState(12345);
+  const [demoItem, setDemoItem] = useState(() => runtime.items.generate(runtime.items.createRng(12345), 1));
 
   useEffect(() => () => runtime.dispose(), [runtime]);
 
@@ -126,6 +128,15 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
         <div style={{ marginTop: 8 }}>Route from (10, 10) to (45, 36): {navPreview ? 'path found' : 'no path'}</div>
         <div>Waypoints: {navPreview?.waypoints.length ?? 0} · Destination: {navPreview ? '(' + navPreview.destination.x.toFixed(1) + ', ' + navPreview.destination.y.toFixed(1) + ')' : 'unreachable'}</div>
         <div style={muted}>Movement stepping and stuck recovery are exposed through the same API service.</div>
+      </div>
+
+      <div style={section}>
+        <strong>Items and equipment API</strong>
+        <div style={muted}>Generate an item using the existing seeded item generator. Reusing a seed reproduces its item properties.</div>
+        <div style={{ marginTop: 8, fontWeight: 700 }}>{demoItem.name}</div>
+        <div>{demoItem.quality} · Level {demoItem.level} · Value {demoItem.value} gold · {demoItem.slot}</div>
+        <div style={muted}>Weight: {runtime.items.itemWeight(demoItem)} · STR 5 carry capacity: {runtime.items.carryCapacity(5)}</div>
+        <button style={{ ...button, marginTop: 8 }} onClick={() => { const nextSeed = itemSeed + 1; setItemSeed(nextSeed); setDemoItem(runtime.items.generate(runtime.items.createRng(nextSeed), 1)); }}>Generate seeded item</button>
       </div>
 
       <div style={section}>
