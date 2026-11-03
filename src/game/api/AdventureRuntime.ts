@@ -36,6 +36,21 @@ import {
   type MoodEvent,
 } from '../npcMood';
 import {
+  findPath,
+  pathTo,
+  pathToDoor,
+  stepAlongPath,
+  trackStep,
+  validateDestination,
+  isOnFieldRoad,
+  type NavPoint,
+  type NavPath,
+  type DoorwayLink,
+  type ObstacleRect,
+  type StepResult,
+  type TrackStepResult,
+} from '../npcNavigation';
+import {
   getDirection,
   isAdjacentTarget,
   isAdjacentAndFacing,
@@ -100,6 +115,16 @@ export interface AdventureNPCPsychologyService {
   validate: typeof isValidMood;
 }
 
+export interface AdventureNavigationService {
+  findPath: typeof findPath;
+  pathTo: typeof pathTo;
+  pathToDoor: typeof pathToDoor;
+  step: typeof stepAlongPath;
+  trackStep: typeof trackStep;
+  validateDestination: typeof validateDestination;
+  isOnFieldRoad: typeof isOnFieldRoad;
+}
+
 export interface AdventureCombatService {
   direction: typeof getDirection;
   isAdjacent: typeof isAdjacentTarget;
@@ -118,6 +143,7 @@ export interface AdventureRuntime {
   readonly civilization: AdventureCivilizationService;
   readonly graphics: AdventureGraphicsService;
   readonly npc: AdventureNPCPsychologyService;
+  readonly navigation: AdventureNavigationService;
   readonly combat: AdventureCombatService;
   dispose: () => void;
 }
@@ -218,6 +244,16 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
     validate: isValidMood,
   };
 
+  const navigation: AdventureNavigationService = {
+    findPath,
+    pathTo,
+    pathToDoor,
+    step: stepAlongPath,
+    trackStep,
+    validateDestination,
+    isOnFieldRoad,
+  };
+
   const combat: AdventureCombatService = {
     direction: getDirection,
     isAdjacent: isAdjacentTarget,
@@ -255,6 +291,12 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
       description: 'Existing deterministic NPC archetypes, bounded mood events, deduplication and time-based recovery',
     }, npc),
     api.registerSystem({
+      id: 'npc.navigation',
+      domain: 'npc',
+      version: '1.0.0',
+      description: 'Existing obstacle-aware A* paths, doorway routing, movement steps and stuck recovery',
+    }, navigation),
+    api.registerSystem({
       id: 'combat.geometry',
       domain: 'combat',
       version: '1.0.0',
@@ -275,6 +317,7 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
     civilization: civ,
     graphics,
     npc,
+    navigation,
     combat,
     dispose() {
       subscriptions.forEach((unsubscribe) => unsubscribe());
