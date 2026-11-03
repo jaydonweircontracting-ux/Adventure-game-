@@ -23,11 +23,13 @@ it is not Unity's C# API and does not require converting the project to Unity.
   `WorldEventBus` and `CoreWorldEvents` vocabulary.
 - `createAdventureRuntime()` adapters for the existing deterministic world
   clock, terrain/landscape queries, persistent civilization simulation,
-  graphics-mode contract, NPC psychology engine and combat geometry.
+  graphics-mode contract, NPC psychology, NPC navigation and combat geometry.
 - Automatic civilization catch-up on in-game day changes, published as a
   typed `economy.civilization-advanced` event.
 - `npc.psychology` exposes the existing ten archetypes, bounded mood state,
   deduplicated emotional events and game-hour recovery.
+- `npc.navigation` exposes the existing obstacle-aware A* pathfinding,
+  doorway routes, movement steps and stuck recovery.
 - `combat.geometry` exposes the existing facing, adjacency, melee-arc,
   hitbox and line-of-sight rules.
 
