@@ -55,7 +55,7 @@ export interface AdventureTerrainService {
 
 export interface AdventureCivilizationService {
   readonly state: CivilizationState;
-  advanceDay: (day?: number) => void;
+  advanceDay: () => void;
   settlement: typeof settlementById;
   settlementsInChunk: typeof settlementsByChunk;
   serialize: typeof serializeCivilization;
@@ -139,8 +139,8 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
 
   const civ: AdventureCivilizationService = {
     get state() { return civilization; },
-    advanceDay(day = core.getClock().day) {
-      civilization = advanceCivilization(civilization, core.getClock(), day);
+    advanceDay() {
+      civilization = advanceCivilization(civilization, core.getClock());
     },
     settlement: (state, id) => settlementById(state, id),
     settlementsInChunk: (state, chunk) => settlementsByChunk(state, chunk),
