@@ -90,12 +90,35 @@ export interface AdventureGraphicsService {
   isSupportedMode: (mode: string) => mode is GraphicsMode;
 }
 
+export interface AdventureNPCPsychologyService {
+  readonly archetypes: typeof NPC_ARCHETYPES;
+  archetype: (id: NPCArchetypeId) => ReturnType<typeof getArchetype>;
+  createMood: () => NPCMood;
+  applyEvent: (mood: NPCMood, event: MoodEvent, archetypeId: NPCArchetypeId) => NPCMood;
+  advanceTime: (mood: NPCMood, elapsedHours: number, archetypeId: NPCArchetypeId) => NPCMood;
+  summarize: typeof moodSummary;
+  validate: typeof isValidMood;
+}
+
+export interface AdventureCombatService {
+  direction: typeof getDirection;
+  isAdjacent: typeof isAdjacentTarget;
+  isFacingPair: typeof isAdjacentAndFacing;
+  attackHitbox: typeof getAttackHitbox;
+  entityBounds: typeof entityRect;
+  intersectsHitbox: typeof isEntityInHitbox;
+  isInMeleeArc: typeof isInMeleeArc;
+  isLineBlocked: typeof traceLineBlocked;
+}
+
 export interface AdventureRuntime {
   readonly api: AdventureAPI;
   readonly world: AdventureWorldService;
   readonly terrain: AdventureTerrainService;
   readonly civilization: AdventureCivilizationService;
   readonly graphics: AdventureGraphicsService;
+  readonly npc: AdventureNPCPsychologyService;
+  readonly combat: AdventureCombatService;
   dispose: () => void;
 }
 
@@ -185,6 +208,27 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
       GRAPHICS_MODE_OPTIONS.some((option) => option.value === mode),
   };
 
+  const npc: AdventureNPCPsychologyService = {
+    archetypes: NPC_ARCHETYPES,
+    archetype: (id) => getArchetype(id),
+    createMood: () => createDefaultMood(),
+    applyEvent: (mood, event, archetypeId) => applyMoodEvent(mood, event, getArchetype(archetypeId)),
+    advanceTime: (mood, elapsedHours, archetypeId) => advanceMoodTime(mood, elapsedHours, getArchetype(archetypeId)),
+    summarize: moodSummary,
+    validate: isValidMood,
+  };
+
+  const combat: AdventureCombatService = {
+    direction: getDirection,
+    isAdjacent: isAdjacentTarget,
+    isFacingPair: isAdjacentAndFacing,
+    attackHitbox: getAttackHitbox,
+    entityBounds: entityRect,
+    intersectsHitbox: isEntityInHitbox,
+    isInMeleeArc,
+    isLineBlocked: traceLineBlocked,
+  };
+
   const unregister = [
     api.registerSystem({
       id: 'world.clock',
@@ -205,6 +249,18 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
       description: 'Existing persistent settlements, production, trade and civilization simulation',
     }, civ),
     api.registerSystem({
+      id: 'npc.psychology',
+      domain: 'npc',
+      version: '1.0.0',
+      description: 'Existing deterministic NPC archetypes, bounded mood events, deduplication and time-based recovery',
+    }, npc),
+    api.registerSystem({
+      id: 'combat.geometry',
+      domain: 'combat',
+      version: '1.0.0',
+      description: 'Existing melee reach, facing, hitbox, adjacency and line-of-sight rules',
+    }, combat),
+    api.registerSystem({
       id: 'graphics.modes',
       domain: 'graphics',
       version: '1.0.0',
@@ -218,6 +274,8 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
     terrain,
     civilization: civ,
     graphics,
+    npc,
+    combat,
     dispose() {
       subscriptions.forEach((unsubscribe) => unsubscribe());
       unregister.reverse().forEach((remove) => remove());
