@@ -5,6 +5,7 @@
  */
 import { AdventureAPI } from './AdventureAPI';
 import { GRAPHICS_MODE_OPTIONS } from '../engine3d/engine3d';
+import { macroLandformAt, moistureAt, forestDensityAt, rockDensityAt, regionForChunk, waterAt, landUseAt } from '../landscape';
 import { NPC_ARCHETYPES, getArchetype } from '../npcArchetypes';
 import { createDefaultMood, applyMoodEvent, advanceMoodTime, moodSummary, isValidMood } from '../npcMood';
 import { findPath, pathTo, pathToDoor, stepAlongPath, trackStep, validateDestination, isOnFieldRoad } from '../npcNavigation';
@@ -48,6 +49,20 @@ export function createAdventureLiveBridge(providers: AdventureLiveProviders): Ad
   }, Object.freeze({ getSnapshot: read })));
 
   registerSnapshot('world.live', 'world', 'Read-only access to the active world clock and player chunk', providers.world);
+  unregister.push(api.registerSystem({
+    id: 'world.terrain', domain: 'world', version: '1.0.0',
+    description: 'Query the same deterministic landscape and terrain layers used by the active game',
+  }, Object.freeze({
+    sample: (x: number, y: number) => ({
+      landform: macroLandformAt(x, y),
+      moisture: moistureAt(x, y),
+      forestDensity: forestDensityAt(x, y),
+      rockDensity: rockDensityAt(x, y),
+      landUse: landUseAt(x, y),
+      water: waterAt(x, y),
+      region: regionForChunk({ x: Math.floor(x / 280), y: Math.floor(y / 280) }),
+    }),
+  })));
   registerSnapshot('player.live', 'player', 'Read-only access to the active player position, health, level and attributes', providers.player);
   registerSnapshot('npc.roster.live', 'npc', 'Read-only access to the active townsfolk and NPC roster', providers.npcs);
   registerSnapshot('inventory.live', 'economy', 'Read-only access to the active player inventory and equipment', providers.inventory);
