@@ -18,5 +18,6 @@ export {
   type AdventureGraphicsService,
   type AdventureNPCPsychologyService,
   type AdventureNavigationService,
+  type AdventureItemService,
   type AdventureCombatService,
 } from './AdventureRuntime';
