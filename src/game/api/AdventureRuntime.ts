@@ -93,6 +93,12 @@ export function createAdventureRuntime(options: AdventureRuntimeOptions = {}): A
         season: event.current.season,
       }, { tick: event.current.tick });
     } else if (event.type === 'day_changed') {
+      civilization = advanceCivilization(civilization, event.current);
+      api.events.publish('economy.civilization-advanced', {
+        day: event.current.day,
+        settlements: civilization.settlements.length,
+        kingdoms: civilization.kingdoms.length,
+      }, { tick: event.current.tick });
       api.events.publish('world.day-changed', {
         previousDay: event.previous.day,
         day: event.current.day,
