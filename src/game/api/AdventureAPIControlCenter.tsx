@@ -12,6 +12,7 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
   const [sampleX, setSampleX] = useState(0);
   const [sampleY, setSampleY] = useState(0);
   const [speed, setSpeed] = useState(1);
+  const [demoMood, setDemoMood] = useState(() => runtime.npc.createMood());
 
   useEffect(() => () => runtime.dispose(), [runtime]);
 
