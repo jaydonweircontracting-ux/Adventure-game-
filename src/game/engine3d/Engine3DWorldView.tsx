@@ -1481,7 +1481,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // only — no gameplay effect). setClock persists like the live clock.
       getClock:()=>({...clockRef.current}),
       setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
-      setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;}},
+      // BUILD 999: a teleport must also drop the NPC's cached A* path.
+      // Paths store ABSOLUTE tiles planned from the old position; the
+      // timer only replans when the DESTINATION changes, so a moved
+      // actor otherwise snaps back onto its stale path on the next
+      // tick (caught by the 999 probes: a teleported NPC jumped ~21
+      // tiles to its old path). Probes only — no gameplay effect: no
+      // in-game system moves an NPC outside the timer today.
+      setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;npcPath.delete(name);}},
       // BUILD 998 test hooks: interpolated render tile coords (floats)
       // for motion proofs, and last-frame slot upload stats (emitted vs
       // reused vs drawn) for the caching proof.
