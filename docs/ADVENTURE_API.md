@@ -22,10 +22,14 @@ it is not Unity's C# API and does not require converting the project to Unity.
 - An instance-scoped typed event bus using the existing bounded
   `WorldEventBus` and `CoreWorldEvents` vocabulary.
 - `createAdventureRuntime()` adapters for the existing deterministic world
-  clock, terrain/landscape queries, persistent civilization simulation, and
-  graphics-mode contract.
+  clock, terrain/landscape queries, persistent civilization simulation,
+  graphics-mode contract, NPC psychology engine and combat geometry.
 - Automatic civilization catch-up on in-game day changes, published as a
   typed `economy.civilization-advanced` event.
+- `npc.psychology` exposes the existing ten archetypes, bounded mood state,
+  deduplicated emotional events and game-hour recovery.
+- `combat.geometry` exposes the existing facing, adjacency, melee-arc,
+  hitbox and line-of-sight rules.
 
 This is the foundation, not a claim that all domains below are already wired.
 Existing game modules remain authoritative until an adapter is implemented
@@ -58,6 +62,16 @@ import { createAdventureRuntime } from '@/game/api';
 const runtime = createAdventureRuntime({ worldSeed: 847291583 });
 runtime.world.advance(1);
 const localTerrain = runtime.terrain.sample(120, 90);
+const worrierMood = runtime.npc.applyEvent(
+  runtime.npc.createMood(),
+  { id: 'saw-danger-01', category: 'credible_danger', severity: 0.8, witnessed: true },
+  'worrier',
+);
+const canHit = runtime.combat.isInMeleeArc(
+  { x: 10, y: 10 },
+  { x: 10.5, y: 10 },
+  'right',
+);
 const settlements = runtime.civilization.settlementsInChunk(
   runtime.civilization.state,
   { x: 8, y: 7 },
@@ -122,10 +136,11 @@ The following are optional integrations, not dependencies to blindly add:
 
 ## Integration order
 
-1. Register the existing world and event systems through adapters.
-2. Expose read-only world/player/NPC snapshots.
+1. Keep expanding tested adapters around existing world, NPC and combat systems.
+2. Connect adapters to authoritative live application state without creating
+   duplicate clocks, NPC populations or save files.
 3. Route 3D renderer actions through validated shared commands.
-4. Add NPC, combat, inventory/economy and quest adapters one at a time.
+4. Add inventory/economy, player, quest and navigation adapters one at a time.
 5. Add persistence and asset adapters without breaking old saves or assets.
 6. Add optional AI/backend/platform integrations after offline behaviour and
    regression tests are stable.
