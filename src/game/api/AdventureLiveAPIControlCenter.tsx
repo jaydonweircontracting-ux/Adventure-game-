@@ -31,6 +31,7 @@ export default function AdventureLiveAPIControlCenter({
   const quests = record(snapshot.quests);
   const civilization = record(snapshot.civilization);
   const roster = list(npcs.roster);
+  const localNpcs = list(npcs.localNpcs);
   const questList = list(quests.active);
   const taskList = list(quests.tasks);
   const settlements = list(civilization.settlements);
@@ -68,7 +69,7 @@ export default function AdventureLiveAPIControlCenter({
         <pre style={pre}>{pretty(snapshot.player)}</pre>
       </div>
       <div style={section}>
-        <strong>NPC roster · {roster.length} loaded</strong>
+        <strong>NPC roster · {roster.length} townsfolk · {localNpcs.length} local NPCs</strong>
         <div style={muted}>This is the actual townsfolk roster used by the live simulation, not generated demo NPCs.</div>
         <pre style={pre}>{pretty(roster.slice(0, 30))}{roster.length > 30 ? '\n… ' + (roster.length - 30) + ' more NPCs' : ''}</pre>
       </div>
