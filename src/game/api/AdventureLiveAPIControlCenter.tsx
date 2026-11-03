@@ -71,7 +71,7 @@ export default function AdventureLiveAPIControlCenter({
       <div style={section}>
         <strong>NPC roster · {roster.length} townsfolk · {localNpcs.length} local NPCs</strong>
         <div style={muted}>This is the actual townsfolk roster used by the live simulation, not generated demo NPCs.</div>
-        <pre style={pre}>{pretty(roster.slice(0, 30))}{roster.length > 30 ? '\n… ' + (roster.length - 30) + ' more NPCs' : ''}</pre>
+        <pre style={pre}>{pretty({ townsfolk: roster.slice(0, 24), localNpcs: localNpcs.slice(0, 12), omittedTownsfolk: Math.max(0, roster.length - 24), omittedLocalNpcs: Math.max(0, localNpcs.length - 12) })}</pre>
       </div>
       <div style={section}>
         <strong>Inventory & equipment</strong>
