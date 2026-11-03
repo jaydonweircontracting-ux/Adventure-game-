@@ -2,16 +2,17 @@ import assert from 'node:assert/strict';
 import { createAdventureRuntime } from '../src/game/api';
 
 const runtime = createAdventureRuntime({ worldSeed: 847291583, eventHistoryLimit: 32 });
-const { api, world, terrain, civilization, graphics, npc, navigation, combat } = runtime;
+const { api, world, terrain, civilization, graphics, npc, navigation, items, combat } = runtime;
 
 assert.equal(api.version, '1.0.0');
-assert.equal(api.getSystemCount(), 7);
+assert.equal(api.getSystemCount(), 8);
 assert.equal(api.hasSystem('world.clock'), true);
 assert.equal(api.hasSystem('world.terrain'), true);
 assert.equal(api.hasSystem('world.civilization'), true);
 assert.equal(api.hasSystem('graphics.modes'), true);
 assert.equal(api.hasSystem('npc.psychology'), true);
 assert.equal(api.hasSystem('npc.navigation'), true);
+assert.equal(api.hasSystem('economy.items'), true);
 assert.equal(api.hasSystem('combat.geometry'), true);
 
 const start = world.getClock();
@@ -76,6 +77,15 @@ assert.ok(navPath && navPath.waypoints.length > 0);
 const navStep = navigation.step(navPath, { x: 10, y: 10 }, 1);
 assert.ok(navStep.moving || navStep.arrived);
 assert.equal(navigation.validateDestination({ x: -50, y: -50 }, []).corrected, true);
+
+const itemA = items.generate(items.createRng(12345), 5);
+const itemB = items.generate(items.createRng(12345), 5);
+assert.equal(itemA.name, itemB.name, 'item generation should be deterministic for a fixed seed');
+assert.deepEqual(itemA.stats, itemB.stats);
+assert.equal(items.carryCapacity(5), 80);
+assert.equal(items.encumbrance(81, 80), 'over');
+assert.ok(items.itemWeight(itemA) >= 0);
+assert.deepEqual(items.equipmentStats([itemA]), {});
 
 assert.equal(combat.direction({ x: 0, y: 0 }, { x: 5, y: 0 }), 'right');
 assert.equal(combat.isAdjacent({ x: 0, y: 0 }, { x: 2, y: 0 }), true);
