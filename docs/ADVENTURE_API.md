@@ -150,3 +150,20 @@ The following are optional integrations, not dependencies to blindly add:
    regression tests are stable.
 
 No external API keys or network services are required by this foundation.
+
+
+## Live application bridge
+
+`createAdventureLiveBridge(providers)` is the read-only integration used by
+the active GameField. Its providers read through the game's existing refs for
+the active WorldCore clock, player position/stats, townsfolk roster, inventory,
+equipment, quest/task states and civilization. It registers stable live
+snapshot services (`world.live`, `player.live`, `npc.roster.live`,
+`inventory.live`, `quests.live`, `civilization.live`) alongside the
+existing NPC psychology/navigation, item, combat and graphics adapters.
+
+The live bridge does not instantiate a WorldCore, advance time, simulate NPCs,
+or write to the save. The in-game Live API Control Center refreshes these
+snapshots from the active session once per second. This makes it a genuine
+read-only API connection; validated mutation commands can be added later
+without bypassing the game's existing rules.
