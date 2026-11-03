@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { createAdventureRuntime } from '../src/game/api';
+
+const runtime = createAdventureRuntime({ worldSeed: 847291583, eventHistoryLimit: 32 });
+const { api, world, terrain, civilization, graphics } = runtime;
+
+assert.equal(api.version, '1.0.0');
+assert.equal(api.getSystemCount(), 4);
+assert.equal(api.hasSystem('world.clock'), true);
+assert.equal(api.hasSystem('world.terrain'), true);
+assert.equal(api.hasSystem('world.civilization'), true);
+assert.equal(api.hasSystem('graphics.modes'), true);
+
+const start = world.getClock();
+let timeEvents = 0;
+let dayEvents = 0;
+const stopTime = api.events.subscribe('world.time-advanced', () => { timeEvents += 1; });
+const stopDay = api.events.subscribe('world.day-changed', () => { dayEvents += 1; });
+world.advance(1);
+assert.equal(world.getClock().tick, start.tick + 1);
+assert.equal(timeEvents, 1);
+assert.equal(dayEvents, 0);
+
+world.setSimulationSpeed(10);
+world.advance(1);
+assert.equal(world.getClock().tick, start.tick + 11);
+assert.equal(timeEvents, 11);
+assert.throws(() => world.setSimulationSpeed(3), /unsupported simulation speed/);
+
+const sample = terrain.sample(100, 100);
+assert.ok(Number.isFinite(sample.landform));
+assert.ok(Number.isFinite(sample.moisture));
+assert.ok(Number.isFinite(sample.forestDensity));
+assert.ok(Number.isFinite(sample.rockDensity));
+assert.ok(sample.water && typeof sample.water === 'object');
+assert.ok(sample.region && typeof sample.region === 'object');
+
+assert.ok(civilization.state.settlements.length > 0);
+const civSave = civilization.serialize(civilization.state);
+const originalSeed = civilization.state.worldSeed;
+civilization.load(civSave);
+assert.equal(civilization.state.worldSeed, originalSeed);
+
+assert.deepEqual(graphics.getModeOptions().map((mode) => mode.value), ['2d', '2.5d', '3d']);
+assert.equal(graphics.isSupportedMode('3d'), true);
+assert.equal(graphics.isSupportedMode('vr'), false);
+
+stopTime();
+stopDay();
+runtime.dispose();
+assert.equal(api.getSystemCount(), 0);
+
+console.log('Adventure API runtime integration: all checks passed.');
