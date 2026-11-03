@@ -16,4 +16,6 @@ export {
   type AdventureTerrainService,
   type AdventureCivilizationService,
   type AdventureGraphicsService,
+  type AdventureNPCPsychologyService,
+  type AdventureCombatService,
 } from './AdventureRuntime';
