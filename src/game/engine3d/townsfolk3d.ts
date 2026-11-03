@@ -267,6 +267,12 @@ export function planPathNpc(
   to: { x: number; y: number },
   maxNodes = 4000,
   extraBlocked?: ReadonlySet<string>,
+  // BUILD 1000: optional per-tile step cost (travelers pass a
+  // road-biased cost so routes follow dirt over grass). Default 1
+  // keeps every existing caller — residents — exactly unchanged.
+  // The Manhattan heuristic stays admissible (min cost is 1) and
+  // consistent (|Δh| ≤ 1 ≤ cost), so first-pop optimality still holds.
+  cost?: (x: number, y: number) => number,
 ): { x: number; y: number }[] | null {
   if (from.x === to.x && from.y === to.y) return [];
   const key = (x: number, y: number) => x + ',' + y;
@@ -301,7 +307,7 @@ export function planPathNpc(
       const nk = key(nx, ny);
       if (closed.has(nk) || (extraBlocked && extraBlocked.has(nk))) continue;
       if (!npcWalkable(world, nx, ny)) continue;
-      const g = cur.g + 1;
+      const g = cur.g + (cost ? cost(nx, ny) : 1);
       if (g < (gScore.get(nk) ?? Infinity)) {
         gScore.set(nk, g);
         came.set(nk, curKey);

@@ -23,6 +23,7 @@ import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, t
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
+import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 
 
 type Vec3 = [number, number, number];
@@ -635,6 +636,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
+  // BUILD 1000: transient figures (travelers + adventurers). A
+  // SEPARATE array from npcActorsRef on purpose: the resident timer
+  // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
+  // must never land in a resident save. Session-only by construction.
+  const transientActorsRef=useRef<TransientActor[]>([]);
+  // BUILD 1000: transient spawn pacing tick (shared by the timer and
+  // the spawnTransient probe hook).
+  const transientTickRef=useRef(0);
   // BUILD 993: the 3D day clock (1 game minute per real second while the
   // view is mounted, persisted so phases survive reloads). Default 08:00.
   const clockRef=useRef(loadClock());
@@ -916,6 +925,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     ROSTER_3D.forEach((n,i)=>{slotByName.set(n.name,i);const scratch:number[]=[];emitVillager(scratch,0,0,0,0,villagerSpecFor(n.name),rosterArchetype(n.name)==='child');figureSlotCounts.push(scratch.length/6);});
     const playerSlot=ROSTER_3D.length;
     {const scratch:number[]=[];emitVillager(scratch,0,0,0,0,PLAYER_SPEC,false);figureSlotCounts.push(scratch.length/6);}
+    // BUILD 1000: transient GPU slots. Each transient owns a FIXED
+    // slot (base + slotId) sized to the largest possible figure, so a
+    // slot never changes size when its occupant leaves and another
+    // arrives; the draw itself uses the occupant's actual vertex
+    // count (emitFigureSlot's pre array). Slots free on despawn.
+    const transientSlotBase=ROSTER_3D.length+1;
+    const transientSlotCap=maxVillagerVerts();
+    for(let i=0;i<MAX_TRANSIENTS;i++)figureSlotCounts.push(transientSlotCap);
     const figureSlots=figureSlotLayout(figureSlotCounts);
     const figureScratch=new Float32Array(Math.max(...figureSlotCounts)*6);
     const slotUploaded=new Map<number,FigurePoseKey>();
@@ -937,10 +954,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const nx=r?r.x:n.x,ny=r?r.y:n.y;
         return Math.hypot(nx-x,ny-y)<.42;
       };
+      // BUILD 1000: the player cannot walk through transient figures
+      // either (same 0.42 render-distance rule as residents).
+      const transientNear=(t:{id:string;x:number;y:number})=>{
+        const r=npcRender.get(t.id);
+        const nx=r?r.x:t.x,ny=r?r.y:t.y;
+        return Math.hypot(nx-x,ny-y)<.42;
+      };
       const inside=insideHutRef.current;
       if(inside&&interiorWalkable(inside,gx,gy))
-        return !npcActorsRef.current.some(npcNear);
+        return !npcActorsRef.current.some(npcNear)&&!transientActorsRef.current.some(transientNear);
       if(npcActorsRef.current.some(npcNear))return false;
+      if(transientActorsRef.current.some(transientNear))return false;
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
     const pickGround=(clientX:number,clientY:number)=>{
@@ -1069,7 +1094,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const world=stateRef.current.world;
       const player=stateRef.current.position;
       const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
-      const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+      const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
       const res=movePlacement(world,drag.item,Math.round(destination.x),Math.round(destination.y),playerTile,npcTiles);
       if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
       const same=res.item.x0===drag.item.x0&&res.item.y0===drag.item.y0&&res.item.x1===drag.item.x1&&res.item.y1===drag.item.y1;
@@ -1214,7 +1239,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
                 const world=stateRef.current.world;
                 const player=stateRef.current.position;
                 const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
-                const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+                const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
                 const res=pasteChunk(world,template,{x:tx,y:ty},playerTile,npcTiles);
                 if(res.landed.length===0){setMessage('Nothing pasted from \''+template.name+'\': '+(res.skipped[0]?res.skipped[0].reason:'blocked'));}
                 else{saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'paste',items:res.landed});setMessage('Pasted '+res.landed.length+' of '+template.items.length+' from \''+template.name+'\''+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':'')+' · tap again to paste more, or tap the chunk to stop');}
@@ -1245,7 +1270,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
               else{
                 const player=stateRef.current.position;
                 const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
-                const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+                const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
                 const result=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles);
                 if(!result.ok){setMessage('Cannot place here: '+result.reason);}
                 else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+asset.name);}
@@ -1253,7 +1278,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
             } else if(build.palette){
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
-              const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+              const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
               const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
               else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+result.item.kind);}
@@ -1371,17 +1396,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       if(!actorSlotsAllocated){gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.bufferData(gl.ARRAY_BUFFER,figureSlots.totalVerts*24,gl.DYNAMIC_DRAW);actorSlotsAllocated=true;}
       gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       let emitted=0,reused=0,drawn=0;
-      const emitFigureSlot=(slot:number,cx:number,cz:number,yaw:number,phase:number,spec:VillagerSpec,child:boolean,rx:number,rz:number)=>{
+      const emitFigureSlot=(slot:number,cx:number,cz:number,yaw:number,phase:number,spec:VillagerSpec,child:boolean,rx:number,rz:number,pre?:number[])=>{
         const key:FigurePoseKey={x:rx,z:rz,yaw,phase};
         if(!poseKeyEquals(slotUploaded.get(slot)??null,key)){
-          const tmp:number[]=[];
-          emitVillager(tmp,cx,cz,yaw,phase,spec,child);
+          const tmp:number[]=pre??[];
+          if(!pre)emitVillager(tmp,cx,cz,yaw,phase,spec,child);
+          const count=pre?pre.length/6:figureSlotCounts[slot];
           figureScratch.set(tmp);
-          gl.bufferSubData(gl.ARRAY_BUFFER,figureSlots.offsets[slot]*24,figureScratch.subarray(0,figureSlotCounts[slot]*6));
+          gl.bufferSubData(gl.ARRAY_BUFFER,figureSlots.offsets[slot]*24,figureScratch.subarray(0,count*6));
           slotUploaded.set(slot,key);
           emitted++;
         } else reused++;
-        gl.drawArrays(gl.TRIANGLES,figureSlots.offsets[slot],figureSlotCounts[slot]);
+        // BUILD 1000: transient slots draw the occupant's actual count
+        // (pre array), not the slot capacity — stale verts past the
+        // occupant's count are never drawn.
+        const drawCount=pre?pre.length/6:figureSlotCounts[slot];
+        gl.drawArrays(gl.TRIANGLES,figureSlots.offsets[slot],drawCount);
         drawn++;
       };
       const nowMs=performance.now();
@@ -1400,6 +1430,32 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
         st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
         emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y);
+      }
+      // BUILD 1000: transient figures (travelers + adventurers) ride
+      // the same glide/yaw/phase/slot machinery as residents: logical
+      // tiles come from the 900ms transient timer, render positions
+      // glide toward them at the demo speed, and only dirty slots
+      // re-emit. Transients are adults (no child scale) and never use
+      // the player spec. Slots are fixed per figure (base + slotId);
+      // despawn frees the slot (the timer deletes the render + slot
+      // state), so a later occupant re-emits instead of inheriting
+      // stale verts.
+      for(const t of transientActorsRef.current){
+        if(Math.abs(t.x-player.x)>=22||Math.abs(t.y-player.y)>=22)continue;
+        const slot=transientSlotBase+t.slotId;
+        const target={x:t.x,y:t.y};
+        let st=npcRender.get(t.id);
+        if(!st){st={x:target.x,y:target.y,yaw:Math.PI,phase:0};npcRender.set(t.id,st);}
+        else if(needsRenderSnap({x:st.x,y:st.y},target)){st.x=target.x;st.y=target.y;}
+        const step=advanceRenderPos({x:st.x,y:st.y},target,dtNpc);
+        const moved=step.dist>0;
+        let yaw=st.yaw;
+        if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
+        const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
+        st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
+        const pre:number[]=[];
+        emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false);
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre);
       }
       // BUILD 992: in first person the camera IS the player — hide the
       // player figure or it fills the frame. NPC figures still draw.
@@ -1494,6 +1550,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // reused vs drawn) for the caching proof.
       getNpcRenderPos:(name:string)=>{const r=npcRender.get(name);return r?{x:r.x,y:r.y}:null;},
       getMotionStats:()=>({...motionStats}),
+      // BUILD 1000 test hooks (probes only — no gameplay effect):
+      // read transients, force-spawn one (bypasses pacing + the
+      // out-of-view rule so probes can watch it, but never the caps,
+      // name uniqueness, or slot uniqueness), and force a bark line
+      // (bypasses cooldowns, range, and the day rule so probes can
+      // prove delivery; the standalone asserts prove eligibility).
+      getTransients:()=>transientActorsRef.current.map(t=>({id:t.id,kind:t.kind,name:t.name,x:t.x,y:t.y,state:t.state,slotId:t.slotId,exit:t.exit})),
+      spawnTransient:(kind:'traveler'|'adventurer')=>{const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
+      // BUILD 1000: teleport a transient (probes only — lets a probe
+      // place an adventurer beside the plaza to watch its pause +
+      // exit without a 90s walk). Drops the cached A* path, the 999
+      // lesson: absolute path tiles would snap it back otherwise.
+      setTransientPos:(id:string,tx:number,ty:number)=>{const t=transientActorsRef.current.find(x=>x.id===id);if(t){t.x=tx;t.y=ty;transientPath.delete(id);return true;}return false;},
+      // BUILD 1000: cached-path inspector (probes only — distinguishes
+      // a sealed route (path []) from an occupied deadlock (path with
+      // a stuck index) when a transient is not advancing).
+      debugTransient:(id:string)=>{const t=transientActorsRef.current.find(x=>x.id===id);const p=transientPath.get(id);return t?{exit:t.exit,path:p?p.path:null,index:p?p.index:null,blockedTicks:p?p.blockedTicks:null,noPathTicks:p?p.noPathTicks:null,state:t.state}:null;},
+      forceBark:(name:string)=>{const clock=clockRef.current;const res=npcActorsRef.current.find(n=>n.name===name);if(res){const line=barkLineFor('resident',rosterArchetype(name),clock.minutes,name,clock.day);setMessage(name+': '+line);return line;}const tr=transientActorsRef.current.find(t=>t.name===name);if(tr){const line=barkLineFor(tr.kind,null,clock.minutes,name,clock.day);setMessage(name+': '+line);return line;}return null;},
       // BUILD 989 refinement: project a tile centre to container pixel
       // coordinates (same math as the Remove aiming preview), so the
       // browser harness can tap/drag exact tiles instead of guessing
@@ -1595,7 +1669,85 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    // BUILD 1000: transient life. Mount spawns one traveler + one
+    // adventurer when an out-of-view road entry exists (the town
+    // reads as lived-in on first load, never a pop-in); the timer
+    // then paces further spawns (travelers ~45s, adventurers ~100s,
+    // staggered) up to the caps, and steps every transient with the
+    // same rules as residents (cached road-biased A*, occupied waits,
+    // persistent-block replans, sealed retries). Despawn frees the
+    // GPU slot + render state. NOTHING here touches NPC_SAVE_KEY:
+    // transients are session-only (see the ref comment above).
+    const transientPath=new Map<string,TransientPathState>();
+    const mountSpawn=(kind:'traveler'|'adventurer')=>{
+      const live=transientActorsRef.current;
+      const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,true);
+      if(s)transientActorsRef.current=[...live,s];
+    };
+    mountSpawn('traveler');
+    mountSpawn('adventurer');
+    const transientTimer=window.setInterval(()=>{
+      transientTickRef.current++;
+      const tick=transientTickRef.current;
+      const player=stateRef.current.position;
+      const live=transientActorsRef.current;
+      if(tick%TRAVELER_SPAWN_TICKS===0&&live.filter(t=>t.kind==='traveler').length<MAX_TRAVELERS){
+        const s=spawnTransient(world,'traveler',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
+        if(s)transientActorsRef.current=[...transientActorsRef.current,s];
+      }
+      if(tick%ADVENTURER_SPAWN_TICKS===ADVENTURER_SPAWN_PHASE&&live.filter(t=>t.kind==='adventurer').length<MAX_ADVENTURERS){
+        const s=spawnTransient(world,'adventurer',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
+        if(s)transientActorsRef.current=[...transientActorsRef.current,s];
+      }
+      const residents=npcActorsRef.current;
+      const kept:TransientActor[]=[];
+      for(const t of transientActorsRef.current){
+        const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)
+          ||residents.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y)
+          ||transientActorsRef.current.some(o=>o!==t&&Math.round(o.x)===x&&Math.round(o.y)===y);
+        const res=stepTransient(world,t,transientPath.get(t.id),occupied,staticAnchors.plaza);
+        if(res.path)transientPath.set(t.id,res.path);else transientPath.delete(t.id);
+        if(res.despawn){npcRender.delete(t.id);slotUploaded.delete(transientSlotBase+t.slotId);}
+        else kept.push(t);
+      }
+      transientActorsRef.current=kept;
+    },900);
+
+    // BUILD 1000: barks through the existing message area. Every 3s,
+    // the nearest figure within 4 tiles barks when eligible (residents:
+    // seeded day rule; transients: always day-eligible) and both
+    // cooldowns (global 25s, per-figure 90s) have elapsed. No floating
+    // text exists in this renderer (see the transients.ts verdict).
+    let lastBarkAt=0;
+    const lastBarkBy=new Map<string,number>();
+    const barkTimer=window.setInterval(()=>{
+      const now=Date.now();
+      if(now-lastBarkAt<BARK_GLOBAL_COOLDOWN_MS)return;
+      const p=stateRef.current.position;
+      const clock=clockRef.current;
+      type Cand={name:string;kind:'resident'|'traveler'|'adventurer';archetype:string|null;x:number;y:number};
+      const cands:Cand[]=[];
+      for(const n of npcActorsRef.current){
+        if(!n.alive)continue;
+        const r=npcRender.get(n.name);
+        cands.push({name:n.name,kind:'resident',archetype:rosterArchetype(n.name),x:r?r.x:n.x,y:r?r.y:n.y});
+      }
+      for(const t of transientActorsRef.current){
+        const r=npcRender.get(t.id);
+        cands.push({name:t.name,kind:t.kind,archetype:null,x:r?r.x:t.x,y:r?r.y:t.y});
+      }
+      const near=cands.filter(c=>Math.hypot(c.x-p.x,c.y-p.y)<=BARK_RANGE)
+        .sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y));
+      for(const c of near){
+        if(c.kind==='resident'&&!barkDayEligible(c.name,clock.day))continue;
+        if(now-(lastBarkBy.get(c.name)??0)<BARK_NPC_COOLDOWN_MS)continue;
+        setMessage(c.name+': '+barkLineFor(c.kind,c.archetype,clock.minutes,c.name,clock.day));
+        lastBarkAt=now;lastBarkBy.set(c.name,now);
+        break;
+      }
+    },BARK_CHECK_MS);
+
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
