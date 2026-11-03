@@ -32,7 +32,8 @@
     "test:body-loot": "npx tsx tests/body-loot-selection.test.ts",
     "test:character-creator": "npx tsx tests/character-creator-restrictions.test.ts",
     "test:adventure-api": "npx tsx tests/adventure-api.test.ts",
-    "test:adventure-api-runtime": "npx tsx tests/adventure-api-runtime.test.ts"
+    "test:adventure-api-runtime": "npx tsx tests/adventure-api-runtime.test.ts",
+    "test:adventure-api-live": "npx tsx tests/adventure-api-live-bridge.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
