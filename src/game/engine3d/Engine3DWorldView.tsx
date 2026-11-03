@@ -10,7 +10,8 @@ import {
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
-  VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_APRON_HALF,
+  VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_FAR_BAND_HALF, VIEW_FAR_BAND_CELL, VIEW_APRON_HALF,
+  VIEW_BAND_Y, VIEW_FAR_BAND_Y, VIEW_APRON_Y,
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import {
@@ -61,12 +62,17 @@ const COLORS: Record<string, Vec3> = {
 export const WORLD_FOV_DEG = 66;
 export const WORLD_FOV_RAD = (WORLD_FOV_DEG * Math.PI) / 180;
 // BUILD 988 distance fog: ground-plane range (tiles from the player)
-// over which world geometry fades to the horizon colour. Near field
-// (<=14) stays crisp; the window edge (22) is half-faded; >=30 is fully
-// haze. Fog is measured from the PLAYER, not the camera, so orbit
-// zoom-out never fogs the town itself out.
-export const FOG_NEAR = 14;
-export const FOG_FAR = 30;
+// over which world geometry fades to the horizon colour. BUILD 1005:
+// fog pushed out to the 240-tile view edge (Minecraft-style render
+// distance) — near field (<=120) stays crisp, the fade runs 120..240,
+// and >=240 is fully horizon colour, so land stays visible across the
+// whole view and only blends into sky at the horizon itself. Fog is
+// measured from the PLAYER, not the camera, so orbit zoom-out never
+// fogs the town itself out. (Before 1005: 14..30 — everything past
+// 30 tiles was fully hazed, so visible land effectively ended at the
+// ±35 band even though ground geometry reached the horizon.)
+export const FOG_NEAR = 120;
+export const FOG_FAR = 240;
 type Position = { x: number; y: number };
 
 // BUILD 990: interior occupancy is session-only. A saved tile strictly
@@ -298,9 +304,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // so the fog no longer ends at a geometry edge. Cost of baking: the
   // fog centre goes stale as the player walks (rebuilds recentre it
   // every >8 tiles), so far-field haze shifts subtly on rebuild; near
-  // field (<=14 tiles) is always unfogged, so nothing the player looks
-  // at ever pops. A shader-side fog was measured first and cost frames
-  // in SwiftShader, so it was replaced by this baked form.
+  // field (<=120 tiles, BUILD 1005) is always unfogged, so nothing the
+  // player looks at ever pops — and 8 tiles of staleness is only 3%
+  // of the 240-tile fog range now, far less visible than at 1002's
+  // 30-tile range. A shader-side fog was measured first and cost
+  // frames in SwiftShader, so it was replaced by this baked form.
   const fogAt = (x: number, z: number) => {
     const d = Math.hypot(x - (center.x + .5), z - (center.y + .5));
     const t = Math.min(1, Math.max(0, (d - FOG_NEAR) / (FOG_FAR - FOG_NEAR)));
@@ -374,23 +382,32 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // out, but the visible ground reaches ~79 tiles at default orbit
   // zoom and ~150 at max zoom-out, and past the 200x200 map edge there
   // is no window at all (the map-edge probe showed half the frame as
-  // sky). Two underlays close that gap, both centred on the build
-  // centre (NOT clamped to the map) so they cover the map exterior
-  // too, and both below real ground so depth hides them wherever the
-  // window exists — no stitching math, no gameplay effect:
+  // sky). Underlays close that gap, all centred on the build centre
+  // (NOT clamped to the map) so they cover the map exterior too, and
+  // all below real ground so depth hides them wherever the window
+  // exists — no stitching math, no gameplay effect:
   // (a) a coarse band of VIEW_BAND_CELL-tile cells out to
   // VIEW_BAND_HALF, terrain-sampled at each cell centre (roads and
   // fields continue coarsely past the window) and fogged per vertex
-  // by the same tri(), so the 50%-hazed window edge blends out to
-  // full haze at FOG_FAR instead of stopping at a hard line. The band
-  // square deliberately overlaps the window (35 > 22 + the 8-tile
-  // rebuild staleness), so a stale window edge still sits on band.
-  // (b) a single apron quad out to VIEW_APRON_HALF at y=-0.03. Its
-  // corners sit far past FOG_FAR, so tri() fogs them to exactly
+  // by the same tri(). The band square deliberately overlaps the
+  // window (64 > 22 + the 8-tile rebuild staleness), so a stale
+  // window edge still sits on band.
+  // BUILD 1005 — (b) a far band of VIEW_FAR_BAND_CELL-tile cells out
+  // to VIEW_FAR_BAND_HALF (240), the full view distance, sampled the
+  // same way (terrainAt falls back to grass past the 200x200 map, so
+  // the plains correctly continue to the horizon). Graduated cells
+  // keep the vertex budget bounded: 1089 near quads + 961 far quads
+  // (edge slivers included — the loops run to the half-size inclusive
+  // so no 1-tile gap ring is left at any square edge).
+  // (c) a single apron quad out to VIEW_APRON_HALF at VIEW_APRON_Y.
+  // Its corners sit far past FOG_FAR, so tri() fogs them to exactly
   // SKY_HORIZON and the whole apron is uniform horizon colour — the
   // same colour as the bottom of the sky gradient — so the horizon
-  // reads as hazy ground fading into sky, never as a cutoff. Cost:
-  // ~2k vertices on a ~65k-vertex world buffer, one rebuild only.
+  // reads as hazy ground fading into sky, never as a cutoff. Layer
+  // order is strictly monotonic (window 0 > band > far band > apron);
+  // the far-band/apron boundary sits at FOG_FAR where both are exactly
+  // horizon colour, so even a depth tie there would be invisible.
+  // Cost: ~12.3k vertices on a ~65k-vertex world buffer, one rebuild.
   {
     const bx0=Math.floor(center.x)-VIEW_BAND_HALF, bx1=Math.floor(center.x)+VIEW_BAND_HALF;
     const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
@@ -398,11 +415,19 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
       const sx=x+Math.floor(w/2), sy=y+Math.floor(d/2);
       const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
-      quad([x,-.02,y],[x+w,-.02,y],[x+w,-.02,y+d],[x,-.02,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+      quad([x,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y+d],[x,VIEW_BAND_Y,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+    }
+    const fx0=Math.floor(center.x)-VIEW_FAR_BAND_HALF, fx1=Math.floor(center.x)+VIEW_FAR_BAND_HALF;
+    const fy0=Math.floor(center.y)-VIEW_FAR_BAND_HALF, fy1=Math.floor(center.y)+VIEW_FAR_BAND_HALF;
+    for(let y=fy0;y<=fy1;y+=VIEW_FAR_BAND_CELL) for(let x=fx0;x<=fx1;x+=VIEW_FAR_BAND_CELL){
+      const w=Math.min(VIEW_FAR_BAND_CELL,fx1+1-x), d=Math.min(VIEW_FAR_BAND_CELL,fy1+1-y);
+      const sx=x+Math.floor(w/2), sy=y+Math.floor(d/2);
+      const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
+      quad([x,VIEW_FAR_BAND_Y,y],[x+w,VIEW_FAR_BAND_Y,y],[x+w,VIEW_FAR_BAND_Y,y+d],[x,VIEW_FAR_BAND_Y,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
     }
     const ax0=Math.floor(center.x)-VIEW_APRON_HALF, ax1=Math.floor(center.x)+VIEW_APRON_HALF+1;
     const az0=Math.floor(center.y)-VIEW_APRON_HALF, az1=Math.floor(center.y)+VIEW_APRON_HALF+1;
-    quad([ax0,-.03,az0],[ax1,-.03,az0],[ax1,-.03,az1],[ax0,-.03,az1],COLORS.grass);
+    quad([ax0,VIEW_APRON_Y,az0],[ax1,VIEW_APRON_Y,az0],[ax1,VIEW_APRON_Y,az1],[ax0,VIEW_APRON_Y,az1],COLORS.grass);
   }
   // BUILD 986: houseBox moved above the stall loop so the shared tree
   // renderer below can serve stalls and crates too (same scope, same
@@ -1464,6 +1489,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // at minimum orbit pitch the horizon ray runs past 200, leaving
       // a sky strip under the horizon line; 300 keeps ground inside
       // the frustum out to the horizon at every zoom and pitch.
+      // BUILD 1005: 300 is KEPT by measurement for the 240 view —
+      // max camera-to-ground-point is 272 (240 + 32 orbit radius at
+      // min pitch 0.22), 280 with 8-tile rebuild staleness, and apron
+      // coverage reaches 340 - 32 = 308, so 300 sits inside [280, 308]
+      // with margin both sides; raising it would only coarsen depth
+      // precision at 240 tiles.
       // BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
       // level gaze by default (lookPitch starts 0).
       // BUILD 992: turning first-person-auto OFF while in first person

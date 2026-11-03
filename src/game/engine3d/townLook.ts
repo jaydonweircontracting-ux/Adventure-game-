@@ -108,11 +108,35 @@ export const ZOOM_HYST = 1.5;
  * at y=-0.02, so no stitching math is needed), and VIEW_APRON_HALF is
  * the single horizon-coloured quad under everything at y=-0.03. The
  * apron half-size exceeds far plane + max camera offset (300 + 32),
- * so every ground point the frustum can reach is covered. */
+ * so every ground point the frustum can reach is covered.
+ * BUILD 1005 — 240-tile view (Minecraft-style render distance).
+ * Fog now completes at the 240 view edge instead of 30, and ground
+ * geometry reaches ±240 in graduated cells: 4-tile cells to ±64, then
+ * 16-tile cells to ±240 (961 quads), so vertex growth stays bounded
+ * (~12.3k band vertices vs ~1.9k at 1002). The apron still reaches
+ * ±340 past the far band. VIEW_FAR_PLANE is UNCHANGED at 300, by
+ * measurement, not oversight: max camera-to-ground-point distance is
+ * 272 tiles (240 view + 32 max orbit radius at min pitch 0.22), 280
+ * with the 8-tile rebuild-staleness worst case, and apron coverage
+ * reaches 340 - 32 = 308 from the camera — so 300 sits inside the
+ * covering window [280, 308] with margin both sides, and raising it
+ * would only coarsen depth precision at 240 tiles (near plane 0.1).
+ * Layer y values are strictly monotonic (see VIEW_*_Y) so the far
+ * layers never cover each other; far-field band/apron overlaps sit
+ * at full horizon colour, where any depth tie is invisible. */
 export const VIEW_FAR_PLANE = 300;
-export const VIEW_BAND_HALF = 35;
+export const VIEW_BAND_HALF = 64;
 export const VIEW_BAND_CELL = 4;
+export const VIEW_FAR_BAND_HALF = 240;
+export const VIEW_FAR_BAND_CELL = 16;
 export const VIEW_APRON_HALF = 340;
+/** Underlay layering (BUILD 1005): window 0 > band -0.02 > far band
+ * -0.05 > apron -0.08, strictly monotonic so depth hides each lower
+ * layer wherever an upper one exists. The apron MUST stay lowest: it
+ * is one huge quad, and anything above it would cover the far band. */
+export const VIEW_BAND_Y = -0.02;
+export const VIEW_FAR_BAND_Y = -0.05;
+export const VIEW_APRON_Y = -0.08;
 
 /** Steep roof rise as a fraction of the cross-axis span. rise/run = 0.9,
  *  i.e. a ~42 degree pitch, matching the reference's steep roofs. */
