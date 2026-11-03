@@ -91,10 +91,12 @@ export default function GraphicsModeHost() {
 
   return <>
     <App />
+    {apiCenterOpen && <AdventureAPIControlCenter onClose={() => setApiCenterOpen(false)} />}
     <div style={{position:'fixed',right:10,top:'max(10px, env(safe-area-inset-top))',zIndex:30000,fontFamily:'system-ui,sans-serif',color:'#fff'}}>
       <button type="button" onClick={() => setOptionsOpen(v => !v)} aria-expanded={optionsOpen} aria-label="Open graphics options" style={{border:'1px solid #8c9b8d',borderRadius:9,padding:'10px 13px',background:'#172c23ee',color:'#fff',fontWeight:700,boxShadow:'0 3px 12px #0005'}}>Options ⚙</button>
       {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{marginTop:6,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007'}}>
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
+        <button type="button" onClick={() => { setOptionsOpen(false); setApiCenterOpen(true); }} style={{display:'block',width:'100%',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:'#344b3d',color:'#fff',fontWeight:700}}>Open Adventure API Control Center</button>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value =>
           <button key={value} type="button" onClick={() => choose(value)} aria-pressed={value === mode} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:value===mode?'#526d42':'#22392d',color:'#fff',fontWeight:value===mode?700:500}}>
             {value === '2.5d' ? '2.5D Isometric' : value === '3d' ? '3D Experimental' : '2D'}
