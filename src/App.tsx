@@ -7718,10 +7718,6 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       },
     });
   }
-  useEffect(() => () => {
-    adventureLiveBridgeRef.current?.dispose();
-    adventureLiveBridgeRef.current = null;
-  }, []);
 
   const createSaveData = (): SaveGameData => ({
     format: SAVE_FILE_FORMAT,
