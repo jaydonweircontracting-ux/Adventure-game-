@@ -18,6 +18,7 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
 
   const clock = runtime.world.getClock();
   const terrain = runtime.terrain.sample(sampleX, sampleY);
+  const navPreview = runtime.navigation.pathTo({ x: 10, y: 10 }, { x: 45, y: 36 }, []);
   const systems = runtime.api.listSystems();
   const events = runtime.api.events.getHistory().slice(-12).reverse();
 
@@ -117,6 +118,14 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
         </div>
         <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', background: '#0c1411', padding: 9, borderRadius: 7, color: '#d8e8d9', fontSize: 11 }}>{runtime.npc.summarize(demoMood)}</pre>
         <div style={muted}>Processed events: {demoMood.processedEvents.length} · Valid state: {runtime.npc.validate(demoMood) ? 'yes' : 'no'}</div>
+      </div>
+
+      <div style={section}>
+        <strong>NPC navigation API</strong>
+        <div style={muted}>Preview of the existing obstacle-aware pathfinder. The demo route is not applied to a live NPC.</div>
+        <div style={{ marginTop: 8 }}>Route from (10, 10) to (45, 36): {navPreview ? 'path found' : 'no path'}</div>
+        <div>Waypoints: {navPreview?.waypoints.length ?? 0} · Destination: {navPreview ? '(' + navPreview.destination.x.toFixed(1) + ', ' + navPreview.destination.y.toFixed(1) + ')' : 'unreachable'}</div>
+        <div style={muted}>Movement stepping and stuck recovery are exposed through the same API service.</div>
       </div>
 
       <div style={section}>
