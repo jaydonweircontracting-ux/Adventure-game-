@@ -2,6 +2,8 @@ import WorldObjectCoordinates from './game/dev/WorldObjectCoordinates';
 import LittleWorldGeneratorPanel from './game/worldgen/LittleWorldGeneratorPanel';
 import { removeEdgeMatte, removeEdgeColorMatte, transparentAssetSource } from './game/dev/assetTransparency';
 import DevConsole from './game/dev/DevConsole';
+import { createAdventureLiveBridge } from './game/api/AdventureLiveBridge';
+import AdventureLiveAPIControlCenter from './game/api/AdventureLiveAPIControlCenter';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
@@ -6108,6 +6110,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const questRumoredRef = useRef<Set<string>>(new Set());
   const [questDialog, setQuestDialog] = useState<{ giverName: string; questId: string } | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [adventureApiOpen, setAdventureApiOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('6:00 AM · Day 1 · Y1');
   const [playerHp, setPlayerHp] = useState(playerMaxHpForStats(initialPlayerStats));
@@ -7652,6 +7655,70 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const brain = createAdventureBrain();
     brain.movePlayer('mosslight-crossing');
     brainRef.current = brain;
+  }
+
+  // The public API reads through the authoritative live-game refs. It must
+  // never create a second clock, NPC roster, inventory, quest store or save.
+  const adventureLiveBridgeRef = useRef<ReturnType<typeof createAdventureLiveBridge> | null>(null);
+  if (adventureLiveBridgeRef.current === null) {
+    adventureLiveBridgeRef.current = createAdventureLiveBridge({
+      world: () => ({
+        clock: brainRef.current?.worldCore.getClock() ?? null,
+        chunk: { ...chunkRef.current },
+      }),
+      player: () => ({
+        position: { ...positionRef.current },
+        chunk: { ...chunkRef.current },
+        hp: playerHpRef.current,
+        mana: playerManaRef.current,
+        level: playerLevelRef.current,
+        xp: playerXpRef.current,
+        className: playerClassRef.current,
+        stats: { ...playerStatsRef.current },
+      }),
+      npcs: () => ({
+        count: townsfolkRef.current.length,
+        roster: townsfolkRef.current.map((npc) => ({
+          id: npc.id,
+          name: npc.name,
+          archetype: npc.archetype,
+          activity: npc.activity,
+          position: { ...npc.position },
+          homeId: npc.homeId ?? null,
+          indoors: Boolean(npc.indoors),
+        })),
+        localNpcs: npcStatesRef.current.map((npc) => ({ ...npc })),
+      }),
+      inventory: () => ({
+        resources: { ...inventoryRef.current },
+        equipment: equipmentRef.current.map((item) => ({
+          name: item.name, quality: item.quality, level: item.level,
+          slot: item.slot, value: item.value,
+        })),
+      }),
+      quests: () => ({
+        active: questStatesRef.current.map((state) => ({ ...state })),
+        tasks: taskStatesRef.current.map((state) => ({ ...state })),
+      }),
+      civilization: () => {
+        const civilization = ensureCiv();
+        return {
+          settlements: civilization.settlements.map((settlement) => {
+            const row = settlement as unknown as Record<string, unknown>;
+            return {
+              id: row.id, name: row.name, kind: row.kind,
+              population: row.population, kingdomId: row.kingdomId,
+              treasury: row.treasury, storage: row.storage,
+            };
+          }),
+          kingdoms: civilization.kingdoms.map((kingdom) => {
+            const row = kingdom as unknown as Record<string, unknown>;
+            return { id: row.id, name: row.name, treasury: row.treasury };
+          }),
+          day: brainRef.current?.worldCore.getClock().day ?? 0,
+        };
+      },
+    });
   }
 
   const createSaveData = (): SaveGameData => ({
@@ -12658,6 +12725,12 @@ if (active) {
         .ag-debug-close-all { border: 1px solid #c88b7b; border-radius: 9px; background: #40221eef; color: #fff; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
         @media (min-width: 700px) { .ag-debug-quick-actions { right: 18px; bottom: 18px; } }
       `}</style>
+      {adventureApiOpen && adventureLiveBridgeRef.current && (
+        <AdventureLiveAPIControlCenter
+          bridge={adventureLiveBridgeRef.current}
+          onClose={() => setAdventureApiOpen(false)}
+        />
+      )}
       {debugUiHidden ? (
         <button type="button" className="ag-debug-reveal" onClick={() => setDebugUiHidden(false)} aria-label="Show Debug windows">🛠 Show Debug UI</button>
       ) : anyDebugToolActive ? (
@@ -16033,6 +16106,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setCollisionDebugMode(!collisionDebugMode); }} data-testid="button-debug-collision">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Collision Boxes{collisionDebugMode ? ' (On)' : ''}</strong><small>{collisionDebugMode ? 'Tap to hide boxes' : 'Red = current box · tap critter, drag green to propose move'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setAdventureApiOpen(true); }} data-testid="button-adventure-api">
+                  <span className="options-action-icon">⚙️</span>
+                  <span><strong>Adventure API Control Center</strong><small>Inspect the live world, player, NPCs, inventory, quests and economy through our API</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setDebugHubOpen(true); }} data-testid="button-debug-control-center">
                   <span className="options-action-icon"><Settings size={17} /></span>

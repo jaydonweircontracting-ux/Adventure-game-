@@ -120,6 +120,10 @@ export interface CoreWorldEvents {
   'crime.witnessed': { crimeId: string; witnessNpcId: string; suspectId?: string };
   'quest.stage-changed': { questId: string; previousStage: string; nextStage: string };
   'building.entrance-used': { buildingId: string; entranceId: string; destinationId: string };
+  'world.time-advanced': { tick: number; day: number; hour: number; minuteOfDay: number; season: string };
+  'world.day-changed': { previousDay: number; day: number; season: string };
+  'world.season-changed': { previousSeason: string; season: string; day: number };
+  'economy.civilization-advanced': { day: number; settlements: number; kingdoms: number };
   'world.chunk-loaded': { chunkKey: string };
   'world.chunk-unloaded': { chunkKey: string };
   'world.save-failed': { scope: 'player' | 'editor' | 'world'; message: string };

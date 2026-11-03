@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import App from '../../App';
 import Engine3DWorldView from './Engine3DWorldView';
+import AdventureAPIControlCenter from '../api/AdventureAPIControlCenter';
 import type { GraphicsMode } from './engine3d';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
@@ -35,6 +36,7 @@ function initialMode(): GraphicsMode {
 export default function GraphicsModeHost() {
   const [mode, setMode] = useState<GraphicsMode>(initialMode);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [apiCenterOpen, setApiCenterOpen] = useState(false);
   const [fpAuto, setFpAuto] = useState<boolean>(() => {
     try { return localStorage.getItem(FP_AUTO_KEY) !== '0'; } catch { return true; }
   });
@@ -67,8 +69,10 @@ export default function GraphicsModeHost() {
         aria-label="Open graphics options"
         style={{position:'fixed',right:12,top:'max(12px, env(safe-area-inset-top))',zIndex:30002,padding:'11px 14px',border:'1px solid #8c9b8d',borderRadius:10,background:'#172c23ee',color:'#fff',fontWeight:700}}
       >Options</button>
+      {apiCenterOpen && <AdventureAPIControlCenter onClose={() => setApiCenterOpen(false)} />}
       {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{position:'fixed',right:12,top:'max(58px, calc(env(safe-area-inset-top) + 50px))',zIndex:30003,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007',fontFamily:'system-ui,sans-serif',color:'#fff'}}>
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
+        <button type="button" onClick={() => { setOptionsOpen(false); setApiCenterOpen(true); }} style={{display:'block',width:'100%',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:'#344b3d',color:'#fff',fontWeight:700}}>Open Adventure API Control Center</button>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value =>
           <button key={value} type="button" onClick={() => choose(value)} aria-pressed={value === mode} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:value===mode?'#526d42':'#22392d',color:'#fff',fontWeight:value===mode?700:500}}>
             {value === '2.5d' ? '2.5D Isometric' : value === '3d' ? '3D Experimental' : '2D'}
@@ -87,10 +91,12 @@ export default function GraphicsModeHost() {
 
   return <>
     <App />
+    {apiCenterOpen && <AdventureAPIControlCenter onClose={() => setApiCenterOpen(false)} />}
     <div style={{position:'fixed',right:10,top:'max(10px, env(safe-area-inset-top))',zIndex:30000,fontFamily:'system-ui,sans-serif',color:'#fff'}}>
       <button type="button" onClick={() => setOptionsOpen(v => !v)} aria-expanded={optionsOpen} aria-label="Open graphics options" style={{border:'1px solid #8c9b8d',borderRadius:9,padding:'10px 13px',background:'#172c23ee',color:'#fff',fontWeight:700,boxShadow:'0 3px 12px #0005'}}>Options ⚙</button>
       {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{marginTop:6,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007'}}>
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
+        <button type="button" onClick={() => { setOptionsOpen(false); setApiCenterOpen(true); }} style={{display:'block',width:'100%',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:'#344b3d',color:'#fff',fontWeight:700}}>Open Adventure API Control Center</button>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value =>
           <button key={value} type="button" onClick={() => choose(value)} aria-pressed={value === mode} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:value===mode?'#526d42':'#22392d',color:'#fff',fontWeight:value===mode?700:500}}>
             {value === '2.5d' ? '2.5D Isometric' : value === '3d' ? '3D Experimental' : '2D'}
