@@ -169,12 +169,18 @@ export interface HouseDesign {
 /** Derive a house's full look from its hut rect + door tile. The door
  *  face comes from the layout's door position (door on the y0 edge =
  *  north face, y1 = south, x0 = west, x1 = east) — the layout is never
- *  moved, only read. */
+ *  moved, only read. BUILD 1006: a moved hut passes its ORIGINAL rect's
+ *  origin as (seedX0, seedY0), so the hash-driven look (stories, stone,
+ *  plaster, timber, roof, open front, chimney, lit windows) stays
+ *  exactly the look the house had before it moved; proportions and door
+ *  face still come from the CURRENT rect (same size, same facing, so
+ *  they agree anyway). Default seeds are the rect itself. */
 export function houseDesignFor(
   x0: number, y0: number, x1: number, y1: number,
   doorX: number, doorY: number,
+  seedX0: number = x0, seedY0: number = y0,
 ): HouseDesign {
-  const h = (salt: number): number => hash2(x0 * 3.1 + salt, y0 * 7.7 + salt * 1.3);
+  const h = (salt: number): number => hash2(seedX0 * 3.1 + salt, seedY0 * 7.7 + salt * 1.3);
   const doorFace: DoorFace =
     doorY <= y0 ? 'north' : doorY >= y1 ? 'south' : doorX <= x0 ? 'west' : 'east';
   const w = Math.max(2, x1 - x0 + 1);

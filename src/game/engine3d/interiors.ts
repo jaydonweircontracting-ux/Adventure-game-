@@ -164,9 +164,13 @@ const FURNITURE_KINDS: FurnitureKind[] = ['bed', 'table', 'chair', 'counter', 's
  * overlapping the wall plane) and are visual only — walkability is
  * interiorWalkable(), so connectivity from the door tile is trivially
  * complete. The door tile and the tile directly inward from it never
- * carry furniture (reserved entry lane).
+ * carry furniture (reserved entry lane). BUILD 1006: a moved hut passes
+ * its ORIGINAL rect as seedHut, so the furniture KIND sequence and
+ * count stay the house's own (bounds, door, and lane still come from
+ * the CURRENT rect, so furniture sits inside the moved house). Default
+ * seed is the hut itself.
  */
-export function interiorBoxes(hut: HutRect): InteriorBox[] {
+export function interiorBoxes(hut: HutRect, seedHut: HutRect = hut): InteriorBox[] {
   const door = hutDoor(hut);
   const lane = hutInwardTile(hut);
   const candidates: Array<{ tx: number; ty: number }> = [];
@@ -182,8 +186,8 @@ export function interiorBoxes(hut: HutRect): InteriorBox[] {
   // tiles (and kinds) differ per house but are stable for a given hut.
   const seeded = [...candidates].sort(
     (a, b) =>
-      hash2(a.tx * 3.7 + hut.x0 * 13.1, a.ty * 9.1 + hut.y0 * 7.3) -
-      hash2(b.tx * 3.7 + hut.x0 * 13.1, b.ty * 9.1 + hut.y0 * 7.3),
+      hash2(a.tx * 3.7 + seedHut.x0 * 13.1, a.ty * 9.1 + seedHut.y0 * 7.3) -
+      hash2(b.tx * 3.7 + seedHut.x0 * 13.1, b.ty * 9.1 + seedHut.y0 * 7.3),
   );
   const count = Math.min(6, Math.max(1, Math.floor(candidates.length / 3)));
   const out: InteriorBox[] = [];
@@ -191,7 +195,7 @@ export function interiorBoxes(hut: HutRect): InteriorBox[] {
     const tile = seeded[i];
     const kind =
       FURNITURE_KINDS[
-        Math.floor(hash2(hut.x0 * 13.7 + i * 3.3, hut.y0 * 7.9 + i * 1.7) * FURNITURE_KINDS.length) %
+        Math.floor(hash2(seedHut.x0 * 13.7 + i * 3.3, seedHut.y0 * 7.9 + i * 1.7) * FURNITURE_KINDS.length) %
           FURNITURE_KINDS.length
       ];
     const cx = tile.tx + 0.5;

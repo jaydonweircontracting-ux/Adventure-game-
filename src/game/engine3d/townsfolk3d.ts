@@ -59,7 +59,7 @@ import { townsfolkTarget, type TownsfolkAnchors, type TownsfolkArchetype, type T
 import type { WorldClockState } from '../worldCore';
 import { mosslightEngineChunkLayout, mosslightFillerLots } from '../mosslightLayout';
 import { terrainAt, type HutRect, type IsoWorld } from '../iso/isoWorld';
-import { hutExitPoint } from './interiors';
+import { hutExitPoint, sameHut } from './interiors';
 import { walkableWithPlacements } from './placements';
 
 /** Mirror of townsfolk.ts ROSTER (order preserved: index i = townsfolk-i). */
@@ -188,7 +188,13 @@ function lotHutRect(lot: LotShape): HutRect {
  * (removed via Build, or never generated). Pinned keys match the layout
  * lot id; filler-1 matches the first filler lot by footprint against
  * mosslightFillerLots()[0] (the 2.5D definition). Matching is by exact hut
- * rect, so it survives undo restoring bare rects.
+ * rect, so it survives undo restoring bare rects. BUILD 1006: a MOVED
+ * home follows its hut — when the layout rect matches a movedHuts
+ * record's `from`, the hut at the record's `to` is returned, so the
+ * resident's doorstep anchor (resolved live per tick in buildAnchors)
+ * moves with the house instead of falling back to the plaza. A moved
+ * hut removed at its new location yields null (plaza fallback), exactly
+ * like an unmoved removed home.
  */
 export function homeHutFor(homeKey: string, world: IsoWorld): HutRect | null {
   const layout = mosslightEngineChunkLayout();
@@ -207,6 +213,12 @@ export function homeHutFor(homeKey: string, world: IsoWorld): HutRect | null {
   }
   if (!lot) return null;
   const rect = lotHutRect(lot);
+  // BUILD 1006: a moved home lives at its record's `to` rect, not the
+  // layout rect — resolve through the record first. When the moved hut
+  // is gone (removed at its new location), the `to` lookup misses and
+  // the caller falls back to the plaza, exactly like a removed home.
+  const moved = (world.movedHuts ?? []).find((m) => sameHut(m.from, rect));
+  if (moved) return world.huts.find((h) => sameHut(h, moved.to)) ?? null;
   return world.huts.find((h) => h.x0 === rect.x0 && h.y0 === rect.y0 && h.x1 === rect.x1 && h.y1 === rect.y1) ?? null;
 }
 

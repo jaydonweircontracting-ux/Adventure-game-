@@ -59,6 +59,27 @@ export interface IsoWorld {
    *  the case where a layout prop shares the tile. Old saves load with
    *  none. */
   removedCrates?: string[];
+  /** BUILD 1006: generated huts the user moved. `from` is the hut's
+   *  ORIGINAL layout rect (with its original door — the adapter matches
+   *  layout lots by this rect, and the look/interior seeds derive from
+   *  it); `to` is the hut's CURRENT rect (with its recomputed door).
+   *  The adapter stamps the lot at `to` instead of `from` on every load,
+   *  so a moved hut never snaps home. Chained moves UPDATE the single
+   *  record's `to` (never a second record — the adapter only matches
+   *  layout lots by `from`). The record SURVIVES a later removal of the
+   *  moved hut: the adapter skips lots whose TARGET rect is removed, so
+   *  keeping the record is what keeps a removed moved-hut gone across
+   *  reloads (dropping it would resurrect the hut at `from`). Saved
+   *  wholesale with the world (saveWorld serializes the whole object),
+   *  so moved huts persist exactly as long as removed huts do. Old saves
+   *  load with none. */
+  movedHuts?: MovedHut[];
+}
+
+/** BUILD 1006: one moved generated hut. Both rects carry doorX/doorY. */
+export interface MovedHut {
+  from: HutRect;
+  to: HutRect;
 }
 
 export interface Clipboard {

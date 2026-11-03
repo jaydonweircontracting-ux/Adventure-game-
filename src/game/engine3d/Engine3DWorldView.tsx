@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -16,7 +16,8 @@ import {
 import { applyZoomDelta } from './firstPerson';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
-  validatePlacement, movePlacement, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
+  validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
+  movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
   type PaletteKind, type UndoEntry, type BuildHistory,
 } from './placements';
@@ -109,7 +110,13 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
     ...source,
     terrain: { ...source.terrain },
     walls: source.walls.filter(w => Math.abs(w.x - 100) > 68 || Math.abs(w.y - 100) > 68),
-    huts: source.huts.filter(h => Math.abs((h.x0 + h.x1) / 2 - 100) > 68 || Math.abs((h.y0 + h.y1) / 2 - 100) > 68),
+    // BUILD 1006: a moved hut's CURRENT rect is kept even when it sits
+    // near town (the lot loop below would otherwise drop it and the
+    // moved record alone cannot re-create a non-layout hut — and for
+    // layout lots the present-guard in the lot loop prevents a double
+    // stamp, so keeping it is always safe).
+    huts: source.huts.filter(h => Math.abs((h.x0 + h.x1) / 2 - 100) > 68 || Math.abs((h.y0 + h.y1) / 2 - 100) > 68
+      || (source.movedHuts ?? []).some(m => m.to.x0 === h.x0 && m.to.y0 === h.y0 && m.to.x1 === h.x1 && m.to.y1 === h.y1)),
     stalls: source.stalls.filter(st => Math.abs((st.x0 + st.x1) / 2 - 100) > 68 || Math.abs(st.y0 - 100) > 68),
     trees: [...source.trees],
     rocks: [...source.rocks],
@@ -175,14 +182,26 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
     const r = lot.footprint;
     const x0 = clamp(Math.floor(tile(r.left))), y0 = clamp(Math.floor(tile(r.top)));
     const x1 = clamp(Math.max(x0, Math.floor(tile(r.right)))), y1 = clamp(Math.max(y0, Math.floor(tile(r.bottom))));
+    // BUILD 1006: a moved lot stamps at its record's `to` rect instead
+    // of its layout rect — the moved hut never snaps home on reload.
+    // The removed-skip checks the TARGET rect: a moved hut removed at
+    // its new location stays gone (its record deliberately survives
+    // removal — dropping it would resurrect the hut at its layout
+    // rect, since the lot loop would no longer know it moved).
+    const moved = (world.movedHuts ?? []).find(m => m.from.x0 === x0 && m.from.y0 === y0 && m.from.x1 === x1 && m.from.y1 === y1);
+    const tx0 = moved ? moved.to.x0 : x0, ty0 = moved ? moved.to.y0 : y0;
+    const tx1 = moved ? moved.to.x1 : x1, ty1 = moved ? moved.to.y1 : y1;
     // BUILD 987: houses the user removed stay removed — the generator
     // would otherwise re-push the same footprint on every load.
-    if ((world.removedHuts ?? []).some(h => h.x0 === x0 && h.y0 === y0 && h.x1 === x1 && h.y1 === y1)) continue;
-    const midX = Math.round((x0 + x1) / 2), midY = Math.round((y0 + y1) / 2);
-    const door = lot.facing === 'north' ? { x: midX, y: y0 }
-      : lot.facing === 'south' ? { x: midX, y: y1 }
-      : lot.facing === 'west' ? { x: x0, y: midY } : { x: x1, y: midY };
-    world.huts.push({ x0, y0, x1, y1, doorX: door.x, doorY: door.y });
+    if ((world.removedHuts ?? []).some(h => h.x0 === tx0 && h.y0 === ty0 && h.x1 === tx1 && h.y1 === ty1)) continue;
+    // Already present (far-kept source hut, or a moved-to hut kept by
+    // the source filter above) — never stamp twice.
+    if (world.huts.some(h => h.x0 === tx0 && h.y0 === ty0 && h.x1 === tx1 && h.y1 === ty1)) continue;
+    const midX = Math.round((tx0 + tx1) / 2), midY = Math.round((ty0 + ty1) / 2);
+    const door = lot.facing === 'north' ? { x: midX, y: ty0 }
+      : lot.facing === 'south' ? { x: midX, y: ty1 }
+      : lot.facing === 'west' ? { x: tx0, y: midY } : { x: tx1, y: midY };
+    world.huts.push({ x0: tx0, y0: ty0, x1: tx1, y1: ty1, doorX: door.x, doorY: door.y });
   }
 
   // Bring the layout generator's authored market/utility props into the
@@ -539,17 +558,22 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // the footprint at INTERIOR_FLOOR_Y; furniture is seeded from the
     // rect (interiors.ts) and is visual only, so the room is fully
     // walkable. Generated and placed houses share this path.
+    // BUILD 1006: a moved hut keeps its ORIGINAL rect's look — the seed
+    // rect is the moved record's `from`, so stories/stone/plaster/
+    // timber/roof/windows and the furniture kind pattern travel with
+    // the house. Unmoved and placed huts seed from themselves.
+    const seedHut=movedRecordForHut(world, hut)?.from ?? hut;
     if(enteredHut && sameHut(hut, enteredHut)) {
       for(let fy=hut.y0;fy<=hut.y1;fy++) for(let fx=hut.x0;fx<=hut.x1;fx++) {
         const fc=interiorFloorColor(fx,fy);
         quad([fx,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy+1],[fx,INTERIOR_FLOOR_Y,fy+1],fc);
       }
-      for(const b of interiorBoxes(hut)) box(b.x,b.z,b.w,b.h,b.d,b.y0,b.color);
+      for(const b of interiorBoxes(hut, seedHut)) box(b.x,b.z,b.w,b.h,b.d,b.y0,b.color);
       continue;
     }
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
     const hDoorY=(hut as {doorY?:number}).doorY ?? hut.y1;
-    const design=houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY);
+    const design=houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0);
     const topY=GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
     const span=design.roofAxis==='x'?d:w;
     const ridgeY=topY+roofRise(span);
@@ -1158,21 +1182,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       pushHistory({kind:'stroke',entries});
       setMessage('Removed '+entries.length+(entries.length===1?' item':' items'));
     };
-    // BUILD 995: drag-to-move for PLACED items only. In Move mode, a
-    // drag that starts on a placed item moves that item (gold ring +
-    // label preview, same direct-DOM technique as Remove); a drag
-    // starting anywhere else orbits as usual, and a tap in Move mode
-    // does nothing special (taps never move items — only drags do, so
-    // Move never hijacks tap-to-walk). The move itself is atomic
-    // (movePlacement: lift, validate under the same placement rules,
-    // insert or restore) and occupies ONE undo entry. Pinch during a
-    // move-drag CANCELS it (item unmoved) — unlike a remove stroke,
-    // a half-dragged move has no partial progress worth keeping.
-    // While inside a house or Walk-suspended, move-drags never start
-    // (same gate as Remove). Generated items are NOT movable in V1:
-    // they regenerate from layout, so a drag starting on generated
-    // content orbits instead of moving anything.
-    let moveDragging:{item:PlacedItem}|null=null;
+    // BUILD 995: drag-to-move. In Move mode, a drag that starts on an
+    // item moves that item (gold ring + label preview, same direct-DOM
+    // technique as Remove); a drag starting anywhere else orbits as
+    // usual, and a tap in Move mode does nothing special (taps never
+    // move items — only drags do, so Move never hijacks tap-to-walk).
+    // The move itself is atomic (lift, validate under the same
+    // placement rules, insert or restore) and occupies ONE undo entry.
+    // Pinch during a move-drag CANCELS it (item unmoved) — unlike a
+    // remove stroke, a half-dragged move has no partial progress worth
+    // keeping. While inside a house or Walk-suspended, move-drags never
+    // start (same gate as Remove). BUILD 1006: generated houses, paths,
+    // and trees move too (same interaction, same one-undo rule) — a
+    // drag starting on generated content grabs it with Remove's
+    // precedence (placed > house > tree > path); stalls, walls, and
+    // rocks never grab, and a tree standing on dirt grabs the tree
+    // (the dirt takes a second drag, exactly like Remove's two-tap).
+    type MoveDrag =
+      | { kind: 'placed'; item: PlacedItem }
+      | { kind: 'house'; hut: HutRect }
+      | { kind: 'tree'; x: number; y: number }
+      | { kind: 'path'; x: number; y: number };
+    let moveDragging:MoveDrag|null=null;
     const hideMovePreview=()=>{const el=movePreviewRef.current;if(el)el.style.display='none';};
     const showMovePreview=(clientX:number,clientY:number)=>{
       const el=movePreviewRef.current;if(!el||!moveDragging)return;
@@ -1180,26 +1211,52 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const proj=projectTileCenter(Math.round(destination.x),Math.round(destination.y));if(!proj){el.style.display='none';return;}
       el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
       const label=movePreviewLabelRef.current;
-      if(label)label.textContent='Move '+placementLabel(moveDragging.item);
+      if(label)label.textContent='Move '+(moveDragging.kind==='placed'?placementLabel(moveDragging.item):moveDragging.kind);
     };
     // BUILD 995: the caller (pointer-up) already cleared moveDragging
     // and hid the preview before calling, so the dragged item arrives
     // as a parameter — re-reading moveDragging here always saw null
     // and silently dropped every move.
-    const finalizeMove=(clientX:number,clientY:number,drag:{item:PlacedItem})=>{
+    const finalizeMove=(clientX:number,clientY:number,drag:MoveDrag)=>{
       const destination=pickGround(clientX,clientY);
-      if(!destination){setMessage('Drag a placed item to move it');return;}
+      if(!destination){setMessage('Drag an item to move it');return;}
       const world=stateRef.current.world;
       const player=stateRef.current.position;
       const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
       const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
-      const res=movePlacement(world,drag.item,Math.round(destination.x),Math.round(destination.y),playerTile,npcTiles);
+      const dx=Math.round(destination.x), dy=Math.round(destination.y);
+      if(drag.kind==='placed'){
+        const res=movePlacement(world,drag.item,dx,dy,playerTile,npcTiles);
+        if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
+        const same=res.item.x0===drag.item.x0&&res.item.y0===drag.item.y0&&res.item.x1===drag.item.x1&&res.item.y1===drag.item.y1;
+        if(same)return; // dropped where it started: no change, no history
+        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        pushHistory({kind:'move',oldItem:drag.item,newItem:res.item,index:res.index});
+        setMessage('Moved '+placementLabel(res.item));
+        return;
+      }
+      // BUILD 1006: generated moves — same atomicity, same one-undo
+      // rule, same save + rebuild. A same-position drop is a silent
+      // no-op (the pure functions already guarantee zero mutation).
+      if(drag.kind==='house'){
+        const res=moveGeneratedHut(world,drag.hut,dx,dy,playerTile,npcTiles);
+        if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
+        if(res.same)return;
+        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        pushHistory(res.entry);setMessage('Moved house');return;
+      }
+      if(drag.kind==='tree'){
+        const res=moveGeneratedTree(world,drag.x,drag.y,dx,dy,playerTile,npcTiles);
+        if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
+        if(res.same)return;
+        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        pushHistory(res.entry);setMessage('Moved tree');return;
+      }
+      const res=moveGeneratedPath(world,drag.x,drag.y,dx,dy);
       if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
-      const same=res.item.x0===drag.item.x0&&res.item.y0===drag.item.y0&&res.item.x1===drag.item.x1&&res.item.y1===drag.item.y1;
-      if(same)return; // dropped where it started: no change, no history
+      if(res.same)return;
       saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
-      pushHistory({kind:'move',oldItem:drag.item,newItem:res.item,index:res.index});
-      setMessage('Moved '+placementLabel(res.item));
+      pushHistory(res.entry);setMessage('Moved path');
     };
     // BUILD 996: save-area drag helpers (effect-local, like the
     // Remove/Move previews — they need pickGround/projectTileCenter).
@@ -1255,7 +1312,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       needsWorldRebuild.current=true;
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={item:found};showMovePreview(e.clientX,e.clientY);}}}if(!removeDragging&&!moveDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
     const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}return;}
       if(moveDragging){
@@ -1291,7 +1348,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const wasSaveDrag=saveDragging;saveDragging=null;hideSavePreview();
       if(wasMoveDrag){
         if(gestureMoved)finalizeMove(e.clientX,e.clientY,wasMoveDrag);
-        else setMessage('Drag a placed item to move it');
+        else setMessage('Drag an item to move it');
       }
       else if(wasRemoveDrag&&removeStrokeEntries.length>0){finalizeRemoveStroke();}
       // BUILD 996: a save-area drag (or tap) finalizes the selection
@@ -1718,6 +1775,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         dirtKeys: Object.entries(stateRef.current.world.terrain).filter(([,t])=>t==='dirt').map(([k])=>k),
         removedHuts: stateRef.current.world.removedHuts??[],
         removedPaths: stateRef.current.world.removedPaths??[],
+        // BUILD 1006: moved generated huts, for move + reload proofs.
+        movedHuts: stateRef.current.world.movedHuts??[],
         placements: JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
         // BUILD 989: trees, crates, and their removed sets for the
         // browser harness (tree/crate-tree removal + undo proofs).

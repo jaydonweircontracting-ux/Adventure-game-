@@ -9,7 +9,7 @@
 // Cost: FREE in V1. No Wood/Stone gate — the player's counters read 0,
 // so a gate would let him place nothing (future economy decision).
 
-import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass';
 export type PlaceResult = { ok: true; item: PlacedItem } | { ok: false; reason: string };
@@ -217,7 +217,12 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  order). Undo removes them in reverse order; redo re-appends them
  *  in paste order, which preserves path-before-grass stacking.
  *  Skipped items are never in the entry, so undo/redo touch exactly
- *  what the paste added — nothing more, nothing less. */
+ *  what the paste added — nothing more, nothing less. BUILD 1006:
+ *  `moveGenHouse`/`moveGenPath`/`moveGenTree` = one generated-item move
+ *  each (see moveGeneratedHut/moveGeneratedPath/moveGeneratedTree).
+ *  moveGenHouse stores BARE prevTo/to rects (doors are always recomputed
+ *  from the facing derived from `from`'s door, so undo/redo can never
+ *  disagree with the adapter about a door); `from` carries its door. */
 export type UndoEntry =
   | { kind: 'place'; item: PlacedItem }
   | { kind: 'unplace'; item: PlacedItem; index: number }
@@ -226,7 +231,10 @@ export type UndoEntry =
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'stroke'; entries: UndoEntry[] }
   | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
-  | { kind: 'paste'; items: PlacedItem[] };
+  | { kind: 'paste'; items: PlacedItem[] }
+  | { kind: 'moveGenHouse'; from: HutRect; prevTo: HutRect; to: HutRect; index: number }
+  | { kind: 'moveGenPath'; fromX: number; fromY: number; toX: number; toY: number }
+  | { kind: 'moveGenTree'; fromX: number; fromY: number; toX: number; toY: number; hasTree: boolean; hasCrate: boolean; treeIndex: number; crateIndex: number };
 
 /** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
  *  each tile of a stroke, in order, with the SAME precedence,
@@ -333,6 +341,60 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, old);
       return 'Moved ' + old.kind + ' back';
     }
+    case 'moveGenHouse': {
+      // Doors recompute from the facing derived from `from`'s door, so
+      // the restored hut's door always agrees with the adapter's
+      // formula. A first move (prevTo == from) drops the moved record;
+      // a chained move rewinds the record's `to` to prevTo.
+      const face = hutFace(entry.from);
+      const prevDoor = doorForRect(entry.prevTo.x0, entry.prevTo.y0, entry.prevTo.x1, entry.prevTo.y1, face);
+      w.huts = w.huts.filter((h) => !rectEqual(h, entry.to));
+      const prevHut: HutRect = { ...entry.prevTo, doorX: prevDoor.x, doorY: prevDoor.y };
+      if (!w.huts.some((h) => rectEqual(h, entry.prevTo))) {
+        w.huts.splice(Math.min(entry.index, w.huts.length), 0, prevHut);
+      }
+      if (rectEqual(entry.prevTo, entry.from)) {
+        // First-move undo drops the record; when no record array exists
+        // (a refused first move rolling back) nothing is created.
+        if (w.movedHuts) w.movedHuts = w.movedHuts.filter((m) => !rectEqual(m.from, entry.from));
+      } else {
+        const rec = (w.movedHuts ?? []).find((m) => rectEqual(m.from, entry.from));
+        if (rec) rec.to = { ...prevHut };
+        else {
+          if (!w.movedHuts) w.movedHuts = [];
+          w.movedHuts.push({ from: { ...entry.from }, to: { ...prevHut } });
+        }
+      }
+      return 'Moved house back';
+    }
+    case 'moveGenPath': {
+      // The moved path is a literal placed path at the destination; undo
+      // deletes it and restores the original dirt (dropping its removed
+      // entry so the adapter re-stamps it on reload).
+      removeExactPlacement(w, { kind: 'path', x0: entry.toX, y0: entry.toY, x1: entry.toX, y1: entry.toY });
+      const fromKey = terrainKey(entry.fromX, entry.fromY);
+      if (w.removedPaths) w.removedPaths = w.removedPaths.filter((k) => k !== fromKey);
+      w.terrain[fromKey] = 'dirt';
+      return 'Moved path back';
+    }
+    case 'moveGenTree': {
+      const fromKey = terrainKey(entry.fromX, entry.fromY);
+      if (entry.hasTree) {
+        w.trees = w.trees.filter((t) => !(t.tx === entry.toX && t.ty === entry.toY));
+        if (!w.trees.some((t) => t.tx === entry.fromX && t.ty === entry.fromY)) {
+          w.trees.splice(Math.min(entry.treeIndex, w.trees.length), 0, { tx: entry.fromX, ty: entry.fromY });
+        }
+        if (w.removedTrees) w.removedTrees = w.removedTrees.filter((k) => k !== fromKey);
+      }
+      if (entry.hasCrate) {
+        w.crates = w.crates.filter((c) => !(c.tx === entry.toX && c.ty === entry.toY));
+        if (!w.crates.some((c) => c.tx === entry.fromX && c.ty === entry.fromY)) {
+          w.crates.splice(Math.min(entry.crateIndex, w.crates.length), 0, { tx: entry.fromX, ty: entry.fromY });
+        }
+        if (w.removedCrates) w.removedCrates = w.removedCrates.filter((k) => k !== fromKey);
+      }
+      return 'Moved tree back';
+    }
     case 'paste': {
       for (let i = entry.items.length - 1; i >= 0; i--) removeExactPlacement(w, entry.items[i]);
       const n = entry.items.length;
@@ -407,6 +469,50 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
       if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, item);
       return 'Moved ' + item.kind;
+    }
+    case 'moveGenHouse': {
+      const face = hutFace(entry.from);
+      const toDoor = doorForRect(entry.to.x0, entry.to.y0, entry.to.x1, entry.to.y1, face);
+      w.huts = w.huts.filter((h) => !rectEqual(h, entry.prevTo));
+      const toHut: HutRect = { ...entry.to, doorX: toDoor.x, doorY: toDoor.y };
+      if (!w.huts.some((h) => rectEqual(h, entry.to))) {
+        w.huts.splice(Math.min(entry.index, w.huts.length), 0, toHut);
+      }
+      if (!w.movedHuts) w.movedHuts = [];
+      const rec = w.movedHuts.find((m) => rectEqual(m.from, entry.from));
+      if (rec) rec.to = { ...toHut };
+      else w.movedHuts.push({ from: { ...entry.from }, to: { ...toHut } });
+      return 'Moved house';
+    }
+    case 'moveGenPath': {
+      const fromKey = terrainKey(entry.fromX, entry.fromY);
+      delete w.terrain[fromKey];
+      if (!w.removedPaths) w.removedPaths = [];
+      if (!w.removedPaths.includes(fromKey)) w.removedPaths.push(fromKey);
+      if (!w.placements) w.placements = [];
+      const item: PlacedItem = { kind: 'path', x0: entry.toX, y0: entry.toY, x1: entry.toX, y1: entry.toY };
+      if (!w.placements.some((p) => p.kind === 'path' && p.x0 === entry.toX && p.y0 === entry.toY)) w.placements.push(item);
+      return 'Moved path';
+    }
+    case 'moveGenTree': {
+      const fromKey = terrainKey(entry.fromX, entry.fromY);
+      if (entry.hasTree) {
+        w.trees = w.trees.filter((t) => !(t.tx === entry.fromX && t.ty === entry.fromY));
+        if (!w.trees.some((t) => t.tx === entry.toX && t.ty === entry.toY)) {
+          w.trees.splice(Math.min(entry.treeIndex, w.trees.length), 0, { tx: entry.toX, ty: entry.toY });
+        }
+        if (!w.removedTrees) w.removedTrees = [];
+        if (!w.removedTrees.includes(fromKey)) w.removedTrees.push(fromKey);
+      }
+      if (entry.hasCrate) {
+        w.crates = w.crates.filter((c) => !(c.tx === entry.fromX && c.ty === entry.fromY));
+        if (!w.crates.some((c) => c.tx === entry.toX && c.ty === entry.toY)) {
+          w.crates.splice(Math.min(entry.crateIndex, w.crates.length), 0, { tx: entry.toX, ty: entry.toY });
+        }
+        if (!w.removedCrates) w.removedCrates = [];
+        if (!w.removedCrates.includes(fromKey)) w.removedCrates.push(fromKey);
+      }
+      return 'Moved tree';
     }
     case 'paste': {
       if (!w.placements) w.placements = [];
@@ -596,10 +702,11 @@ export function validatePlacement(
  *  original item is restored at its exact index and nothing changes.
  *  The drop tile has placement semantics: house = centre tile of the
  *  3x3, stall = west tile of the 2x1, everything else = the tile.
- *  Generated items are NOT movable here (they regenerate from layout;
- *  a moved-set design is a follow-up) — callers only ever pass placed
- *  items, and an item missing from the list refuses. Returns the new
- *  item plus its list index so one undo entry restores exactly. */
+ *  Generated items are NOT movable here — callers only ever pass placed
+ *  items, and an item missing from the list refuses. Generated moves
+ *  live in moveGeneratedHut/moveGeneratedPath/moveGeneratedTree below
+ *  (BUILD 1006). Returns the new item plus its list index so one undo
+ *  entry restores exactly. */
 export function movePlacement(
   w: IsoWorld,
   item: PlacedItem,
@@ -636,6 +743,281 @@ export function movePlacement(
   const at = Math.min(index, list.length);
   list.splice(at, 0, result.item);
   return { ok: true, item: result.item, index: at };
+}
+
+/** BUILD 1006: generated-item moves — the 995 Move mode extended to the
+ *  game's own houses, paths, and trees. The drag interaction is the
+ *  view's existing Move mode (same tap/drag, same one-undo-per-move);
+ *  these pure functions own the world mutation so it is asserted
+ *  standalone. Design notes, all load-bearing:
+ *  - Houses move by RECORD, not by editing the layout: a movedHuts
+ *    entry {from: original layout rect, to: current rect} tells the
+ *    adapter to stamp the lot at `to` instead of `from` on every load
+ *    (the adapter rebuilds town lots from layout, so plainly moving the
+ *    hut rect would snap home on reload). Chained moves UPDATE the one
+ *    record's `to`. The record survives a later removal of the moved
+ *    hut — the adapter skips lots whose TARGET rect is removed, so
+ *    keeping the record is what keeps a removed moved-hut gone.
+ *  - Paths move as a 987 removal at the source (grass returns, removed
+ *    entry blocks the road rasterizer) plus a LITERAL placed path at
+ *    the destination (same rendering, walkability, and Remove behavior
+ *    as a palette path). Consequence, stated: chunk saves capture a
+ *    moved path as the placed path it now is — that is placed-item
+ *    capture, not generated-item capture (still not built).
+ *  - Trees move as entries: whatever backs the tile (real tree and/or
+ *    crate, the 989 coherence rule) travels to the destination and the
+ *    source tile is left completely empty — no duplicated harvest, no
+ *    phantom collision. Source keys join the removed sets so the
+ *    adapter's prop loop cannot resurrect a moved prop crate.
+ *  - Destinations obey the full 984 rules (validateBlockingRect for
+ *    huts, validatePlacement for trees/paths), with the source lifted
+ *    first so a destination overlapping its own old footprint validates
+ *    against freed tiles. A move that would newly cut the player or any
+ *    NPC off from the map edge is refused and rolled back via the same
+ *    applyUndo path as a real undo — never half-applied. Paths never
+ *    need the trap check: dirt and grass are both walkable, so a path
+ *    move cannot change connectivity.
+ *  - Same-position drops return {ok, same} with ZERO mutation (the
+ *    placed-move path can lift-and-restore harmlessly, but a generated
+ *    tree move that touched the removed sets before the view's
+ *    same-check would lose the tree on reload — so the check lives here,
+ *    before any mutation). The view treats `same` as a silent no-op:
+ *    no save, no history entry. */
+
+export function rectEqual(a: HutRect, b: HutRect): boolean {
+  return a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1;
+}
+
+/** The moved record whose CURRENT rect is `rect`, else null. */
+export function movedRecordForHut(w: IsoWorld, rect: HutRect): MovedHut | null {
+  return (w.movedHuts ?? []).find((m) => rectEqual(m.to, rect)) ?? null;
+}
+
+/** The moved record for a LAYOUT rect (a hut's original position), else null. */
+export function movedRecordForLayoutRect(w: IsoWorld, rect: HutRect): MovedHut | null {
+  return (w.movedHuts ?? []).find((m) => rectEqual(m.from, rect)) ?? null;
+}
+
+/** Seed rect for a hut's look: a moved hut keeps its ORIGINAL rect's
+ *  look (townLook/interior seeds derive from it); unmoved huts seed
+ *  from themselves. */
+export function seedRectForHut(w: IsoWorld, hut: HutRect): HutRect {
+  return movedRecordForHut(w, hut)?.from ?? hut;
+}
+
+/** Door face from a hut's stored door, mirroring interiors.hutDoor
+ *  exactly (doorless huts fall back to the SE corner, as
+ *  isWalkableWorld does). */
+export function hutFace(hut: HutRect): 'north' | 'south' | 'west' | 'east' {
+  const x = hut.doorX ?? hut.x1;
+  const y = hut.doorY ?? hut.y1;
+  return y <= hut.y0 ? 'north' : y >= hut.y1 ? 'south' : x <= hut.x0 ? 'west' : 'east';
+}
+
+/** Door tile for a rect + facing, mirroring the adapter's formula
+ *  exactly (midX/midY of the rect on the facing edge). */
+export function doorForRect(
+  x0: number, y0: number, x1: number, y1: number,
+  face: 'north' | 'south' | 'west' | 'east',
+): { x: number; y: number } {
+  const midX = Math.round((x0 + x1) / 2);
+  const midY = Math.round((y0 + y1) / 2);
+  return face === 'north' ? { x: midX, y: y0 }
+    : face === 'south' ? { x: midX, y: y1 }
+    : face === 'west' ? { x: x0, y: midY }
+    : { x: x1, y: midY };
+}
+
+/** Walkable tiles connected to the map edge under NPC rules (no hut
+ *  tile at all — door tiles included — plus walkableWithPlacements).
+ *  The trap check compares this set before/after a tentative move:
+ *  the player can step on door tiles, so the NPC-stricter set can only
+ *  over-refuse in exotic door-tile cases, never under-refuse a real
+ *  enclosure (a door tile never leads out of a pocket — Exit returns to
+ *  the same side). One BFS over at most w*h tiles; a move action only,
+ *  never per-frame. */
+export function edgeConnectedTiles(w: IsoWorld): Set<string> {
+  const key = (x: number, y: number) => x + ',' + y;
+  const blocked = new Set<string>();
+  for (const wl of w.walls) blocked.add(key(wl.x, wl.y));
+  for (const h of w.huts) for (let y = h.y0; y <= h.y1; y++) for (let x = h.x0; x <= h.x1; x++) blocked.add(key(x, y));
+  for (const s of w.stalls) for (let x = s.x0; x <= s.x1; x++) blocked.add(key(x, s.y0));
+  for (const t of w.trees) blocked.add(key(t.tx, t.ty));
+  for (const r of w.rocks) blocked.add(key(r.tx, r.ty));
+  for (const c of w.crates) blocked.add(key(c.tx, c.ty));
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'path' || p.kind === 'grass') continue;
+    for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) blocked.add(key(x, y));
+  }
+  const seen = new Set<string>();
+  const queue: Array<{ x: number; y: number }> = [];
+  const push = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w.w || y >= w.h) return;
+    const k = key(x, y);
+    if (seen.has(k) || blocked.has(k)) return;
+    if (terrainAt(w, x, y) === 'water') return;
+    seen.add(k);
+    queue.push({ x, y });
+  };
+  for (let x = 0; x < w.w; x++) { push(x, 0); push(x, w.h - 1); }
+  for (let y = 0; y < w.h; y++) { push(0, y); push(w.w - 1, y); }
+  for (let i = 0; i < queue.length; i++) {
+    const c = queue[i];
+    push(c.x + 1, c.y); push(c.x - 1, c.y); push(c.x, c.y + 1); push(c.x, c.y - 1);
+  }
+  return seen;
+}
+
+/** Actors cut off from the map edge by a tentative move: free BEFORE
+ *  (in preFree) but not free AFTER (absent from the current world's
+ *  edge set). Actors already sealed before the move are NOT newly
+ *  trapped — a freeing move stays legal and an unrelated move is never
+ *  refused because of a pre-existing pocket. */
+function newlyTrapped(
+  preFree: Set<string>,
+  w: IsoWorld,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): { player: boolean; npcs: boolean } {
+  const postFree = edgeConnectedTiles(w);
+  const key = (t: { x: number; y: number }) => t.x + ',' + t.y;
+  return {
+    player: preFree.has(key(playerTile)) && !postFree.has(key(playerTile)),
+    npcs: npcTiles.some((t) => preFree.has(key(t)) && !postFree.has(key(t))),
+  };
+}
+
+export type MoveGeneratedResult =
+  | { ok: true; same: true }
+  | { ok: true; same: false; entry: UndoEntry }
+  | { ok: false; reason: string };
+
+/** Move a GENERATED hut so its centre (adapter-mid) lands on the drop
+ *  tile: new rect keeps the hut's exact size, door recomputed from its
+ *  facing, moved record created or updated. The drop tile is the hut's
+ *  centre, mirroring placed houses (centre tile) — for south/north
+ *  facing huts the door lands on the drop tile. */
+export function moveGeneratedHut(
+  w: IsoWorld,
+  hut: HutRect,
+  destCx: number,
+  destCy: number,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): MoveGeneratedResult {
+  const width = hut.x1 - hut.x0 + 1;
+  const height = hut.y1 - hut.y0 + 1;
+  const nx0 = destCx - Math.floor(width / 2);
+  const ny0 = destCy - Math.floor(height / 2);
+  const nx1 = nx0 + width - 1;
+  const ny1 = ny0 + height - 1;
+  if (nx0 === hut.x0 && ny0 === hut.y0 && nx1 === hut.x1 && ny1 === hut.y1) return { ok: true, same: true };
+  const index = w.huts.indexOf(hut);
+  if (index < 0) return { ok: false, reason: 'house not found' };
+  const face = hutFace(hut);
+  const door = doorForRect(nx0, ny0, nx1, ny1, face);
+  const newHut: HutRect = { x0: nx0, y0: ny0, x1: nx1, y1: ny1, doorX: door.x, doorY: door.y };
+  const existing = movedRecordForHut(w, hut);
+  const from: HutRect = existing ? { ...existing.from } : { ...hut };
+  const prevTo: HutRect = { x0: hut.x0, y0: hut.y0, x1: hut.x1, y1: hut.y1 };
+  const entry: UndoEntry = { kind: 'moveGenHouse', from, prevTo, to: { x0: nx0, y0: ny0, x1: nx1, y1: ny1 }, index };
+  const preFree = edgeConnectedTiles(w);
+  const [lifted] = w.huts.splice(index, 1);
+  const check = validateBlockingRect(w, nx0, ny0, nx1, ny1, playerTile, npcTiles);
+  if (!check.ok) {
+    w.huts.splice(Math.min(index, w.huts.length), 0, lifted);
+    return { ok: false, reason: check.reason };
+  }
+  w.huts.splice(Math.min(index, w.huts.length), 0, newHut);
+  const trapped = newlyTrapped(preFree, w, playerTile, npcTiles);
+  if (trapped.player || trapped.npcs) {
+    // Roll back BEFORE any moved record is written, so a refused move
+    // leaves zero trace (the undo branch likewise creates no array for
+    // a first-move rollback — see applyUndo's moveGenHouse case).
+    applyUndo(w, entry);
+    return { ok: false, reason: trapped.player ? 'would trap you' : 'would trap a villager' };
+  }
+  if (!w.movedHuts) w.movedHuts = [];
+  const rec = w.movedHuts.find((m) => rectEqual(m.from, from));
+  if (rec) rec.to = { ...newHut };
+  else w.movedHuts.push({ from: { ...from }, to: { ...newHut } });
+  return { ok: true, same: false, entry };
+}
+
+/** Move a GENERATED dirt tile: 987 removal at the source plus a literal
+ *  placed path at the destination. No trap check — dirt and grass are
+ *  both walkable, so connectivity cannot change. */
+export function moveGeneratedPath(
+  w: IsoWorld,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+): MoveGeneratedResult {
+  if (fromX === toX && fromY === toY) return { ok: true, same: true };
+  if (terrainAt(w, fromX, fromY) !== 'dirt') return { ok: false, reason: 'no path here' };
+  const check = validatePlacement(w, 'path', toX, toY, { x: -1, y: -1 }, []);
+  if (!check.ok) return { ok: false, reason: check.reason };
+  const fromKey = terrainKey(fromX, fromY);
+  delete w.terrain[fromKey];
+  if (!w.removedPaths) w.removedPaths = [];
+  if (!w.removedPaths.includes(fromKey)) w.removedPaths.push(fromKey);
+  addPlacement(w, { kind: 'path', x0: toX, y0: toY, x1: toX, y1: toY });
+  return { ok: true, same: false, entry: { kind: 'moveGenPath', fromX, fromY, toX, toY } };
+}
+
+/** Move a GENERATED visible tree: whatever backs the tile (real tree
+ *  and/or crate, the 989 coherence rule) travels together; the source
+ *  tile is left completely empty. E-key harvest follows the entries to
+ *  the new tile with unchanged yields (crate +1, tree +2). */
+export function moveGeneratedTree(
+  w: IsoWorld,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): MoveGeneratedResult {
+  if (fromX === toX && fromY === toY) return { ok: true, same: true };
+  const treeIndex = w.trees.findIndex((t) => t.tx === fromX && t.ty === fromY);
+  const crateIndex = w.crates.findIndex((c) => c.tx === fromX && c.ty === fromY);
+  if (treeIndex < 0 && crateIndex < 0) return { ok: false, reason: 'no tree here' };
+  const preFree = edgeConnectedTiles(w);
+  let tree: { tx: number; ty: number } | null = null;
+  let crate: { tx: number; ty: number } | null = null;
+  if (treeIndex >= 0) [tree] = w.trees.splice(treeIndex, 1);
+  if (crateIndex >= 0) [crate] = w.crates.splice(crateIndex, 1);
+  const check = validatePlacement(w, 'tree', toX, toY, playerTile, npcTiles);
+  if (!check.ok) {
+    if (tree) w.trees.splice(Math.min(treeIndex, w.trees.length), 0, tree);
+    if (crate) w.crates.splice(Math.min(crateIndex, w.crates.length), 0, crate);
+    return { ok: false, reason: check.reason };
+  }
+  const entry: UndoEntry = {
+    kind: 'moveGenTree', fromX, fromY, toX, toY,
+    hasTree: tree !== null, hasCrate: crate !== null, treeIndex, crateIndex,
+  };
+  if (tree) w.trees.splice(Math.min(treeIndex, w.trees.length), 0, { tx: toX, ty: toY });
+  if (crate) w.crates.splice(Math.min(crateIndex, w.crates.length), 0, { tx: toX, ty: toY });
+  const trapped = newlyTrapped(preFree, w, playerTile, npcTiles);
+  if (trapped.player || trapped.npcs) {
+    // Roll back BEFORE any removed key is written, so a refused move
+    // leaves zero trace (the undo branch only filters arrays that
+    // already exist, so nothing is created here either).
+    applyUndo(w, entry);
+    return { ok: false, reason: trapped.player ? 'would trap you' : 'would trap a villager' };
+  }
+  const fromKey = terrainKey(fromX, fromY);
+  if (tree) {
+    if (!w.removedTrees) w.removedTrees = [];
+    if (!w.removedTrees.includes(fromKey)) w.removedTrees.push(fromKey);
+  }
+  if (crate) {
+    if (!w.removedCrates) w.removedCrates = [];
+    if (!w.removedCrates.includes(fromKey)) w.removedCrates.push(fromKey);
+  }
+  return { ok: true, same: false, entry };
 }
 
 /** True when a placed house/stall/tree blocks the tile. Placed paths
