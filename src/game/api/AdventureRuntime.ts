@@ -49,9 +49,6 @@ import {
   carriedWeight,
   carryCapacity,
   encumbranceTier,
-  type GeneratedItem,
-  type ItemQuality,
-  type ItemStats,
 } from '../items';
 import {
   findPath,
