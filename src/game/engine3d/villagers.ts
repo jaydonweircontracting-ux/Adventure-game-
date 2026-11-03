@@ -294,6 +294,19 @@ export function lightenRgb(color: Rgb, amt: number): Rgb {
  * opposite at ±ARM_SWING, whole figure bobs |sin(phase)| × WALK_BOB.
  * At a multiple of 2π the figure stands neutral (legs together, no bob).
  * Facing: yaw with forward = (sin yaw, cos yaw) in (x, z).
+ *
+ * BUILD 1002 (queue 1002) — limb placement rotates WITH the facing.
+ * The old code placed legs/boots/arms at WORLD-X offsets (cx ± legX,
+ * cx ± armX) while the boxes themselves were yaw-rotated. At yaw 0
+ * the lateral axis IS world X, so south-facing figures looked right
+ * (and every 999 probe framed mostly those) — but at any other yaw
+ * the limbs stayed spread along world X while the torso/head/eyes
+ * turned to yaw: a west-facing figure's legs collapsed into a single
+ * front-back line instead of standing side by side, which is the
+ * user's "head turned, torso sideways" photo. The fix offsets every
+ * limb along the lateral axis r = (cos yaw, −sin yaw); at yaw 0 this
+ * is byte-identical to the old placement, so the 999 south-facing
+ * look is preserved exactly.
  */
 export function emitVillager(
   out: number[],
@@ -306,13 +319,16 @@ export function emitVillager(
   const L = figureLayout(spec, child, bob);
   const legSwing = Math.sin(phase) * LEG_SWING;
   const armSwing = Math.sin(phase) * ARM_SWING;
+  // Lateral axis for limb placement (BUILD 1002 — see doc above).
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
   // Legs pivot at the hips (top of each leg box); boots share the leg
   // pivot + swing so they move with the legs, sitting proud of the
   // leg faces (no coplanar flicker) at the bottom of each leg.
-  emitBox(out, cx - L.legX, L.hipY, cz, yaw, legSwing, L.legW, -L.legH, 0, L.legD, spec.pants);
-  emitBox(out, cx + L.legX, L.hipY, cz, yaw, -legSwing, L.legW, -L.legH, 0, L.legD, spec.pants);
-  emitBox(out, cx - L.legX, L.hipY, cz, yaw, legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
-  emitBox(out, cx + L.legX, L.hipY, cz, yaw, -legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
+  emitBox(out, cx - rx * L.legX, L.hipY, cz - rz * L.legX, yaw, legSwing, L.legW, -L.legH, 0, L.legD, spec.pants);
+  emitBox(out, cx + rx * L.legX, L.hipY, cz + rz * L.legX, yaw, -legSwing, L.legW, -L.legH, 0, L.legD, spec.pants);
+  emitBox(out, cx - rx * L.legX, L.hipY, cz - rz * L.legX, yaw, legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
+  emitBox(out, cx + rx * L.legX, L.hipY, cz + rz * L.legX, yaw, -legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
   // Torso (centered, no swing) + belt at the waist + collar at the neck.
   emitBox(out, cx, (L.torsoY0 + L.torsoY1) / 2, cz, yaw, 0, L.torsoW, -L.torsoH / 2, L.torsoH / 2, L.torsoD, spec.shirt);
   emitBox(out, cx, L.hipY + L.beltH / 2, cz, yaw, 0, L.torsoW + 0.02 * L.ws, -L.beltH / 2, L.beltH / 2, L.torsoD + 0.02 * L.ws, BELT_COL);
@@ -321,15 +337,15 @@ export function emitVillager(
   // Sleeve (shirt) + forearm (skin) share one pivot and one swing, so
   // each arm stays a single piece in motion; the forearm is the arm's
   // lower 45%, ending at the same bottom as before (0.06 below hip).
-  emitBox(out, cx - L.armX, L.shoulderY, cz, yaw, -armSwing, L.armW, -L.sleeveLen, 0, L.armD, spec.shirt);
-  emitBox(out, cx + L.armX, L.shoulderY, cz, yaw, armSwing, L.armW, -L.sleeveLen, 0, L.armD, spec.shirt);
-  emitBox(out, cx - L.armX, L.shoulderY, cz, yaw, -armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
-  emitBox(out, cx + L.armX, L.shoulderY, cz, yaw, armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
+  emitBox(out, cx - rx * L.armX, L.shoulderY, cz - rz * L.armX, yaw, -armSwing, L.armW, -L.sleeveLen, 0, L.armD, spec.shirt);
+  emitBox(out, cx + rx * L.armX, L.shoulderY, cz + rz * L.armX, yaw, armSwing, L.armW, -L.sleeveLen, 0, L.armD, spec.shirt);
+  emitBox(out, cx - rx * L.armX, L.shoulderY, cz - rz * L.armX, yaw, -armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
+  emitBox(out, cx + rx * L.armX, L.shoulderY, cz + rz * L.armX, yaw, armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
   // Head (centered, no swing).
   emitBox(out, cx, (L.headY0 + L.headY1) / 2, cz, yaw, 0, L.headW, -L.headH / 2, L.headH / 2, L.headD, spec.skin);
-  // Eyes: two dark dots on the front face of the head.
-  const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  // Eyes: two dark dots on the front face of the head (rx/rz/fx/fz
+  // are the BUILD 1002 hoisted lateral/forward axes, shared with the
+  // limbs above so head, eyes, arms, and legs all face one yaw).
   const eyeY = (L.headY0 + L.headY1) / 2 + 0.02 * L.s;
   const eyeOff = L.headD / 2 + 0.006;
   const eyeLat = 0.07 * L.ws;
