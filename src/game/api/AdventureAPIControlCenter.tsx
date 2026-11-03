@@ -107,6 +107,27 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
       </div>
 
       <div style={section}>
+        <strong>NPC psychology API</strong>
+        <div style={muted}>Live test of the existing personality and mood engine. This demo NPC is sandbox-only.</div>
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+          <button style={button} onClick={() => setDemoMood(mood => runtime.npc.applyEvent(mood, { id: 'danger-' + mood.processedEvents.length, category: 'credible_danger', severity: 0.8, witnessed: true }, 'worrier'))}>Simulate danger</button>
+          <button style={button} onClick={() => setDemoMood(mood => runtime.npc.applyEvent(mood, { id: 'friendly-' + mood.processedEvents.length, category: 'friendly_conversation', severity: 0.8, witnessed: true }, 'social_butterfly'))}>Friendly conversation</button>
+          <button style={button} onClick={() => setDemoMood(mood => runtime.npc.advanceTime(mood, 2, 'worrier'))}>Advance 2 hours</button>
+          <button style={button} onClick={() => setDemoMood(runtime.npc.createMood())}>Reset demo</button>
+        </div>
+        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', background: '#0c1411', padding: 9, borderRadius: 7, color: '#d8e8d9', fontSize: 11 }}>{runtime.npc.summarize(demoMood)}</pre>
+        <div style={muted}>Processed events: {demoMood.processedEvents.length} · Valid state: {runtime.npc.validate(demoMood) ? 'yes' : 'no'}</div>
+      </div>
+
+      <div style={section}>
+        <strong>Combat geometry API</strong>
+        <div style={muted}>Using the same melee geometry and line-of-sight rules as the existing game.</div>
+        <div style={{ marginTop: 8 }}>Facing east · Adjacent target at 2 units: {runtime.combat.isAdjacent({ x: 0, y: 0 }, { x: 2, y: 0 }) ? 'in range' : 'out of range'}</div>
+        <div>Melee arc at 0.5 units: {runtime.combat.isInMeleeArc({ x: 0, y: 0 }, { x: 0.5, y: 0 }, 'right') ? 'valid' : 'miss'}</div>
+        <div>Wall blocks line of sight: {runtime.combat.isLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, point => point.x > 4 && point.x < 6) ? 'yes' : 'no'}</div>
+      </div>
+
+      <div style={section}>
         <strong>Recent typed events</strong>
         {events.length === 0 ? <p style={muted}>Advance the sandbox clock to publish events.</p> : <div style={{ display: 'grid', gap: 6, marginTop: 7 }}>
           {events.map(event => <div key={event.id} style={{ borderTop: '1px solid #344b3d', paddingTop: 6 }}>
