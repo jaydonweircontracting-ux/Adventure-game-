@@ -33,6 +33,8 @@ jobs:
         run: npm run test:adventure-api
       - name: Adventure API runtime integration regression test
         run: npm run test:adventure-api-runtime
+      - name: Adventure API live-game bridge regression test
+        run: npm run test:adventure-api-live
       - name: Isometric direction regression test
         run: npm run test:iso-directions
       - name: Isometric tile asset integrity regression test
