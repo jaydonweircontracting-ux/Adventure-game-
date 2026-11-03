@@ -25,6 +25,7 @@ import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlace
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
+import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
 
 
 type Vec3 = [number, number, number];
@@ -672,8 +673,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const [position,setPosition]=useState<Position>(()=>savedPosition(applyMosslightTownLayout(loadWorld())));
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
+  // BUILD 1003: stamina UI state (throttled publish from draw(); the
+  // authoritative value lives in staminaRef, session-only, never saved).
+  const [staminaUi,setStaminaUi]=useState<StaminaState>(FULL_STAMINA);
+  const [sprintingUi,setSprintingUi]=useState(false);
   const inventoryRef=useRef<Inventory3D>(inventory); inventoryRef.current=inventory;
   const healthRef=useRef<number>(health); healthRef.current=health;
+  // BUILD 1003: sprint hold (button or Shift key) + stamina. Session-only:
+  // staminaRef starts full on every mount and is never written to storage.
+  const sprintHeldRef=useRef(false);
+  const staminaRef=useRef<StaminaState>({...FULL_STAMINA});
+  const sprintingRef=useRef(false);
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
@@ -933,6 +943,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     let moveTarget:{x:number;y:number}|null=null;
     let gestureMoved=false,gestureStartX=0,gestureStartY=0;
     let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
+    // BUILD 1003: stamina UI publish throttle (bar updates ~10/s while
+    // draining, immediately on exhausted/sprinting flips).
+    let lastStaminaPublish=0,lastStaminaInt=STAMINA_MAX,lastExhaustedPub=false,lastSprintingPub=false;
     let walkingNow=false;
     // BUILD 994: per-figure walk state (player + NPCs). Session-only
     // render state, never saved: last tile center, facing yaw, walk
@@ -1043,7 +1056,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     };
     const wheel=(e:WheelEvent)=>{e.preventDefault();applyZoom(e.deltaY*.012);};
     const keys=new Set<string>();
-    const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
+    const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' ','shift'].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
     // BUILD 989 refinement: Remove targeting. (1) TAP TOLERANCE — taps
     // snap via findRemovableNear (1.5 tiles), so a fat-finger tap next
@@ -1367,8 +1380,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         moveDy=(held.includes('s')||held.includes('arrowdown')?1:0)-(held.includes('w')||held.includes('arrowup')?1:0);
         hasInput=moveDx!==0||moveDy!==0;
       }
+      // BUILD 1003: sprint multiplies speed INSIDE this same pipeline —
+      // same step, same walkableAt checks, same wall sliding. Hold =
+      // Sprint button or Shift key; exhausted forces walk.
+      const sprintHeld=sprintHeldRef.current||keys.has('shift');
+      const sprintingNow=sprintHeld&&!staminaRef.current.exhausted&&hasInput;
+      // Position before this frame's step, so stamina can tell real
+      // displacement from a zero-displacement slide (see below).
+      const prevMoveX=player.x,prevMoveY=player.y;
       if(hasInput){
-        const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,3.15*dt);
+        const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,(sprintingNow?SPRINT_SPEED:WALK_SPEED)*dt);
         const nx=player.x+moveDx/dist*step,ny=player.y+moveDy/dist*step;
         if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
         else{
@@ -1383,6 +1404,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
         if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
       }
+      // BUILD 1003: stamina ticks every frame, even idle (regen) — drain
+      // only on ACTUAL displacement (stepStamina's rule). walkingNow
+      // alone is not enough: a straight-line push against a wall or a
+      // slower figure takes the no-op slide branch (same tile, flag
+      // still true), which must NOT drain — the player took no benefit.
+      // Caught by the 1004 probes: stamina drained steadily while the
+      // player was stuck behind an eastbound traveler at ~1.1 u/s.
+      // Session-only: staminaRef is never written to storage.
+      const actuallyMoved=player.x!==prevMoveX||player.y!==prevMoveY;
+      const nextStamina=stepStamina(staminaRef.current,dt,sprintHeld,actuallyMoved);
+      staminaRef.current=nextStamina;sprintingRef.current=sprintingNow&&actuallyMoved;
+      const nextStaminaInt=Math.round(nextStamina.stamina);
+      if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);}
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
       player=stateRef.current.position;
@@ -1600,6 +1634,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // name uniqueness, or slot uniqueness), and force a bark line
       // (bypasses cooldowns, range, and the day rule so probes can
       // prove delivery; the standalone asserts prove eligibility).
+      // BUILD 1003 test hooks (probes only — no gameplay effect):
+      // stamina read, sprint hold, and whether this frame sprint-moves.
+      getStamina:()=>({...staminaRef.current}),
+      setSprintHeld:(v:boolean)=>{sprintHeldRef.current=v;},
+      getSprinting:()=>sprintingRef.current,
+      // Probe-only: drop a stale tap destination so key-based probe runs
+      // are not overridden by an earlier tap (no gameplay effect — taps
+      // only ever set moveTarget from the canvas handler).
+      clearMoveTarget:()=>{moveTarget=null;},
       getTransients:()=>transientActorsRef.current.map(t=>({id:t.id,kind:t.kind,name:t.name,x:t.x,y:t.y,state:t.state,slotId:t.slotId,exit:t.exit})),
       spawnTransient:(kind:'traveler'|'adventurer')=>{const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
@@ -1797,7 +1840,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
-    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>{firstPersonOn?'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door':'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door'}</div></div>
+    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div>{/* BUILD 1003: stamina HUD — bar + number, green normally, red + "Tired" while exhausted. */}<div style={{marginTop:3}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:120,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired — walk to recover':''}</div><div style={{opacity:.8,marginTop:3}}>{firstPersonOn?'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint':'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint'}</div></div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
         First person now engages on full zoom; its setting lives in the
@@ -1819,6 +1862,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     {!buildOpen&&(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(walkToolLabel()?'Resume '+walkToolLabel():'Resume'):'Walk'}</button>}
     {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
     {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
+    {/* BUILD 1003: Sprint — HOLD to sprint (button or Shift key). Next
+        slot in the fixed right-side stack (Build 14 / Walk 76 / Undo
+        138 / Redo 200 / Sprint 262, same 62px step) so it never shifts
+        and never collides: no clash with Build, Enter/Exit (center
+        bottom 110), or the message box (bottom-left). Rendered always
+        in normal play; when the Build panel is open it sits under the
+        panel (later in DOM, same zIndex) — minimize to reach it, same
+        as the rest of the cluster. Pointer capture so a sliding finger
+        still releases cleanly; green while sprint-moving, dimmed +
+        "Tired" while exhausted (forced walk until 25 stamina). */}
+    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{e.currentTarget.setPointerCapture(e.pointerId);sprintHeldRef.current=true;}} onPointerUp={()=>{sprintHeldRef.current=false;}} onPointerCancel={()=>{sprintHeldRef.current=false;}} onLostPointerCapture={()=>{sprintHeldRef.current=false;}} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:sprintingUi?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':'Sprint'}</button>
     {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
         house door is within one tile (nearest door wins); Exit shows
         only while inside. Centered at bottom:110 — clear of the
