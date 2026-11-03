@@ -8,3 +8,12 @@ export {
   type AdventureSystemDomain,
   type AdventureSystemEntry,
 } from './AdventureAPI';
+export {
+  createAdventureRuntime,
+  type AdventureRuntime,
+  type AdventureRuntimeOptions,
+  type AdventureWorldService,
+  type AdventureTerrainService,
+  type AdventureCivilizationService,
+  type AdventureGraphicsService,
+} from './AdventureRuntime';
