@@ -96,6 +96,23 @@ export const FP_PITCH_MAX = 1.0;
 export const ZOOM_MIN = 4;
 export const ZOOM_MAX = 32;
 export const ZOOM_HYST = 1.5;
+/** BUILD 1002 — view-distance constants (see Engine3DWorldView).
+ * The detailed 45x45 ground window ends 22 tiles out, but the visible
+ * ground reaches ~79 tiles at default orbit zoom and ~150 at max
+ * zoom-out, and past the 200x200 map edge there is no ground at all —
+ * so the sky quad showed through as empty area. VIEW_FAR_PLANE is the
+ * projection far plane (was 200: at minimum orbit pitch the horizon
+ * ray runs past 200, leaving a sky strip under the horizon line).
+ * VIEW_BAND_HALF/CELL is the coarse fog-bridging ground band around
+ * the window (its cells overlap the window and hide under real ground
+ * at y=-0.02, so no stitching math is needed), and VIEW_APRON_HALF is
+ * the single horizon-coloured quad under everything at y=-0.03. The
+ * apron half-size exceeds far plane + max camera offset (300 + 32),
+ * so every ground point the frustum can reach is covered. */
+export const VIEW_FAR_PLANE = 300;
+export const VIEW_BAND_HALF = 35;
+export const VIEW_BAND_CELL = 4;
+export const VIEW_APRON_HALF = 340;
 
 /** Steep roof rise as a fraction of the cross-axis span. rise/run = 0.9,
  *  i.e. a ~42 degree pitch, matching the reference's steep roofs. */

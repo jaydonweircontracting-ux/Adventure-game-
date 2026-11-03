@@ -10,6 +10,7 @@ import {
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
+  VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_APRON_HALF,
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import {
@@ -47,9 +48,13 @@ const COLORS: Record<string, Vec3> = {
 // built first and measured a real town FPS regression in SwiftShader
 // (wider wedge = more triangles surviving frustum clipping), so the
 // step was cut to 66, the largest step that holds FPS at baseline.
-// The ground window stays 45x45 — at default zoom + street view the
-// window still covers the visible ground (verified by screenshot);
-// the new distance fog softens the far window edge instead of a hard
+// The ground window stays 45x45 — but BUILD 1002 proved by probe that
+// it does NOT cover the visible ground: at max zoom-out the top of
+// the frame showed sky where ground should be, an open field rendered
+// as a floating mesa, and past the map edge half the frame was sky.
+// The window is kept (detail where it matters); the new band + apron
+// underlays in buildWorldVertices carry ground to the horizon, and
+// the distance fog softens the far window edge instead of a hard
 // cutoff.
 export const WORLD_FOV_DEG = 66;
 export const WORLD_FOV_RAD = (WORLD_FOV_DEG * Math.PI) / 180;
@@ -286,7 +291,9 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // distance from the build centre (the player position at rebuild
   // time), smoothstep FOG_NEAR..FOG_FAR. Zero per-frame cost — the
   // shader stays trivial — and the 45x45 window edge reads as haze
-  // instead of a hard cutoff, at any orbit zoom. Cost of baking: the
+  // instead of a hard cutoff. BUILD 1002: the band + apron underlays
+  // below continue that fade past the window edge out to the horizon,
+  // so the fog no longer ends at a geometry edge. Cost of baking: the
   // fog centre goes stale as the player walks (rebuilds recentre it
   // every >8 tiles), so far-field haze shifts subtly on rebuild; near
   // field (<=14 tiles) is always unfogged, so nothing the player looks
@@ -360,6 +367,40 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         }
       }
     }
+  }
+  // BUILD 1002 — far ground: the detailed window above ends 22 tiles
+  // out, but the visible ground reaches ~79 tiles at default orbit
+  // zoom and ~150 at max zoom-out, and past the 200x200 map edge there
+  // is no window at all (the map-edge probe showed half the frame as
+  // sky). Two underlays close that gap, both centred on the build
+  // centre (NOT clamped to the map) so they cover the map exterior
+  // too, and both below real ground so depth hides them wherever the
+  // window exists — no stitching math, no gameplay effect:
+  // (a) a coarse band of VIEW_BAND_CELL-tile cells out to
+  // VIEW_BAND_HALF, terrain-sampled at each cell centre (roads and
+  // fields continue coarsely past the window) and fogged per vertex
+  // by the same tri(), so the 50%-hazed window edge blends out to
+  // full haze at FOG_FAR instead of stopping at a hard line. The band
+  // square deliberately overlaps the window (35 > 22 + the 8-tile
+  // rebuild staleness), so a stale window edge still sits on band.
+  // (b) a single apron quad out to VIEW_APRON_HALF at y=-0.03. Its
+  // corners sit far past FOG_FAR, so tri() fogs them to exactly
+  // SKY_HORIZON and the whole apron is uniform horizon colour — the
+  // same colour as the bottom of the sky gradient — so the horizon
+  // reads as hazy ground fading into sky, never as a cutoff. Cost:
+  // ~2k vertices on a ~65k-vertex world buffer, one rebuild only.
+  {
+    const bx0=Math.floor(center.x)-VIEW_BAND_HALF, bx1=Math.floor(center.x)+VIEW_BAND_HALF;
+    const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
+    for(let y=by0;y<=by1;y+=VIEW_BAND_CELL) for(let x=bx0;x<=bx1;x+=VIEW_BAND_CELL){
+      const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
+      const sx=x+Math.floor(w/2), sy=y+Math.floor(d/2);
+      const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
+      quad([x,-.02,y],[x+w,-.02,y],[x+w,-.02,y+d],[x,-.02,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+    }
+    const ax0=Math.floor(center.x)-VIEW_APRON_HALF, ax1=Math.floor(center.x)+VIEW_APRON_HALF+1;
+    const az0=Math.floor(center.y)-VIEW_APRON_HALF, az1=Math.floor(center.y)+VIEW_APRON_HALF+1;
+    quad([ax0,-.03,az0],[ax1,-.03,az0],[ax1,-.03,az1],[ax0,-.03,az1],COLORS.grass);
   }
   // BUILD 986: houseBox moved above the stall loop so the shared tree
   // renderer below can serve stalls and crates too (same scope, same
@@ -1366,16 +1407,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const ex=targetX+Math.sin(yaw)*horizontal,ez=targetZ+Math.cos(yaw)*horizontal,ey=targetY+zoom*Math.sin(pitch);
       // BUILD 983 first-person camera: eye-level camera at the player,
       // looking along yaw with a slight up/down look pitch (yaw 0 faces
-      // north). Far plane 200 so distant terrain stays inside the
-      // frustum. BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
+      // north). BUILD 1002: far plane VIEW_FAR_PLANE (300, was 200):
+      // at minimum orbit pitch the horizon ray runs past 200, leaving
+      // a sky strip under the horizon line; 300 keeps ground inside
+      // the frustum out to the horizon at every zoom and pitch.
+      // BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
       // level gaze by default (lookPitch starts 0).
       // BUILD 992: turning first-person-auto OFF while in first person
       // drops back to orbit at the minimum distance (the zoom handlers
       // alone cannot see the toggle flip).
       if(firstPersonRef.current&&!fpAutoRef.current){firstPersonRef.current=false;setFirstPersonOn(false);zoom=ZOOM_MIN;}
       const mat=firstPersonRef.current
-        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([targetX,FIRST_PERSON_EYE,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,FIRST_PERSON_EYE+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
-        : mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
+        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,VIEW_FAR_PLANE),lookAt([targetX,FIRST_PERSON_EYE,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,FIRST_PERSON_EYE+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
+        : mul(perspective(WORLD_FOV_RAD,w/h,.1,VIEW_FAR_PLANE),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       // BUILD 988: no per-frame getError() here — it is a known
