@@ -43,12 +43,6 @@ import {
   trackStep,
   validateDestination,
   isOnFieldRoad,
-  type NavPoint,
-  type NavPath,
-  type DoorwayLink,
-  type ObstacleRect,
-  type StepResult,
-  type TrackStepResult,
 } from '../npcNavigation';
 import {
   getDirection,
