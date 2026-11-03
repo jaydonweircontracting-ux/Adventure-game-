@@ -67,7 +67,7 @@ export default function AdventureAPIControlCenter({ onClose }: { onClose: () => 
           <button style={button} onClick={() => advance(1)}>+1 tick</button>
           <button style={button} onClick={() => advance(6)}>+1 hour</button>
           <button style={button} onClick={() => advance(144)}>+1 day</button>
-          <select aria-label="Simulation speed" value={speed} onChange={event => setSimulationSpeed(event.target.value)} style={{ background: '#202d28', color: 'white', border: '1px solid #53685c', borderRadius: 7, padding: 8 }}>
+          <select aria-label="Simulation speed" value={speed} onChange={event => setSimulationSpeed(Number(event.target.value))} style={{ background: '#202d28', color: 'white', border: '1px solid #53685c', borderRadius: 7, padding: 8 }}>
             {[0, 1, 2, 5, 10, 50, 100, 1000].map(value => <option key={value} value={value}>{value}× speed</option>)}
           </select>
         </div>
