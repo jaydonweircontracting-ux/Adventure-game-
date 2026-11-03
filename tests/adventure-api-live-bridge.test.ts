@@ -17,8 +17,11 @@ const bridge = createAdventureLiveBridge({
   civilization: () => civilization,
 });
 
-assert.equal(bridge.api.getSystemCount(), 11);
+assert.equal(bridge.api.getSystemCount(), 12);
 assert.equal(bridge.api.hasSystem('world.live'), true);
+assert.equal(bridge.api.hasSystem('world.terrain'), true);
+const terrain = bridge.api.requireSystem<{ sample: (x: number, y: number) => { moisture: number } }>('world.terrain');
+assert.ok(Number.isFinite(terrain.sample(12, 18).moisture));
 assert.equal(bridge.api.hasSystem('player.live'), true);
 assert.equal(bridge.api.hasSystem('npc.roster.live'), true);
 assert.equal(bridge.api.hasSystem('inventory.live'), true);
