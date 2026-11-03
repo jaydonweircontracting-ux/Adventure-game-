@@ -21,3 +21,6 @@ export {
   type AdventureItemService,
   type AdventureCombatService,
 } from './AdventureRuntime';
+
+export { createAdventureLiveBridge } from './AdventureLiveBridge';
+export type { AdventureLiveBridge, AdventureLiveProviders, AdventureLiveSnapshot } from './AdventureLiveBridge';
