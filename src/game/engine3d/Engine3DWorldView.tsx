@@ -452,20 +452,54 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // the neighbouring layers (band square covers [cx-64, cx+65), so
   // the far ring's inner hole is that same interval).
   {
+    // BUILD 1008 — dirt subdivision for far cells. A far cell used to
+    // render dirt only when its CENTRE tile happened to be dirt, so
+    // 1-2-tile roads dissolved into grass at distance (corner probes
+    // on 1007: 0/11 and 0/12 dirt on the open-country road past 64
+    // tiles, placed-path span only 37/102 dirt at 120 tiles). Cells
+    // containing ANY dirt tile are now subdivided into per-row runs
+    // of equal terrain — dirt runs render as dirt, the rest as their
+    // own terrain — all at the same ring y, non-overlapping (the
+    // 1007 ring philosophy applied within a cell, so no z-fighting
+    // at any range). Cells with no dirt keep the single
+    // centre-sampled quad (fast path, pixel-identical to before).
+    // Dirt can only exist inside the map (terrainAt falls back to
+    // grass outside it, placed paths are bounds-checked), so the
+    // dirt scan is clipped to the cell ∩ map rectangle — far cells
+    // outside the map skip the scan entirely.
+    const quadCellDirt=(x0:number,x1:number,y0:number,y1:number,y:number)=>{
+      const sx0=Math.max(x0,0), sx1=Math.min(x1,world.w-1), sy0=Math.max(y0,0), sy1=Math.min(y1,world.h-1);
+      let hasDirt=false;
+      for(let yy=sy0;yy<=sy1&&!hasDirt;yy++) for(let xx=sx0;xx<=sx1;xx++) if(effTerrain(xx,yy)==='dirt'){hasDirt=true;break;}
+      if(!hasDirt){
+        const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
+        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
+        quad([x0,y,y0],[x1+1,y,y0],[x1+1,y,y1+1],[x0,y,y1+1],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+        return;
+      }
+      for(let yy=y0;yy<=y1;yy++){
+        let runStart=x0, runT=effTerrain(x0,yy);
+        for(let xx=x0+1;xx<=x1+1;xx++){
+          const t=xx<=x1?effTerrain(xx,yy):null;
+          if(t!==runT){
+            const mid=runStart+Math.floor((xx-runStart)/2);
+            const bc=COLORS[runT]||COLORS.grass, tint=groundTintDelta(runT,mid,yy);
+            quad([runStart,y,yy],[xx,y,yy],[xx,y,yy+1],[runStart,y,yy+1],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+            runStart=xx; runT=t!;
+          }
+        }
+      }
+    };
     const bx0=Math.floor(center.x)-VIEW_BAND_HALF, bx1=Math.floor(center.x)+VIEW_BAND_HALF;
     const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
     for(let y=by0;y<=by1;y+=VIEW_BAND_CELL) for(let x=bx0;x<=bx1;x+=VIEW_BAND_CELL){
       const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
-      const sx=x+Math.floor(w/2), sy=y+Math.floor(d/2);
-      const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
-      quad([x,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y+d],[x,VIEW_BAND_Y,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+      quadCellDirt(x,x+w-1,y,y+d-1,VIEW_BAND_Y);
     }
     const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number)=>{
       for(let yy=y0;yy<=y1;yy+=cell) for(let xx=x0;xx<=x1;xx+=cell){
         const w=Math.min(cell,x1+1-xx), d=Math.min(cell,y1+1-yy);
-        const sx=xx+Math.floor(w/2), sy=yy+Math.floor(d/2);
-        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
-        quad([xx,y,yy],[xx+w,y,yy],[xx+w,y,yy+d],[xx,y,yy+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+        quadCellDirt(xx,xx+w-1,yy,yy+d-1,y);
       }
     };
     const fillRing=(inner:number,outer:number,cell:number,y:number)=>{
@@ -751,6 +785,21 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
+  // BUILD 1008 NOTE (lines removed): a gl.LINES centreline overlay
+  // was prototyped here and then REMOVED before shipping. The reason
+  // is verification, not geometry: in the SwiftShader harness
+  // gl.LINES draws nothing at all (isolated test: 0 red line pixels
+  // vs 40,841 green triangle pixels from the same buffer layout), so
+  // a line overlay cannot be browser-proven in this harness, and
+  // shipping an unverifiable renderer path is a guess-build. The
+  // subdivision below is the shipped mechanism, and it IS sufficient:
+  // with antialias:true the 0.27-row dirt strip at 120 tiles blends
+  // into a continuous ~24% dirt tint band (row 294 of the placed-line
+  // far view: 37 tint pixels across the full x144-245 span, vs pure
+  // grass on neighbouring rows), and at phone DPR 3 the same strip
+  // covers ~0.81 rows (~81% blend). A line overlay would only help
+  // where the tint band already reads; it is not worth an unverified
+  // draw path. If a future harness has a real GPU, revisit.
   return new Float32Array(data);
 }
 
@@ -1571,7 +1620,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
       // the player moves >8 tiles from the last build centre.
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
-      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,built);worldVertCount=built.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // Sky gradient pass (identity matrix, depth off), then the world.
       gl.disable(gl.DEPTH_TEST);
