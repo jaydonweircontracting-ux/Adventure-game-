@@ -10,8 +10,8 @@ import {
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
-  VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_FAR_BAND_HALF, VIEW_FAR_BAND_CELL, VIEW_APRON_HALF,
-  VIEW_BAND_Y, VIEW_FAR_BAND_Y, VIEW_APRON_Y,
+  VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_FAR_BAND_HALF, VIEW_FAR_BAND_CELL, VIEW_HORIZON_BAND_HALF, VIEW_HORIZON_BAND_CELL, VIEW_APRON_HALF,
+  VIEW_BAND_Y, VIEW_FAR_BAND_Y, VIEW_HORIZON_BAND_Y, VIEW_APRON_Y,
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import {
@@ -72,8 +72,25 @@ export const WORLD_FOV_RAD = (WORLD_FOV_DEG * Math.PI) / 180;
 // fogs the town itself out. (Before 1005: 14..30 — everything past
 // 30 tiles was fully hazed, so visible land effectively ended at the
 // ±35 band even though ground geometry reached the horizon.)
-export const FOG_NEAR = 120;
-export const FOG_FAR = 240;
+// BUILD 1007 — "unlimited" view: the world is 200x200, so the
+// farthest real object is ~282 tiles from any viewpoint. Fog stays
+// crisp across the ENTIRE world (<=300) and only fades on the plains
+// beyond the map (300..600), reaching full horizon colour exactly
+// where ground meets sky. Nothing real is ever hazed out.
+// BUILD 1007 — far shadow-blob range: house contact shadows are
+// ground decals 0.005-0.008 above the ground plane, the detail most
+// prone to depth fighting at range (24-bit resolution at camera
+// distance d is ~d^2 x 6e-7 with near plane 0.1, so a 0.005 offset
+// stops resolving past ~91 tiles of camera distance). Blobs render
+// only within 150 tiles of the build centre: that covers every
+// in-town view (farthest in-town hut is ~139 tiles from any in-town
+// viewpoint), and cross-map views drop a decal that would be a
+// couple of dark pixels under a ~10px house anyway. The far-house
+// shimmer probe (see verify1007) measures what residual flicker, if
+// any, remains on distant houses.
+export const FOG_NEAR = 300;
+export const FOG_FAR = 600;
+export const FAR_BLOB_RANGE = 150;
 type Position = { x: number; y: number };
 
 // BUILD 990: interior occupancy is session-only. A saved tile strictly
@@ -323,11 +340,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // so the fog no longer ends at a geometry edge. Cost of baking: the
   // fog centre goes stale as the player walks (rebuilds recentre it
   // every >8 tiles), so far-field haze shifts subtly on rebuild; near
-  // field (<=120 tiles, BUILD 1005) is always unfogged, so nothing the
-  // player looks at ever pops — and 8 tiles of staleness is only 3%
-  // of the 240-tile fog range now, far less visible than at 1002's
-  // 30-tile range. A shader-side fog was measured first and cost
-  // frames in SwiftShader, so it was replaced by this baked form.
+  // field (<=300 tiles, BUILD 1007) is always unfogged — the whole
+  // world stays crisp, and only the plains beyond the map fade — and
+  // 8 tiles of staleness is under 3% of the 300-tile fog range, far
+  // less visible than at 1002's 30-tile range. A shader-side fog was
+  // measured first and cost frames in SwiftShader, so it was replaced
+  // by this baked form. NOTE: figures are NOT fogged (see the actor
+  // section) — deliberate, so people stay visible at range.
   const fogAt = (x: number, z: number) => {
     const d = Math.hypot(x - (center.x + .5), z - (center.y + .5));
     const t = Math.min(1, Math.max(0, (d - FOG_NEAR) / (FOG_FAR - FOG_NEAR)));
@@ -402,31 +421,36 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // zoom and ~150 at max zoom-out, and past the 200x200 map edge there
   // is no window at all (the map-edge probe showed half the frame as
   // sky). Underlays close that gap, all centred on the build centre
-  // (NOT clamped to the map) so they cover the map exterior too, and
-  // all below real ground so depth hides them wherever the window
-  // exists — no stitching math, no gameplay effect:
+  // (NOT clamped to the map) so they cover the map exterior too.
   // (a) a coarse band of VIEW_BAND_CELL-tile cells out to
   // VIEW_BAND_HALF, terrain-sampled at each cell centre (roads and
   // fields continue coarsely past the window) and fogged per vertex
   // by the same tri(). The band square deliberately overlaps the
   // window (64 > 22 + the 8-tile rebuild staleness), so a stale
-  // window edge still sits on band.
+  // window edge still sits on band. That overlap is safe: at <=64
+  // tiles, 24-bit depth resolution (<=0.0024) is far under the 0.02
+  // layer separation.
   // BUILD 1005 — (b) a far band of VIEW_FAR_BAND_CELL-tile cells out
-  // to VIEW_FAR_BAND_HALF (240), the full view distance, sampled the
-  // same way (terrainAt falls back to grass past the 200x200 map, so
-  // the plains correctly continue to the horizon). Graduated cells
-  // keep the vertex budget bounded: 1089 near quads + 961 far quads
-  // (edge slivers included — the loops run to the half-size inclusive
-  // so no 1-tile gap ring is left at any square edge).
-  // (c) a single apron quad out to VIEW_APRON_HALF at VIEW_APRON_Y.
-  // Its corners sit far past FOG_FAR, so tri() fogs them to exactly
-  // SKY_HORIZON and the whole apron is uniform horizon colour — the
-  // same colour as the bottom of the sky gradient — so the horizon
-  // reads as hazy ground fading into sky, never as a cutoff. Layer
-  // order is strictly monotonic (window 0 > band > far band > apron);
-  // the far-band/apron boundary sits at FOG_FAR where both are exactly
-  // horizon colour, so even a depth tie there would be invisible.
-  // Cost: ~12.3k vertices on a ~65k-vertex world buffer, one rebuild.
+  // to VIEW_FAR_BAND_HALF (240), sampled the same way (terrainAt
+  // falls back to grass past the 200x200 map, so the plains correctly
+  // continue to the horizon). Graduated cells keep the vertex budget
+  // bounded: 1089 near quads + 961 far quads (edge slivers included).
+  // BUILD 1007 — far ground as NON-OVERLAPPING rings. At 300+ tiles,
+  // depth resolution (~d^2 x 6e-7, near plane 0.1) exceeds the old
+  // 0.02-0.05 layer separations, so overlapping far layers WOULD
+  // z-fight. Instead each far layer owns an exclusive ring of the
+  // plane (adjacent rects, shared edges, no shared area): far ring
+  // (64,240] at 16-tile cells, horizon ring (240,600] at 64-tile
+  // cells, apron ring (600,1000] as 4 quads. Rings cannot fight at
+  // any range because no two layers occupy the same ground point;
+  // the y values stay monotonic as belt-and-braces. The apron ring's
+  // vertices all sit past FOG_FAR, so tri() fogs them to exactly
+  // SKY_HORIZON — uniform horizon colour meeting the sky gradient's
+  // horizon colour, never a cutoff. Cell convention: fillCells takes
+  // INCLUSIVE tile bounds and covers continuous [x0, x1+1), exactly
+  // like the old square loops, so ring edges tile exactly against
+  // the neighbouring layers (band square covers [cx-64, cx+65), so
+  // the far ring's inner hole is that same interval).
   {
     const bx0=Math.floor(center.x)-VIEW_BAND_HALF, bx1=Math.floor(center.x)+VIEW_BAND_HALF;
     const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
@@ -436,17 +460,30 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
       quad([x,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y],[x+w,VIEW_BAND_Y,y+d],[x,VIEW_BAND_Y,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
     }
-    const fx0=Math.floor(center.x)-VIEW_FAR_BAND_HALF, fx1=Math.floor(center.x)+VIEW_FAR_BAND_HALF;
-    const fy0=Math.floor(center.y)-VIEW_FAR_BAND_HALF, fy1=Math.floor(center.y)+VIEW_FAR_BAND_HALF;
-    for(let y=fy0;y<=fy1;y+=VIEW_FAR_BAND_CELL) for(let x=fx0;x<=fx1;x+=VIEW_FAR_BAND_CELL){
-      const w=Math.min(VIEW_FAR_BAND_CELL,fx1+1-x), d=Math.min(VIEW_FAR_BAND_CELL,fy1+1-y);
-      const sx=x+Math.floor(w/2), sy=y+Math.floor(d/2);
-      const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
-      quad([x,VIEW_FAR_BAND_Y,y],[x+w,VIEW_FAR_BAND_Y,y],[x+w,VIEW_FAR_BAND_Y,y+d],[x,VIEW_FAR_BAND_Y,y+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+    const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number)=>{
+      for(let yy=y0;yy<=y1;yy+=cell) for(let xx=x0;xx<=x1;xx+=cell){
+        const w=Math.min(cell,x1+1-xx), d=Math.min(cell,y1+1-yy);
+        const sx=xx+Math.floor(w/2), sy=yy+Math.floor(d/2);
+        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
+        quad([xx,y,yy],[xx+w,y,yy],[xx+w,y,yy+d],[xx,y,yy+d],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+      }
+    };
+    const fillRing=(inner:number,outer:number,cell:number,y:number)=>{
+      const cx=Math.floor(center.x), cy=Math.floor(center.y);
+      fillCells(cx-outer,cx+outer,cy+inner+1,cy+outer,cell,y);
+      fillCells(cx-outer,cx+outer,cy-outer,cy-inner-1,cell,y);
+      fillCells(cx-outer,cx-inner-1,cy-inner,cy+inner,cell,y);
+      fillCells(cx+inner+1,cx+outer,cy-inner,cy+inner,cell,y);
+    };
+    fillRing(VIEW_BAND_HALF,VIEW_FAR_BAND_HALF,VIEW_FAR_BAND_CELL,VIEW_FAR_BAND_Y);
+    fillRing(VIEW_FAR_BAND_HALF,VIEW_HORIZON_BAND_HALF,VIEW_HORIZON_BAND_CELL,VIEW_HORIZON_BAND_Y);
+    {
+      const cx=Math.floor(center.x), cy=Math.floor(center.y), A=VIEW_APRON_HALF, I=VIEW_HORIZON_BAND_HALF, y=VIEW_APRON_Y;
+      quad([cx-A,y,cy+I+1],[cx+A+1,y,cy+I+1],[cx+A+1,y,cy+A+1],[cx-A,y,cy+A+1],COLORS.grass);
+      quad([cx-A,y,cy-A],[cx+A+1,y,cy-A],[cx+A+1,y,cy-I],[cx-A,y,cy-I],COLORS.grass);
+      quad([cx-A,y,cy-I],[cx-I,y,cy-I],[cx-I,y,cy+I+1],[cx-A,y,cy+I+1],COLORS.grass);
+      quad([cx+I+1,y,cy-I],[cx+A+1,y,cy-I],[cx+A+1,y,cy+I+1],[cx+I+1,y,cy+I+1],COLORS.grass);
     }
-    const ax0=Math.floor(center.x)-VIEW_APRON_HALF, ax1=Math.floor(center.x)+VIEW_APRON_HALF+1;
-    const az0=Math.floor(center.y)-VIEW_APRON_HALF, az1=Math.floor(center.y)+VIEW_APRON_HALF+1;
-    quad([ax0,VIEW_APRON_Y,az0],[ax1,VIEW_APRON_Y,az0],[ax1,VIEW_APRON_Y,az1],[ax0,VIEW_APRON_Y,az1],COLORS.grass);
   }
   // BUILD 986: houseBox moved above the stall loop so the shared tree
   // renderer below can serve stalls and crates too (same scope, same
@@ -487,8 +524,9 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // counter cubes. Stall data + collision are untouched; only the mesh
   // changes. User-PLACED stalls keep the brown counter cube below — a
   // deliberate Build-panel choice is never silently converted.
-  for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) treeAt(x,stall.y0);
-  for(const stall of placedStallRects(world)) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  // BUILD 1007: stalls render at whole-world range (were window-culled).
+  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) treeAt(x,stall.y0);
+  for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
   // BUILD 997: uploaded custom meshes — static vertex-colour
   // triangles in the world buffer (like placed stalls, not the
   // per-frame actor buffer: uploads never move on their own). Mesh
@@ -496,8 +534,8 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // the mesh centres on the placement rect's centre. A placement
   // whose asset is gone renders nothing (delete removes copies
   // first, so this is defensive only).
+  // BUILD 1007: custom assets render at whole-world range (were window-culled).
   for(const p of (world.placements??[])) if(p.kind==='custom'){
-    if(p.x1<minX||p.x0>maxX||p.y1<minY||p.y0>maxY)continue;
     const asset=customAssets.find(a=>a.id===p.assetId);if(!asset)continue;
     const ccx=(p.x0+p.x1+1)/2,ccz=(p.y0+p.y1+1)/2;
     for(let i=0;i<asset.indices.length;i+=3){
@@ -548,9 +586,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     }
   };
   const warmTint=(c:Vec3):Vec3=>[Math.min(1,c[0]*1.04),Math.min(1,c[1]*1.0),Math.min(1,c[2]*.94)];
+  // BUILD 1007: houses render at whole-world range (were window-culled
+  // — even in-town views were missing houses past 22 tiles).
   for(const hut of [...world.huts, ...placedHutRects(world)]) {
-    if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
+    const hutDist=Math.hypot(x-(center.x+.5),z-(center.y+.5));
     // BUILD 990 shell-hide overlay: the entered house renders its
     // generated interior INSTEAD of its shell — no walls, roof,
     // windows, chimney, or shadow blobs. Only this hut (rect match);
@@ -585,8 +625,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const spanA=face==='south'||face==='north'?w:d;
     // Soft contact shadow + sun-side blob (no shadow maps in this
     // renderer; darkened ground quads ground the volumes instead).
-    quad([x-w/2-.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z+d/2+.45+.35],[x-w/2-.45+.25,.005,z+d/2+.45+.35],[.28,.27,.24]);
-    quad([x-w/2-.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z+d/2+.15+.15],[x-w/2-.15+.12,.008,z+d/2+.15+.15],[.2,.19,.17]);
+    // BUILD 1007: blobs gated to FAR_BLOB_RANGE — cross-map views drop
+    // a decal that would be a couple of dark pixels under a ~10px house.
+    if(hutDist<=FAR_BLOB_RANGE){
+      quad([x-w/2-.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z+d/2+.45+.35],[x-w/2-.45+.25,.005,z+d/2+.45+.35],[.28,.27,.24]);
+      quad([x-w/2-.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z+d/2+.15+.15],[x-w/2-.15+.12,.008,z+d/2+.15+.15],[.2,.19,.17]);
+    }
     // Stone ground floor + mortar joints on all faces.
     houseBox(x,z,w,GROUND_FLOOR_H,d,0,design.stone);
     (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d));
@@ -682,7 +726,8 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       quad([chX-.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ+.19],[chX-.19,ridgeY+.8,chZ+.19],[.15,.14,.12]);
     }
   }
-  for(const t of [...world.trees, ...placedTreeTiles(world)]) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
+  // BUILD 1007: trees render at whole-world range (were window-culled).
+  for(const t of [...world.trees, ...placedTreeTiles(world)]) {
     // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
     // tiers) instead of the old single green cube. Visual only — same
     // tile, same collision, same positions. BUILD 986: now the shared
@@ -697,11 +742,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // quads, before rocks/crates (draw order is irrelevant — one buffer).
   emitNaturalGrass(triV, world, effTerrain, minX, maxX, minY, maxY);
   emitPlacedGrass(triV, world, minX, maxX, minY, maxY);
-  for(const r of world.rocks) if(r.tx>=minX&&r.tx<=maxX&&r.ty>=minY&&r.ty<=maxY) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
+  // BUILD 1007: rocks + crates render at whole-world range (were window-culled).
+  for(const r of world.rocks) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
   // BUILD 986: generated/authored crates + layout prop placeholders render
   // as 983 trees, not brown cubes. Data untouched — the wood interaction
   // still finds and removes the crate entry (see the E-key handler).
-  for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) treeAt(c.tx,c.ty);
+  for(const c of world.crates) treeAt(c.tx,c.ty);
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
@@ -1552,6 +1598,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // coverage reaches 340 - 32 = 308, so 300 sits inside [280, 308]
       // with margin both sides; raising it would only coarsen depth
       // precision at 240 tiles.
+      // BUILD 1007: far plane is 700. Two coverings, both measured:
+      // (1) worst camera-to-farthest-real-object is 282 (map diagonal)
+      // + 32 (max orbit radius) = 314, far under 700; (2) the clip edge
+      // must sit past the fog-full distance, or hazed-green ground
+      // would end visibly against sky: worst clip-edge distance from
+      // the build centre is 700 - 32 - 8 = 660, past FOG_FAR 600, so
+      // the clipped edge is always uniform horizon colour. Apron
+      // coverage 1000 - 32 = 968 > 700, so the apron always extends
+      // past the far plane. Depth precision at a given distance
+      // depends on the near plane (0.1) and the distance, not the far
+      // plane, so 700 costs nothing versus 300 at 282 tiles.
       // BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
       // level gaze by default (lookPitch starts 0).
       // BUILD 992: turning first-person-auto OFF while in first person
@@ -1576,8 +1633,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // pose changed re-emit + re-upload (bufferSubData). Idle figures
       // cost zero emission and zero upload per frame. Corpses keep a
       // small separate buffer (few verts, full upload is negligible).
-      // Same 22-tile cull the sprites used; figures still depth-test
-      // against houses like any other geometry, in both cameras.
+      // BUILD 1007: NO figure cull — residents, transients, and corpses
+      // draw at whole-world range (were 22-tile culled, so the town
+      // looked empty of people from any far viewpoint). Figures are
+      // deliberately NOT fogged: at range they are a few pixels, and
+      // vivid figures stay visible while hazed ground would swallow
+      // them — visibility wins for "see everything". Figures still
+      // depth-test against houses like any other geometry, in both
+      // cameras.
       if(!actorSlotsAllocated){gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.bufferData(gl.ARRAY_BUFFER,figureSlots.totalVerts*24,gl.DYNAMIC_DRAW);actorSlotsAllocated=true;}
       gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       let emitted=0,reused=0,drawn=0;
@@ -1603,7 +1666,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       for(const npc of npcActorsRef.current){
         if(npc.looted||!npc.alive)continue;
         const slot=slotByName.get(npc.name);if(slot===undefined)continue;
-        if(Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)continue;
         const target={x:npc.x,y:npc.y};
         let st=npcRender.get(npc.name);
         if(!st){st={x:target.x,y:target.y,yaw:Math.PI,phase:0};npcRender.set(npc.name,st);}
@@ -1626,7 +1688,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // state), so a later occupant re-emits instead of inheriting
       // stale verts.
       for(const t of transientActorsRef.current){
-        if(Math.abs(t.x-player.x)>=22||Math.abs(t.y-player.y)>=22)continue;
         const slot=transientSlotBase+t.slotId;
         const target={x:t.x,y:t.y};
         let st=npcRender.get(t.id);
@@ -1654,7 +1715,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       motionStats={emitted,reused,drawn};
       const corpseVerts:number[]=[];
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])corpseVerts.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
-      for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
+      for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive)corpse(npc.x+.5,npc.y+.5);
       if(corpseVerts.length){upload(corpseBuffer,new Float32Array(corpseVerts));gl.drawArrays(gl.TRIANGLES,0,corpseVerts.length/6);}
       raf=requestAnimationFrame(draw);
     };

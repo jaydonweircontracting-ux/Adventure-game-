@@ -123,20 +123,48 @@ export const ZOOM_HYST = 1.5;
  * would only coarsen depth precision at 240 tiles (near plane 0.1).
  * Layer y values are strictly monotonic (see VIEW_*_Y) so the far
  * layers never cover each other; far-field band/apron overlaps sit
- * at full horizon colour, where any depth tie is invisible. */
-export const VIEW_FAR_PLANE = 300;
+ * at full horizon colour, where any depth tie is invisible.
+ * BUILD 1007 — "unlimited" view (see everything). The world itself
+ * is finite (200x200: farthest real points ~282 tiles apart), so
+ * unlimited means every real object visible from anywhere, ground
+ * unbroken to the visual horizon, haze only as a faint horizon
+ * blend. Far ground becomes NON-OVERLAPPING rings (adjacent rects,
+ * no shared plan area): band square ±64, far ring (64,240] at
+ * 16-tile cells, horizon ring (240,600] at 64-tile cells, apron ring
+ * (600,1000] as 4 quads. Rings cannot z-fight at any range because
+ * no two layers occupy the same ground point — depth precision at
+ * 300+ tiles (near plane 0.1) is far too coarse for the old
+ * 0.02-0.03 layer separations, so overlap was removed instead of
+ * widened. The only remaining overlap is window∩band (<=64 tiles,
+ * depth resolution <=0.0024 there, far under the 0.02 separation).
+ * VIEW_FAR_PLANE is 700: worst camera-to-farthest-object is 282
+ * (map diagonal) + 32 (max orbit radius) = 314, but the far plane
+ * must ALSO push the clip edge past the fog-full distance — the
+ * clip edge sits at worst 700 - 32 (orbit) - 8 (staleness) = 660
+ * tiles from the build centre, past FOG_FAR 600, so the clipped edge
+ * is always uniform horizon colour meeting the sky's horizon colour
+ * (the 1005 failure mode was a hazed-green clip edge). Apron
+ * coverage 1000 - 32 = 968 > 700, so the apron always extends past
+ * the far plane. Depth precision at a given distance depends on the
+ * near plane and the distance, not the far plane, so 700 costs
+ * nothing versus 300 at 282 tiles. */
+export const VIEW_FAR_PLANE = 700;
 export const VIEW_BAND_HALF = 64;
 export const VIEW_BAND_CELL = 4;
 export const VIEW_FAR_BAND_HALF = 240;
 export const VIEW_FAR_BAND_CELL = 16;
-export const VIEW_APRON_HALF = 340;
-/** Underlay layering (BUILD 1005): window 0 > band -0.02 > far band
- * -0.05 > apron -0.08, strictly monotonic so depth hides each lower
- * layer wherever an upper one exists. The apron MUST stay lowest: it
- * is one huge quad, and anything above it would cover the far band. */
+export const VIEW_HORIZON_BAND_HALF = 600;
+export const VIEW_HORIZON_BAND_CELL = 64;
+export const VIEW_APRON_HALF = 1000;
+/** Underlay layering (BUILD 1007): window 0 > band -0.02 > far band
+ * -0.05 > horizon band -0.08 > apron ring -0.11, strictly monotonic
+ * as belt-and-braces — but the real guarantee is non-overlap: far
+ * rings share edges only, never plan area, so they cannot fight
+ * regardless of depth precision. The apron ring MUST stay lowest. */
 export const VIEW_BAND_Y = -0.02;
 export const VIEW_FAR_BAND_Y = -0.05;
-export const VIEW_APRON_Y = -0.08;
+export const VIEW_HORIZON_BAND_Y = -0.08;
+export const VIEW_APRON_Y = -0.11;
 
 /** Steep roof rise as a fraction of the cross-axis span. rise/run = 0.9,
  *  i.e. a ~42 degree pitch, matching the reference's steep roofs. */
