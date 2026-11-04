@@ -373,6 +373,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       c[0], c[1], c[2], cc[0] + (SKY_HORIZON[0] - cc[0]) * fc, cc[1] + (SKY_HORIZON[1] - cc[1]) * fc, cc[2] + (SKY_HORIZON[2] - cc[2]) * fc);
   };
   const quad = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: Vec3) => { tri(a, b, c, color); tri(a, c, d, color); };
+  // BUILD 1009: per-corner-colour quad (two triV calls). Ground tint is
+  // a continuous field of position, so ground quads MUST carry one tint
+  // per corner: adjacent quads share corner positions and therefore
+  // corner colours exactly, which is what makes ring boundaries
+  // invisible. A single-colour quad() here would reintroduce the flat
+  // tint blocks the 1009 tint field exists to remove.
+  const quadV = (a: Vec3, ca: Vec3, b: Vec3, cb: Vec3, c: Vec3, cc: Vec3, d: Vec3, cd: Vec3) => { triV(a, ca, b, cb, c, cc); triV(a, ca, c, cc, d, cd); };
   // BUILD 988: cube faces use the unified SUN_SHADE table (sun from
   // northwest-high, matching the house shadow blobs): +z south shaded,
   // -z north lit, -x west near-lit, +x east darkest, top brightest.
@@ -392,11 +399,14 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
     const terrain=effTerrain(x,y);
     const c=COLORS[terrain]||COLORS.grass;
-    // BUILD 988: hue-varied deterministic ground tint (replaces the old
-    // brightness-only ((x*13+y*7)&3)*.012 wash) — lawns and dirt stop
-    // reading as flat paint. Baked here, zero runtime cost.
-    const tint=groundTintDelta(terrain,x,y);
-    quad([x,0,y],[x+1,0,y],[x+1,0,y+1],[x,0,y+1],[c[0]+tint[0],c[1]+tint[1],c[2]+tint[2]]);
+    // BUILD 1009: tint evaluated PER CORNER from the continuous 1009
+    // field (see townLook groundTintDelta). Adjacent tiles share corner
+    // positions and therefore corner colours exactly — the near field
+    // reads as rolling variation, not a checkerboard, and the window
+    // edge is invisible because the band cells beyond it sample the
+    // same field at their own corners.
+    const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
+    quadV([x,0,y],colAt(x,y),[x+1,0,y],colAt(x+1,y),[x+1,0,y+1],colAt(x+1,y+1),[x,0,y+1],colAt(x,y+1));
     // BUILD 983 street: scattered stone slabs on dirt, grey cobble shoulders
     // on grass/stone tiles beside a dirt tile. Overlays sit slightly above
     // the ground (slabs staggered per index) so nothing z-fights.
@@ -473,8 +483,15 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       for(let yy=sy0;yy<=sy1&&!hasDirt;yy++) for(let xx=sx0;xx<=sx1;xx++) if(effTerrain(xx,yy)==='dirt'){hasDirt=true;break;}
       if(!hasDirt){
         const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
-        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass, tint=groundTintDelta(bt,sx,sy);
-        quad([x0,y,y0],[x1+1,y,y0],[x1+1,y,y1+1],[x0,y,y1+1],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass;
+        // BUILD 1009: per-corner tint from the continuous field. The
+        // old single centre-sampled tint made every far cell one flat
+        // block; corner sampling turns the same cell into a smooth
+        // gradient of the same field the window samples directly, so
+        // the cell edges vanish. Adjacent cells share corner positions
+        // and therefore colours exactly — no seams at any ring edge.
+        const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(bt,cx,cy);return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];};
+        quadV([x0,y,y0],colAt(x0,y0),[x1+1,y,y0],colAt(x1+1,y0),[x1+1,y,y1+1],colAt(x1+1,y1+1),[x0,y,y1+1],colAt(x0,y1+1));
         return;
       }
       for(let yy=y0;yy<=y1;yy++){
@@ -482,9 +499,14 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         for(let xx=x0+1;xx<=x1+1;xx++){
           const t=xx<=x1?effTerrain(xx,yy):null;
           if(t!==runT){
-            const mid=runStart+Math.floor((xx-runStart)/2);
-            const bc=COLORS[runT]||COLORS.grass, tint=groundTintDelta(runT,mid,yy);
-            quad([runStart,y,yy],[xx,y,yy],[xx,y,yy+1],[runStart,y,yy+1],[bc[0]+tint[0],bc[1]+tint[1],bc[2]+tint[2]]);
+            // BUILD 1009: dirt runs keep the 1008 subdivision geometry
+            // (roads still render to their ends) but take per-corner
+            // tint like every other ground quad, so a road's tint
+            // varies smoothly along its length instead of stepping
+            // once per run.
+            const bc=COLORS[runT]||COLORS.grass;
+            const colAt=(cx:number,cy:number):Vec3=>{const tt=groundTintDelta(runT,cx,cy);return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];};
+            quadV([runStart,y,yy],colAt(runStart,yy),[xx,y,yy],colAt(xx,yy),[xx,y,yy+1],colAt(xx,yy+1),[runStart,y,yy+1],colAt(runStart,yy+1));
             runStart=xx; runT=t!;
           }
         }

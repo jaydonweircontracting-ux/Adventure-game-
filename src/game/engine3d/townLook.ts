@@ -303,23 +303,62 @@ export function shadeRgb(c: Rgb, s: number): Rgb {
   return [Math.min(1, c[0] * s), Math.min(1, c[1] * s), Math.min(1, c[2] * s)];
 }
 
-/** BUILD 988 ground tint: deterministic per-tile colour variation so
- *  lawns and dirt stop reading as flat paint. The old renderer added a
- *  brightness-only ((x*13+y*7)&3)*.012 wash — barely visible and the
- *  same on every terrain. This varies HUE inside each terrain's own
- *  colour family (grass green↔yellow-green, dirt tan↔brown), seeded by
- *  hash2(tile) so it is stable across rebuilds and cameras, and stays
- *  far from lavender/pink (asserted). Water gets no tint: a flat water
- *  plane reads better. Baked at build time — zero runtime cost. */
+/** BUILD 1009 — smooth value noise in [0,1] over a lattice of `spacing`
+ *  tiles: bilinear smoothstep interpolation of decorrelated lattice
+ *  hashes. Unlike hash2 (one independent random per tile), this is a
+ *  CONTINUOUS field of position: neighbouring points differ slightly,
+ *  never randomly, so a tint built on it has no steps at any sampling
+ *  scale — a 64-tile cell's corners interpolate the same field the
+ *  1-tile window samples directly. Defined for every real coordinate
+ *  (negative and past the map edge included), so far cells outside the
+ *  map evaluate it exactly like cells inside. */
+export function groundNoise(x: number, z: number, spacing: number): number {
+  const lx = x / spacing, lz = z / spacing;
+  const ix = Math.floor(lx), iz = Math.floor(lz);
+  const fx = lx - ix, fz = lz - iz;
+  const ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix * 127.1 + 311.7, iz * 269.5 + 183.3);
+  const b = hash2((ix + 1) * 127.1 + 311.7, iz * 269.5 + 183.3);
+  const c = hash2(ix * 127.1 + 311.7, (iz + 1) * 269.5 + 183.3);
+  const d = hash2((ix + 1) * 127.1 + 311.7, (iz + 1) * 269.5 + 183.3);
+  const top = a + (b - a) * ux, bot = c + (d - c) * ux;
+  return top + (bot - top) * uz;
+}
+
+/** BUILD 988 ground tint, REWORKED in BUILD 1009: deterministic colour
+ *  variation so lawns and dirt stop reading as flat paint. The 988 form
+ *  sampled hash2 per tile, so adjacent tiles differed randomly
+ *  (near-field checkerboard) and far cells rendered ONE centre tile's
+ *  hash over 16/64 tiles (literal tint blocks) — and a tile's colour
+ *  JUMPED when it crossed the ±22 window edge on rebuild, which is
+ *  the "chunks generating in the sight line" the user reported: the
+ *  ground visibly regenerated as he moved, across the whole periphery.
+ *  The 1009 form keeps the exact 988 per-terrain amplitudes (same
+ *  palette, same hue families, still far from lavender/pink) but builds
+ *  them on two-octave smooth value noise (8-tile rolling variation +
+ *  2.5-tile fine grain) instead of the tile hash, so the field is
+ *  continuous: a tile's colour no longer depends on which ring renders
+ *  it, and ring boundaries are invisible. Water gets no tint: a flat
+ *  water plane reads better. Baked at build time — zero runtime cost.
+ *  CALLERS MUST EVALUATE THIS PER VERTEX (corner), not once per quad:
+ *  a per-quad sample of even a smooth field reintroduces the blocks
+ *  (one flat colour per cell). Engine3DWorldView's ground emission
+ *  uses quadV (per-corner colours via triV) for exactly this reason. */
 export function groundTintDelta(terrain: string, x: number, y: number): Rgb {
-  const v = hash2(x * 3.1 + 7.7, y * 5.9 + 3.3) - 0.5; // -0.5..0.5
-  const v2 = hash2(x * 9.4 + 1.7, y * 4.2 + 8.1) - 0.5;
+  // Octave mix 0.8/0.2 (not 0.65/0.35): the fine octave is what limits
+  // how accurately a 4-tile band cell interpolates the field at its
+  // interior points (a 2.5-tile wave is under-sampled by 4-tile
+  // corners), and the band→window crossing is the one ring crossing
+  // close enough to see. 0.2 keeps near-field grain while holding the
+  // worst 4-tile interpolation error to ~1/4 of the old hash jump.
+  const n = groundNoise(x, y, 8) * 0.8 + groundNoise(x, y, 2.5) * 0.2 - 0.5; // -0.5..0.5
+  const n2 = groundNoise(x + 37.2, y + 11.8, 8) * 0.8 + groundNoise(x + 37.2, y + 11.8, 2.5) * 0.2 - 0.5;
   switch (terrain) {
-    case 'grass': return [v * 0.04, v * 0.06, v2 * 0.02];
-    case 'dirt': return [v * 0.05, v * 0.04, v2 * 0.03];
-    case 'sand': return [v * 0.04, v * 0.03, v2 * 0.02];
-    case 'stone': return [v * 0.03, v * 0.03, v * 0.03];
+    case 'grass': return [n * 0.04, n * 0.06, n2 * 0.02];
+    case 'dirt': return [n * 0.05, n * 0.04, n2 * 0.03];
+    case 'sand': return [n * 0.04, n * 0.03, n2 * 0.02];
+    case 'stone': return [n * 0.03, n * 0.03, n * 0.03];
     case 'water': return [0, 0, 0];
-    default: return [v * 0.03, v * 0.03, v * 0.03];
+    default: return [n * 0.03, n * 0.03, n * 0.03];
   }
 }
