@@ -199,6 +199,7 @@ function itemExamine(ref: ExamineRef, rng: () => number): { name: string; text: 
     weapon: ['A dependable weapon. Nothing fancy, but it should hold an edge.', 'Well-balanced, with honest wear along the blade.'],
     armor: ['Sturdy armor, dented in the places that matter.', 'It has turned aside worse than you, probably.'],
     potion: ['A small bottle containing a suspiciously red liquid.', 'The label fell off long ago. Probably fine.'],
+    halicin: ['A dark draught divined by scholars who read molecules as webs of atoms rather than lines of text. It slays even resistant blights by collapsing the spark — the electrochemical gradient — that sustains them.', 'Bitter, black, and brutally effective: where lesser cures fail against hardened blights, this draught unmakes the very gradient that keeps them alive.'],
     food: ['Hard enough to qualify as a weapon.', 'Edible. Technically.'],
     key: ['A heavy iron key. It opens something important, surely.', 'Teeth worn smooth from years of use.'],
     lore: ['The pages are brittle, but the writing is still legible.', 'Someone took great care writing this.'],

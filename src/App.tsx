@@ -197,7 +197,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1009';
+const BUILD_NUMBER = '1010';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -229,6 +229,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1007': 'In 3D mode, you can see everything now: the view reaches across the whole world with no fog wall and no cutoff — every house, tree, and person stays visible no matter how far away you stand, the ground runs unbroken to the horizon, and only the faintest haze softens the very far edge. Everything else works exactly as before.',
   '1008': 'In 3D mode, roads now render as far as the land does: the dirt road network stays visible all the way to where the roads actually end, instead of dissolving into grass in the distance, and placed paths you build stay visible as lines from far away too. Houses and trees already reached that far and still do. Everything else works exactly as before.',
   '1009': 'In 3D mode, the ground now reads as one continuous surface: the patchy squares and visible seams where one detail level ended and the next began are gone, from the ground at your feet all the way to the horizon and out to the edges of the screen. The ground no longer visibly regenerates or shifts as you walk — what you see ahead is what stays there. Everything else works exactly as before.',
+  '1010': 'A rare new draught joins the game: Halicin, the curative divined by scholars who read molecules as webs of atoms rather than lines of text. It restores your full health in one draught and purges poison and disease — even blights that shrug off lesser cures, it unmakes by collapsing the spark that sustains them. Bram the guild smith is the only one who sells it, and at 150 gold it is not cheap. Everything else works exactly as before.',
   '984': 'The giant dark castle skyline in 3D mode is gone, and you can now build in 3D mode: tap Build, pick Pathway, House, Tree, or Market Stall, then tap the ground to place it — free, no resource cost, and your placements save and reload. Tap Remove, then a placed item, to take it back down. Placed houses are decorative for now (no interior yet), and placed items show in 3D mode.',
   '983': 'The 3D town now looks like the medieval street it should be: houses have stone-block ground floors, dark timber framing, cream and tan plaster upper walls, and steep brown and red-tiled roofs, two or three stories tall, with small square windows — some warmly lit — and a few open-front shops with timber posts. The main street is a tan dirt path scattered with stone slabs and flanked by grey cobble, running toward a distant jagged castle silhouette with small red-roofed houses at its foot, under a clear blue sky. Tap the Street view button in 3D mode to walk the street at eye level.',
   '982': 'Mosslight now has a real bank building on the south road: a stone facade with a tall red roof, its own door, and a gold bank pin on the minimap. Brand the merchant minds the bank in the mornings and his market stall after lunch — talk to him at the bank (or anywhere you meet him) to deposit coins, withdraw, or store and take back gear, exactly as before, now with a place to go with it.',
@@ -1711,7 +1712,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; stone: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number; healthPotion: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; stone: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number; healthPotion: number; halicin: number };
 type GoatLoot = Partial<GameInventory>;
 // BUILD 950: refusal message shared by every carry-limit gate.
 const CARRY_OVER_MSG = 'Too heavy to carry more — sell or use something first.';
@@ -1900,7 +1901,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, stone: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0, healthPotion: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, stone: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0, healthPotion: 0, halicin: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats, aaBonusHp: number = 0) {
   return PLAYER_MAX_HP + stats.int * 3 + aaBonusHp;
@@ -2151,7 +2152,7 @@ function isDroppedLootSave(value: unknown): value is DroppedLoot {
     && isSavePoint(value.chunk)
     && isSavePoint(value.position)
     && isRecord(value.loot)
-    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths', 'wood', 'silk', 'bow', 'bone', 'pelt', 'fang', 'corn', 'stone', 'beer', 'lockpicks', 'shirts', 'swords', 'healthPotion'].includes(key) && isFiniteNumber(amount) && amount >= 0)
+    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths', 'wood', 'silk', 'bow', 'bone', 'pelt', 'fang', 'corn', 'stone', 'beer', 'lockpicks', 'shirts', 'swords', 'healthPotion', 'halicin'].includes(key) && isFiniteNumber(amount) && amount >= 0)
     && (value.gearBaseIds === undefined || (Array.isArray(value.gearBaseIds) && value.gearBaseIds.every((g) => typeof g === 'string')))
     && (value.sourceKind === undefined || typeof value.sourceKind === 'string');
 }
@@ -3861,9 +3862,9 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }:
     </div>
   );
 }
-function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, taskStates, questPlayerLevel, onAcceptQuest, onAcceptTask, onWeaveBowstring, onOpenSkills, aaCarry }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; taskStates: TaskState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void; aaCarry?: number }) {
+function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, onDrinkHalicin, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, taskStates, questPlayerLevel, onAcceptQuest, onAcceptTask, onWeaveBowstring, onOpenSkills, aaCarry }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; onDrinkHalicin: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; taskStates: TaskState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void; aaCarry?: number }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + (inventory.stone || 0) + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + (inventory.stone || 0) + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.halicin + inventory.lockpicks + inventory.shirts + inventory.swords;
   // BUILD 950: same load the HUD widget shows (capacity includes AA Strong Back).
   const sheetWeight = carriedWeight(inventory as unknown as Record<string, number>, equipment);
   const sheetCapacity = carryCapacity(playerStats.str) + (aaCarry ?? 0);
@@ -3886,6 +3887,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
     { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark', img: (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL + 'items/sword-inventory.png' },
     { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark', img: foodIconUrl('beer') },
     { key: 'healthPotion', label: 'Health Potion', detail: 'Restores 50% HP', mark: '🧪', className: 'potion-mark' },
+    { key: 'halicin', label: 'Halicin', detail: 'Restores full HP · purges poison & disease', mark: '🧪', className: 'potion-mark' },
     { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
@@ -3920,7 +3922,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = (inventory[item.key as keyof GameInventory] as number) || 0;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true">{(item as { img?: string }).img ? <img src={(item as { img?: string }).img} alt="" className="inventory-item-img" /> : item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}{item.key === 'healthPotion' && <button className="item-action" onClick={onDrinkPotion} data-testid="button-drink-potion">Drink</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true">{(item as { img?: string }).img ? <img src={(item as { img?: string }).img} alt="" className="inventory-item-img" /> : item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}{item.key === 'healthPotion' && <button className="item-action" onClick={onDrinkPotion} data-testid="button-drink-potion">Drink</button>}{item.key === 'halicin' && <button className="item-action" onClick={onDrinkHalicin} data-testid="button-drink-halicin">Drink</button>}</div>;
                 })}
               </div>
               {equipment.length > 0 && (
@@ -12319,6 +12321,16 @@ if (active) {
     onLoot({ coins: -10, healthPotion: 1 } as GoatLoot);
     setLogs((currentLogs) => [{ text: 'Bought a health potion for 10 gold.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  // BUILD 1010: buy halicin from Bram (150 gold — the ONLY vendor, no stall
+  // stock; rarity comes from the single source and the 15x potion price).
+  // Same carry-limit pre-gate and onLoot path as buyPotion.
+  const buyHalicin = () => {
+    if (inventory.coins < 150) return;
+    // BUILD 950: carry-limit pre-gate — before gold moves.
+    if (carryNow().over) { setLogs((currentLogs) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...currentLogs].slice(0, 3)); return; }
+    onLoot({ coins: -150, halicin: 1 } as GoatLoot);
+    setLogs((currentLogs) => [{ text: 'Bought halicin for 150 gold.', color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   // BUILD 697: market stall shops — tapping a stall opens its shop panel.
   // Double-tap safety: the pure shops.ts transactions guard against bad
   // state, but two taps landing before React re-renders would both see the
@@ -12799,6 +12811,19 @@ if (active) {
               // She is the quest giver for "Rats in the Cellar" but was only
               // rendered in the 2D fallback, making the quest inaccessible
               // in the default iso view.
+              // BUILD 1010: Bram the guild smith must be interactable in iso
+              // mode, mirroring BUILD 564 (Mira). He was only rendered in the
+              // 2D fallback, making the smith shop — the 10g potion and the
+              // 1010 halicin — unreachable in the default iso view for
+              // new-model characters, for whom 2D is forcibly reverted.
+              ...(interior.roomType === 'guild' ? [{
+                id: 'guild-smith-bram',
+                name: 'Bram',
+                tx: 6,
+                ty: 2,
+                facing: 'down' as const,
+                look: 'guild-smith',
+              }] : []),
               ...(interior.roomType === 'tavern' ? [{
                 id: 'tavern-bartender-mira',
                 name: 'Mira',
@@ -12839,6 +12864,11 @@ if (active) {
               // BUILD 564: Cellar hatch handling
               if (npcId === 'tavern-cellar-hatch') {
                 enterCellar();
+                return;
+              }
+              // BUILD 1010: guild smith Bram in iso mode (see npcs above).
+              if (npcId === 'guild-smith-bram') {
+                talkToSmith();
                 return;
               }
               const npc = townsfolk.find((n) => n.id === npcId);
@@ -16146,6 +16176,10 @@ if (active) {
                           <span><b>🧪 Health Potion</b><small>Restores 50% HP · You have {inventory.healthPotion}</small></span>
                           <em>10 gold</em>
                         </button>
+                        <button className="craft-button buy-button" onClick={buyHalicin} disabled={inventory.coins < 150} data-testid="button-buy-halicin">
+                          <span><b>🧪 Halicin</b><small>Restores full HP · purges poison & disease · You have {inventory.halicin}</small></span>
+                          <em>150 gold</em>
+                        </button>
                       </div>
                     )}
                     {smithTab === 'rumors' && (
@@ -17478,6 +17512,18 @@ function Home() {
     const maxHp = playerMaxHpForStats(playerStats) + (menuBridgeRef.current?.getAaMaxHpBonus?.() ?? 0);
     menuBridgeRef.current?.healPlayer(Math.round(maxHp * 0.5));
   };
+  // BUILD 1010: drink halicin (rare curative draught — restores the FULL
+  // effective max HP, and purges poison/disease if present. No poison or
+  // disease status exists in the game today, so the purge clause is
+  // no-op-safe by construction: the draught is useful through its full heal,
+  // never a dead item that only cures a status that does not exist.
+  // Player consumable only; NPCs never drink it.
+  const drinkHalicin = () => {
+    if (inventory.halicin < 1) return;
+    setInventory((current) => ({ ...current, halicin: Math.max(0, current.halicin - 1) }));
+    const maxHp = playerMaxHpForStats(playerStats) + (menuBridgeRef.current?.getAaMaxHpBonus?.() ?? 0);
+    menuBridgeRef.current?.healPlayer(maxHp);
+  };
   const beerBuffActive = Date.now() < beerBuffUntil;
   const [playerStats, setPlayerStats] = useState<PlayerStats>(initialPlayerStats);
   const [statPoints, setStatPoints] = useState(0);
@@ -17711,6 +17757,7 @@ function Home() {
       shirts: Math.max(0, current.shirts + (accepted.shirts || 0)),
       swords: Math.max(0, current.swords + (accepted.swords || 0)),
       healthPotion: Math.max(0, current.healthPotion + ((accepted as { healthPotion?: number }).healthPotion || 0)),
+      halicin: Math.max(0, current.halicin + ((accepted as { halicin?: number }).halicin || 0)),
     }));
   };
 
@@ -18167,7 +18214,7 @@ function Home() {
           </div>
           {dungeonOpen && <StoneSoupDungeon variant={dungeonSite?.kind ?? 'dungeon'} siteName={dungeonSite?.name ?? ''} onExit={() => { setDungeonOpen(false); setDungeonSite(null); }} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} aaCarry={menuBridgeRef.current?.getAaCarryBonus?.() ?? 0} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} onDrinkHalicin={drinkHalicin} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} aaCarry={menuBridgeRef.current?.getAaCarryBonus?.() ?? 0} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">

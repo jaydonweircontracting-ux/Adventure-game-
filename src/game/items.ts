@@ -416,7 +416,7 @@ export const INVENTORY_WEIGHTS: Record<string, number> = {
   coins: 0,
   goatHorns: 2, fabric: 1, daggers: 3, cloths: 1, bone: 1, pelt: 2, fang: 0.5,
   corn: 0.5, wood: 3, stone: 4, silk: 0.5, bow: 4, beer: 1.5, lockpicks: 0.2,
-  shirts: 2, swords: 8, healthPotion: 0.5,
+  shirts: 2, swords: 8, healthPotion: 0.5, halicin: 0.5,
 };
 
 /**
