@@ -14,6 +14,7 @@ import {
   VIEW_BAND_Y, VIEW_FAR_BAND_Y, VIEW_HORIZON_BAND_Y, VIEW_APRON_Y,
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
+import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
@@ -872,6 +873,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   // BUILD 993: the 3D day clock (1 game minute per real second while the
   // view is mounted, persisted so phases survive reloads). Default 08:00.
   const clockRef=useRef(loadClock());
+  // BUILD 1011: cloud-drift clock (real seconds, accumulated per frame;
+  // session-only — clouds keep drifting, they do not need persistence).
+  const skyDriftRef=useRef(0);
   // BUILD 984 placement tool. The ref mirrors the state for the
   // render-loop closures (which capture refs, not state).
   const [buildOpen,setBuildOpen]=useState(false);
@@ -1087,18 +1091,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const gl=canvas.getContext('webgl',{antialias:true,alpha:false,powerPreference:'high-performance'});
     if(!gl){setMessage('WebGL is unavailable in this browser');return;}
     const vs=gl.createShader(gl.VERTEX_SHADER)!;gl.shaderSource(vs,'attribute vec3 p;attribute vec3 c;uniform mat4 m;varying vec3 v;void main(){gl_Position=m*vec4(p,1.0);v=c;}');gl.compileShader(vs);
-    const fs=gl.createShader(gl.FRAGMENT_SHADER)!;gl.shaderSource(fs,'precision mediump float;varying vec3 v;void main(){gl_FragColor=vec4(v,1.0);}');gl.compileShader(fs);
+    // BUILD 1011: uNight mixes every fragment toward 976's navy veil
+    // (mix(v, navy, uNight) IS the 976 composite scene*(1-a)+navy*a).
+    // One uniform, set per frame from the 3D clock — no rebuilds, no
+    // blending, no veil quad. Sun/moon draw with uNight=0 (self-luminous).
+    const fs=gl.createShader(gl.FRAGMENT_SHADER)!;gl.shaderSource(fs,`precision mediump float;varying vec3 v;uniform float uNight;void main(){gl_FragColor=vec4(mix(v,vec3(${NIGHT_NAVY[0].toFixed(3)},${NIGHT_NAVY[1].toFixed(3)},${NIGHT_NAVY[2].toFixed(3)}),uNight),1.0);}`);gl.compileShader(fs);
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){setMessage('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));return;}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){setMessage('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));return;}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
-    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!;
-    const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
-    if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
+    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!;
+    const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight');
+    if(pLoc<0||cLoc<0||!mLoc||!uNightLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(SKY_HORIZON[0],SKY_HORIZON[1],SKY_HORIZON[2],1);
     // BUILD 983 sky gradient: a static clip-space quad (horizon colour at
     // the bottom, clear blue at the top) drawn with depth off before the
     // world, so the world draws over it. Same vertex-colour program.
+    // BUILD 1011: the sky-object buffer is allocated ONCE at SKY_MAX_VERTS
+    // and re-uploaded per frame with bufferSubData (see the draw loop) —
+    // a per-frame bufferData reallocation stalls the pipeline.
+    gl.bindBuffer(gl.ARRAY_BUFFER,skyObjBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,SKY_MAX_VERTS*24,gl.DYNAMIC_DRAW);
     const skyBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
@@ -1644,6 +1657,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
       if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,built);worldVertCount=built.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      // BUILD 1011: night factor for this frame — 976's curve on the 3D
+      // clock, as one shader uniform (see sky.ts). Set before the sky
+      // pass so the gradient darkens too; sun/moon are drawn with
+      // uNight=0 below (self-luminous). Cloud drift accumulates here.
+      const nightFactor=nightFactorForMinutes(clockRef.current.minutes);
+      skyDriftRef.current+=dt;
+      gl.uniform1f(uNightLoc,nightFactor);
       // Sky gradient pass (identity matrix, depth off), then the world.
       gl.disable(gl.DEPTH_TEST);
       gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
@@ -1697,6 +1717,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // compile + program link checks above, and the diagnostic still
       // reports the vertex count every rebuild.
       gl.drawArrays(gl.TRIANGLES,0,worldVertCount);
+      // BUILD 1011: sun, moon, drifting clouds — a small per-frame buffer
+      // (a few hundred verts; the world buffer rebuilds only on >8-tile
+      // moves and cannot carry moving sky objects). Camera-centred on the
+      // player so walking never leaves them behind; depth-tested, so the
+      // ground occludes them below the horizon. Clouds draw with the
+      // night factor, sun/moon with uNight=0 (self-luminous). Suppressed
+      // entirely while inside a house (990: emitSkyObjects returns empty
+      // when insideHut is set).
+      const skyEye:Vec3=firstPersonRef.current?[targetX,FIRST_PERSON_EYE,targetZ]:[ex,ey,ez];
+      const skyArr:number[]=[];
+      const skyCounts=emitSkyObjects(skyArr,skyEye,player.x+.5,player.y+.5,clockRef.current.minutes,skyDriftRef.current,!!insideHutRef.current);
+      if(skyCounts.totalVerts>0){
+        gl.bindBuffer(gl.ARRAY_BUFFER,skyObjBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(skyArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+        if(skyCounts.cloudVerts>0)gl.drawArrays(gl.TRIANGLES,0,skyCounts.cloudVerts);
+        if(skyCounts.totalVerts>skyCounts.cloudVerts){gl.uniform1f(uNightLoc,0);gl.drawArrays(gl.TRIANGLES,skyCounts.cloudVerts,skyCounts.totalVerts-skyCounts.cloudVerts);gl.uniform1f(uNightLoc,nightFactor);}
+      }
       // BUILD 998: interpolated NPC motion + per-figure GPU slots (see
       // npcMotion.ts). Logical tiles come from the 900ms timer; figures
       // glide toward them at the demo speed, phase follows distance
@@ -1854,6 +1890,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // only — no gameplay effect). setClock persists like the live clock.
       getClock:()=>({...clockRef.current}),
       setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
+      // BUILD 1011 test hooks: sky state read + cloud-drift set (probes
+      // only — no gameplay effect).
+      getSky:()=>({minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,inside:!!insideHutRef.current}),
+      setSkyDrift:(s:number)=>{skyDriftRef.current=Math.max(0,Math.floor(s));},
       // BUILD 999: a teleport must also drop the NPC's cached A* path.
       // Paths store ABSOLUTE tiles planned from the old position; the
       // timer only replans when the DESTINATION changes, so a moved
@@ -2075,7 +2115,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
