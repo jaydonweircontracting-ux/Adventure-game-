@@ -4,7 +4,7 @@ import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import {
-  houseDesignFor, streetSlabsFor, cobbleSquaresFor,
+  houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
   GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
   SUN_SHADE, shadeRgb, groundTintDelta,
@@ -670,7 +670,14 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     }
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
     const hDoorY=(hut as {doorY?:number}).doorY ?? hut.y1;
-    const design=houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0);
+    // BUILD 1012: a placed house with a variant renders the picked
+    // design (stories/open front fixed by the variant, the rest from
+    // the same seed hash as town houses); every other hut — generated
+    // or legacy placed — uses houseDesignFor exactly as before.
+    const hutVariant=(hut as {variant?:string}).variant;
+    const design=hutVariant&&HOUSE_VARIANTS[hutVariant as keyof typeof HOUSE_VARIANTS]
+      ?houseDesignForVariant(HOUSE_VARIANTS[hutVariant as keyof typeof HOUSE_VARIANTS],hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0)
+      :houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0);
     const topY=GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
     const span=design.roofAxis==='x'?d:w;
     const ridgeY=topY+roofRise(span);
@@ -951,13 +958,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
   // so they never index KIND_META with 'custom' (which has no entry
-  // and would crash the preview/message path).
-  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<string,string>)[item.kind]??item.kind;
+  // and would crash the preview/message path). BUILD 1012: a placed
+  // house shows its variant's label (Cottage / Tall House /
+  // Shopfront / Grand House); a legacy variant-less house is 'House'.
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
@@ -1012,13 +1021,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   type CatalogCategory='all'|'terrain'|'buildings'|'plants'|'props'|'custom';
   const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
     {id:'terrain',label:'Terrain',kinds:['path','grass']},
-    {id:'buildings',label:'Buildings',kinds:['house']},
+    // BUILD 1012: the Buildings section offers the four real town
+    // house designs (cottage / tall / shopfront / grand) instead of
+    // the one bare 'house' kind — each is its own palette entry with
+    // its own look, footprint, and interior. Bare 'house' is the
+    // legacy placed kind (old saves only) and is not offered here.
+    {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand']},
     {id:'plants',label:'Plants',kinds:['tree']},
     {id:'props',label:'Props',kinds:['stall']},
   ];
   const KIND_META:Record<PaletteKind,{label:string;swatch:string}>={
     path:{label:'Pathway',swatch:'linear-gradient(135deg,#bd914f 0 50%,#61615c 50% 100%)'},
     house:{label:'House',swatch:'linear-gradient(135deg,#d6c799 0 50%,#6b452b 50% 100%)'},
+    // BUILD 1012 swatches (995 style: the model's own colours) —
+    // each variant's plaster + roof, so the four read apart at a
+    // glance: cottage cream/brown, tall pale-yellow/red tile,
+    // shopfront tan/dark timber (open colonnade), grand warm
+    // beige/dark brown.
+    'house-cottage':{label:'Cottage',swatch:'linear-gradient(135deg,#d6c799 0 50%,#6b452b 50% 100%)'},
+    'house-tall':{label:'Tall House',swatch:'linear-gradient(135deg,#dec78f 0 50%,#8f3626 50% 100%)'},
+    'house-shop':{label:'Shopfront',swatch:'linear-gradient(135deg,#c2a678 0 50%,#3a281a 50% 100%)'},
+    'house-grand':{label:'Grand House',swatch:'linear-gradient(135deg,#d1b183 0 50%,#54341e 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     grass:{label:'Grass',swatch:'linear-gradient(180deg,#a6bf66 0,#618538 100%)'},
@@ -1566,7 +1589,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
               const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
               const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
-              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+result.item.kind);}
+              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
             }
           }
         } else {

@@ -194,6 +194,39 @@ export interface HouseDesign {
   lit: boolean[];
 }
 
+/** BUILD 1012 — placeable house variants. AUDIT (measured from the
+ *  generated town, not assumed): the town's 26 unique generated huts
+ *  are 6x5 (11), 6x4 (5), 4x3 (4), 5x4 (3), 4x4 (2), 5x5 (1) — ZERO
+ *  3x3 huts in town — with 15 two-story, 11 three-story, 6 open
+ *  colonnade shopfronts, 7 chimneys, all roofAxis 'x'. The placed
+ *  house was always 3x3 with a hash-random design (44% 3-story in a
+ *  map-wide sample), which is why every placement read as the same
+ *  skinny tall house: the footprint was fixed at the one size the
+ *  town never uses, and the design was a positional lottery, not a
+ *  choice. Each variant below is a REAL town combination: its
+ *  footprint is a measured town size, its stories/openFront are
+ *  values the emitter already produces. Chimney, stone, plaster,
+ *  timber, roof and lit windows stay seed-driven (town behaviour —
+ *  two cottages at different spots differ in those, exactly like two
+ *  town houses do). No new models, no new parameter values. */
+export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand';
+export interface HouseVariant {
+  id: HouseVariantId;
+  label: string;
+  /** Footprint in tiles (w x d). */
+  w: number;
+  d: number;
+  stories: 2 | 3;
+  openFront: boolean;
+}
+export const HOUSE_VARIANTS: Record<HouseVariantId, HouseVariant> = {
+  cottage: { id: 'cottage', label: 'Cottage', w: 4, d: 3, stories: 2, openFront: false },
+  tall: { id: 'tall', label: 'Tall House', w: 3, d: 3, stories: 3, openFront: false },
+  shop: { id: 'shop', label: 'Shopfront', w: 6, d: 4, stories: 2, openFront: true },
+  grand: { id: 'grand', label: 'Grand House', w: 6, d: 5, stories: 3, openFront: false },
+};
+export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand'];
+
 /** Derive a house's full look from its hut rect + door tile. The door
  *  face comes from the layout's door position (door on the y0 edge =
  *  north face, y1 = south, x0 = west, x1 = east) — the layout is never
@@ -226,6 +259,21 @@ export function houseDesignFor(
     doorFace,
     lit: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => h(10 + i) < 0.35),
   };
+}
+
+/** BUILD 1012: a placed house's design when the player picked a
+ *  variant. The variant fixes ONLY the structural choices the user
+ *  picked (stories, open front); everything else is the exact same
+ *  seed hash as houseDesignFor, so colours, chimney and lit windows
+ *  still vary by placement spot exactly like town houses do. */
+export function houseDesignForVariant(
+  variant: HouseVariant,
+  x0: number, y0: number, x1: number, y1: number,
+  doorX: number, doorY: number,
+  seedX0: number = x0, seedY0: number = y0,
+): HouseDesign {
+  const base = houseDesignFor(x0, y0, x1, y1, doorX, doorY, seedX0, seedY0);
+  return { ...base, stories: variant.stories, openFront: variant.openFront };
 }
 
 /** One scattered stone slab on a dirt tile, in tile-local coordinates.

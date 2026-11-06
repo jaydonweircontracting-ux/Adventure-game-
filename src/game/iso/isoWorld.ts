@@ -1,6 +1,7 @@
 // Data model + persistence + edit ops for the isometric demo world (?iso=1).
 // The world is fully data-driven so the in-game map builder can reshape it.
 import type { TilePoint } from './projection';
+import type { HouseVariantId } from '../engine3d/townLook';
 
 export type Terrain = 'grass' | 'dirt' | 'sand' | 'stone' | 'water';
 
@@ -15,7 +16,7 @@ export interface StallRect { x0: number; y0: number; x1: number }
  *  huts/stalls/trees so the 3D adapter's layout filter (which rebuilds
  *  generated lots near town on every load) can never delete placed
  *  work. Old saves load with none. */
-export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string }
+export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
 export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }

@@ -10,8 +10,46 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
+import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
 
-export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass';
+export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass'
+  | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand';
+/** The four placeable house variants (BUILD 1012). 'house' itself is
+ *  NOT in this list: it is the legacy placed kind (old saves, and
+ *  anything placed before variants existed) — it validates and renders
+ *  exactly as it always did, but the palette no longer offers it. */
+export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand'];
+export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' {
+  return (HOUSE_VARIANT_KINDS as string[]).includes(kind);
+}
+/** True for the legacy 'house' kind and every variant kind. */
+export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' {
+  return kind === 'house' || isHouseVariantKind(kind);
+}
+export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
+  switch (kind) {
+    case 'house-cottage': return 'cottage';
+    case 'house-tall': return 'tall';
+    case 'house-shop': return 'shop';
+    case 'house-grand': return 'grand';
+    default: return null;
+  }
+}
+export function kindOfVariant(variant: HouseVariantId): PaletteKind {
+  return ('house-' + variant) as PaletteKind;
+}
+/** The palette kind a placed house validates/moves/pastes under:
+ *  its variant kind, or legacy 'house' when it has no variant. */
+export function housePlacementKind(item: PlacedItem): PaletteKind {
+  return item.variant ? kindOfVariant(item.variant) : 'house';
+}
+/** Footprint (w x d in tiles) a house kind places: the variant's
+ *  measured town footprint, or the legacy 3x3 for bare 'house'. */
+export function houseFootprint(kind: PaletteKind): { w: number; d: number } {
+  const v = variantOfKind(kind);
+  if (v) { const hv: HouseVariant = HOUSE_VARIANTS[v]; return { w: hv.w, d: hv.d }; }
+  return { w: 3, d: 3 };
+}
 export type PlaceResult = { ok: true; item: PlacedItem } | { ok: false; reason: string };
 
 export function placementsOf(w: IsoWorld): PlacedItem[] {
@@ -615,8 +653,12 @@ export function validateBlockingRect(
 
 /**
  * Validate a placement whose tap landed on tile (tx, ty).
- * Houses are 3x3 centred on the tap; stalls are 2x1 (tap + east);
- * paths/trees/grass are single tiles. Standing rule: houses NEVER on
+ * Houses are centred on the tap at their kind's footprint — the
+ * legacy 3x3 for bare 'house', the variant's measured town footprint
+ * for a variant kind (cottage 4x3, tall 3x3, shop 6x4, grand 6x5;
+ * x0 = tap - floor(w/2), same anchor moveGeneratedHut uses, so
+ * paste/move anchors reproduce the rect exactly). Stalls are 2x1
+ * (tap + east); paths/trees/grass are single tiles. Standing rule: houses NEVER on
  * paths (dirt) or the square (sand); blocking items never on the
  * player, an NPC, or an NPC waypoint tile (an NPC that can never reach
  * its waypoint stalls forever). Paths are walkable ground, so they may
@@ -641,8 +683,10 @@ export function validatePlacement(
   // a 1x1 tile for a 3x3 mesh.
   if ((kind as string) === 'custom') return { ok: false, reason: 'use validateCustomPlacement' };
   const tiles: Array<{ x: number; y: number }> = [];
-  if (kind === 'house') {
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) tiles.push({ x: tx + dx, y: ty + dy });
+  if (isHouseKind(kind)) {
+    const fp = houseFootprint(kind);
+    const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
+    for (let dy = 0; dy < fp.d; dy++) for (let dx = 0; dx < fp.w; dx++) tiles.push({ x: x0 + dx, y: y0 + dy });
   } else if (kind === 'stall') {
     tiles.push({ x: tx, y: ty }, { x: tx + 1, y: ty });
   } else {
@@ -686,12 +730,23 @@ export function validatePlacement(
       if (isWaypointTile(w, t.x, t.y)) return { ok: false, reason: 'an NPC walking route' };
     }
   }
-  const item: PlacedItem =
-    kind === 'house'
-      ? { kind, x0: tx - 1, y0: ty - 1, x1: tx + 1, y1: ty + 1 }
-      : kind === 'stall'
-        ? { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty }
-        : { kind, x0: tx, y0: ty, x1: tx, y1: ty };
+  // BUILD 1012: a variant kind places kind 'house' carrying the
+  // variant; bare 'house' stays the legacy variant-less item. The
+  // rect is the validated footprint (centred on the tap), never
+  // re-derived, so the shape guard in pasteChunk can trust it.
+  let item: PlacedItem;
+  if (isHouseKind(kind)) {
+    const fp = houseFootprint(kind);
+    const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
+    const v = variantOfKind(kind);
+    item = v
+      ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 }
+      : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 };
+  } else if (kind === 'stall') {
+    item = { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty };
+  } else {
+    item = { kind, x0: tx, y0: ty, x1: tx, y1: ty };
+  }
   return { ok: true, item };
 }
 
@@ -700,8 +755,9 @@ export function validatePlacement(
  *  first, so a destination overlapping its own old rect validates
  *  against the freed tiles, not against itself; on failure the
  *  original item is restored at its exact index and nothing changes.
- *  The drop tile has placement semantics: house = centre tile of the
- *  3x3, stall = west tile of the 2x1, everything else = the tile.
+ *  The drop tile has placement semantics: house = centre tile of its
+ *  footprint (legacy 3x3, or the variant's footprint), stall = west
+ *  tile of the 2x1, everything else = the tile.
  *  Generated items are NOT movable here — callers only ever pass placed
  *  items, and an item missing from the list refuses. Generated moves
  *  live in moveGeneratedHut/moveGeneratedPath/moveGeneratedTree below
@@ -735,7 +791,12 @@ export function movePlacement(
     list.splice(at, 0, customItem);
     return { ok: true, item: customItem, index: at };
   }
-  const result = validatePlacement(w, item.kind, destTx, destTy, playerTile, npcTiles);
+  // BUILD 1012: a placed house moves under its own kind (its variant
+  // kind, or legacy 'house') so the footprint and the design travel
+  // with it — validating a variant house as bare 'house' would shrink
+  // it to 3x3 and drop the variant.
+  const moveKind = item.kind === 'house' ? housePlacementKind(item) : item.kind;
+  const result = validatePlacement(w, moveKind, destTx, destTy, playerTile, npcTiles);
   if (!result.ok) {
     list.splice(Math.min(index, list.length), 0, lifted);
     return { ok: false, reason: result.reason };
@@ -1040,11 +1101,11 @@ export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], 
 // ---- Render lists (shapes match the generated arrays so the 3D view's
 // existing house/tree/stall loops can iterate the union unchanged). ----
 
-/** Placed houses as hut rects; door derived at render time (south edge centre). */
-export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number }> {
+/** Placed houses as hut rects; door derived at render time (south edge centre). BUILD 1012: the variant travels on the rect so the house loop can render the picked design (absent = legacy seed-hash house). */
+export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number; variant?: HouseVariantId }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'house')
-    .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: Math.round((p.x0 + p.x1) / 2), doorY: p.y1 }));
+    .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: Math.round((p.x0 + p.x1) / 2), doorY: p.y1, ...(p.variant ? { variant: p.variant } : {}) }));
 }
 
 export function placedTreeTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {

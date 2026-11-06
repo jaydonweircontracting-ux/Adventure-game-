@@ -32,7 +32,7 @@
 // are free: no cost gating, like every other Build-panel action.
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
-import { addPlacement, placementsOf, validatePlacement, type PaletteKind } from './placements';
+import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, type PaletteKind } from './placements';
 
 /** localStorage key for saved chunks. Versioned (v1); separate from
  *  the world save so a world reset never wipes the user's library. */
@@ -48,7 +48,7 @@ export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: numb
  *  was placed, which the grass rule needs). */
 export type ChunkTemplate = { name: string; items: ChunkItem[] };
 
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass'];
+const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'house-cottage', 'house-tall', 'house-shop', 'house-grand'];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;
@@ -128,7 +128,10 @@ export function uniquifyName(existing: string[], base: string): string {
  *  built-in kinds only, so a captured custom item would paste as a
  *  shape mismatch; excluding it keeps the save preview count (which
  *  reads this function) honest. Asset-aware paste is the follow-up,
- *  not a silent partial capture. */
+ *  not a silent partial capture. BUILD 1012: a placed house is
+ *  captured under its own kind (variant kind, or legacy 'house') —
+ *  the kind IS the variant, so no separate variant field is needed
+ *  and paste reconstructs the design through validatePlacement. */
 export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: number; y1: number }): ChunkItem[] {
   const x0 = Math.min(rect.x0, rect.x1);
   const y0 = Math.min(rect.y0, rect.y1);
@@ -138,19 +141,20 @@ export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: nu
   for (const p of placementsOf(w)) {
     if (p.kind === 'custom') continue;
     if (p.x0 >= x0 && p.y0 >= y0 && p.x1 <= x1 && p.y1 <= y1) {
-      out.push({ kind: p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0 });
+      out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0 });
     }
   }
   return out;
 }
 
 /** The tap tile validatePlacement needs for an item whose pasted rect
- *  is known: house = rect centre, stall = west tile, everything else
- *  = the rect's min tile. This is the same anchor math placing and
- *  moving already use, so a validated paste reproduces the stored
- *  rect exactly — and the caller asserts that below. */
+ *  is known: house (legacy or any variant kind) = rect centre, stall
+ *  = west tile, everything else = the rect's min tile. This is the
+ *  same anchor math placing and moving already use, so a validated
+ *  paste reproduces the stored rect exactly — and the caller asserts
+ *  that below. */
 function pasteTapTile(kind: PaletteKind, nx0: number, ny0: number, nx1: number, ny1: number): { x: number; y: number } {
-  if (kind === 'house') return { x: Math.round((nx0 + nx1) / 2), y: Math.round((ny0 + ny1) / 2) };
+  if (isHouseKind(kind)) return { x: Math.round((nx0 + nx1) / 2), y: Math.round((ny0 + ny1) / 2) };
   return { x: nx0, y: ny0 };
 }
 
