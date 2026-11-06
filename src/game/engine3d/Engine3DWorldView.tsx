@@ -28,6 +28,7 @@ import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlace
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
+import { spawnAnimal, stepAnimal, emitAnimal, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -877,6 +878,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   // BUILD 1000: transient spawn pacing tick (shared by the timer and
   // the spawnTransient probe hook).
   const transientTickRef=useRef(0);
+  // BUILD 1013: wild animals (birds, goats, deer, wolves). Session-only
+  // like transients (see animals.ts header §5): a separate array the
+  // view never serializes; reload repopulates them fresh.
+  const animalActorsRef=useRef<AnimalActor[]>([]);
+  const animalTickRef=useRef(0);
   // BUILD 993: the 3D day clock (1 game minute per real second while the
   // view is mounted, persisted so phases survive reloads). Default 08:00.
   const clockRef=useRef(loadClock());
@@ -1195,6 +1201,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // full-size buffer allocation on the first draw frame.
     type NpcRenderState={x:number;y:number;yaw:number;phase:number};
     const npcRender=new Map<string,NpcRenderState>();
+    // BUILD 1013: animal render state. h = flight height (birds only,
+    // eased toward BIRD_FLIGHT_HEIGHT while flying), graze = head-down
+    // amount (goat/deer, eased toward 1 while grazing); eh/eg are the
+    // last values EMITTED to the GPU slot — the draw loop deletes the
+    // slot's uploaded key when either changes, because the pose key
+    // (x/z/yaw/phase) cannot see them.
+    type AnimalRenderState={x:number;y:number;h:number;yaw:number;phase:number;graze:number;eh:number;eg:number};
+    const animalRender=new Map<string,AnimalRenderState>();
     const slotByName=new Map<string,number>();
     const figureSlotCounts:number[]=[];
     ROSTER_3D.forEach((n,i)=>{slotByName.set(n.name,i);const scratch:number[]=[];emitVillager(scratch,0,0,0,0,villagerSpecFor(n.name),rosterArchetype(n.name)==='child');figureSlotCounts.push(scratch.length/6);});
@@ -1208,6 +1222,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const transientSlotBase=ROSTER_3D.length+1;
     const transientSlotCap=maxVillagerVerts();
     for(let i=0;i<MAX_TRANSIENTS;i++)figureSlotCounts.push(transientSlotCap);
+    // BUILD 1013: animal GPU slots. One fixed slot per animal (base +
+    // slotId), sized to the largest animal emitter — the same
+    // discipline as transient slots (a slot never changes size when
+    // its occupant leaves and another arrives).
+    const animalSlotBase=transientSlotBase+MAX_TRANSIENTS;
+    const animalSlotCap=maxAnimalVerts();
+    for(let i=0;i<MAX_ANIMALS;i++)figureSlotCounts.push(animalSlotCap);
     const figureSlots=figureSlotLayout(figureSlotCounts);
     const figureScratch=new Float32Array(Math.max(...figureSlotCounts)*6);
     const slotUploaded=new Map<number,FigurePoseKey>();
@@ -1236,11 +1257,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const nx=r?r.x:t.x,ny=r?r.y:t.y;
         return Math.hypot(nx-x,ny-y)<.42;
       };
+      // BUILD 1013: the player cannot walk through an animal either
+      // (same 0.42 render-distance rule as residents/transients).
+      const animalNear=(a:{id:string;x:number;y:number})=>{
+        const r=animalRender.get(a.id);
+        const nx=r?r.x:a.x,ny=r?r.y:a.y;
+        return Math.hypot(nx-x,ny-y)<.42;
+      };
       const inside=insideHutRef.current;
       if(inside&&interiorWalkable(inside,gx,gy))
-        return !npcActorsRef.current.some(npcNear)&&!transientActorsRef.current.some(transientNear);
+        return !npcActorsRef.current.some(npcNear)&&!transientActorsRef.current.some(transientNear)&&!animalActorsRef.current.some(animalNear);
       if(npcActorsRef.current.some(npcNear))return false;
       if(transientActorsRef.current.some(transientNear))return false;
+      if(animalActorsRef.current.some(animalNear))return false;
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
     const pickGround=(clientX:number,clientY:number)=>{
@@ -1833,6 +1862,37 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false);
         emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre);
       }
+      // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
+      // machinery as residents and transients: logical tiles come from
+      // the 900ms animal timer, render positions glide toward them at
+      // the demo speed, and only dirty slots re-emit. Two render
+      // dimensions the pose key cannot see — bird flight height and
+      // graze amount — are eased in render state, and the loop deletes
+      // the slot's uploaded key when either changes, forcing a
+      // re-emit instead of a stale reuse. Geometry comes from
+      // emitAnimal via `pre`, so the villager spec argument is unused
+      // (PLAYER_SPEC is a dummy — never rendered as a villager).
+      for(const a of animalActorsRef.current){
+        const slot=animalSlotBase+a.slotId;
+        const target={x:a.x,y:a.y};
+        let st=animalRender.get(a.id);
+        if(!st){st={x:target.x,y:target.y,h:a.kind==='bird'&&a.state==='flying'?BIRD_FLIGHT_HEIGHT:0,yaw:Math.PI,phase:0,graze:0,eh:-1,eg:-1};animalRender.set(a.id,st);}
+        else if(needsRenderSnap({x:st.x,y:st.y},target)){st.x=target.x;st.y=target.y;}
+        const step=advanceRenderPos({x:st.x,y:st.y},target,dtNpc);
+        const moved=step.dist>0;
+        let yaw=st.yaw;
+        if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
+        const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
+        st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
+        const targetH=a.kind==='bird'&&a.state==='flying'?BIRD_FLIGHT_HEIGHT:0;
+        st.h+=Math.max(-4*dtNpc,Math.min(4*dtNpc,targetH-st.h));
+        const targetGraze=(a.kind==='goat'||a.kind==='deer')&&a.state==='grazing'?1:0;
+        st.graze+=Math.max(-2.5*dtNpc,Math.min(2.5*dtNpc,targetGraze-st.graze));
+        if(Math.abs(st.h-st.eh)>0.01||Math.abs(st.graze-st.eg)>0.01){slotUploaded.delete(slot);st.eh=st.h;st.eg=st.graze;}
+        const pre:number[]=[];
+        emitAnimal(pre,a.kind,st.x+.5,st.y+.5,st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying'});
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,PLAYER_SPEC,false,st.x,st.y,pre);
+      }
       // BUILD 992: in first person the camera IS the player — hide the
       // player figure or it fills the frame. NPC figures still draw.
       if(!firstPersonRef.current){
@@ -1852,7 +1912,25 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
     const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();const p=stateRef.current.position;
       if(k==='f'||k===' '){
-        const target=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+        const npcTarget=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+        // BUILD 1013: wolves are F/Space targets too (25/swing, the
+        // NPC rule). Nearest target wins across residents + wolves.
+        // Goats, deer, and birds are ambient wildlife — never targets.
+        // A wolf does NOT strike back here: wolves bite on their own
+        // 900ms tick (the animal timer), so the bite is a real combat
+        // loop, not a scripted retaliation.
+        const wolfTarget=animalActorsRef.current.filter(a=>a.kind==='wolf'&&a.hp>0&&Math.abs(a.x-p.x)<=1&&Math.abs(a.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+        if(wolfTarget&&(!npcTarget||Math.hypot(wolfTarget.x-p.x,wolfTarget.y-p.y)<Math.hypot(npcTarget.x-p.x,npcTarget.y-p.y))){
+          wolfTarget.hp=Math.max(0,wolfTarget.hp-25);
+          if(wolfTarget.hp===0){
+            animalActorsRef.current=animalActorsRef.current.filter(a=>a!==wolfTarget);
+            animalRender.delete(wolfTarget.id);
+            slotUploaded.delete(animalSlotBase+wolfTarget.slotId);
+            setMessage('Wolf slain.');
+          } else setMessage('Wolf hit · '+wolfTarget.hp+' HP remaining');
+          return;
+        }
+        const target=npcTarget;
         if(!target){setMessage('No living target in melee range');return}
         target.hp=Math.max(0,target.hp-25);
         const nextHealth=Math.max(0,healthRef.current-5);healthRef.current=nextHealth;setHealth(nextHealth);try{localStorage.setItem(HEALTH_KEY,String(nextHealth))}catch{}
@@ -1947,6 +2025,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       clearMoveTarget:()=>{moveTarget=null;},
       getTransients:()=>transientActorsRef.current.map(t=>({id:t.id,kind:t.kind,name:t.name,x:t.x,y:t.y,state:t.state,slotId:t.slotId,exit:t.exit})),
       spawnTransient:(kind:'traveler'|'adventurer')=>{const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
+      // BUILD 1013 test hooks (probes only — no gameplay effect):
+      // read animals, force-spawn one (bypasses pacing + the
+      // out-of-view rule so probes can watch it, but never the caps
+      // or slot uniqueness), teleport one (drops the cached A* path,
+      // the 999 lesson), and read its render position (floats, with
+      // flight height h for birds).
+      getAnimals:()=>animalActorsRef.current.map(a=>({id:a.id,kind:a.kind,x:a.x,y:a.y,state:a.state,hp:a.hp,slotId:a.slotId,flightTo:a.flightTo})),
+      spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:MAX_WOLVES;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
+      setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;animalPath.delete(id);return true;}return false;},
+      getAnimalRenderPos:(id:string)=>{const r=animalRender.get(id);return r?{x:r.x,y:r.y,h:r.h}:null;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -2104,6 +2192,52 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       transientActorsRef.current=kept;
     },900);
 
+    // BUILD 1013: wild animals. Mount spawns one of each kind when an
+    // out-of-view wild tile exists (the wild reads as alive on first
+    // load, never a pop-in); the timer tops each kind up to its cap
+    // every 30 ticks (~27s) and steps every animal with the 998 rules
+    // (cached A*, occupied waits, persistent-block replans, sealed
+    // retries — see animals.ts). A wolf bite lands here, on the wolf's
+    // own 900ms tick: the player takes WOLF_BITE damage (persisted to
+    // HEALTH_KEY, with the same exhaustion rule as the NPC strike-back).
+    // NOTHING here touches NPC_SAVE_KEY: animals are session-only.
+    const animalPath=new Map<string,AnimalPathState>();
+    const mountSpawnAnimal=(kind:'bird'|'goat'|'deer'|'wolf')=>{
+      const live=animalActorsRef.current;
+      const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:MAX_WOLVES;
+      if(live.filter(a=>a.kind===kind).length>=cap)return;
+      const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,true);
+      if(s)animalActorsRef.current=[...live,s];
+    };
+    mountSpawnAnimal('bird');
+    mountSpawnAnimal('goat');
+    mountSpawnAnimal('deer');
+    mountSpawnAnimal('wolf');
+    const animalTimer=window.setInterval(()=>{
+      animalTickRef.current++;
+      const tick=animalTickRef.current;
+      const player=stateRef.current.position;
+      if(tick%ANIMAL_SPAWN_TOPUP_TICKS===0){
+        (['bird','goat','deer','wolf'] as const).forEach(kind=>mountSpawnAnimal(kind));
+      }
+      const residents=npcActorsRef.current;
+      for(const a of animalActorsRef.current){
+        const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)
+          ||residents.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y)
+          ||transientActorsRef.current.some(t=>Math.round(t.x)===x&&Math.round(t.y)===y)
+          ||animalActorsRef.current.some(o=>o!==a&&Math.round(o.x)===x&&Math.round(o.y)===y);
+        const res=stepAnimal(world,a,animalPath.get(a.id),occupied,player,staticAnchors.plaza);
+        if(res.path)animalPath.set(a.id,res.path);else animalPath.delete(a.id);
+        if(res.biteDamage>0){
+          const nextHealth=Math.max(0,healthRef.current-res.biteDamage);
+          healthRef.current=nextHealth;setHealth(nextHealth);
+          try{localStorage.setItem(HEALTH_KEY,String(nextHealth))}catch{}
+          if(nextHealth===0){setMessage('You are exhausted. Health restored to 100.');healthRef.current=100;setHealth(100);try{localStorage.setItem(HEALTH_KEY,'100')}catch{}}
+          else setMessage('A wolf bites you for '+res.biteDamage+'!');
+        }
+      }
+    },900);
+
     // BUILD 1000: barks through the existing message area. Every 3s,
     // the nearest figure within 4 tiles barks when eligible (residents:
     // seeded day rule; transients: always day-eligible) and both
@@ -2138,7 +2272,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
