@@ -29,9 +29,17 @@
 //   (skyDriftRef), so it moves every frame for free.
 // - Wind: smoke drifts +x at exactly CLOUD_DRIFT_TILES_PER_SEC (0.3),
 //   the same speed and direction as the 1011 clouds — the sky agrees
-//   with itself. A puff lives SMOKE_RISE_PERIOD_SEC seconds, rises
-//   SMOKE_RISE_H tiles, drifts ~2.1 tiles east, and thins by colour
-//   toward SKY_HORIZON (no alpha exists in this renderer).
+//   with itself.
+// - BUILD 1015 smoke rework (the 1014 column read as a stack of pale
+//   cubes, and the user said so flatly): the 1014 form rose only 3
+//   tiles, started nearly white, and vanished at full size (0.9) at
+//   the top — a hard pop. The rework rises 7 tiles over 10s, starts
+//   DARK at the cap (fresh smoke is dark against the sky), thins by
+//   colour toward the sky AND shrinks to a 0.06 wisp at end of life,
+//   so it dissolves instead of popping; puffs vary in size by seed
+//   and the column wanders (growing with height) instead of stacking
+//   on a rigid line. A puff lives 10s, rises 7 tiles, drifts ~3
+//   tiles east.
 // - Lit panes are SELF-LUMINOUS (drawn with uNight=0, the sun/moon
 //   precedent): a lit window emits light, so at night it stays full
 //   warm yellow against the navy-dimmed town. Smoke and dark panes
@@ -48,24 +56,44 @@ import type { HutRect, IsoWorld } from '../iso/isoWorld';
 
 export type Vec3 = [number, number, number];
 
-/** Puffs per chimney column. Six, spaced half a tile apart, so the
- *  column reads as continuous smoke rather than separate cubes (four
- *  left visible sky gaps between puffs). */
-export const SMOKE_PUFFS_PER_CHIMNEY = 6;
+/** Puffs per chimney column. Nine over a 7-tile rise, ~0.78 apart,
+ *  so the taller column still reads as continuous smoke (six over 7
+ *  would leave sky gaps between puffs). */
+export const SMOKE_PUFFS_PER_CHIMNEY = 9;
 /** One puff's full life, real seconds (rise + drift + thin, then recycle). */
-export const SMOKE_RISE_PERIOD_SEC = 7;
-/** How far a puff rises above the chimney cap over its life, tiles. */
-export const SMOKE_RISE_H = 3;
-/** Puff size at the cap, tiles. */
-export const SMOKE_BASE_SIZE = 0.35;
-/** Puff growth over its life, tiles (ends at 0.9). */
-export const SMOKE_GROW = 0.55;
-/** Smoke colour at the cap: light grey. */
-export const SMOKE_BASE: Vec3 = [0.84, 0.84, 0.86];
-/** One-time fx-buffer allocation, vertices. Town needs ~2,600 (7
- *  chimneys x 216 + 185 panes x 6); 40 extra placed houses need
- *  ~11,000. Emission never pushes past this cap (see emitHouseFx). */
-export const FX_MAX_VERTS = 16384;
+export const SMOKE_RISE_PERIOD_SEC = 10;
+/** How far a puff rises above the chimney cap over its life, tiles.
+ *  BUILD 1015: 3 -> 7 (the 1014 column was a stubby stack). */
+export const SMOKE_RISE_H = 7;
+/** Puff size at the cap, tiles (small at birth). */
+export const SMOKE_BASE_SIZE = 0.28;
+/** Puff size at mid-life (p = 0.45), tiles — the column's widest. */
+export const SMOKE_PEAK_SIZE = 1.0;
+/** Puff size at end of life, tiles — a wisp, so the column dissolves
+ *  instead of popping out at full size (the 1014 failure). */
+export const SMOKE_END_SIZE = 0.06;
+/** Life fraction where the size peaks (grow before, shrink after). */
+export const SMOKE_PEAK_P = 0.45;
+/** Per-puff size jitter, seeded: puffs vary 0.85x-1.15x so the column
+ *  is not a uniform stack. */
+export const SMOKE_SIZE_JITTER = 0.3;
+/** Smoke colour at the cap: DARK grey-blue (fresh smoke is dark
+ *  against the sky — the 1014 nearly-white base is what read as
+ *  solid cubes). */
+export const SMOKE_BASE: Vec3 = [0.38, 0.38, 0.42];
+/** Smoke colour at mid-life: dispersed mid grey. */
+export const SMOKE_MID: Vec3 = [0.62, 0.64, 0.68];
+/** One-time fx-buffer allocation, vertices. Town needs ~4,500 (10
+ *  chimneys x 324 + 205 panes x 6); 40 extra placed chimney houses
+ *  need ~19,000 (50 chimneys x 324 + ~490 panes x 6) — still under
+ *  the cap, and emission never pushes past it (see emitHouseFx).
+ *  Raised from 16384 in BUILD 1015: the reworked smoke costs 324
+ *  verts per chimney (was 216), and at 16384 the 40-extra-houses
+ *  scenario overflowed — the fits() guard would silently skip the
+ *  smoke on later placed houses. The buffer is allocated once
+ *  (32768 verts x 6 floats x 4 bytes ≈ 786 KB); per-frame cost is
+ *  unchanged (bufferSubData of the used prefix). */
+export const FX_MAX_VERTS = 32768;
 
 /** Light-on time, minutes after midnight: 17:30. */
 export const LIGHT_ON_MIN = 1050;
@@ -174,30 +202,49 @@ export interface SmokePuff {
 
 const frac = (v: number): number => v - Math.floor(v);
 
+const smooth = (t: number): number => t * t * (3 - 2 * t);
+const lerp3 = (a: Vec3, b: Vec3, t: number): Vec3 => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
 /**
  * A chimney's smoke puffs at driftSec real seconds. Puff i rides
- * phase (driftSec / period + i/4) mod 1: it spawns at the cap, rises
- * SMOKE_RISE_H, grows SMOKE_BASE_SIZE -> +SMOKE_GROW, drifts +x at
- * exactly the cloud wind speed, sways a little in z (seeded per
- * chimney), and thins by colour toward SKY_HORIZON — no alpha exists,
- * so fading to sky colour IS the thinning. Pure: same inputs give
- * the same puffs, so the browser hook can read the live state.
+ * phase (driftSec / period + i/9) mod 1. BUILD 1015 rework — the 1014
+ * column was a rigid stack of pale cubes that popped out at the top:
+ * - Taller: rises SMOKE_RISE_H (7) over SMOKE_RISE_PERIOD_SEC (10).
+ * - Real fade, two ways at once: colour dark base -> mid grey -> sky
+ *   at the top, AND size grows to a peak at p=0.45 then shrinks to a
+ *   0.06 wisp at p=1 — the puff dissolves instead of vanishing at
+ *   full size. No alpha exists, so sky-colour + shrink IS the fade.
+ * - Varied: each puff's size jitters by seed (0.85x-1.15x).
+ * - Wandering: the column bends as it rises — x wander and two
+ *   z harmonics, both scaled by p so a newborn puff starts exactly
+ *   at the cap and the wind catches it as it climbs. Drift +x stays
+ *   exactly the cloud wind speed.
+ * Pure: same inputs give the same puffs, so the browser hook can read
+ * the live state.
  */
 export function smokePuffsFor(top: Vec3, seedX0: number, seedY0: number, driftSec: number): SmokePuff[] {
   const sway = hash2(seedX0 * 1.7 + 5, seedY0 * 3.3 + 5) * Math.PI * 2;
+  const sway2 = hash2(seedX0 * 2.9 + 11, seedY0 * 1.3 + 7) * Math.PI * 2;
   const puffs: SmokePuff[] = [];
   for (let i = 0; i < SMOKE_PUFFS_PER_CHIMNEY; i++) {
     const p = frac(driftSec / SMOKE_RISE_PERIOD_SEC + i / SMOKE_PUFFS_PER_CHIMNEY);
+    const sizeJitter = 1 - SMOKE_SIZE_JITTER / 2 + SMOKE_SIZE_JITTER * hash2(seedX0 + i * 3.7, seedY0 + i * 1.9);
+    const size = (p < SMOKE_PEAK_P
+      ? SMOKE_BASE_SIZE + (SMOKE_PEAK_SIZE - SMOKE_BASE_SIZE) * smooth(p / SMOKE_PEAK_P)
+      : SMOKE_PEAK_SIZE - (SMOKE_PEAK_SIZE - SMOKE_END_SIZE) * smooth((p - SMOKE_PEAK_P) / (1 - SMOKE_PEAK_P))) * sizeJitter;
+    const color = p < SMOKE_PEAK_P
+      ? lerp3(SMOKE_BASE, SMOKE_MID, smooth(p / SMOKE_PEAK_P))
+      : lerp3(SMOKE_MID, SKY_HORIZON, smooth((p - SMOKE_PEAK_P) / (1 - SMOKE_PEAK_P)));
     puffs.push({
-      x: top[0] + p * SMOKE_RISE_PERIOD_SEC * CLOUD_DRIFT_TILES_PER_SEC,
+      x: top[0] + p * SMOKE_RISE_PERIOD_SEC * CLOUD_DRIFT_TILES_PER_SEC + Math.sin(p * Math.PI * 3 + sway2) * 0.35 * p,
       y: top[1] + 0.15 + p * SMOKE_RISE_H,
-      z: top[2] + Math.sin(p * Math.PI * 2 + sway) * 0.18,
-      size: SMOKE_BASE_SIZE + p * SMOKE_GROW,
-      color: [
-        SMOKE_BASE[0] + (SKY_HORIZON[0] - SMOKE_BASE[0]) * p,
-        SMOKE_BASE[1] + (SKY_HORIZON[1] - SMOKE_BASE[1]) * p,
-        SMOKE_BASE[2] + (SKY_HORIZON[2] - SMOKE_BASE[2]) * p,
-      ],
+      z: top[2] + (Math.sin(p * Math.PI * 2 + sway) * 0.3 + Math.sin(p * Math.PI * 4 + sway2) * 0.12) * p,
+      size,
+      color,
       rot: sway + i * (Math.PI / 3),
     });
   }

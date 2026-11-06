@@ -13,17 +13,19 @@ import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWo
 import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass'
-  | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand';
-/** The four placeable house variants (BUILD 1012). 'house' itself is
- *  NOT in this list: it is the legacy placed kind (old saves, and
- *  anything placed before variants existed) — it validates and renders
- *  exactly as it always did, but the palette no longer offers it. */
-export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand'];
-export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' {
+  | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
+  | 'house-inn' | 'house-smith' | 'house-store';
+/** The placeable house variants (BUILD 1012: four; BUILD 1015: the
+ *  three commercial buildings join them). 'house' itself is NOT in
+ *  this list: it is the legacy placed kind (old saves, and anything
+ *  placed before variants existed) — it validates and renders exactly
+ *  as it always did, but the palette no longer offers it. */
+export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand', 'house-inn', 'house-smith', 'house-store'];
+export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' {
   return (HOUSE_VARIANT_KINDS as string[]).includes(kind);
 }
 /** True for the legacy 'house' kind and every variant kind. */
-export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' {
+export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' {
   return kind === 'house' || isHouseVariantKind(kind);
 }
 export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
@@ -32,6 +34,9 @@ export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
     case 'house-tall': return 'tall';
     case 'house-shop': return 'shop';
     case 'house-grand': return 'grand';
+    case 'house-inn': return 'inn';
+    case 'house-smith': return 'smith';
+    case 'house-store': return 'store';
     default: return null;
   }
 }

@@ -851,3 +851,19 @@ export function maxAnimalVerts(): number {
   }
   return max;
 }
+
+/**
+ * BUILD 1015 polish: shadow blob under a ground animal (1013 shipped
+ * none). One dark ground quad (2 tris, 6 verts) at y=0.005, same dark
+ * blob colour as the house contact shadows. Skipped while a bird is
+ * flying (h >= 0.05) — a bird in the air casts no blob here.
+ * Half-size by kind: bird 0.22, deer 0.55, goat/wolf 0.45.
+ */
+export function emitAnimalBlob(out: number[], kind: AnimalKind, cx: number, cz: number, h: number): void {
+  if (h >= 0.05) return;
+  const bs = kind === 'bird' ? 0.22 : kind === 'deer' ? 0.55 : 0.45;
+  out.push(
+    cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17,
+    cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17, cx - bs, 0.005, cz + bs, 0.2, 0.19, 0.17,
+  );
+}

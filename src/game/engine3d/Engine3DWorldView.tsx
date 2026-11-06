@@ -5,7 +5,7 @@ import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type Villag
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import {
   houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
-  SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
+  SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, hash2,
   DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
@@ -24,12 +24,14 @@ import {
   type PaletteKind, type UndoEntry, type BuildHistory,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
+import { emitGroundDetail3d } from './groundDetail3d';
+import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
-import { spawnAnimal, stepAnimal, emitAnimal, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
+import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -223,6 +225,15 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
       : lot.facing === 'west' ? { x: tx0, y: midY } : { x: tx1, y: midY };
     world.huts.push({ x0: tx0, y0: ty0, x1: tx1, y1: ty1, doorX: door.x, doorY: door.y });
   }
+
+  // BUILD 1015: the town's commercial buildings (inn, general store,
+  // blacksmith) and the extra wild rocks — pure functions in
+  // townAdditions3d.ts, asserted standalone. Stamped after the lot
+  // loop and before the prop loop / insideBuilding filter, so
+  // trees/rocks/crates under them get cleared and NPC spawns get
+  // nudged. No mechanics: buildings only.
+  stampTownBuildings(world);
+  stampExtraRocks(world);
 
   // Bring the layout generator's authored market/utility props into the
   // 3D collision grid. Stalls retain their counter collision; other solid
@@ -776,11 +787,50 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       houseBox(x,z,.1,.1,d+2*e,ridgeY,design.timber);
     }
     // BUILD 1014: chimney top single-sourced with houseFx.ts — the
-    // smoke starts at exactly this cap (ridgeY+.8).
+    // smoke starts at exactly this cap (ridgeY+.8). BUILD 1015: the
+    // blacksmith's chimney is wider (0.55); the cap lip scales with
+    // it, the cap HEIGHT is unchanged so the smoke needs no case.
     const chimTop=chimneyTopFor(x,z,w,d,design);
     if(chimTop){
-      houseBox(chimTop[0],chimTop[2],.35,1.1,.35,chimTop[1]-1.1,design.stone);
-      quad([chimTop[0]-.19,chimTop[1],chimTop[2]-.19],[chimTop[0]+.19,chimTop[1],chimTop[2]-.19],[chimTop[0]+.19,chimTop[1],chimTop[2]+.19],[chimTop[0]-.19,chimTop[1],chimTop[2]+.19],[.15,.14,.12]);
+      const chw=design.wideChimney?.55:.35;
+      houseBox(chimTop[0],chimTop[2],chw,1.1,chw,chimTop[1]-1.1,design.stone);
+      const cap=chw/2+.015;
+      quad([chimTop[0]-cap,chimTop[1],chimTop[2]-cap],[chimTop[0]+cap,chimTop[1],chimTop[2]-cap],[chimTop[0]+cap,chimTop[1],chimTop[2]+cap],[chimTop[0]-cap,chimTop[1],chimTop[2]+cap],[.15,.14,.12]);
+    }
+    // BUILD 1015: commercial-building dressing (no mechanics — the
+    // buildings are shells with 990 interiors for now). Inn: a hanging
+    // sign board on a timber post beside the door. Store: a terracotta
+    // awning over the open front on two posts, with goods crates
+    // flanking the door (clear of the colonnade posts and the door
+    // swing). All positions derive from the door face, so they read
+    // from every camera angle.
+    if(design.building==='inn'){
+      const signA=aC+spanA*.32;
+      if(face==='south'||face==='north'){
+        houseBox(signA,facePlane(.16),.08,.08,.3,2.32,design.timber);
+        houseBox(signA,facePlane(.32),.7,.45,.06,2.02,[.78,.58,.25]);
+      } else {
+        houseBox(facePlane(.16),signA,.3,.08,.08,2.32,design.timber);
+        houseBox(facePlane(.32),signA,.06,.45,.7,2.02,[.78,.58,.25]);
+      }
+    } else if(design.building==='store'){
+      const aw=spanA/2-.3;
+      const a0=aC-aw,a1=aC+aw;
+      if(face==='south'||face==='north'){
+        quad([a0,2.0,facePlane(.02)],[a1,2.0,facePlane(.02)],[a1,1.65,facePlane(.78)],[a0,1.65,facePlane(.78)],[.55,.25,.18]);
+        houseBox(a0,facePlane(.78),.08,1.65,.08,0,design.timber);
+        houseBox(a1,facePlane(.78),.08,1.65,.08,0,design.timber);
+        houseBox(aC-spanA*.35,facePlane(.45),.5,.5,.5,0,[.57,.31,.16]);
+        houseBox(aC+spanA*.35,facePlane(.45),.5,.5,.5,0,[.57,.31,.16]);
+        houseBox(aC-spanA*.35,facePlane(.45),.35,.35,.35,.5,[.5,.27,.14]);
+      } else {
+        quad([facePlane(.02),2.0,a0],[facePlane(.02),2.0,a1],[facePlane(.78),1.65,a1],[facePlane(.78),1.65,a0],[.55,.25,.18]);
+        houseBox(facePlane(.78),a0,.08,1.65,.08,0,design.timber);
+        houseBox(facePlane(.78),a1,.08,1.65,.08,0,design.timber);
+        houseBox(facePlane(.45),aC-spanA*.35,.5,.5,.5,0,[.57,.31,.16]);
+        houseBox(facePlane(.45),aC+spanA*.35,.5,.5,.5,0,[.57,.31,.16]);
+        houseBox(facePlane(.45),aC-spanA*.35,.35,.35,.35,.5,[.5,.27,.14]);
+      }
     }
   }
   // BUILD 1007: trees render at whole-world range (were window-culled).
@@ -799,8 +849,20 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // quads, before rocks/crates (draw order is irrelevant — one buffer).
   emitNaturalGrass(triV, world, effTerrain, minX, maxX, minY, maxY);
   emitPlacedGrass(triV, world, minX, maxX, minY, maxY);
+  // BUILD 1015: wildflowers + pebbles (groundDetail3d.ts) — same
+  // window, same determinism as the tufts, a few hundred verts.
+  emitGroundDetail3d(triV, world, effTerrain, minX, maxX, minY, maxY);
   // BUILD 1007: rocks + crates render at whole-world range (were window-culled).
-  for(const r of world.rocks) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
+  // BUILD 1015: rocks vary in size and shade by tile seed (0.5-1.0
+  // wide, 0.4-0.9 tall) instead of one identical cube — the wild reads
+  // less stamped. Collision is unchanged (the whole tile blocks,
+  // whatever the visual size).
+  for(const r of world.rocks){
+    const rw=.5+hash2(r.tx*3.1+21,r.ty*7.7+21)*.5;
+    const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
+    const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
+    cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh]);
+  }
   // BUILD 986: generated/authored crates + layout prop placeholders render
   // as 983 trees, not brown cubes. Data untouched — the wood interaction
   // still finds and removes the crate entry (see the E-key handler).
@@ -956,7 +1018,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
@@ -1024,7 +1086,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // the one bare 'house' kind — each is its own palette entry with
     // its own look, footprint, and interior. Bare 'house' is the
     // legacy placed kind (old saves only) and is not offered here.
-    {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand']},
+    {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand','house-inn','house-smith','house-store']},
     {id:'plants',label:'Plants',kinds:['tree']},
     {id:'props',label:'Props',kinds:['stall']},
   ];
@@ -1040,6 +1102,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     'house-tall':{label:'Tall House',swatch:'linear-gradient(135deg,#dec78f 0 50%,#8f3626 50% 100%)'},
     'house-shop':{label:'Shopfront',swatch:'linear-gradient(135deg,#c2a678 0 50%,#3a281a 50% 100%)'},
     'house-grand':{label:'Grand House',swatch:'linear-gradient(135deg,#d1b183 0 50%,#54341e 50% 100%)'},
+    // BUILD 1015 swatches: inn cream/amber sign, smith dark stone/
+    // forge ember, store tan/terracotta awning.
+    'house-inn':{label:'Inn',swatch:'linear-gradient(135deg,#d6c799 0 50%,#c79540 50% 100%)'},
+    'house-smith':{label:'Blacksmith',swatch:'linear-gradient(135deg,#61615c 0 50%,#b35a1e 50% 100%)'},
+    'house-store':{label:'General Store',swatch:'linear-gradient(135deg,#c2a678 0 50%,#8c402e 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     grass:{label:'Grass',swatch:'linear-gradient(180deg,#a6bf66 0,#618538 100%)'},
@@ -1909,6 +1976,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         if(Math.abs(st.h-st.eh)>0.01||Math.abs(st.graze-st.eg)>0.01){slotUploaded.delete(slot);st.eh=st.h;st.eg=st.graze;}
         const pre:number[]=[];
         emitAnimal(pre,a.kind,st.x+.5,st.y+.5,st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying'});
+        // BUILD 1015 polish: shadow blob under ground animals (1013
+        // shipped none; emitAnimalBlob in animals.ts). Landing/takeoff
+        // forces a slot re-emit via the h-change check above, so the
+        // blob appears and disappears with the bird.
+        emitAnimalBlob(pre,a.kind,st.x+.5,st.y+.5,st.h);
         emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,PLAYER_SPEC,false,st.x,st.y,pre);
       }
       // BUILD 992: in first person the camera IS the player — hide the
@@ -1974,7 +2046,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         const crate=world.crates.find(c=>key(c.tx,c.ty));
         if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
-        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
         if(tree){world.trees=world.trees.filter(c=>c!==tree);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         setMessage('Nothing close enough to interact with');return

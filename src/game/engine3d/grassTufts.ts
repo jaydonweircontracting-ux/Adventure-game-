@@ -43,14 +43,15 @@ export const GRASS_COLOR: V3 = [0.65, 0.75, 0.4]; // tip (v=1)
 export const GRASS_COLOR2: V3 = [0.38, 0.52, 0.22]; // base (v=0)
 export const GRASS_NOISE_SCALE = 20.0;
 
-// Fraction of eligible grass tiles carrying a natural tuft (0.05 => ~100
-// tufts, ~10k triangles, in a full-grass 45x45 window). 0.12 was measured
+// Fraction of eligible grass tiles carrying a natural tuft (0.08 => ~160
+// tufts, ~16k triangles, in a full-grass 45x45 window). 0.12 was measured
 // first (26k tris) and cost 28-44% SwiftShader FPS vs the 984 baseline,
-// so the density was cut to 0.05: near-field tufts still read clearly
-// (see the after-field screenshot) while the frame cost stays bounded.
-// Lower this first if grass ever costs frames on a real phone
-// (SwiftShader headless numbers understate it).
-export const GRASS_DENSITY = 0.05;
+// so the density was cut to 0.05 in 985. BUILD 1015 raises it to 0.08 —
+// visibly more grass, with the FPS cost measured in the 1015 probe
+// (same-scene harness runs vs the 1014 baseline). Lower this first if
+// grass ever costs frames on a real phone (SwiftShader headless numbers
+// understate it).
+export const GRASS_DENSITY = 0.08;
 
 const TAU = Math.PI * 2;
 
@@ -166,7 +167,10 @@ function emitTuft(triV: TriV, p: TuftParams, originX: number, originZ: number): 
 // (walls, trees, rocks, crates, stalls, houses — generated or placed), so
 // blades never clip through solid geometry. Grass terrain under a house
 // or tree is still grass terrain, so the block list is checked first.
-function blockedTiles(world: IsoWorld): Set<string> {
+// BUILD 1015: exported — the ground-detail module (flowers/pebbles)
+// shares exactly this block list, so detail never clips through solid
+// geometry either.
+export function blockedTiles(world: IsoWorld): Set<string> {
   const blocked = new Set<string>();
   const key = (x: number, y: number): string => x + ',' + y;
   for (const w of world.walls || []) blocked.add(key(w.x, w.y));

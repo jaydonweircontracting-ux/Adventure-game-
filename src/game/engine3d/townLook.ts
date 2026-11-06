@@ -194,6 +194,15 @@ export interface HouseDesign {
   // removed — window light is now a per-house schedule in houseFx.ts
   // (seeded on/off times, evaluated per frame), and the world builder
   // emits only the timber frames.
+  // BUILD 1015: commercial-building identity (inn / blacksmith /
+  // general store). Undefined for ordinary houses. Set by
+  // houseDesignForVariant for the three new variants; the house loop
+  // adds the sign / awning+crates / wide chimney from it.
+  building?: 'inn' | 'smith' | 'store';
+  /** Wide chimney (blacksmith): a 0.55 box instead of the 0.35 house
+   *  chimney. The cap height is unchanged, so chimneyTopFor (and the
+   *  smoke) need no special case. */
+  wideChimney?: boolean;
 }
 
 /** BUILD 1012 — placeable house variants. AUDIT (measured from the
@@ -211,7 +220,7 @@ export interface HouseDesign {
  *  timber and roof stay seed-driven (town behaviour —
  *  two cottages at different spots differ in those, exactly like two
  *  town houses do). No new models, no new parameter values. */
-export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand';
+export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand' | 'inn' | 'smith' | 'store';
 export interface HouseVariant {
   id: HouseVariantId;
   label: string;
@@ -226,8 +235,16 @@ export const HOUSE_VARIANTS: Record<HouseVariantId, HouseVariant> = {
   tall: { id: 'tall', label: 'Tall House', w: 3, d: 3, stories: 3, openFront: false },
   shop: { id: 'shop', label: 'Shopfront', w: 6, d: 4, stories: 2, openFront: true },
   grand: { id: 'grand', label: 'Grand House', w: 6, d: 5, stories: 3, openFront: false },
+  // BUILD 1015: the town's commercial buildings. Inn: the tallest
+  // house in town (3 stories, 6x5) with a hanging sign. Blacksmith:
+  // 5x4 with a wide chimney and darker stone. General Store: 5x4
+  // open colonnade with an awning and goods crates — distinct from
+  // the generic 6x4 Shopfront by footprint, awning, and crates.
+  inn: { id: 'inn', label: 'Inn', w: 6, d: 5, stories: 3, openFront: false },
+  smith: { id: 'smith', label: 'Blacksmith', w: 5, d: 4, stories: 2, openFront: false },
+  store: { id: 'store', label: 'General Store', w: 5, d: 4, stories: 2, openFront: true },
 };
-export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand'];
+export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand', 'inn', 'smith', 'store'];
 
 /** Derive a house's full look from its hut rect + door tile. The door
  *  face comes from the layout's door position (door on the y0 edge =
@@ -266,7 +283,13 @@ export function houseDesignFor(
  *  variant. The variant fixes ONLY the structural choices the user
  *  picked (stories, open front); everything else is the exact same
  *  seed hash as houseDesignFor, so colours, chimney and lit windows
- *  still vary by placement spot exactly like town houses do. */
+ *  still vary by placement spot exactly like town houses do.
+ *  BUILD 1015: the three commercial variants also fix their identity:
+ *  the inn and the blacksmith ALWAYS have a chimney (a smokeless inn
+ *  or smithy would read wrong, and their chimneys feed the reworked
+ *  smoke), the smith gets darker stone and a wide chimney, and all
+ *  three carry the `building` flag the house loop dresses them from.
+ *  The store keeps its seeded chimney like any house. */
 export function houseDesignForVariant(
   variant: HouseVariant,
   x0: number, y0: number, x1: number, y1: number,
@@ -274,7 +297,13 @@ export function houseDesignForVariant(
   seedX0: number = x0, seedY0: number = y0,
 ): HouseDesign {
   const base = houseDesignFor(x0, y0, x1, y1, doorX, doorY, seedX0, seedY0);
-  return { ...base, stories: variant.stories, openFront: variant.openFront };
+  const out: HouseDesign = { ...base, stories: variant.stories, openFront: variant.openFront };
+  if (variant.id === 'inn') { out.building = 'inn'; out.chimney = true; }
+  else if (variant.id === 'smith') {
+    out.building = 'smith'; out.chimney = true; out.wideChimney = true;
+    out.stone = [0.38, 0.38, 0.36];
+  } else if (variant.id === 'store') { out.building = 'store'; }
+  return out;
 }
 
 /** One scattered stone slab on a dirt tile, in tile-local coordinates.

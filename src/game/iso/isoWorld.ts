@@ -75,6 +75,14 @@ export interface IsoWorld {
    *  so moved huts persist exactly as long as removed huts do. Old saves
    *  load with none. */
   movedHuts?: MovedHut[];
+  /** BUILD 1015: terrain keys ("x,y") of adapter-stamped extra rocks
+   *  the user mined (E-key) or removed. The 3D adapter re-stamps extra
+   *  rocks from a hash on every load, so without this set a mined rock
+   *  would resurrect — the 987/989 rule (removed things stay removed).
+   *  The E-key handler records the key; the adapter skips it. Old
+   *  saves load with none (no extra rocks were ever stamped for them
+   *  to remove). The iso demo never reads this field. */
+  removedRocks?: string[];
 }
 
 /** BUILD 1006: one moved generated hut. Both rects carry doorX/doorY. */
