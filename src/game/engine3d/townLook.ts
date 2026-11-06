@@ -190,8 +190,10 @@ export interface HouseDesign {
   openFront: boolean;
   chimney: boolean;
   doorFace: DoorFace;
-  /** One flag per window slot (8 slots); true = warm-lit pane. */
-  lit: boolean[];
+  // BUILD 1014: the old `lit` flags (one per window slot, static) were
+  // removed — window light is now a per-house schedule in houseFx.ts
+  // (seeded on/off times, evaluated per frame), and the world builder
+  // emits only the timber frames.
 }
 
 /** BUILD 1012 — placeable house variants. AUDIT (measured from the
@@ -206,7 +208,7 @@ export interface HouseDesign {
  *  choice. Each variant below is a REAL town combination: its
  *  footprint is a measured town size, its stories/openFront are
  *  values the emitter already produces. Chimney, stone, plaster,
- *  timber, roof and lit windows stay seed-driven (town behaviour —
+ *  timber and roof stay seed-driven (town behaviour —
  *  two cottages at different spots differ in those, exactly like two
  *  town houses do). No new models, no new parameter values. */
 export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand';
@@ -232,7 +234,7 @@ export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', '
  *  north face, y1 = south, x0 = west, x1 = east) — the layout is never
  *  moved, only read. BUILD 1006: a moved hut passes its ORIGINAL rect's
  *  origin as (seedX0, seedY0), so the hash-driven look (stories, stone,
- *  plaster, timber, roof, open front, chimney, lit windows) stays
+ *  plaster, timber, roof, open front, chimney) stays
  *  exactly the look the house had before it moved; proportions and door
  *  face still come from the CURRENT rect (same size, same facing, so
  *  they agree anyway). Default seeds are the rect itself. */
@@ -257,7 +259,6 @@ export function houseDesignFor(
     openFront: h(6) < 0.25,
     chimney: h(7) < 0.5,
     doorFace,
-    lit: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => h(10 + i) < 0.35),
   };
 }
 

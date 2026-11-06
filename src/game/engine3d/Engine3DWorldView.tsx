@@ -6,7 +6,7 @@ import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, p
 import {
   houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
-  GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
+  DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
@@ -15,6 +15,7 @@ import {
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
+import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, FX_MAX_VERTS } from './houseFx';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
@@ -741,27 +742,17 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       houseBox(x+w/2+.01,z,.07,.13,d,y-.065,design.timber);
     }
     // Small square windows: 2 on the door face per upper floor, 1 on each
-    // side face per upper floor, 1 on the back per upper floor. Lit flags
-    // cycle through the design's 8 slots.
-    let winSlot=0;
-    const win=(f:FaceDir,a:number,y:number)=>{
-      const fixed=f==='south'?z+d/2:f==='north'?z-d/2:f==='west'?x-w/2:x+w/2;
-      const out=f==='south'||f==='east'?1:-1;
-      const lit=design.lit[winSlot%8];winSlot++;
-      faceRect(f,a,.46,y,.56,fixed+out*.015,design.timber);
-      faceRect(f,a,.34,y,.44,fixed+out*.03,lit?GLASS_LIT:GLASS_DARK);
-    };
-    for(let s=1;s<design.stories;s++){
-      const yC=GROUND_FLOOR_H+(s-1)*UPPER_FLOOR_H+UPPER_FLOOR_H/2;
-      win(face,aC-spanA*.22,yC);
-      win(face,aC+spanA*.22,yC);
-      const sideA=face==='south'||face==='north'?z:x;
-      const sideL:FaceDir=face==='south'?'west':face==='north'?'east':face==='west'?'north':'south';
-      const sideR:FaceDir=face==='south'?'east':face==='north'?'west':face==='west'?'south':'north';
-      win(sideL,sideA,yC);
-      win(sideR,sideA,yC);
-      const back:FaceDir=face==='south'?'north':face==='north'?'south':face==='west'?'east':'west';
-      win(back,aC,yC);
+    // side face per upper floor, 1 on the back per upper floor.
+    // BUILD 1014: the timber FRAMES stay here (static, world buffer);
+    // the glass panes moved to the per-frame fx buffer (houseFx.ts),
+    // where the lit state is a pure function of (house seed, clock
+    // minutes) — no world rebuild when a light flips. Positions are
+    // single-sourced from windowSlotsFor, so frames and panes can
+    // never disagree.
+    for(const s of windowSlotsFor(x,z,w,d,face,design.stories)){
+      const fixed=s.face==='south'?z+d/2:s.face==='north'?z-d/2:s.face==='west'?x-w/2:x+w/2;
+      const out=s.face==='south'||s.face==='east'?1:-1;
+      faceRect(s.face,s.a,.46,s.y,.56,fixed+out*.015,design.timber);
     }
     // Steep pitched roof (ridge along the longer side), eaves overhang,
     // timber gables at the ridge ends, ridge beam, optional chimney.
@@ -784,11 +775,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       tri([x+w/2,topY,z+d/2],[x-w/2,topY,z+d/2],[x,ridgeY,z+d/2],shadeRgb(design.plaster, SUN_SHADE.south));
       houseBox(x,z,.1,.1,d+2*e,ridgeY,design.timber);
     }
-    if(design.chimney){
-      const chX=design.roofAxis==='x'?x+w*.28:x;
-      const chZ=design.roofAxis==='x'?z:z+d*.28;
-      houseBox(chX,chZ,.35,1.1,.35,ridgeY-.3,design.stone);
-      quad([chX-.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ-.19],[chX+.19,ridgeY+.8,chZ+.19],[chX-.19,ridgeY+.8,chZ+.19],[.15,.14,.12]);
+    // BUILD 1014: chimney top single-sourced with houseFx.ts — the
+    // smoke starts at exactly this cap (ridgeY+.8).
+    const chimTop=chimneyTopFor(x,z,w,d,design);
+    if(chimTop){
+      houseBox(chimTop[0],chimTop[2],.35,1.1,.35,chimTop[1]-1.1,design.stone);
+      quad([chimTop[0]-.19,chimTop[1],chimTop[2]-.19],[chimTop[0]+.19,chimTop[1],chimTop[2]-.19],[chimTop[0]+.19,chimTop[1],chimTop[2]+.19],[chimTop[0]-.19,chimTop[1],chimTop[2]+.19],[.15,.14,.12]);
     }
   }
   // BUILD 1007: trees render at whole-world range (were window-culled).
@@ -1128,7 +1120,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){setMessage('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));return;}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){setMessage('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));return;}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
-    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!;
+    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight');
     if(pLoc<0||cLoc<0||!mLoc||!uNightLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -1141,6 +1133,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // a per-frame bufferData reallocation stalls the pipeline.
     gl.bindBuffer(gl.ARRAY_BUFFER,skyObjBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,SKY_MAX_VERTS*24,gl.DYNAMIC_DRAW);
+    // BUILD 1014: the house-fx buffer (chimney smoke + window panes) is
+    // allocated ONCE at FX_MAX_VERTS and re-uploaded per frame with
+    // bufferSubData, the 1011 sky-buffer pattern — a per-frame
+    // bufferData reallocation stalls the pipeline.
+    gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,FX_MAX_VERTS*24,gl.DYNAMIC_DRAW);
     const skyBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
@@ -1152,6 +1150,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // getBufferParameter GL query).
     const IDENTITY_MAT=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
     let worldVertCount=0;
+    // BUILD 1014: last frame's house-fx emission stats, for the
+    // getHouseFx test hook (probes only).
+    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0};
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     // BUILD 992: one zoom parameter for pinch + wheel, routed through
@@ -1785,6 +1786,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         if(skyCounts.cloudVerts>0)gl.drawArrays(gl.TRIANGLES,0,skyCounts.cloudVerts);
         if(skyCounts.totalVerts>skyCounts.cloudVerts){gl.uniform1f(uNightLoc,0);gl.drawArrays(gl.TRIANGLES,skyCounts.cloudVerts,skyCounts.totalVerts-skyCounts.cloudVerts);gl.uniform1f(uNightLoc,nightFactor);}
       }
+      // BUILD 1014: chimney smoke + window panes — a small per-frame
+      // buffer (a few thousand verts; the world buffer rebuilds only
+      // on >8-tile moves and cannot carry moving smoke or time-varying
+      // lights). Lit state is a pure function of (house seed, clock
+      // minutes), so no rebuild fires when a light flips. Smoke + dark
+      // panes draw with the night factor; lit panes draw with uNight=0
+      // (self-luminous, the sun/moon precedent — a lit window emits
+      // light). The entered hut's shell is skipped whole (its chimney
+      // and panes are hidden with it).
+      const fxArr:number[]=[];
+      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current);
+      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts};
+      if(fxCounts.totalVerts>0){
+        gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+        if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
+        if(fxCounts.totalVerts>fxCounts.nightVerts){gl.uniform1f(uNightLoc,0);gl.drawArrays(gl.TRIANGLES,fxCounts.nightVerts,fxCounts.totalVerts-fxCounts.nightVerts);gl.uniform1f(uNightLoc,nightFactor);}
+      }
       // BUILD 998: interpolated NPC motion + per-figure GPU slots (see
       // npcMotion.ts). Logical tiles come from the 900ms timer; figures
       // glide toward them at the demo speed, phase follows distance
@@ -1995,6 +2013,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // only — no gameplay effect).
       getSky:()=>({minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,inside:!!insideHutRef.current}),
       setSkyDrift:(s:number)=>{skyDriftRef.current=Math.max(0,Math.floor(s));},
+      // BUILD 1014 test hooks: house-fx state read (probes only — no
+      // gameplay effect). houses/chimneys/litHouses are the last
+      // frame's emission; houses[] carries each house's schedule +
+      // lit state (resolveHouseFx is what the renderer draws, so
+      // probes see exactly the live state); smokeSample is the first
+      // chimney's live puff centres (pure function of the drift clock,
+      // for the smoke-movement proof).
+      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit})),smokeSample:sample};},
       // BUILD 999: a teleport must also drop the NPC's cached A* path.
       // Paths store ABSOLUTE tiles planned from the old position; the
       // timer only replans when the DESTINATION changes, so a moved
@@ -2272,7 +2298,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
