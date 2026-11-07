@@ -14,6 +14,9 @@
 //
 // Terrain rule (out-of-map tiles only; in-map tiles are governed by
 // the stored world and never consult this module):
+//   - Ocean: west of the BUILD 1027 coastline (oceanAt) — the sea
+//     extends infinitely west, so out-of-map west is water, not grass.
+//     Ocean wins over lakes (a lake west of the coast is sea anyway).
 //   - Lakes: groundNoise(x, y, 32) > 0.90. Measured on a 400x400
 //     out-of-map sample: 1.76% water — occasional coherent lake blobs
 //     (the field is smooth at 32-tile scale), not speckles, and never
@@ -27,16 +30,16 @@
 // asserts: every stored scatter tree/rock satisfies its rule. A tile
 // cannot be both a lake and a tree/rock: lake wins, so no tree stands
 // in a lake and no rock sits in one.
-// Walkability: wild grass is walkable; lakes, wild trees and wild
-// rocks block, exactly like their in-map counterparts (water, tree,
-// rock). Chopped/mined wild items stay gone via the world's
+// Walkability: wild grass is walkable; ocean, lakes, wild trees and
+// wild rocks block, exactly like their in-map counterparts (water,
+// tree, rock). Chopped/mined wild items stay gone via the world's
 // removedWildTrees / removedWildRocks sets (same rule as 987/989).
 // NPCs, animals and transients never consult this module: their
 // targets and spawn bands are all in-town, and their walkability
 // (walkableWithPlacements -> isWalkableWorld) stays in-bounds. The
 // wilderness is player-only by construction — "empty chunks", as
 // ordered: landscape, no town, no NPCs, no quests.
-import { hash2 as scatterHash } from '../iso/isoWorld';
+import { hash2 as scatterHash, oceanAt } from '../iso/isoWorld';
 import { groundNoise } from './townLook';
 import type { IsoWorld } from '../iso/isoWorld';
 
@@ -60,14 +63,15 @@ export function wildLakeAt(x: number, y: number): boolean {
 }
 
 /** True when the scatter hash puts a wild tree on this tile
- *  (and the tile is not a lake — lake wins). */
+ *  (and the tile is not a lake or ocean — water wins). */
 export function wildTreeAt(x: number, y: number): boolean {
-  return !wildLakeAt(x, y) && wildScatter(x, y) < WILD_TREE_MAX;
+  return !oceanAt(x, y) && !wildLakeAt(x, y) && wildScatter(x, y) < WILD_TREE_MAX;
 }
 
 /** True when the scatter hash puts a wild rock on this tile
- *  (and the tile is not a lake — lake wins). */
+ *  (and the tile is not a lake or ocean — water wins). */
 export function wildRockAt(x: number, y: number): boolean {
+  if (oceanAt(x, y)) return false;
   if (wildLakeAt(x, y)) return false;
   const h = wildScatter(x, y);
   return h >= WILD_TREE_MAX && h < WILD_ROCK_MAX;
@@ -80,9 +84,10 @@ export function wildObstacleAt(x: number, y: number): 'tree' | 'rock' | null {
   return null;
 }
 
-/** Terrain of an out-of-map tile: 'water' for a lake, 'grass' else.
- *  Never call for in-map tiles (terrainAt governs there). */
+/** Terrain of an out-of-map tile: 'water' for ocean or a lake,
+ *  'grass' else. Never call for in-map tiles (terrainAt governs there). */
 export function wildTerrainAt(x: number, y: number): 'grass' | 'water' {
+  if (oceanAt(x, y)) return 'water';
   return wildLakeAt(x, y) ? 'water' : 'grass';
 }
 
@@ -90,6 +95,7 @@ export function wildTerrainAt(x: number, y: number): 'grass' | 'water' {
  *  grass that holds no tree or rock, minus anything the player
  *  already chopped or mined (those stay gone, like 987/989). */
 export function isWildWalkable(w: IsoWorld, x: number, y: number): boolean {
+  if (oceanAt(x, y)) return false;
   if (wildLakeAt(x, y)) return false;
   const key = x + ',' + y;
   if (wildTreeAt(x, y) && !(w.removedWildTrees ?? []).includes(key)) return false;

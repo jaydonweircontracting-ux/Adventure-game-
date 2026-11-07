@@ -9,14 +9,14 @@ export interface HutRect { x0: number; y0: number; x1: number; y1: number; doorX
 export interface StallRect { x0: number; y0: number; x1: number }
 /** Player-placed item (BUILD 984, 3D mode; grass added in BUILD 985;
  *  custom GLB uploads added in BUILD 997).
- *  Houses/stalls are rects; paths/trees/grass/rocks are single tiles
+ *  Houses/stalls are rects; paths/trees/grass/rocks/water are single tiles
  *  (x0 === x1, y0 === y1); custom items are rects sized by the
  *  uploaded mesh's footprint, carrying the asset id they render from.
  *  Kept separate from the generated
  *  huts/stalls/trees so the 3D adapter's layout filter (which rebuilds
  *  generated lots near town on every load) can never delete placed
  *  work. Old saves load with none. */
-export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
+export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
 export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }
@@ -83,6 +83,15 @@ export interface IsoWorld {
    *  saves load with none (no extra rocks were ever stamped for them
    *  to remove). The iso demo never reads this field. */
   removedRocks?: string[];
+  /** BUILD 1027: terrain keys ("x,y") of generated water tiles the
+   *  user removed via Remove — ocean tiles and the authored pond.
+   *  The ocean is a pure function (oceanAt), not stored terrain, so
+   *  without this set a removed ocean tile would come back as water
+   *  on the next terrainAt call; the pond is stored terrain, and this
+   *  set is belt-and-braces there (removeGeneratedWaterAt also
+   *  deletes the stored entry, and the adapter never re-stamps
+   *  water). Old saves load with none. */
+  removedWater?: string[];
   /** BUILD 1024: terrain keys ("x,y") of WILD (procedurally generated,
    *  out-of-map) trees the player chopped with E-key, and wild rocks the
    *  player mined. Wild trees/rocks are not stored in the world lists —
@@ -118,7 +127,13 @@ export const HUT_H = 64;
 
 export function terrainKey(x: number, y: number): string { return `${x},${y}`; }
 export function terrainAt(w: IsoWorld, x: number, y: number): Terrain {
-  return w.terrain[terrainKey(x, y)] || 'grass';
+  const key = terrainKey(x, y);
+  // BUILD 1027: a removed water tile stays grass (ocean and pond
+  // alike — this check runs first so neither the pure ocean function
+  // nor a re-stamped stored entry can resurrect it).
+  if ((w.removedWater ?? []).includes(key)) return 'grass';
+  if (oceanAt(x, y)) return 'water';
+  return w.terrain[key] || 'grass';
 }
 export function inBounds(w: IsoWorld, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < w.w && y < w.h;
@@ -176,6 +191,37 @@ export function hash2(x: number, y: number, s: number): number {
   return h / 4294967296;
 }
 
+/** BUILD 1027 — the western ocean. A basic ocean at the world's west
+ *  edge: a wavy north-south coastline around x≈12, extending
+ *  infinitely west past the old map edge (the 1024 wilderness is
+ *  player-only land; west of the coast it is sea). Pure functions of
+ *  tile coordinates, so old saves gain the ocean with no migration,
+ *  and the coast is identical for terrain, walkability, rendering
+ *  and the wilderness scatter — one coastline, never a second copy
+ *  that could drift. The coast is a smooth 1D value-noise field
+ *  (24-tile wavelength, smoothstep interpolation of the scatter
+ *  hash at salt 911), so it waves gently instead of running straight:
+ *  bays and headlands, never a ruler edge. The town (westmost hut
+ *  x=63) sits ~45 tiles east of the coast, and the roads end at
+ *  x≈66 (measured in 1008) — no road, hut, garden or NPC route
+ *  reaches the sea, so the ocean changes no town layout. The
+ *  horizontal road does not run into it; the shore is a walk away. */
+export function oceanCoastX(y: number): number {
+  const s = y / 24;
+  const i = Math.floor(s);
+  const f = s - i;
+  const u = f * f * (3 - 2 * f);
+  const a = hash2(i, 0, 911);
+  const b = hash2(i + 1, 0, 911);
+  return 6 + 12 * (a + (b - a) * u);
+}
+
+/** True when tile (x, y) is ocean: west of the coastline, for every
+ *  y and every x (including negative x — the sea has no far shore). */
+export function oceanAt(x: number, y: number): boolean {
+  return x < oceanCoastX(y);
+}
+
 export function defaultWorld(): IsoWorld {
   // 200x200 with the town in the middle (center tile 100,100).
   const w = 200, h = 200;
@@ -209,7 +255,12 @@ export function defaultWorld(): IsoWorld {
     const inTown = Math.abs(x - C) <= 24 && Math.abs(y - C) <= 24;
     const onRoad = x === C - 1 || x === C || y === C - 1 || y === C;
     const inPond = x >= C + 18 && x <= C + 24 && y >= C - 20 && y <= C - 14;
-    if (inTown || onRoad || inPond) continue;
+    // BUILD 1027: no scatter tree or rock stands in the ocean — the
+    // sea is water, not a forest. (Old saves keep any stored ocean
+    // tree/rock in their lists; the view's tree/rock loops skip
+    // water tiles, so they never render.)
+    const inOcean = oceanAt(x, y);
+    if (inTown || onRoad || inPond || inOcean) continue;
     const r = hash2(x, y, 7);
     if (r < 0.006) trees.push(wp(x, y));
     else if (r < 0.008) rocks.push(wp(x, y));

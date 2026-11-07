@@ -12,7 +12,7 @@
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
 import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
 
-export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock'
+export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -189,17 +189,49 @@ export function removeGeneratedRockAt(w: IsoWorld, x: number, y: number): { x: n
   return { x, y, rockIndex };
 }
 
+/** BUILD 1027: remove GENERATED water at (x, y) — an ocean tile or
+ *  the authored pond. The mutation is the water twin of
+ *  removeGeneratedRockAt: the tile's terrain key joins removedWater,
+ *  so it stays gone across reloads (terrainAt consults removedWater
+ *  first, so neither the pure ocean function nor a re-stamped stored
+ *  entry can resurrect it), and a stored pond entry is deleted too
+ *  (the adapter never re-stamps water, but the delete keeps the saved
+ *  world honest). This is deletion, NOT harvest: no fish or loot is
+ *  granted here — there is no fishing mechanic to grant from (the
+ *  2.5D game has none either; see the 1027 audit). Returns what was
+ *  removed plus whether the tile held stored water (the pond) or was
+ *  pure-function ocean — undo needs the distinction to restore the
+ *  stored entry. Null when the tile holds no generated water. */
+export function removeGeneratedWaterAt(w: IsoWorld, x: number, y: number): { x: number; y: number; wasStored: boolean } | null {
+  // In-map only: the out-of-map ocean is the infinite sea, not a
+  // removable tile (the Remove tool bounds its snap to the map, so
+  // this is belt-and-braces — and it keeps removeAt returning null
+  // out-of-map, like rocks and paths).
+  if (x < 0 || y < 0 || x >= w.w || y >= w.h) return null;
+  if (terrainAt(w, x, y) !== 'water') return null;
+  const key = terrainKey(x, y);
+  const wasStored = w.terrain[key] === 'water';
+  if (wasStored) delete w.terrain[key];
+  if (!w.removedWater) w.removedWater = [];
+  if (!w.removedWater.includes(key)) w.removedWater.push(key);
+  return { x, y, wasStored };
+}
 /** BUILD 989 refinement: what removeAt WOULD remove at (x, y), without
  *  mutating anything — the snap/paint/preview probe. Returns the kind
  *  only; the view calls removeAt on the snapped tile to do the work,
  *  so probe and action can never disagree about precedence. */
-export type RemovableKind = 'placed' | 'house' | 'tree' | 'rock' | 'path';
+export type RemovableKind = 'placed' | 'house' | 'tree' | 'rock' | 'water' | 'path';
 
 export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKind | null {
   if (w.placements && w.placements.some((p) => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1)) return 'placed';
   if (hutAt(w, x, y)) return 'house';
   if (w.trees.some((t) => t.tx === x && t.ty === y) || w.crates.some((c) => c.tx === x && c.ty === y)) return 'tree';
   if (w.rocks.some((r) => r.tx === x && r.ty === y)) return 'rock';
+  // BUILD 1027: generated water (ocean or pond) is a removable
+  // fixture of the world — a water tile the player did not place.
+  // Water yields to nothing below it, so it sits between rock and
+  // path: house > tree > rock > water > path.
+  if (terrainAt(w, x, y) === 'water') return 'water';
   if (terrainAt(w, x, y) === 'dirt') return 'path';
   return null;
 }
@@ -212,7 +244,8 @@ export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKin
  *  neighbours, without reaching two tiles away. Nearest wins; the
  *  tapped tile wins exact ties (so a tap squarely on a removable tile
  *  never jumps to a neighbour). Within one tile, precedence is the
- *  removeAt order (placed > house > tree > path), via peekRemovableAt.
+ *  removeAt order (placed > house > tree > rock > water > path), via
+ *  peekRemovableAt.
  *  Nothing removable within tolerance => null => the view keeps the
  *  "Nothing to remove here" message. */
 export const REMOVE_TAP_TOLERANCE = 1.5;
@@ -241,7 +274,8 @@ export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance
  *  precedence is asserted standalone instead of living only in the
  *  view's tap handler. Order: placed item > generated house (whole
  *  rect) > generated tree (real tree and/or crate on the tile) >
- *  generated rock (BUILD 1025) > generated path (dirt tile). A tree
+ *  generated rock (BUILD 1025) > generated water (BUILD 1027 — ocean
+ *  or pond) > generated path (dirt tile). A tree
  *  standing on dirt therefore takes two taps (tree, then path),
  *  mirroring 987's hut-over-dirt two-tap.
  *  Generated stalls are NOT removed here (not asked): a stall tile
@@ -251,12 +285,15 @@ export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance
  *  rock removes the tree first (they look different, so separate taps
  *  are correct, unlike tree+crate which remove together); rocks never
  *  sit on dirt, so the rock-before-path step is unreachable in
+ *  practice but explicit. BUILD 1027: water never sits on dirt
+ *  either, so the water-before-path step is likewise unreachable in
  *  practice but explicit. */
 export type RemoveAtResult =
   | { kind: 'placed'; item: PlacedItem; index: number }
   | { kind: 'house'; rect: HutRect; index: number }
   | { kind: 'tree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'rock'; x: number; y: number; rockIndex: number }
+  | { kind: 'water'; x: number; y: number; wasStored: boolean }
   | { kind: 'path'; x: number; y: number };
 
 export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | null {
@@ -270,6 +307,11 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
   if (tr) return { kind: 'tree', tree: tr.tree, treeIndex: tr.treeIndex, crate: tr.crate, crateIndex: tr.crateIndex };
   const rk = removeGeneratedRockAt(w, x, y);
   if (rk) return { kind: 'rock', x: rk.x, y: rk.y, rockIndex: rk.rockIndex };
+  // BUILD 1027: generated water — the ocean or the pond. The
+  // wasStored flag (stored pond vs pure-function ocean) rides along
+  // so undo can restore the stored pond entry exactly.
+  const wt = removeGeneratedWaterAt(w, x, y);
+  if (wt) return { kind: 'water', x: wt.x, y: wt.y, wasStored: wt.wasStored };
   const gen = removeGeneratedAt(w, x, y);
   if (gen && gen.kind === 'path') return { kind: 'path', x, y };
   return null;
@@ -279,7 +321,9 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  stroke = one `stroke` entry). `place` = a placement to delete;
  *  `unplace` = a placed item to restore at its exact index;
  *  `unhouse`/`unpath`/`untree` = a generated removal to reverse
- *  (removed-set entry dropped, content restored). BUILD 995: `move` =
+ *  (removed-set entry dropped, content restored). BUILD 1027:
+ *  `unwater` = a generated water removal to reverse (removedWater
+ *  entry dropped; a stored pond entry restored too). BUILD 995:
  *  a placed item moved from oldItem to newItem (index = its list
  *  position, so undo/redo restore the exact order). BUILD 991: entries
  *  are the unit of the undo AND redo stacks (see BuildHistory below)
@@ -303,6 +347,7 @@ export type UndoEntry =
   | { kind: 'unpath'; x: number; y: number }
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'unrock'; x: number; y: number; rockIndex: number }
+  | { kind: 'unwater'; x: number; y: number; wasStored: boolean }
   | { kind: 'stroke'; entries: UndoEntry[] }
   | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
   | { kind: 'paste'; items: PlacedItem[] }
@@ -343,6 +388,8 @@ export function removeAlongStroke(w: IsoWorld, tiles: Array<{ x: number; y: numb
       entries.push({ kind: 'untree', tree: res.tree, treeIndex: res.treeIndex, crate: res.crate, crateIndex: res.crateIndex });
     } else if (res.kind === 'rock') {
       entries.push({ kind: 'unrock', x: res.x, y: res.y, rockIndex: res.rockIndex });
+    } else if (res.kind === 'water') {
+      entries.push({ kind: 'unwater', x: res.x, y: res.y, wasStored: res.wasStored });
     } else {
       entries.push({ kind: 'unpath', x: res.x, y: res.y });
     }
@@ -416,6 +463,15 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
         w.rocks.splice(Math.min(entry.rockIndex, w.rocks.length), 0, { tx: entry.x, ty: entry.y });
       }
       return 'Restored rock';
+    }
+    case 'unwater': {
+      // Drop the removed entry so terrainAt reports water again; a
+      // stored pond tile also gets its stored entry back (the ocean
+      // is pure-function, so dropping the entry is enough there).
+      const key = terrainKey(entry.x, entry.y);
+      if (w.removedWater) w.removedWater = w.removedWater.filter((k) => k !== key);
+      if (entry.wasStored) w.terrain[key] = 'water';
+      return 'Restored water';
     }
     case 'move': {
       removeExactPlacement(w, entry.newItem);
@@ -553,6 +609,12 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       if (!w.removedRocks) w.removedRocks = [];
       if (!w.removedRocks.includes(key)) w.removedRocks.push(key);
       return 'Removed rock';
+    }
+    case 'unwater': {
+      // Re-apply the forward removal (idempotent — a tile already
+      // removed is a no-op), which is exactly removeGeneratedWaterAt.
+      removeGeneratedWaterAt(w, entry.x, entry.y);
+      return 'Removed water';
     }
     case 'move': {
       removeExactPlacement(w, entry.oldItem);
@@ -1175,6 +1237,15 @@ export function placedRockTiles(w: IsoWorld): Array<{ tx: number; ty: number }> 
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 
+/** Placed water tiles (BUILD 1027). Single tiles, like placed trees
+ *  and rocks — a placed water tile renders and blocks exactly like
+ *  generated water. */
+export function placedWaterTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'water')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
 export function placedStallRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'stall')
@@ -1201,6 +1272,17 @@ export function placedPathKeys(w: IsoWorld): Set<string> {
   const keys = new Set<string>();
   for (const p of placementsOf(w)) {
     if (p.kind === 'path') keys.add(terrainKey(p.x0, p.y0));
+  }
+  return keys;
+}
+
+/** Terrain keys of placed water tiles, for the terrain loop's
+ *  effective terrain (BUILD 1027 — placed water is 'water' terrain,
+ *  like the ocean and the pond). */
+export function placedWaterKeys(w: IsoWorld): Set<string> {
+  const keys = new Set<string>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'water') keys.add(terrainKey(p.x0, p.y0));
   }
   return keys;
 }

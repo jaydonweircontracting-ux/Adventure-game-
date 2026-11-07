@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, inBounds, isWalkableWorld, loadWorld, oceanCoastX, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -17,7 +17,7 @@ import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, FX_MAX_VERTS } from './houseFx';
 import {
-  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys, placedRockTiles,
+  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys, placedRockTiles, placedWaterKeys,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
@@ -456,8 +456,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   const minX=Math.floor(center.x)-22, maxX=Math.floor(center.x)+22;
   const minY=Math.floor(center.y)-22, maxY=Math.floor(center.y)+22;
   // BUILD 984: placed paths render exactly like generated dirt roads.
+  // BUILD 1027: placed water renders exactly like generated water
+  // (ocean/pond) — and wins over a placed path on the same tile, so a
+  // water tile can never silently read as dirt.
   const placedPaths=placedPathKeys(world);
-  const effTerrain=(x:number,y:number)=>placedPaths.has(terrainKey(x,y))?'dirt':(inBounds(world,x,y)?terrainAt(world,x,y):wildTerrainAt(x,y));
+  const placedWater=placedWaterKeys(world);
+  const effTerrain=(x:number,y:number)=>placedWater.has(terrainKey(x,y))?'water':(placedPaths.has(terrainKey(x,y))?'dirt':(inBounds(world,x,y)?terrainAt(world,x,y):wildTerrainAt(x,y)));
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
     const terrain=effTerrain(x,y);
     const c=COLORS[terrain]||COLORS.grass;
@@ -555,15 +559,37 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // 1007 ring philosophy applied within a cell, so no z-fighting
     // at any range). Cells with no dirt keep the single
     // centre-sampled quad (fast path, pixel-identical to before).
-    // Dirt can only exist inside the map (terrainAt falls back to
-    // grass outside it, placed paths are bounds-checked), so the
-    // dirt scan is clipped to the cell ∩ map rectangle — far cells
-    // outside the map skip the scan entirely.
-    const quadCellDirt=(x0:number,x1:number,y0:number,y1:number,y:number)=>{
+    // BUILD 1027 — generalised to MIXED cells (was dirt-only in
+    // 1008): the same centre-sampled problem applies to
+    // water — without it the ocean coastline would step in 16/64-tile
+    // blocks at distance, and the pond would vanish or flood a whole
+    // 4-tile band cell. The trigger is now "the cell holds 2+
+    // distinct terrains" (in-map scan; a uniform water cell keeps the
+    // fast path, so the open ocean stays one quad) OR "the cell
+    // straddles the ocean coastline" (analytic coast test — the coast
+    // is a smooth 1D function, so sampling it across the cell's
+    // y-range is enough, no per-tile scan of the infinite west).
+    // Wild lakes stay centre-sampled at distance (the 1024 accepted
+    // limit — small far silhouettes, not a coherent edge). Dirt can
+    // only exist inside the map (terrainAt falls back to grass
+    // outside it, placed paths are bounds-checked), so the mix scan
+    // is clipped to the cell ∩ map rectangle — far cells outside the
+    // map skip the scan entirely, and the coast test is analytic.
+    const quadCellMixed=(x0:number,x1:number,y0:number,y1:number,y:number)=>{
       const sx0=Math.max(x0,0), sx1=Math.min(x1,world.w-1), sy0=Math.max(y0,0), sy1=Math.min(y1,world.h-1);
-      let hasDirt=false;
-      for(let yy=sy0;yy<=sy1&&!hasDirt;yy++) for(let xx=sx0;xx<=sx1;xx++) if(effTerrain(xx,yy)==='dirt'){hasDirt=true;break;}
-      if(!hasDirt){
+      let firstT:string|null=null, mixed=false;
+      for(let yy=sy0;yy<=sy1&&!mixed;yy++) for(let xx=sx0;xx<=sx1;xx++){const t=effTerrain(xx,yy); if(firstT===null)firstT=t; else if(t!==firstT){mixed=true;break;}}
+      if(!mixed){
+        // Coast test: the cell straddles the coastline when the
+        // coast's min/max over the cell's y-range overlaps the cell's
+        // x-range. Conservative — a wavy coast may over-trigger by a
+        // cell; subdivision is correct there, just a few extra quads.
+        let cMin=Infinity, cMax=-Infinity;
+        for(let yy=y0;yy<=y1+1;yy+=4){const c=oceanCoastX(yy); if(c<cMin)cMin=c; if(c>cMax)cMax=c;}
+        const cEnd=oceanCoastX(y1+1); if(cEnd<cMin)cMin=cEnd; if(cEnd>cMax)cMax=cEnd;
+        mixed=cMin<=x1+1 && cMax>=x0;
+      }
+      if(!mixed){
         const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
         const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass;
         // BUILD 1009: per-corner tint from the continuous field. The
@@ -598,12 +624,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
     for(let y=by0;y<=by1;y+=VIEW_BAND_CELL) for(let x=bx0;x<=bx1;x+=VIEW_BAND_CELL){
       const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
-      quadCellDirt(x,x+w-1,y,y+d-1,VIEW_BAND_Y);
+      quadCellMixed(x,x+w-1,y,y+d-1,VIEW_BAND_Y);
     }
     const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number)=>{
       for(let yy=y0;yy<=y1;yy+=cell) for(let xx=x0;xx<=x1;xx+=cell){
         const w=Math.min(cell,x1+1-xx), d=Math.min(cell,y1+1-yy);
-        quadCellDirt(xx,xx+w-1,yy,yy+d-1,y);
+        quadCellMixed(xx,xx+w-1,yy,yy+d-1,y);
       }
     };
     const fillRing=(inner:number,outer:number,cell:number,y:number)=>{
@@ -903,6 +929,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   }
   // BUILD 1007: trees render at whole-world range (were window-culled).
   for(const t of [...world.trees, ...placedTreeTiles(world)]) {
+    // BUILD 1027: a stored tree standing in water never renders — the
+    // ocean scatter skips water tiles, but an old save's stored list
+    // (or a placed tree under a placed water tile, which removeAt
+    // clears first) can hold one; water wins, the tree does not.
+    if(effTerrain(t.tx,t.ty)==='water')continue;
     // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
     // tiers) instead of the old single green cube. Visual only — same
     // tile, same collision, same positions. BUILD 986: now the shared
@@ -941,6 +972,10 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // rock on a tile uses the tile's seed, so it looks identical to a
   // generated rock there) — same pattern as placed trees above.
   for(const r of [...world.rocks, ...placedRockTiles(world)]){
+    // BUILD 1027: a stored rock standing in water never renders —
+    // the ocean scatter skips water tiles, but an old save's stored
+    // list can hold one; water wins, the rock does not.
+    if(effTerrain(r.tx,r.ty)==='water')continue;
     const rw=.5+hash2(r.tx*3.1+21,r.ty*7.7+21)*.5;
     const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
@@ -954,8 +989,8 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // a wild rock looks identical to a stored rock on the same tile),
   // same collision (the whole tile blocks). In-map tiles are skipped
   // (stored lists govern there); chopped/mined wild items stay gone
-  // via removedWildTrees / removedWildRocks; lake tiles hold no tree
-  // or rock (wildTreeAt/wildRockAt already exclude them).
+  // via removedWildTrees / removedWildRocks; lake and ocean tiles
+  // hold no tree or rock (wildTreeAt/wildRockAt already exclude them).
   for(let y=fY0;y<=fY1;y++) for(let x=fX0;x<=fX1;x++) {
     if(x>=0&&y>=0&&x<world.w&&y<world.h) continue;
     const wkey=x+','+y;
@@ -1207,7 +1242,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // and would crash the preview/message path). BUILD 1012: a placed
   // house shows its variant's label (Cottage / Tall House /
   // Shopfront / Grand House); a legacy variant-less house is 'House'.
-  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock'} as Record<string,string>)[item.kind]??item.kind;
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
@@ -1261,7 +1296,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // tool itself is cleared by close.
   type CatalogCategory='all'|'terrain'|'buildings'|'plants'|'props'|'custom';
   const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
-    {id:'terrain',label:'Terrain',kinds:['path','grass']},
+    {id:'terrain',label:'Terrain',kinds:['path','grass','water']},
     // BUILD 1012: the Buildings section offers the four real town
     // house designs (cottage / tall / shopfront / grand) instead of
     // the one bare 'house' kind — each is its own palette entry with
@@ -1293,6 +1328,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // BUILD 1025: Rock — the generated rock's own grey (seeded cube
     // [.43,.45,.44] x shade .8-1.05), so the swatch reads as the rock.
     rock:{label:'Rock',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#5c5e5c 50% 100%)'},
+    // BUILD 1027: Water — the water surface's own blue
+    // (COLORS.water [0.12,0.36,0.57] ≈ #1f5c91), so the swatch reads
+    // as the water it places.
+    water:{label:'Water',swatch:'linear-gradient(180deg,#2e6ea8 0,#1f5c91 100%)'},
     grass:{label:'Grass',swatch:'linear-gradient(180deg,#a6bf66 0,#618538 100%)'},
   };
   const [catalogCategory,setCatalogCategory]=useState<CatalogCategory>('all');
@@ -1613,7 +1652,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!snapped||!proj){el.style.display='none';return;}
       el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
       const label=removePreviewLabelRef.current;
-      if(label)label.textContent='Remove '+({placed:'placed item',house:'house',tree:'tree',rock:'rock',path:'path'} as Record<string,string>)[snapped.kind];
+      if(label)label.textContent='Remove '+({placed:'placed item',house:'house',tree:'tree',rock:'rock',water:'water',path:'path'} as Record<string,string>)[snapped.kind];
     };
     let removeDragging=false;
     let removeStrokeEntries:UndoEntry[]=[];
@@ -1852,7 +1891,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // BUILD 989: full chain — placed > generated house (whole
               // rect) > generated tree (real tree and/or crate on the
               // tile, one tap) > generated rock (BUILD 1025) > generated
-              // path tile. Every successful
+              // water (BUILD 1027 — ocean or pond) > generated path
+              // tile. Every successful
               // change pushes onto the undo stack and clears the redo
               // stack (BUILD 991); failed taps touch neither world nor stacks.
               // Refinement: the tap SNAPS to the nearest removable tile
@@ -1865,6 +1905,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
               else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
               else if(res.kind==='rock'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unrock',x:res.x,y:res.y,rockIndex:res.rockIndex});setMessage('Removed rock');}
+              else if(res.kind==='water'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unwater',x:res.x,y:res.y,wasStored:res.wasStored});setMessage('Removed water');}
               else{saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
             } else if(build.customAssetId){
               // BUILD 997: an armed upload places with its mesh
@@ -2444,6 +2485,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // (rock placement / rock removal + reload proofs). Read-only.
         rocks: stateRef.current.world.rocks.map(t=>({tx:t.tx,ty:t.ty})),
         removedRocks: stateRef.current.world.removedRocks??[],
+        // BUILD 1027: removedWater for the browser harness (water
+        // removal + reload proofs). Read-only.
+        removedWater: stateRef.current.world.removedWater??[],
         // BUILD 993: day clock + roster positions for schedule probes.
         clockMinutes: clockRef.current.minutes,
         clockDay: clockRef.current.day,
@@ -2792,7 +2836,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
         <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, tree, or rock to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','terrain','buildings','plants','props','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props',custom:'Custom'}[cat]}</button>)}
       </div>
