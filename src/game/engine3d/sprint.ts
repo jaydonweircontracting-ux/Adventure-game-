@@ -46,7 +46,7 @@ export function sprintSpeed(sprintHeld: boolean, exhausted: boolean, hasInput: b
   return sprintHeld && !exhausted && hasInput ? SPRINT_SPEED : WALK_SPEED;
 }
 
-// BUILD 1018: tap-to-toggle sprint. The Sprint button is BOTH hold-to-
+// BUILD 1018: tap-to-toggle sprint. The Sprint control is BOTH hold-to-
 // sprint AND tap-to-toggle: a quick tap latches sprint ON until tapped
 // again or until exhaustion. Pure rules — the view owns the pointer
 // events, this module owns the classification + the latch state

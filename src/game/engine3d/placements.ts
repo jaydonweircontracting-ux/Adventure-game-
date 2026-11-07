@@ -12,7 +12,7 @@
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
 import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
 
-export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water'
+export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -98,7 +98,7 @@ export function removeExactPlacement(w: IsoWorld, item: PlacedItem): boolean {
 
 /** BUILD 987: remove a GENERATED thing at (x, y) — a whole hut rect or
  *  one dirt path tile. Placed items are NOT handled here (the caller
- *  tries removePlacementAt first); precedence is placed > house > tree > rock > path (see removeAt),
+ *  tries removePlacementAt first); precedence is placed > house > tree > rock > water > wall > path (see removeAt),
  *  matching the existing first-match pattern. Generated town content is
  *  rebuilt by the 3D adapter on every load, so removals are ALSO
  *  recorded in removedHuts / removedPaths, which the adapter consults
@@ -216,11 +216,33 @@ export function removeGeneratedWaterAt(w: IsoWorld, x: number, y: number): { x: 
   if (!w.removedWater.includes(key)) w.removedWater.push(key);
   return { x, y, wasStored };
 }
+
+/** BUILD 1028: remove a GENERATED wall tile at (x, y) — one tile
+ *  of the town boundary wall (or any wall in w.walls), never the
+ *  whole run: the unit is the TILE, consistent with rock/water
+ *  (a one-tile run is the same either way). The tile leaves
+ *  w.walls and its terrain key joins removedWalls, so it stays gone
+ *  across reloads — the adapter copies source walls verbatim on
+ *  every load and consults removedWalls, so either half alone would
+ *  be fragile (the 528/529 save-load lesson: the tile AND the set
+ *  must agree). This is deletion, NOT harvest: no stone is granted
+ *  here — E-key remains the harvest path (and E-key never mined
+ *  walls). The tile's h rides along so undo restores its exact
+ *  orientation. Null when the tile holds no generated wall. */
+export function removeGeneratedWallAt(w: IsoWorld, x: number, y: number): { x: number; y: number; wallIndex: number; h: boolean } | null {
+  const wallIndex = w.walls.findIndex((wl) => wl.x === x && wl.y === y);
+  if (wallIndex < 0) return null;
+  const [tile] = w.walls.splice(wallIndex, 1);
+  const key = terrainKey(x, y);
+  if (!w.removedWalls) w.removedWalls = [];
+  if (!w.removedWalls.includes(key)) w.removedWalls.push(key);
+  return { x, y, wallIndex, h: tile.h };
+}
 /** BUILD 989 refinement: what removeAt WOULD remove at (x, y), without
  *  mutating anything — the snap/paint/preview probe. Returns the kind
  *  only; the view calls removeAt on the snapped tile to do the work,
  *  so probe and action can never disagree about precedence. */
-export type RemovableKind = 'placed' | 'house' | 'tree' | 'rock' | 'water' | 'path';
+export type RemovableKind = 'placed' | 'house' | 'tree' | 'rock' | 'water' | 'wall' | 'path';
 
 export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKind | null {
   if (w.placements && w.placements.some((p) => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1)) return 'placed';
@@ -232,6 +254,10 @@ export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKin
   // Water yields to nothing below it, so it sits between rock and
   // path: house > tree > rock > water > path.
   if (terrainAt(w, x, y) === 'water') return 'water';
+  // BUILD 1028: a generated wall tile is a removable fixture too.
+  // Walls never sit on dirt, so the wall-before-path step is
+  // unreachable in practice but explicit, like water's.
+  if (w.walls.some((wl) => wl.x === x && wl.y === y)) return 'wall';
   if (terrainAt(w, x, y) === 'dirt') return 'path';
   return null;
 }
@@ -244,7 +270,7 @@ export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKin
  *  neighbours, without reaching two tiles away. Nearest wins; the
  *  tapped tile wins exact ties (so a tap squarely on a removable tile
  *  never jumps to a neighbour). Within one tile, precedence is the
- *  removeAt order (placed > house > tree > rock > water > path), via
+ *  removeAt order (placed > house > tree > rock > water > wall > path), via
  *  peekRemovableAt.
  *  Nothing removable within tolerance => null => the view keeps the
  *  "Nothing to remove here" message. */
@@ -275,7 +301,8 @@ export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance
  *  view's tap handler. Order: placed item > generated house (whole
  *  rect) > generated tree (real tree and/or crate on the tile) >
  *  generated rock (BUILD 1025) > generated water (BUILD 1027 — ocean
- *  or pond) > generated path (dirt tile). A tree
+ *  or pond) > generated wall tile (BUILD 1028) > generated path
+ *  (dirt tile). A tree
  *  standing on dirt therefore takes two taps (tree, then path),
  *  mirroring 987's hut-over-dirt two-tap.
  *  Generated stalls are NOT removed here (not asked): a stall tile
@@ -287,6 +314,8 @@ export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance
  *  sit on dirt, so the rock-before-path step is unreachable in
  *  practice but explicit. BUILD 1027: water never sits on dirt
  *  either, so the water-before-path step is likewise unreachable in
+ *  practice but explicit. BUILD 1028: walls never sit on dirt
+ *  either, so the wall-before-path step is likewise unreachable in
  *  practice but explicit. */
 export type RemoveAtResult =
   | { kind: 'placed'; item: PlacedItem; index: number }
@@ -294,6 +323,7 @@ export type RemoveAtResult =
   | { kind: 'tree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'rock'; x: number; y: number; rockIndex: number }
   | { kind: 'water'; x: number; y: number; wasStored: boolean }
+  | { kind: 'wall'; x: number; y: number; wallIndex: number; h: boolean }
   | { kind: 'path'; x: number; y: number };
 
 export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | null {
@@ -312,6 +342,10 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
   // so undo can restore the stored pond entry exactly.
   const wt = removeGeneratedWaterAt(w, x, y);
   if (wt) return { kind: 'water', x: wt.x, y: wt.y, wasStored: wt.wasStored };
+  // BUILD 1028: a generated wall tile. The h rides along so undo
+  // restores the tile's exact orientation.
+  const wl = removeGeneratedWallAt(w, x, y);
+  if (wl) return { kind: 'wall', x: wl.x, y: wl.y, wallIndex: wl.wallIndex, h: wl.h };
   const gen = removeGeneratedAt(w, x, y);
   if (gen && gen.kind === 'path') return { kind: 'path', x, y };
   return null;
@@ -323,7 +357,10 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  `unhouse`/`unpath`/`untree` = a generated removal to reverse
  *  (removed-set entry dropped, content restored). BUILD 1027:
  *  `unwater` = a generated water removal to reverse (removedWater
- *  entry dropped; a stored pond entry restored too). BUILD 995:
+ *  entry dropped; a stored pond entry restored too). BUILD 1028:
+ *  `unwall` = a generated wall removal to reverse (removedWalls
+ *  entry dropped; the tile re-inserted at its exact index with its
+ *  h). BUILD 995:
  *  a placed item moved from oldItem to newItem (index = its list
  *  position, so undo/redo restore the exact order). BUILD 991: entries
  *  are the unit of the undo AND redo stacks (see BuildHistory below)
@@ -348,6 +385,7 @@ export type UndoEntry =
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'unrock'; x: number; y: number; rockIndex: number }
   | { kind: 'unwater'; x: number; y: number; wasStored: boolean }
+  | { kind: 'unwall'; x: number; y: number; wallIndex: number; h: boolean }
   | { kind: 'stroke'; entries: UndoEntry[] }
   | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
   | { kind: 'paste'; items: PlacedItem[] }
@@ -390,6 +428,8 @@ export function removeAlongStroke(w: IsoWorld, tiles: Array<{ x: number; y: numb
       entries.push({ kind: 'unrock', x: res.x, y: res.y, rockIndex: res.rockIndex });
     } else if (res.kind === 'water') {
       entries.push({ kind: 'unwater', x: res.x, y: res.y, wasStored: res.wasStored });
+    } else if (res.kind === 'wall') {
+      entries.push({ kind: 'unwall', x: res.x, y: res.y, wallIndex: res.wallIndex, h: res.h });
     } else {
       entries.push({ kind: 'unpath', x: res.x, y: res.y });
     }
@@ -472,6 +512,18 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       if (w.removedWater) w.removedWater = w.removedWater.filter((k) => k !== key);
       if (entry.wasStored) w.terrain[key] = 'water';
       return 'Restored water';
+    }
+    case 'unwall': {
+      // Drop the removed entry so the adapter stops skipping the
+      // tile, and re-insert the tile at its exact index with its
+      // orientation (idempotent — a tile already present is skipped,
+      // so a stale entry cannot duplicate it).
+      const key = terrainKey(entry.x, entry.y);
+      if (w.removedWalls) w.removedWalls = w.removedWalls.filter((k) => k !== key);
+      if (!w.walls.some((wl) => wl.x === entry.x && wl.y === entry.y)) {
+        w.walls.splice(Math.min(entry.wallIndex, w.walls.length), 0, { x: entry.x, y: entry.y, h: entry.h });
+      }
+      return 'Restored wall';
     }
     case 'move': {
       removeExactPlacement(w, entry.newItem);
@@ -615,6 +667,12 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       // removed is a no-op), which is exactly removeGeneratedWaterAt.
       removeGeneratedWaterAt(w, entry.x, entry.y);
       return 'Removed water';
+    }
+    case 'unwall': {
+      // Re-apply the forward removal (idempotent — a tile already
+      // removed is a no-op), which is exactly removeGeneratedWallAt.
+      removeGeneratedWallAt(w, entry.x, entry.y);
+      return 'Removed wall';
     }
     case 'move': {
       removeExactPlacement(w, entry.oldItem);
@@ -784,6 +842,24 @@ export function validateBlockingRect(
  * never on water, walls, buildings, stalls, trees, rocks or crates,
  * and never twice on one tile. It never blocks movement.
  */
+/** BUILD 1028: the orientation a newly placed wall tile takes. A
+ *  neighbour on the same row extends a horizontal run; a neighbour
+ *  in the same column extends a vertical one; a corner (a row
+ *  neighbour present) reads horizontal. No wall neighbour at all
+ *  defaults horizontal. Generated and placed walls both count, so
+ *  extending the town boundary keeps its orientation. In 3D the
+ *  cube looks the same either way — the h only matters to the 2.5D
+ *  wall-run merge. */
+function wallOrientationAt(w: IsoWorld, tx: number, ty: number): boolean {
+  const isWall = (x: number, y: number): boolean => {
+    if (w.walls.some((wl) => wl.x === x && wl.y === y)) return true;
+    return placementsOf(w).some((p) => p.kind === 'wall' && p.x0 === x && p.y0 === y);
+  };
+  if (isWall(tx - 1, ty) || isWall(tx + 1, ty)) return true;
+  if (isWall(tx, ty - 1) || isWall(tx, ty + 1)) return false;
+  return true;
+}
+
 export function validatePlacement(
   w: IsoWorld,
   kind: PaletteKind,
@@ -860,6 +936,10 @@ export function validatePlacement(
       : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 };
   } else if (kind === 'stall') {
     item = { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty };
+  } else if (kind === 'wall') {
+    // BUILD 1028: a placed wall is a 1x1 tile carrying its
+    // orientation (auto-matched to an adjacent run, else horizontal).
+    item = { kind, x0: tx, y0: ty, x1: tx, y1: ty, h: wallOrientationAt(w, tx, ty) };
   } else {
     item = { kind, x0: tx, y0: ty, x1: tx, y1: ty };
   }
@@ -917,6 +997,10 @@ export function movePlacement(
     list.splice(Math.min(index, list.length), 0, lifted);
     return { ok: false, reason: result.reason };
   }
+  // BUILD 1028: a moved wall keeps its own orientation — a move
+  // must not flip what the thing is (validatePlacement would
+  // re-orient it to its new neighbours).
+  if (item.kind === 'wall' && item.h !== undefined) result.item.h = item.h;
   const at = Math.min(index, list.length);
   list.splice(at, 0, result.item);
   return { ok: true, item: result.item, index: at };
@@ -1244,6 +1328,17 @@ export function placedWaterTiles(w: IsoWorld): Array<{ tx: number; ty: number }>
   return placementsOf(w)
     .filter((p) => p.kind === 'water')
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed wall tiles (BUILD 1028). Single tiles, like placed trees,
+ *  rocks, and water — a placed wall tile renders and blocks exactly
+ *  like a generated wall tile. The h rides along (absent =
+ *  horizontal, the placement default), so the 2.5D wall-run merge
+ *  sees the same orientation a generated tile carries. */
+export function placedWallTiles(w: IsoWorld): Array<{ x: number; y: number; h: boolean }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'wall')
+    .map((p) => ({ x: p.x0, y: p.y0, h: p.h ?? true }));
 }
 
 export function placedStallRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number }> {

@@ -17,7 +17,7 @@ import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, FX_MAX_VERTS } from './houseFx';
 import {
-  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys, placedRockTiles, placedWaterKeys,
+  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys, placedRockTiles, placedWaterKeys, placedWallTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
@@ -139,7 +139,10 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   const world: IsoWorld = {
     ...source,
     terrain: { ...source.terrain },
-    walls: source.walls.filter(w => Math.abs(w.x - 100) > 68 || Math.abs(w.y - 100) > 68),
+    // BUILD 1028: walls the user removed stay removed — the filter
+    // copies source walls verbatim on every load, so a removed tile
+    // would otherwise come back (the 987/989 rule, same as huts).
+    walls: source.walls.filter(w => (Math.abs(w.x - 100) > 68 || Math.abs(w.y - 100) > 68) && !(source.removedWalls ?? []).includes(terrainKey(w.x, w.y))),
     // BUILD 1006: a moved hut's CURRENT rect is kept even when it sits
     // near town (the lot loop below would otherwise drop it and the
     // moved record alone cannot re-create a non-layout hut — and for
@@ -683,7 +686,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     for(const t of TREE_TIERS) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0,t.color);
   };
   // Walls and stall counters use the editor-authored collision geometry.
-  for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
+  // BUILD 1028: placed walls render as the same 1x0.85x1 cube as a
+  // generated wall tile (placedWallTiles carries the h, but the 3D
+  // cube is orientation-agnostic — the h only matters to the 2.5D
+  // wall-run merge).
+  for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
   // BUILD 986: generated/authored stalls render as 983 trees, not brown
   // counter cubes. Stall data + collision are untouched; only the mesh
   // changes. User-PLACED stalls keep the brown counter cube below — a
@@ -1242,7 +1249,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // and would crash the preview/message path). BUILD 1012: a placed
   // house shows its variant's label (Cottage / Tall House /
   // Shopfront / Grand House); a legacy variant-less house is 'House'.
-  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water'} as Record<string,string>)[item.kind]??item.kind;
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
@@ -1304,7 +1311,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // legacy placed kind (old saves only) and is not offered here.
     {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand','house-inn','house-smith','house-store']},
     {id:'plants',label:'Plants',kinds:['tree']},
-    {id:'props',label:'Props',kinds:['stall','rock']},
+    {id:'props',label:'Props',kinds:['stall','rock','wall']},
   ];
   const KIND_META:Record<PaletteKind,{label:string;swatch:string}>={
     path:{label:'Pathway',swatch:'linear-gradient(135deg,#bd914f 0 50%,#61615c 50% 100%)'},
@@ -1332,6 +1339,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // (COLORS.water [0.12,0.36,0.57] ≈ #1f5c91), so the swatch reads
     // as the water it places.
     water:{label:'Water',swatch:'linear-gradient(180deg,#2e6ea8 0,#1f5c91 100%)'},
+    // BUILD 1028: Wall — the generated wall's own dark grey-brown
+    // ([.43,.39,.32] ≈ #6e6352), so the swatch reads as the wall.
+    wall:{label:'Wall',swatch:'linear-gradient(135deg,#6e6352 0 50%,#4a4238 50% 100%)'},
     grass:{label:'Grass',swatch:'linear-gradient(180deg,#a6bf66 0,#618538 100%)'},
   };
   const [catalogCategory,setCatalogCategory]=useState<CatalogCategory>('all');
@@ -1652,7 +1662,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!snapped||!proj){el.style.display='none';return;}
       el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
       const label=removePreviewLabelRef.current;
-      if(label)label.textContent='Remove '+({placed:'placed item',house:'house',tree:'tree',rock:'rock',water:'water',path:'path'} as Record<string,string>)[snapped.kind];
+      if(label)label.textContent='Remove '+({placed:'placed item',house:'house',tree:'tree',rock:'rock',water:'water',wall:'wall',path:'path'} as Record<string,string>)[snapped.kind];
     };
     let removeDragging=false;
     let removeStrokeEntries:UndoEntry[]=[];
@@ -1906,6 +1916,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
               else if(res.kind==='rock'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unrock',x:res.x,y:res.y,rockIndex:res.rockIndex});setMessage('Removed rock');}
               else if(res.kind==='water'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unwater',x:res.x,y:res.y,wasStored:res.wasStored});setMessage('Removed water');}
+              else if(res.kind==='wall'){saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unwall',x:res.x,y:res.y,wallIndex:res.wallIndex,h:res.h});setMessage('Removed wall');}
               else{saveWorld(world);needsWorldRebuild.current=true;pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
             } else if(build.customAssetId){
               // BUILD 997: an armed upload places with its mesh
@@ -1990,7 +2001,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!hasInput)slidePerpRef.current=null;
       // BUILD 1003: sprint multiplies speed INSIDE this same pipeline —
       // same step, same walkableAt checks, same wall sliding. Hold =
-      // Sprint button or Shift key; exhausted forces walk. BUILD 1018:
+      // Sprint control or Shift key; exhausted forces walk. BUILD 1018:
       // the button ALSO latches (tap-to-toggle) — sprintInput merges
       // hold, latch, and Shift into one sprint input. BUILD 1020: the
       // rearm gate — while rearmed (exhaustion hit and the same hold
@@ -2488,6 +2499,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // BUILD 1027: removedWater for the browser harness (water
         // removal + reload proofs). Read-only.
         removedWater: stateRef.current.world.removedWater??[],
+        // BUILD 1028: walls + removedWalls for the browser harness
+        // (wall placement / wall removal + reload proofs). Read-only.
+        walls: stateRef.current.world.walls.map(wl=>({x:wl.x,y:wl.y,h:wl.h})),
+        removedWalls: stateRef.current.world.removedWalls??[],
         // BUILD 993: day clock + roster positions for schedule probes.
         clockMinutes: clockRef.current.minutes,
         clockDay: clockRef.current.day,
@@ -2724,13 +2739,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         can never grow up into the Enter/Exit buttons (center bottom 110).
         BUILD 1003 stamina behaviour is kept (bar + number, red + "Tired"
         while exhausted) — only the long "walk to recover" sentence is
-        dropped, so the row still fits on one line; the Sprint button
+        dropped, so the row still fits on one line; the Sprint icon
         already shows "Tired" while exhausted. */}
     {!hideUi && <div data-testid="hud-text" style={{position:'absolute',left:10,bottom:10,maxWidth:260,padding:'6px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>
       <div title={message} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:240}}>{message}</div>
       <div style={{marginTop:2}}>HP {health}/100<div style={{display:'inline-block',width:80,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="hp-bar" style={{width:health+'%',height:'100%',background:'#5fbf6f'}} /></div></div>
       <div style={{marginTop:2}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:100,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired':''}</div>
-      <div style={{marginTop:2}}>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div>
+      {/* BUILD 1028: the Sprint control is a SMALL icon at the bottom
+          next to Gold — the big right-side button is gone. Same
+          handlers, same state (tap-to-toggle latch, "Release!" while
+          the rearm gate is armed, "Tired" while exhausted, green
+          while sprinting); only the size and the seat changed. The
+          stamina bar above keeps its sprint-stamina-bar testid, and
+          the icon keeps the sprint-toggle testid the 1026 probes use.
+          Consequence, stated: Hide UI hides this whole strip, so the
+          icon hides with it (the old button stayed visible) — the
+          user asked for it next to Gold, which lives in this strip. */}
+      <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
     </div>}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
@@ -2753,25 +2778,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     {!buildOpen&&(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(walkToolLabel()?'Resume '+walkToolLabel():'Resume'):'Walk'}</button>}
     {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
     {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
-    {/* BUILD 1003: Sprint — HOLD to sprint (button or Shift key). Next
-        slot in the fixed right-side stack (Build 14 / Walk 76 / Undo
-        138 / Redo 200 / Sprint 262, same 62px step) so it never shifts
-        and never collides: no clash with Build, Enter/Exit (center
-        bottom 110), or the message box (bottom-left). Rendered always
-        in normal play; when the Build panel is open it sits under the
-        panel (later in DOM, same zIndex) — minimize to reach it, same
-        as the rest of the cluster. BUILD 1018: the button is ALSO
-        tap-to-toggle — a quick tap latches sprint on (green +
-        "Sprinting") until tapped again or exhausted. BUILD 1026: no
-        more 2s idle-clear, and "Release!" while the rearm gate is
-        armed after recovery (hold → exhausted → recovered → still
-        holding sprints never; the label says what to do). No pointer
-        capture: the hold ends on pointerup for the same pointerId
-        (button or window-level backstop), so a second finger can never
-        cancel the first finger's hold. Green while sprint-moving or
-        latched, dimmed + "Tired" while exhausted (forced walk until
-        25 stamina). */}
-    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</button>
+    {/* BUILD 1028: the big right-side Sprint button is gone — the
+        control is now a small ⚡ icon at the bottom next to Gold in
+        the HUD strip (same handlers, same latch/rearm/Tired states).
+        The slot at bottom:262 stays empty on purpose: the 989 fixed
+        stack never shifts, so Walk/Undo/Redo/Remove keep their
+        positions. */}
     {/* BUILD 1004: Remove quick toggle — the SAME toggleRemove the
         panel's Remove button calls, so the two can never diverge.
         Renders in the minimized cluster (same visibility rule as

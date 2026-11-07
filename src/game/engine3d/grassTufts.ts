@@ -31,7 +31,7 @@
 import { GRASS_MESHES, type BakedGrassMesh } from './grassMeshes';
 import { wildObstacleAt } from './wildTerrain';
 import type { IsoWorld } from '../iso/isoWorld';
-import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles } from './placements';
+import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles, placedWallTiles } from './placements';
 
 export type V3 = [number, number, number];
 
@@ -189,6 +189,10 @@ export function blockedTiles(world: IsoWorld): Set<string> {
     for (let x = s.x0; x <= s.x1; x++) blocked.add(key(x, s.y0));
   }
   for (const t of placedTreeTiles(world)) blocked.add(key(t.tx, t.ty));
+  // BUILD 1028: a placed wall is a tall solid cube — no tuft, flower,
+  // or pebble may poke through it (generated walls are already above,
+  // via world.walls).
+  for (const t of placedWallTiles(world)) blocked.add(key(t.x, t.y));
   // BUILD 997: custom-upload rects are solid geometry too — no tuft
   // may poke through an uploaded mesh.
   for (const c of placedCustomRects(world)) {

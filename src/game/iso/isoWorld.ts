@@ -16,7 +16,7 @@ export interface StallRect { x0: number; y0: number; x1: number }
  *  huts/stalls/trees so the 3D adapter's layout filter (which rebuilds
  *  generated lots near town on every load) can never delete placed
  *  work. Old saves load with none. */
-export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
+export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId; /** BUILD 1028: wall orientation (only meaningful for kind 'wall'; h=true horizontal, false vertical — the same flag as WallTile). Set at placement time by auto-matching an adjacent wall run, default horizontal; a moved wall keeps its own h. Absent = horizontal. */ h?: boolean }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
 export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }
@@ -92,6 +92,15 @@ export interface IsoWorld {
    *  deletes the stored entry, and the adapter never re-stamps
    *  water). Old saves load with none. */
   removedWater?: string[];
+  /** BUILD 1028: terrain keys ("x,y") of generated wall tiles the
+   *  user removed via Remove. The 3D adapter copies source walls
+   *  verbatim (filtered to far walls) on every load, so without this
+   *  set a removed wall would come back — the 987/989 rule (removed
+   *  things stay removed). removeGeneratedWallAt also deletes the
+   *  tile from w.walls, so the set is belt-and-braces against any
+   *  path that re-adds the tile (a 2.5D paste, a save restore). Old
+   *  saves load with none. */
+  removedWalls?: string[];
   /** BUILD 1024: terrain keys ("x,y") of WILD (procedurally generated,
    *  out-of-map) trees the player chopped with E-key, and wild rocks the
    *  player mined. Wild trees/rocks are not stored in the world lists —
