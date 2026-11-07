@@ -61,6 +61,30 @@
  *    birds 5, goats 3, deer 3, wolves 2. The town never floods, and
  *    the 998 slot story stays bounded (one fixed GPU slot per animal,
  *    sized to the largest animal emitter).
+ *
+ * BUILD 1016 — CHICKENS (town animals, the INVERSE of the keep-out):
+ * Zelda's village chickens, the game's own triangles — no Zelda
+ * assets, names, or copied designs; in-game they are just "chickens".
+ * Wild animals stay OUT of town (§4); chickens live INSIDE it: they
+ * wander the streets, plaza edges, and house fronts, peck, and
+ * scuttle a step aside when the player walks into one (so a chicken
+ * never blocks the player or sits underfoot — a small step aside,
+ * not a deer flee and not a bird flush). No swarm, no eggs, no
+ * collecting, no picking up — ambient town wildlife only.
+ * Audit notes: NPC movement NEVER checks animal tiles (zero 'animal'
+ * hits in npcMotion/townsfolk3d/transients) — chickens cannot block
+ * NPCs by construction; only the PLAYER's walkableAt treats animals
+ * as solid (the 0.42 render-distance rule), and the scuttle is what
+ * keeps that momentary. The bark system is name-keyed (residents /
+ * transients) — chickens have no names, so they stay SILENT: no
+ * cluck lines, no sound system. Door tiles are inside hut rects, so
+ * npcWalkable already excludes them; doorSTEPS need an extra set
+ * (doorstepTiles below, via hutFace + doorForRect over generated +
+ * placed huts). Roam radius 64 covers the central town and the
+ * vertical road (y41..164) plus all three 1015 buildings, and keeps
+ * an 8-tile buffer from the wild keep-out (72) — the extreme
+ * north/south hut rows (66.0 out) sit just outside it, which is fine:
+ * chickens are central-town animals, not far-row ones.
  */
 
 import { terrainAt, type IsoWorld } from '../iso/isoWorld';
@@ -68,10 +92,11 @@ import { npcWalkable, planPathNpc } from './townsfolk3d';
 import { blockedAction } from './npcMotion';
 import { emitBox, hashStr } from './villagers';
 import { SUN_SHADE, shadeRgb, type Rgb } from './townLook';
+import { doorForRect, hutFace, placedHutRects } from './placements';
 
 // ---------------------------------------------------------------- constants
 
-export type AnimalKind = 'bird' | 'goat' | 'deer' | 'wolf';
+export type AnimalKind = 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken';
 
 /** The 3D plaza (staticAnchors.plaza at runtime; this is the assert default). */
 export const PLAZA_3D = { x: 102, y: 102 };
@@ -94,7 +119,9 @@ export const MAX_BIRDS = 5;
 export const MAX_GOATS = 3;
 export const MAX_DEER = 3;
 export const MAX_WOLVES = 2;
-export const MAX_ANIMALS = MAX_BIRDS + MAX_GOATS + MAX_DEER + MAX_WOLVES;
+/** BUILD 1016: a handful scattered loosely, same order as the 1013 caps. */
+export const MAX_CHICKENS = 5;
+export const MAX_ANIMALS = MAX_BIRDS + MAX_GOATS + MAX_DEER + MAX_WOLVES + MAX_CHICKENS;
 
 /** Stardew-style flush: a perched bird takes off inside this radius. */
 export const BIRD_FLUSH_RADIUS = 5;
@@ -113,6 +140,15 @@ export const WOLF_GIVE_UP_RADIUS = 16;
 /** Wolf combat numbers (player melee is 25/swing, the NPC rule). */
 export const WOLF_HP = 50;
 export const WOLF_BITE = 6;
+/** BUILD 1016: chickens roam the town inside this radius of the
+ *  plaza (central town + vertical road + all three 1015 buildings;
+ *  8 tiles of buffer from the wild keep-out at 72). */
+export const CHICKEN_ROAM_RADIUS = 64;
+/** A chicken scuttles aside when the player gets this close. */
+export const CHICKEN_SCUTTLE_RADIUS = 2;
+/** Scuttle lasts at most this many ticks (or until the player is
+ *  CHICKEN_SCUTTLE_RADIUS + 2 away — the goat-shy exit rule). */
+export const CHICKEN_SCUTTLE_TICKS = 3;
 
 // ------------------------------------------------------------------- types
 
@@ -120,7 +156,8 @@ export type BirdState = 'perched' | 'flying';
 export type GoatState = 'grazing' | 'wandering' | 'shying';
 export type DeerState = 'grazing' | 'wandering' | 'fleeing';
 export type WolfState = 'stalking' | 'approaching' | 'attacking';
-export type AnimalState = BirdState | GoatState | DeerState | WolfState;
+export type ChickenState = 'pecking' | 'wandering' | 'scuttling';
+export type AnimalState = BirdState | GoatState | DeerState | WolfState | ChickenState;
 
 /** One wild animal. Logical tiles (integers after each 900ms step);
  * the view glides the render position toward them (998 rule). `slotId`
@@ -206,6 +243,92 @@ export function clampToWild(x: number, y: number, plaza: { x: number; y: number 
   return { x: Math.round(plaza.x + dx * s), y: Math.round(plaza.y + dy * s) };
 }
 
+// ------------------------------------------------------------ BUILD 1016 — town
+
+/** True when a tile is inside the chickens' town roam. */
+export function inTown(x: number, y: number, plaza: { x: number; y: number }): boolean {
+  return distFromPlaza(x, y, plaza) <= CHICKEN_ROAM_RADIUS;
+}
+
+/**
+ * Every doorstep tile in the world: each hut's door tile stepped one
+ * tile outward along its door-face normal (the 990 exit point). Door
+ * tiles themselves sit inside hut rects, so npcWalkable already
+ * excludes them — doorsteps are the extra exclusion, and a chicken
+ * must never sit on one (it would block Enter). Covers generated
+ * huts (world.huts, incl. the stamped 1015 inn/store/smith) and
+ * placed houses (placedHutRects). Single-sourced door math via
+ * hutFace + doorForRect — never a second formula.
+ */
+export function doorstepTiles(world: IsoWorld): Set<string> {
+  const out = new Set<string>();
+  const huts = [...world.huts, ...placedHutRects(world)];
+  for (const h of huts) {
+    const face = hutFace(h);
+    const door = doorForRect(h.x0, h.y0, h.x1, h.y1, face);
+    const step = face === 'north' ? { x: door.x, y: door.y - 1 }
+      : face === 'south' ? { x: door.x, y: door.y + 1 }
+      : face === 'west' ? { x: door.x - 1, y: door.y }
+      : { x: door.x + 1, y: door.y };
+    out.add(door.x + ',' + door.y);
+    out.add(step.x + ',' + step.y);
+  }
+  return out;
+}
+
+/**
+ * A tile a chicken may stand on: NPC-walkable (never a hut, never a
+ * placed blocker, never water), inside the town roam, town ground
+ * (grass, dirt streets, or the sand plaza — never water, never
+ * stone), and never a door tile or doorstep. The inverse of
+ * habitatTile: wild animals take grass OUTSIDE 72; chickens take
+ * town ground INSIDE 64.
+ */
+export function townHabitatTile(world: IsoWorld, x: number, y: number, plaza: { x: number; y: number }): boolean {
+  if (!inTown(x, y, plaza)) return false;
+  if (!npcWalkable(world, x, y)) return false;
+  const t = terrainAt(world, x, y);
+  if (t !== 'grass' && t !== 'dirt' && t !== 'sand') return false;
+  if (doorstepTiles(world).has(x + ',' + y)) return false;
+  return true;
+}
+
+/**
+ * A* step cost for chickens: outside the town roam is expensive
+ * (50) so routes stay in town instead of wandering into the wild.
+ * The Manhattan heuristic stays admissible (min cost 1). Mirror of
+ * wildCostFn with the sign flipped.
+ */
+export function townCostFn(plaza: { x: number; y: number }): (x: number, y: number) => number {
+  return (x: number, y: number) => (distFromPlaza(x, y, plaza) > CHICKEN_ROAM_RADIUS ? 50 : 1);
+}
+
+/**
+ * BUILD 1016: the A* step cost chickens actually plan with —
+ * townCostFn plus a hard exclusion of door tiles/doorsteps (and any
+ * other non-habitat town tile). Wander targets are habitat tiles,
+ * but a plain townCostFn route may CUT THROUGH a doorstep on its
+ * way there (a doorstep is NPC-walkable, so A* sees it as a free
+ * tile) — the chicken would then stand on someone's doorstep for a
+ * tick. The doorstep set is built once here and closed over, so
+ * the per-node check is a Set lookup, not a rebuild. Non-habitat
+ * tiles cost 1000 (not Infinity) so a route always exists: a
+ * doorstep is a single tile with habitat ground around it, so the
+ * planner routes around it instead of through it.
+ */
+export function chickenCostFn(world: IsoWorld, plaza: { x: number; y: number }): (x: number, y: number) => number {
+  const steps = doorstepTiles(world);
+  const town = townCostFn(plaza);
+  return (x: number, y: number) => {
+    if (steps.has(x + ',' + y)) return 1000;
+    if (!inTown(x, y, plaza)) return town(x, y);
+    if (!npcWalkable(world, x, y)) return 1000;
+    const t = terrainAt(world, x, y);
+    if (t !== 'grass' && t !== 'dirt' && t !== 'sand') return 1000;
+    return town(x, y);
+  };
+}
+
 // -------------------------------------------------------------------- spawn
 
 function randomSpawnTile(
@@ -233,6 +356,35 @@ function randomSpawnTile(
 }
 
 /**
+ * BUILD 1016: a chicken spawn tile — a random town-ground tile
+ * inside the roam radius, never on another animal's tile, never on
+ * the player's tile, and (when requireOutOfView) beyond the 22-tile
+ * figure cull so a chicken never pops in next to the player.
+ */
+function randomTownTile(
+  world: IsoWorld,
+  plaza: { x: number; y: number },
+  usedPositions: ReadonlySet<string>,
+  player: { x: number; y: number },
+  requireOutOfView: boolean,
+): { x: number; y: number } | null {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  for (let k = 0; k < 48; k++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = Math.sqrt(Math.random()) * CHICKEN_ROAM_RADIUS;
+    const x = Math.round(plaza.x + Math.cos(ang) * dist);
+    const y = Math.round(plaza.y + Math.sin(ang) * dist);
+    if (x < 2 || y < 2 || x >= world.w - 2 || y >= world.h - 2) continue;
+    if (usedPositions.has(x + ',' + y)) continue;
+    if (x === px && y === py) continue;
+    if (requireOutOfView && Math.max(Math.abs(x - px), Math.abs(y - py)) <= ANIMAL_SPAWN_VIEW_DIST) continue;
+    if (!townHabitatTile(world, x, y, plaza)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+/**
  * Spawn one animal of a kind, or null when it cannot spawn (no free
  * slot, no valid habitat tile, or — when requireOutOfView — no
  * out-of-view tile). Ids are kind + slot (stable, unique per live
@@ -250,14 +402,19 @@ export function spawnAnimal(
   let slotId: number | null = null;
   for (let i = 0; i < MAX_ANIMALS; i++) if (!usedSlots.has(i)) { slotId = i; break; }
   if (slotId === null) return null;
-  const minDist = kind === 'wolf' ? WOLF_SPAWN_MIN_DIST : SPAWN_MIN_DIST;
-  const maxDist = kind === 'wolf' ? WOLF_SPAWN_MAX_DIST : SPAWN_MAX_DIST;
   let tile: { x: number; y: number } | null = null;
-  for (let attempt = 0; attempt < 3 && !tile; attempt++) {
-    const cand = randomSpawnTile(world, kind, plaza, minDist, maxDist, usedPositions, kind === 'bird' || kind === 'deer');
-    if (!cand) break;
-    if (requireOutOfView && Math.max(Math.abs(cand.x - player.x), Math.abs(cand.y - player.y)) <= ANIMAL_SPAWN_VIEW_DIST) continue;
-    tile = cand;
+  if (kind === 'chicken') {
+    // Chickens spawn in town, not in the wild annulus.
+    tile = randomTownTile(world, plaza, usedPositions, player, requireOutOfView);
+  } else {
+    const minDist = kind === 'wolf' ? WOLF_SPAWN_MIN_DIST : SPAWN_MIN_DIST;
+    const maxDist = kind === 'wolf' ? WOLF_SPAWN_MAX_DIST : SPAWN_MAX_DIST;
+    for (let attempt = 0; attempt < 3 && !tile; attempt++) {
+      const cand = randomSpawnTile(world, kind, plaza, minDist, maxDist, usedPositions, kind === 'bird' || kind === 'deer');
+      if (!cand) break;
+      if (requireOutOfView && Math.max(Math.abs(cand.x - player.x), Math.abs(cand.y - player.y)) <= ANIMAL_SPAWN_VIEW_DIST) continue;
+      tile = cand;
+    }
   }
   if (!tile) return null;
   const seed = hashStr(kind + ':' + slotId + ':' + tile.x + ',' + tile.y);
@@ -266,11 +423,11 @@ export function spawnAnimal(
     kind,
     x: tile.x,
     y: tile.y,
-    state: kind === 'wolf' ? 'stalking' : kind === 'bird' ? 'perched' : 'grazing',
+    state: kind === 'wolf' ? 'stalking' : kind === 'bird' ? 'perched' : kind === 'chicken' ? 'pecking' : 'grazing',
     hp: kind === 'wolf' ? WOLF_HP : 0,
     slotId,
     flightTo: null,
-    pauseTicks: kind === 'bird' ? 0 : 4 + (seed % 5),
+    pauseTicks: kind === 'bird' ? 0 : kind === 'chicken' ? 3 + (seed % 4) : 4 + (seed % 5),
     fleeTicks: 0,
     relocateTicks: 25 + (seed % 20),
     seed,
@@ -293,17 +450,21 @@ function followPath(
   dest: { x: number; y: number },
   occupied: (x: number, y: number) => boolean,
   plaza: { x: number; y: number },
+  costFn?: (x: number, y: number) => number,
 ): { path: AnimalPathState | undefined; moved: boolean } {
+  // BUILD 1016: wild animals pay wildCostFn (stay out of town);
+  // chickens pay townCostFn (stay in town). Default is wild.
+  const cost = costFn ?? wildCostFn(plaza);
   const cx = Math.round(actor.x), cy = Math.round(actor.y);
   const destKey = dest.x + ',' + dest.y;
   let w = path;
   if (!w || w.dest !== destKey) {
-    w = { dest: destKey, path: planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, wildCostFn(plaza)) ?? [], index: 0, noPathTicks: 0, blockedTicks: 0 };
+    w = { dest: destKey, path: planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [], index: 0, noPathTicks: 0, blockedTicks: 0 };
   }
   if (w.path.length === 0) {
     w.noPathTicks++;
     if (w.noPathTicks >= 11) {
-      w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, wildCostFn(plaza)) ?? [];
+      w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [];
       w.index = 0; w.noPathTicks = 0;
     }
     return { path: w, moved: false };
@@ -311,14 +472,14 @@ function followPath(
   const next = w.path[w.index];
   if (!next) return { path: undefined, moved: false };
   if (!npcWalkable(world, next.x, next.y)) {
-    w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, wildCostFn(plaza)) ?? [];
+    w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [];
     w.index = 0; w.noPathTicks = 0; w.blockedTicks = 0;
     return { path: w, moved: false };
   }
   if (occupied(next.x, next.y)) {
     w.blockedTicks++;
     if (blockedAction(w.blockedTicks) === 'replan') {
-      const detour = planPathNpc(world, { x: cx, y: cy }, dest, 4000, new Set([next.x + ',' + next.y]), wildCostFn(plaza));
+      const detour = planPathNpc(world, { x: cx, y: cy }, dest, 4000, new Set([next.x + ',' + next.y]), cost);
       if (detour) { w.path = detour; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; }
       else { w.path = []; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; }
     }
@@ -345,6 +506,50 @@ function wanderTarget(
     if (habitatTile(world, actor.kind, x, y, plaza)) return { x, y };
   }
   return null;
+}
+
+/** BUILD 1016: a random town-ground wander target (mirror of wanderTarget). */
+function townWanderTarget(
+  world: IsoWorld,
+  actor: AnimalActor,
+  radius: number,
+  plaza: { x: number; y: number },
+): { x: number; y: number } | null {
+  for (let k = 0; k < 16; k++) {
+    const x = Math.round(actor.x + (Math.random() * 2 - 1) * radius);
+    const y = Math.round(actor.y + (Math.random() * 2 - 1) * radius);
+    if (x < 2 || y < 2 || x >= world.w - 2 || y >= world.h - 2) continue;
+    if (townHabitatTile(world, x, y, plaza)) return { x, y };
+  }
+  return null;
+}
+
+/**
+ * BUILD 1016: direct scuttle step — the walkable 8-neighbour (town
+ * ground only) farthest from the player. Mirror of fleeStep with
+ * the town habitat instead of the wild one.
+ */
+function townFleeStep(
+  world: IsoWorld,
+  actor: AnimalActor,
+  player: { x: number; y: number },
+  occupied: (x: number, y: number) => boolean,
+  plaza: { x: number; y: number },
+): boolean {
+  const cx = Math.round(actor.x), cy = Math.round(actor.y);
+  let best: { x: number; y: number } | null = null;
+  let bestD = Math.hypot(cx - player.x, cy - player.y);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (dx === 0 && dy === 0) continue;
+    const nx = cx + dx, ny = cy + dy;
+    if (!townHabitatTile(world, nx, ny, plaza)) continue;
+    if (occupied(nx, ny)) continue;
+    const d = Math.hypot(nx - player.x, ny - player.y);
+    if (d > bestD) { bestD = d; best = { x: nx, y: ny }; }
+  }
+  if (!best) return false;
+  actor.x = best.x; actor.y = best.y;
+  return true;
 }
 
 /** Direct flee step: the walkable 8-neighbour (wild only) farthest from the player. */
@@ -537,6 +742,55 @@ export function stepAnimal(
     return { path: res.path, biteDamage: 0 };
   }
 
+  // ---------------------------------------------------------- chicken
+  // BUILD 1016: peck → wander → scuttle. Pecking is head-down and
+  // stationary (the view eases the peck from the 'pecking' state,
+  // same channel as goat/deer graze); wandering is the 998 A* walk
+  // on town ground; scuttling is the goat-shy shape with a town
+  // flee step — a small step aside, never a deer flee, never a bird
+  // flush. A chicken never leaves town: wander targets and flee
+  // steps are town-habitat tiles, and the A* cost (chickenCostFn)
+  // keeps routes inside the roam radius AND off doorsteps — a
+  // plain townCostFn route could cut through a doorstep, since a
+  // doorstep is NPC-walkable.
+  if (actor.kind === 'chicken') {
+    if (actor.state === 'scuttling') {
+      actor.fleeTicks--;
+      if (actor.fleeTicks <= 0 || playerDist > CHICKEN_SCUTTLE_RADIUS + 2) {
+        actor.state = 'pecking';
+        actor.pauseTicks = 3 + (actor.seed % 4);
+        return { path: undefined, biteDamage: 0 };
+      }
+      townFleeStep(world, actor, player, occupied, plaza);
+      return { path: undefined, biteDamage: 0 };
+    }
+    if (playerDist <= CHICKEN_SCUTTLE_RADIUS) {
+      actor.state = 'scuttling';
+      actor.fleeTicks = CHICKEN_SCUTTLE_TICKS;
+      townFleeStep(world, actor, player, occupied, plaza);
+      return { path: undefined, biteDamage: 0 };
+    }
+    if (actor.state === 'pecking') {
+      actor.pauseTicks--;
+      if (actor.pauseTicks <= 0) {
+        const dest = townWanderTarget(world, actor, 10, plaza);
+        if (dest) { actor.state = 'wandering'; const r = followPath(world, actor, undefined, dest, occupied, plaza, chickenCostFn(world, plaza)); return { path: r.path, biteDamage: 0 }; }
+        actor.pauseTicks = 3 + (actor.seed % 4);
+      }
+      return { path, biteDamage: 0 };
+    }
+    // wandering
+    const dest = path ? (() => { const [x, y] = path.dest.split(',').map(Number); return { x, y }; })() : null;
+    if (!dest) { actor.state = 'pecking'; actor.pauseTicks = 3 + (actor.seed % 4); return { path: undefined, biteDamage: 0 }; }
+    const res = followPath(world, actor, path, dest, occupied, plaza, chickenCostFn(world, plaza));
+    if (Math.round(actor.x) === dest.x && Math.round(actor.y) === dest.y) {
+      actor.state = 'pecking';
+      actor.pauseTicks = 3 + (actor.seed % 4);
+      return { path: undefined, biteDamage: 0 };
+    }
+    return { path: res.path, biteDamage: 0 };
+  }
+
   // ---------------------------------------------------------- wolf
   const playerInWild = playerWildDist >= ANIMAL_TOWN_KEEP_OUT;
   if (actor.state === 'attacking') {
@@ -608,6 +862,11 @@ const DEER_BODIES: Rgb[] = [
 const WOLF_BODIES: Rgb[] = [
   [0.45, 0.46, 0.5], [0.32, 0.32, 0.36], [0.5, 0.44, 0.38],
 ];
+/** BUILD 1016: mostly white, like Zelda's village cuccos, with some
+ *  brown variety. White is listed twice so most chickens read white. */
+const CHICKEN_BODIES: Rgb[] = [
+  [0.93, 0.93, 0.9], [0.93, 0.93, 0.9], [0.62, 0.47, 0.3], [0.35, 0.28, 0.22],
+];
 
 export function animalSpecFor(id: string, kind: AnimalKind): AnimalSpec {
   const h = hashStr(id + ':' + kind);
@@ -625,6 +884,9 @@ export function animalSpecFor(id: string, kind: AnimalKind): AnimalSpec {
       return { body: pick(DEER_BODIES), belly: [0.85, 0.75, 0.6], dark: [0.6, 0.45, 0.28], accent: [0.6, 0.5, 0.38], scale: 0.94 + ((h >>> 3) % 5) * 0.035 };
     case 'wolf':
       return { body: pick(WOLF_BODIES), belly: [0.78, 0.76, 0.74], dark: [0.28, 0.28, 0.32], accent: [0.9, 0.9, 0.92], scale: 0.94 + ((h >>> 3) % 5) * 0.035 };
+    case 'chicken':
+      // accent is the red comb; beak/legs are a fixed orange in emitChicken.
+      return { body: pick(CHICKEN_BODIES), belly: [0.96, 0.96, 0.93], dark: [0.55, 0.42, 0.28], accent: [0.85, 0.2, 0.15], scale: 0.9 + ((h >>> 3) % 3) * 0.05 };
   }
 }
 
@@ -818,10 +1080,79 @@ function emitBird(
   emitRollBox(out, cx, wingY, cz, yaw, flap, -1, wingSpan, wingThick, wingChord, spec.body);
 }
 
+/** Orange beak + legs (fixed, not seeded — every chicken reads as one). */
+const CHICKEN_ORANGE: Rgb = [0.9, 0.6, 0.15];
+
+/**
+ * BUILD 1016: emit one chicken — a small biped, ~0.5 tall against
+ * the 1.48 character anchor. Plump body, head with beak and red comb,
+ * folded wings (flapping while scuttling), tail feathers fanned
+ * up-back, two thin legs that alternate while walking. `graze` is
+ * the peck amount 0..1: the head drops toward the ground and the
+ * body pitches forward, same channel as goat/deer graze.
+ */
+function emitChicken(
+  out: number[],
+  cx: number, cz: number,
+  yBase: number,
+  yaw: number,
+  phase: number,
+  spec: AnimalSpec,
+  graze: number,
+  flutter: boolean,
+): void {
+  const s = spec.scale;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const legH = 0.16 * s;
+  const bodyY = yBase + legH + 0.12 * s;
+  const bodyW = 0.22 * s, bodyH = 0.24 * s, bodyL = 0.34 * s;
+  const bob = Math.abs(Math.sin(phase)) * 0.015;
+  // Legs: thin, orange, swinging opposite while walking.
+  const legSwing = 0.4;
+  const legW = 0.045 * s, legD = 0.05 * s;
+  const legX = 0.05 * s;
+  for (const side of [1, -1] as const) {
+    const lx = cx + rx * (side * legX), lz = cz + rz * (side * legX);
+    emitBox(out, lx, legH + bob, lz, yaw, side === 1 ? legSwing * Math.sin(phase) : -legSwing * Math.sin(phase), legW, -legH, 0, legD, CHICKEN_ORANGE);
+  }
+  // Body (slight forward pitch while pecking) + belly patch.
+  emitBox(out, cx, bodyY + bob, cz, yaw, graze * 0.15, bodyW, -bodyH / 2, bodyH / 2, bodyL, spec.body);
+  emitBox(out, cx, bodyY - bodyH / 2 + 0.02 + bob, cz, yaw, graze * 0.15, bodyW * 0.85, -0.05, 0.05, bodyL * 0.8, spec.belly);
+  // Head: front-top of the body; pecking drops it toward the ground
+  // and tips it forward. Beak + red comb ride the head.
+  const headCx = cx + fx * (bodyL / 2 + 0.01 + graze * 0.06 * s);
+  const headCz = cz + fz * (bodyL / 2 + 0.01 + graze * 0.06 * s);
+  const headCy = bodyY + 0.14 * s - graze * 0.2 * s + bob;
+  const headW = 0.13 * s, headH = 0.12 * s, headL = 0.13 * s;
+  const headSwing = graze * 0.5;
+  emitBox(out, headCx, headCy, headCz, yaw, headSwing, headW, -headH / 2, headH / 2, headL, spec.body);
+  emitBox(out, headCx + fx * 0.09 * s, headCy - 0.01 * s, headCz + fz * 0.09 * s, yaw, headSwing, 0.04 * s, -0.015 * s, 0.015 * s, 0.07 * s, CHICKEN_ORANGE);
+  emitBox(out, headCx, headCy + headH / 2 + 0.02 * s, headCz, yaw, headSwing, 0.04 * s, 0, 0.07 * s, 0.05 * s, spec.accent);
+  // Tail feathers: two thin boxes fanned up-back.
+  const tailX = cx + fx * (-bodyL / 2 + 0.01), tailZ = cz + fz * (-bodyL / 2 + 0.01);
+  emitBox(out, tailX, bodyY + 0.06 * s + bob, tailZ, yaw, 0.55, 0.05 * s, 0, 0.18 * s, 0.04 * s, spec.dark);
+  emitBox(out, tailX + rx * 0.04 * s, bodyY + 0.07 * s + bob, tailZ + rz * 0.04 * s, yaw, 0.85, 0.045 * s, 0, 0.14 * s, 0.04 * s, spec.dark);
+  // Wings: folded flat on the body sides while pecking/wandering,
+  // flapping (roll boxes, like the bird) while scuttling.
+  if (flutter) {
+    const flap = Math.sin(phase) * 0.7;
+    const wingY = bodyY + 0.04 * s + bob;
+    emitRollBox(out, cx, wingY, cz, yaw, flap, 1, 0.2 * s, 0.03, 0.18 * s, spec.dark);
+    emitRollBox(out, cx, wingY, cz, yaw, flap, -1, 0.2 * s, 0.03, 0.18 * s, spec.dark);
+  } else {
+    for (const side of [1, -1] as const) {
+      const wx = cx + rx * (side * (bodyW / 2 + 0.005)), wz = cz + rz * (side * (bodyW / 2 + 0.005));
+      emitBox(out, wx, bodyY + 0.02 * s + bob, wz, yaw, graze * 0.15, 0.03, -0.06 * s, 0.06 * s, 0.2 * s, spec.dark);
+    }
+  }
+}
+
 /**
  * Emit one animal into the world vertex buffer. `yBase` is the ground
  * height (birds pass their flight height; ground animals pass 0).
- * `graze` is 0..1 (goat/deer head-down), `flying` drives wing flap.
+ * `graze` is 0..1 (goat/deer head-down, chicken peck), `flying`
+ * drives wing flap, `flutter` flaps chicken wings while scuttling.
  */
 export function emitAnimal(
   out: number[],
@@ -832,10 +1163,14 @@ export function emitAnimal(
   yaw: number,
   phase: number,
   spec: AnimalSpec,
-  opts: { graze?: number; flying?: boolean },
+  opts: { graze?: number; flying?: boolean; flutter?: boolean },
 ): void {
   if (kind === 'bird') {
     emitBird(out, cx, cz, yBase, yaw, phase, spec, opts.flying ?? false);
+    return;
+  }
+  if (kind === 'chicken') {
+    emitChicken(out, cx, cz, yBase, yaw, phase, spec, opts.graze ?? 0, opts.flutter ?? false);
     return;
   }
   emitQuadruped(out, kind, cx, cz, yBase, yaw, phase, spec, opts.graze ?? 0);
@@ -844,9 +1179,9 @@ export function emitAnimal(
 /** Largest per-kind vertex count (probe one spec per kind). */
 export function maxAnimalVerts(): number {
   let max = 0;
-  for (const kind of ['bird', 'goat', 'deer', 'wolf'] as const) {
+  for (const kind of ['bird', 'goat', 'deer', 'wolf', 'chicken'] as const) {
     const out: number[] = [];
-    emitAnimal(out, kind, 0, 0, 0, 0, 0, animalSpecFor('probe-0', kind), { graze: 0.5, flying: true });
+    emitAnimal(out, kind, 0, 0, 0, 0, 0, animalSpecFor('probe-0', kind), { graze: 0.5, flying: true, flutter: true });
     max = Math.max(max, out.length / 6);
   }
   return max;
@@ -861,7 +1196,7 @@ export function maxAnimalVerts(): number {
  */
 export function emitAnimalBlob(out: number[], kind: AnimalKind, cx: number, cz: number, h: number): void {
   if (h >= 0.05) return;
-  const bs = kind === 'bird' ? 0.22 : kind === 'deer' ? 0.55 : 0.45;
+  const bs = kind === 'bird' ? 0.22 : kind === 'chicken' ? 0.25 : kind === 'deer' ? 0.55 : 0.45;
   out.push(
     cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17,
     cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17, cx - bs, 0.005, cz + bs, 0.2, 0.19, 0.17,

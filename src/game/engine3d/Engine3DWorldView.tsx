@@ -31,7 +31,7 @@ import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlace
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
-import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
+import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -1971,11 +1971,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
         const targetH=a.kind==='bird'&&a.state==='flying'?BIRD_FLIGHT_HEIGHT:0;
         st.h+=Math.max(-4*dtNpc,Math.min(4*dtNpc,targetH-st.h));
-        const targetGraze=(a.kind==='goat'||a.kind==='deer')&&a.state==='grazing'?1:0;
+        // BUILD 1016: chickens peck through the same graze channel
+        // (head down while 'pecking') and flap while scuttling.
+        const targetGraze=((a.kind==='goat'||a.kind==='deer')&&a.state==='grazing')||(a.kind==='chicken'&&a.state==='pecking')?1:0;
         st.graze+=Math.max(-2.5*dtNpc,Math.min(2.5*dtNpc,targetGraze-st.graze));
         if(Math.abs(st.h-st.eh)>0.01||Math.abs(st.graze-st.eg)>0.01){slotUploaded.delete(slot);st.eh=st.h;st.eg=st.graze;}
         const pre:number[]=[];
-        emitAnimal(pre,a.kind,st.x+.5,st.y+.5,st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying'});
+        emitAnimal(pre,a.kind,st.x+.5,st.y+.5,st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying',flutter:a.state==='scuttling'});
         // BUILD 1015 polish: shadow blob under ground animals (1013
         // shipped none; emitAnimalBlob in animals.ts). Landing/takeoff
         // forces a slot re-emit via the h-change check above, so the
@@ -2130,7 +2132,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // the 999 lesson), and read its render position (floats, with
       // flight height h for birds).
       getAnimals:()=>animalActorsRef.current.map(a=>({id:a.id,kind:a.kind,x:a.x,y:a.y,state:a.state,hp:a.hp,slotId:a.slotId,flightTo:a.flightTo})),
-      spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:MAX_WOLVES;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
+      spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
       setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;animalPath.delete(id);return true;}return false;},
       getAnimalRenderPos:(id:string)=>{const r=animalRender.get(id);return r?{x:r.x,y:r.y,h:r.h}:null;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
@@ -2300,9 +2302,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     // HEALTH_KEY, with the same exhaustion rule as the NPC strike-back).
     // NOTHING here touches NPC_SAVE_KEY: animals are session-only.
     const animalPath=new Map<string,AnimalPathState>();
-    const mountSpawnAnimal=(kind:'bird'|'goat'|'deer'|'wolf')=>{
+    const mountSpawnAnimal=(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{
       const live=animalActorsRef.current;
-      const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:MAX_WOLVES;
+      const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;
       if(live.filter(a=>a.kind===kind).length>=cap)return;
       const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,true);
       if(s)animalActorsRef.current=[...live,s];
@@ -2311,12 +2313,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     mountSpawnAnimal('goat');
     mountSpawnAnimal('deer');
     mountSpawnAnimal('wolf');
+    // BUILD 1016: chickens spawn in town with the wild animals.
+    mountSpawnAnimal('chicken');
     const animalTimer=window.setInterval(()=>{
       animalTickRef.current++;
       const tick=animalTickRef.current;
       const player=stateRef.current.position;
       if(tick%ANIMAL_SPAWN_TOPUP_TICKS===0){
-        (['bird','goat','deer','wolf'] as const).forEach(kind=>mountSpawnAnimal(kind));
+        (['bird','goat','deer','wolf','chicken'] as const).forEach(kind=>mountSpawnAnimal(kind));
       }
       const residents=npcActorsRef.current;
       for(const a of animalActorsRef.current){
