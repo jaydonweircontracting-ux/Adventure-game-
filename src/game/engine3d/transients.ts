@@ -413,15 +413,19 @@ export function barkLineFor(
 }
 
 /**
- * Largest figure vertex count over all headwear kinds, for transient
- * GPU slot capacity. Specs vary only by hat (brim adds one box), so
- * probing one spec per hat kind covers every transient figure.
- * Expected 480 (14 base boxes + brim's 2, × 30 verts each).
+ * Largest figure vertex count over all headwear AND face kinds, for
+ * transient GPU slot capacity. BUILD 1019: figures vary by hat (the
+ * pointed hat adds the most boxes) AND by face (toothy mouth + brows
+ * add the most boxes), so the probe uses the max-count face combo
+ * (googly eyes + toothy mouth + wonky brows) for every hat kind.
+ * Expected 720: 11 base boxes + 9 face boxes + 4 pointed-hat boxes,
+ * × 30 verts each. The asserts prove this covers every roster figure
+ * and every face x mouth x brow x hat combination.
  */
 export function maxVillagerVerts(): number {
   let max = 0;
-  for (const hat of ['brim', 'cap', 'hood', 'none'] as const) {
-    const spec = { ...villagerSpecFor('__probe__'), hat };
+  for (const hat of ['brim', 'cap', 'hood', 'pointed', 'flat', 'none'] as const) {
+    const spec = { ...villagerSpecFor('__probe__'), hat, face: 'googly' as const, mouth: 'toothy' as const, brow: 'wonky' as const };
     const out: number[] = [];
     emitVillager(out, 0, 0, 0, 0, spec, false);
     if (out.length / 6 > max) max = out.length / 6;

@@ -1,32 +1,83 @@
 /**
- * BUILD 994 — procedural low-poly 3D villagers (pure module, no React).
+ * BUILD 1019 — Minecraft-style blocky characters (pure module, no React).
  *
- * PACK AUDIT RESULT (2026-11-01, re-verified by the standalone asserts):
- * no uploaded pack yields 3D villager geometry for this renderer. The
- * RPG sprite pack is 48,803 2D PNGs; characters.zip is 16 2D PNGs; the
- * Tiny RPG soldier/orc pack is 2D PNGs + .aseprite sources; the 2D HD
- * Character Knight pack is 2D PNG spritesheets; FreeEnvironment_2 is 2
- * PNGs; the Kenney fantasy town kit has 167 FBX/GLB/OBJ models but zero
- * character/person/villager files — buildings only. The renderer draws
- * vertex-colour triangles only (positions + RGB, no textures, no
- * normals), so a 2D sprite cannot become a villager here. These figures
- * are therefore GENERATED from the game's own geometry vocabulary, in
- * the blocky low-poly style of the town reference (a style target only
- * — no reference assets are copied, and no pack model is faked).
+ * USER DIRECTION (2026-11-06 20:18 MST, literal): "No change the shitty
+ * body and the look we like Minecraft characters with stupid faces and
+ * hat". So the 994/999 realistic-polish direction is DEAD — this file
+ * no longer tapers limbs, adds necks/shoulders/age cues, or refines
+ * proportions toward realism. The target is MINECRAFT: cubic and blocky
+ * ON PURPOSE — big square head, box torso, straight box arms and legs,
+ * flat square faces — with STUPID/GOOFY faces and a HAT. Minecraft is
+ * a style reference only: every vertex here is the game's own geometry
+ * and colours, built from its triangle vocabulary. No Minecraft assets,
+ * textures, or copied models exist anywhere in this file.
  *
- * A figure is a blocky humanoid: two legs, torso, two arms, head, and a
- * hat or hair cap, plus two eye dots on the front of the head. Every
- * variation is seeded from the figure's id string, so the same NPC
- * renders the same figure on every rebuild and from every camera.
- * Emission format matches the 3D actor buffer exactly: 6 floats per
- * vertex (x, y, z, r, g, b), drawn with the main vertex-colour program.
+ * PACK AUDIT (re-confirmed 2026-11-06, same result as 994): no uploaded
+ * pack yields 3D character geometry for this renderer. The RPG sprite
+ * pack is 48,803 2D PNGs; characters.zip is 16 2D PNGs; the Tiny RPG
+ * soldier/orc pack is 2D PNGs + .aseprite; the 2D HD Character Knight
+ * pack is 2D PNG spritesheets; FreeEnvironment_2 is 2 PNGs; the Kenney
+ * fantasy town kit has 167 FBX/GLB/OBJ models but zero character files.
+ * The renderer draws vertex-colour triangles only (positions + RGB, no
+ * textures, no normals), so a 2D sprite cannot become a character here.
  *
- * Proportions follow the 992 scale: adult height anchors at
- * CHARACTER_H (1.48) — doors 1.78 read as 1.20x, trees 4.44 as 3.00x.
- * Height varies only ±4% around the anchor (build variation, never
- * tree-sized); children render at exactly 0.7x their adult height
- * (the 979 rule). Figures are visual only: they never change
- * collision, schedules, movement, or roster logic.
+ * AUDIT DEFECTS of the shipped 994/999 figure (before numbers, H=1.48):
+ *   head 0.20H (20% of the body) on a 0.30-wide head vs a 0.46-wide
+ *     torso — a small head on a wide chest, the opposite of Minecraft
+ *     (Steve's head IS as wide as his torso and 25% of his height);
+ *   legs 0.36H = torso 0.36H — stubby legs, long torso (Minecraft:
+ *     legs and torso are each 37.5% of the height);
+ *   no neck is FINE for Minecraft — but the old figure ALSO had no
+ *     neck and still read as a polished mannequin, not a cube;
+ *   face = two eye dots only — no expression at all, and at 3-5 tiles
+ *     the figure read as a blank doll;
+ *   hair = one cap box for everyone; hats on only ~50% of figures
+ *     (brim/cap/hood/none each 25%) — half the town was bare-headed;
+ *   arms/legs were single-colour sticks with a sleeve split — the
+ *     whole figure read as "shitty" because nothing about it was
+ *     bold, square, or funny.
+ *
+ * MINECRAFT PROPORTIONS (fractions of the 0.92H body, H = 1.48 anchor):
+ *   adult: legs 0.345H, torso 0.345H, head 0.23H (head = 25% of the
+ *     body, legs = torso = 37.5% — Steve's exact ratios);
+ *   child: legs 0.30H, torso 0.30H, head 0.32H (head = 35% of the body
+ *     — a big baby-villager head, still exactly 0.7x overall, the
+ *     979 rule);
+ *   head is a CUBE: headW = headD = 0.44 (as wide as the torso, as
+ *     deep as it is wide); torso is 0.44 wide but only 0.22 deep
+ *     (Steve's torso is half as deep as his head); legs 0.20 wide,
+ *     touching at the centre; arms 0.19 wide at the torso edge.
+ *   Figure tops (hat included) stay in the 992 range: brim tops at
+ *     headY1 + 0.13, pointed hats at +0.16 — adult tops 1.41-1.58.
+ *
+ * STUPID FACES (seeded per NPC, so the town doesn't pull one face):
+ *   eyes: googly (pupils looking different ways), crossed (both
+ *     pupils toward the nose), derp (one big eye, one small eye,
+ *     pupils at different heights), sleepy (half-lidded, pupils low),
+ *     wide (big white eyes, tiny pupils — surprised);
+ *   mouths: grin (wide dark grin + white tooth strip), toothy (two
+ *     square teeth hanging from the top lip), open (dark open mouth +
+ *     pink tongue), buck (one big front tooth), smirk (one-sided grin);
+ *   brows: wonky (one high, one low), raised, slant (angry-funny),
+ *     none. White sclera + dark pupils + white teeth read as a silly
+ *     face at the 3-5 tile framing the player actually sees.
+ *
+ * HATS ARE THE DEFAULT (old: 25% bare heads; new: 5%): brim 30%,
+ * cap 25%, pointed 20% (stepped cone — brim + 3 shrinking tiers),
+ * flat 15% (wide brim + flat top), hood 5%, bare head 5%.
+ *
+ * WALK: stiff straight box swings ARE the Minecraft walk — legs
+ * ±LEG_SWING, arms ±ARM_SWING opposite, bob |sin| x WALK_BOB, phase
+ * by distance (the 998 rule). No lean, no elbow/knee articulation:
+ * Minecraft characters do not bend. Animation is UNCHANGED in 1019.
+ *
+ * INVARIANTS (kept): player distinct by construction (emerald tunic,
+ * dark brown pants, wide-brim hat with gold band — now in blocky
+ * form, with a fixed googly/grin/wonky face); children exactly 0.7x;
+ * facing coherence (1001 — limb boxes offset along the lateral axis
+ * r = (cos yaw, -sin yaw)); figure-slot counts depend only on
+ * (spec, child), never on phase/yaw (the 998 slot cache); NPC
+ * schedules, movement, collision, barks untouched — looks only.
  */
 
 import { CHARACTER_H, SUN_SHADE, shadeRgb, type Rgb } from './townLook';
@@ -60,11 +111,19 @@ const HAIRS: Rgb[] = [
 ];
 const HATS: Rgb[] = [
   [0.35, 0.24, 0.12], [0.25, 0.25, 0.25], [0.15, 0.2, 0.35], [0.45, 0.35, 0.2],
+  [0.7, 0.15, 0.15], [0.85, 0.7, 0.15],
 ];
 const HEIGHT_SCALES = [0.96, 0.98, 1.0, 1.02, 1.04];
 const WIDTH_SCALES = [0.92, 1.0, 1.08];
 
-export type HatKind = 'brim' | 'cap' | 'hood' | 'none';
+export type HatKind = 'brim' | 'cap' | 'hood' | 'pointed' | 'flat' | 'none';
+export type FaceKind = 'googly' | 'crossed' | 'derp' | 'sleepy' | 'wide';
+export type MouthKind = 'grin' | 'toothy' | 'open' | 'buck' | 'smirk';
+export type BrowKind = 'wonky' | 'raised' | 'slant' | 'none';
+
+const FACES: FaceKind[] = ['googly', 'crossed', 'derp', 'sleepy', 'wide'];
+const MOUTHS: MouthKind[] = ['grin', 'toothy', 'open', 'buck', 'smirk'];
+const BROWS: BrowKind[] = ['wonky', 'raised', 'slant', 'none'];
 
 export interface VillagerSpec {
   skin: Rgb;
@@ -77,12 +136,17 @@ export interface VillagerSpec {
   widthScale: number;
   /** Gold band on the hat — player only, never rolled for NPCs. */
   goldBand: boolean;
+  /** Stupid-face combo, seeded per figure id. */
+  face: FaceKind;
+  mouth: MouthKind;
+  brow: BrowKind;
 }
 
 /**
  * The player's outfit, DISTINCT from every roster figure by
  * construction: the emerald tunic is absent from the NPC shirt palette
- * and the gold hat band is never rolled for NPCs.
+ * and the gold hat band is never rolled for NPCs. Now in blocky form,
+ * with a fixed goofy face (googly eyes, big grin, wonky brows).
  */
 export const PLAYER_SPEC: VillagerSpec = {
   skin: [0.92, 0.72, 0.55],
@@ -94,23 +158,39 @@ export const PLAYER_SPEC: VillagerSpec = {
   heightScale: 1.0,
   widthScale: 1.0,
   goldBand: true,
+  face: 'googly',
+  mouth: 'grin',
+  brow: 'wonky',
 };
 
 /** Seeded spec for one figure id (NPC name). Same id → same spec, always. */
 export function villagerSpecFor(id: string): VillagerSpec {
   const h = hashStr(id);
   const pick = <T>(arr: readonly T[], n: number): T => arr[(h >>> n) % arr.length];
-  const hatRoll = (h >>> 12) % 4;
+  // Hats are the default now: brim 30%, cap 25%, pointed 20%,
+  // flat 15%, hood 5%, bare head 5% (was 25% each incl. bare).
+  const hatRoll = (h >>> 12) % 20;
+  const hat: HatKind =
+    hatRoll < 6 ? 'brim' : hatRoll < 11 ? 'cap' : hatRoll < 15 ? 'pointed'
+    : hatRoll < 18 ? 'flat' : hatRoll < 19 ? 'hood' : 'none';
+  // Face/mouth/brow roll from SEPARATELY salted hashes: the top bits
+  // of the single djb2 hash are badly skewed over this 47-name roster
+  // (the first cut had 26 'wide' faces, zero 'smirk' mouths and zero
+  // 'none' brows), so each goofy feature gets its own decorrelated
+  // roll. Colours/hat/height/width keep the original bit picks.
   return {
     skin: pick(SKINS, 0),
     shirt: pick(SHIRTS, 3),
     pants: pick(PANTS, 6),
     hair: pick(HAIRS, 9),
-    hat: (['brim', 'cap', 'hood', 'none'] as HatKind[])[hatRoll],
+    hat,
     hatColor: pick(HATS, 15),
     heightScale: HEIGHT_SCALES[(h >>> 18) % HEIGHT_SCALES.length],
     widthScale: WIDTH_SCALES[(h >>> 21) % WIDTH_SCALES.length],
     goldBand: false,
+    face: FACES[hashStr(id + ':face') % FACES.length],
+    mouth: MOUTHS[hashStr(id + ':mouth') % MOUTHS.length],
+    brow: BROWS[hashStr(id + ':brow') % BROWS.length],
   };
 }
 
@@ -122,7 +202,7 @@ export function villagerHeight(spec: VillagerSpec, child: boolean): number {
 /** A spec as one comparable tuple (player-distinctness asserts use this). */
 export function specTuple(spec: VillagerSpec): string {
   const c = (v: Rgb) => v.map((n) => n.toFixed(2)).join(',');
-  return [c(spec.skin), c(spec.shirt), c(spec.pants), c(spec.hair), spec.hat, c(spec.hatColor), String(spec.goldBand)].join('|');
+  return [c(spec.skin), c(spec.shirt), c(spec.pants), c(spec.hair), spec.hat, c(spec.hatColor), String(spec.goldBand), spec.face, spec.mouth, spec.brow].join('|');
 }
 
 // ------------------------------------------------------------ box emission
@@ -156,6 +236,7 @@ function shadeForNormal(nx: number, ny: number, nz: number): number {
  * the world's cube helper). Corners rotate in the (up, forward) plane:
  * b' = b·cos(s) + c·sin(s), c' = −b·sin(s) + c·cos(s), so a positive
  * swing moves the bottom of the box forward.
+ * NOTE: animals.ts imports this exact signature — do not change it.
  */
 export function emitBox(
   out: number[],
@@ -203,34 +284,34 @@ export const PHASE_PER_UNIT = (2 * Math.PI) / STRIDE_LENGTH;
 export const NPC_SPEED = 1 / 0.9;
 
 /**
- * BUILD 999 — arm + detail geometry, derived from one place so the
+ * BUILD 1019 — Minecraft proportions, derived from one place so the
  * asserts can check attachment and proportions exactly.
  *
- * ARM FIX (the user's "spaced out and weird" complaint, verified
- * against the shipped 994 code): the old arms sat 0.01 clear of the
- * torso edge (a floating gap, visible at close range), were thin
- * 0.13-wide sticks in a single sleeve colour, and spanned 0.74x width
- * against a 0.46x torso. The new arms OVERLAP the torso by 0.02 (no
- * gap, ever), are wider (0.16), and read as limbs: a shirt-coloured
- * sleeve on the upper 55% and a skin-coloured forearm below, both
- * pivoting at the same shoulder point with the same swing so the arm
- * stays one piece in motion. Total arm extent is unchanged (bottom
- * still 0.06 below hip level), so the 992 silhouette anchors do not
- * move. Detailing that reads at game scale: a leather belt at the
- * waist, a lightened-shirt collar at the neck, and darker boot bands
- * at the bottom of each leg (same leg pivot + swing, so boots move
- * with the legs). All detail bands sit inside existing spans, so
- * figure tops — and the 992 anchors — are unchanged.
+ * Adult body (fractions of H, sum 0.92H — the hat brings the top to
+ * the 1.48 anchor): legs 0.345, torso 0.345, head 0.23 (head = 25%
+ * of the body, Steve's ratio; old: head 0.20 on a 0.30-wide head vs
+ * a 0.46 torso). Child body: legs 0.30, torso 0.30, head 0.32
+ * (head = 35% — a big baby-villager head, still exactly 0.7x overall).
+ * Head is a CUBE (headW = headD = 0.44); torso is as wide as the head
+ * but half as deep (0.22). Legs touch at the centre (legX 0.11, legW
+ * 0.20). Arms overlap the torso by 0.02 (the 999 attachment fix,
+ * kept). Belt at the waist and boot bands at the ankles stay; the
+ * 999 collar is GONE — Minecraft torsos have no collar.
  */
-export const ARM_W = 0.16;
+export const ARM_W = 0.19;
 export const ARM_OVERLAP = 0.02;
 export const SLEEVE_FRAC = 0.55;
-/** Belt, collar, and boot detail bands (fractions of figure height). */
+/** Belt and boot detail bands (fractions of figure height). */
 export const BELT_H_FRAC = 0.045;
-export const COLLAR_H_FRAC = 0.04;
 export const BOOT_H_FRAC = 0.09;
 export const BELT_COL: Rgb = [0.22, 0.15, 0.09];
 export const BOOT_COL: Rgb = [0.25, 0.18, 0.12];
+/** Face palette: white sclera, dark pupils, white teeth, pink tongue. */
+export const EYE_WHITE: Rgb = [0.95, 0.95, 0.93];
+export const PUPIL_COL: Rgb = [0.08, 0.08, 0.1];
+export const TOOTH_COL: Rgb = [0.95, 0.95, 0.9];
+export const MOUTH_COL: Rgb = [0.2, 0.1, 0.1];
+export const TONGUE_COL: Rgb = [0.85, 0.4, 0.45];
 
 export interface FigureLayout {
   H: number; ws: number; s: number; bob: number;
@@ -240,7 +321,8 @@ export interface FigureLayout {
   legW: number; legD: number; legX: number;
   armW: number; armD: number; armX: number; armLen: number; sleeveLen: number; shoulderY: number;
   headW: number; headD: number;
-  beltH: number; collarH: number; bootH: number;
+  beltH: number; bootH: number;
+  eyeY: number; eyeLat: number; mouthY: number; browY: number;
 }
 
 /** Pure figure geometry for one spec. Same spec + child + bob → same layout. */
@@ -248,26 +330,30 @@ export function figureLayout(spec: VillagerSpec, child: boolean, bob: number): F
   const s = child ? 0.7 : 1;
   const H = CHARACTER_H * spec.heightScale * s;
   const ws = spec.widthScale * s;
-  const legH = 0.36 * H;
-  const torsoH = 0.36 * H;
-  const headH = 0.2 * H;
+  // Minecraft ratios: adult legs = torso = 37.5% of the body, head 25%;
+  // children get a bigger head (35%) and shorter legs/torso (30% each).
+  const legFrac = child ? 0.30 : 0.345;
+  const torsoFrac = child ? 0.30 : 0.345;
+  const headFrac = child ? 0.32 : 0.23;
+  const legH = legFrac * H;
+  const torsoH = torsoFrac * H;
+  const headH = headFrac * H;
   const hipY = legH + bob;
   const torsoY0 = hipY;
   const torsoY1 = hipY + torsoH;
   const headY0 = torsoY1;
   const headY1 = headY0 + headH;
-  const torsoW = 0.46 * ws;
-  const torsoD = 0.26 * ws;
-  const legW = 0.17 * ws;
-  const legD = 0.2 * ws;
+  const torsoW = 0.44 * ws;
+  const torsoD = 0.22 * ws;
+  const legW = 0.20 * ws;
+  const legD = 0.22 * ws;
   const armW = ARM_W * ws;
-  const armD = 0.15 * ws;
-  const headW = 0.3 * ws;
-  const headD = 0.28 * ws;
-  const legX = 0.1 * ws;
+  const armD = 0.19 * ws;
+  const headW = 0.44 * ws;
+  const headD = 0.44 * ws;
+  const legX = 0.11 * ws;
   // Attached: the arm's inner edge sits ARM_OVERLAP INSIDE the torso
-  // edge (old code added a 0.01 gap instead). Outer span is unchanged
-  // in spirit (wider arms cancel the overlap), but nothing floats.
+  // edge (the 999 fix). Outer span is unchanged in spirit.
   const armX = torsoW / 2 + armW / 2 - ARM_OVERLAP * ws;
   const armLen = torsoH + 0.03 * s;
   const shoulderY = torsoY1 - 0.03 * s;
@@ -275,17 +361,29 @@ export function figureLayout(spec: VillagerSpec, child: boolean, bob: number): F
     H, ws, s, bob, legH, torsoH, headH, hipY, torsoY0, torsoY1, headY0, headY1,
     torsoW, torsoD, legW, legD, legX, armW, armD, armX, armLen,
     sleeveLen: SLEEVE_FRAC * armLen, shoulderY, headW, headD,
-    beltH: BELT_H_FRAC * H, collarH: COLLAR_H_FRAC * H, bootH: BOOT_H_FRAC * H,
+    beltH: BELT_H_FRAC * H, bootH: BOOT_H_FRAC * H,
+    // Face anchors: eyes just above the head's middle, mouth in the
+    // lower third, brows just above the eyes.
+    eyeY: headY0 + 0.58 * headH,
+    eyeLat: 0.09 * ws,
+    mouthY: headY0 + 0.22 * headH,
+    browY: headY0 + 0.58 * headH + 0.18 * headH,
   };
 }
 
-/** Lighten a colour toward white (collar trim from the shirt colour). */
-export function lightenRgb(color: Rgb, amt: number): Rgb {
-  return [
-    Math.min(1, color[0] + (1 - color[0]) * amt),
-    Math.min(1, color[1] + (1 - color[1]) * amt),
-    Math.min(1, color[2] + (1 - color[2]) * amt),
-  ];
+// ------------------------------------------------------------ face helpers
+
+/** One face feature box, centred on the head's front face. */
+function faceBox(
+  out: number[],
+  cx: number, cz: number, yaw: number,
+  lat: number, y: number, fwd: number,
+  w: number, h: number, d: number,
+  color: Rgb,
+): void {
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  emitBox(out, cx + rx * lat + fx * fwd, y, cz + rz * lat + fz * fwd, yaw, 0, w, -h / 2, h / 2, d, color);
 }
 
 /**
@@ -295,18 +393,12 @@ export function lightenRgb(color: Rgb, amt: number): Rgb {
  * At a multiple of 2π the figure stands neutral (legs together, no bob).
  * Facing: yaw with forward = (sin yaw, cos yaw) in (x, z).
  *
- * BUILD 1002 (queue 1002) — limb placement rotates WITH the facing.
- * The old code placed legs/boots/arms at WORLD-X offsets (cx ± legX,
- * cx ± armX) while the boxes themselves were yaw-rotated. At yaw 0
- * the lateral axis IS world X, so south-facing figures looked right
- * (and every 999 probe framed mostly those) — but at any other yaw
- * the limbs stayed spread along world X while the torso/head/eyes
- * turned to yaw: a west-facing figure's legs collapsed into a single
- * front-back line instead of standing side by side, which is the
- * user's "head turned, torso sideways" photo. The fix offsets every
- * limb along the lateral axis r = (cos yaw, −sin yaw); at yaw 0 this
- * is byte-identical to the old placement, so the 999 south-facing
- * look is preserved exactly.
+ * BUILD 1001 (kept) — limb placement rotates WITH the facing: every
+ * limb is offset along the lateral axis r = (cos yaw, −sin yaw); at
+ * yaw 0 this is byte-identical to world-X placement, so the old
+ * south-facing look is preserved exactly. The face features use the
+ * same lateral/forward axes, so the goofy face always stays on the
+ * front of the head at every yaw.
  */
 export function emitVillager(
   out: number[],
@@ -319,7 +411,7 @@ export function emitVillager(
   const L = figureLayout(spec, child, bob);
   const legSwing = Math.sin(phase) * LEG_SWING;
   const armSwing = Math.sin(phase) * ARM_SWING;
-  // Lateral axis for limb placement (BUILD 1002 — see doc above).
+  // Lateral axis for limb placement (BUILD 1001 — see doc above).
   const rx = Math.cos(yaw), rz = -Math.sin(yaw);
   const fx = Math.sin(yaw), fz = Math.cos(yaw);
   // Legs pivot at the hips (top of each leg box); boots share the leg
@@ -329,10 +421,10 @@ export function emitVillager(
   emitBox(out, cx + rx * L.legX, L.hipY, cz + rz * L.legX, yaw, -legSwing, L.legW, -L.legH, 0, L.legD, spec.pants);
   emitBox(out, cx - rx * L.legX, L.hipY, cz - rz * L.legX, yaw, legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
   emitBox(out, cx + rx * L.legX, L.hipY, cz + rz * L.legX, yaw, -legSwing, L.legW + 0.02 * L.ws, -L.legH, -L.legH + L.bootH, L.legD + 0.02 * L.ws, BOOT_COL);
-  // Torso (centered, no swing) + belt at the waist + collar at the neck.
+  // Torso (centered, no swing) + belt at the waist. No collar — a
+  // Minecraft torso is a plain box with a belt.
   emitBox(out, cx, (L.torsoY0 + L.torsoY1) / 2, cz, yaw, 0, L.torsoW, -L.torsoH / 2, L.torsoH / 2, L.torsoD, spec.shirt);
   emitBox(out, cx, L.hipY + L.beltH / 2, cz, yaw, 0, L.torsoW + 0.02 * L.ws, -L.beltH / 2, L.beltH / 2, L.torsoD + 0.02 * L.ws, BELT_COL);
-  emitBox(out, cx, L.torsoY1 - L.collarH / 2, cz, yaw, 0, L.torsoW + 0.02 * L.ws, -L.collarH / 2, L.collarH / 2, L.torsoD + 0.02 * L.ws, lightenRgb(spec.shirt, 0.25));
   // Arms pivot at the shoulders, swinging opposite their side's leg.
   // Sleeve (shirt) + forearm (skin) share one pivot and one swing, so
   // each arm stays a single piece in motion; the forearm is the arm's
@@ -341,33 +433,102 @@ export function emitVillager(
   emitBox(out, cx + rx * L.armX, L.shoulderY, cz + rz * L.armX, yaw, armSwing, L.armW, -L.sleeveLen, 0, L.armD, spec.shirt);
   emitBox(out, cx - rx * L.armX, L.shoulderY, cz - rz * L.armX, yaw, -armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
   emitBox(out, cx + rx * L.armX, L.shoulderY, cz + rz * L.armX, yaw, armSwing, L.armW, -L.armLen, -L.sleeveLen, L.armD, spec.skin);
-  // Head (centered, no swing).
+  // Head: a CUBE, as wide as the torso and as deep as it is wide.
   emitBox(out, cx, (L.headY0 + L.headY1) / 2, cz, yaw, 0, L.headW, -L.headH / 2, L.headH / 2, L.headD, spec.skin);
-  // Eyes: two dark dots on the front face of the head (rx/rz/fx/fz
-  // are the BUILD 1002 hoisted lateral/forward axes, shared with the
-  // limbs above so head, eyes, arms, and legs all face one yaw).
-  const eyeY = (L.headY0 + L.headY1) / 2 + 0.02 * L.s;
-  const eyeOff = L.headD / 2 + 0.006;
-  const eyeLat = 0.07 * L.ws;
-  const eyeCol: Rgb = [0.08, 0.08, 0.1];
-  emitBox(out, cx + rx * -eyeLat + fx * eyeOff, eyeY, cz + rz * -eyeLat + fz * eyeOff, yaw, 0, 0.045 * L.ws, -0.025 * L.s, 0.025 * L.s, 0.008, eyeCol);
-  emitBox(out, cx + rx * eyeLat + fx * eyeOff, eyeY, cz + rz * eyeLat + fz * eyeOff, yaw, 0, 0.045 * L.ws, -0.025 * L.s, 0.025 * L.s, 0.008, eyeCol);
-  // Hat or hair cap on top of the head.
+  // ---- STUPID FACE (front of the head, always on the facing side) ----
+  const fwd = L.headD / 2;
+  const hw = L.headW, hh = L.headH;
+  // Eyes: white sclera + dark pupil. Size/placement per face kind.
+  let sclW = 0.17 * hw, sclH = 0.18 * hh;
+  let pupW = 0.09 * hw, pupH = 0.11 * hh;
+  let pupL: [number, number] = [-0.02 * L.ws, 0.015 * L.s];
+  let pupR: [number, number] = [0.02 * L.ws, -0.015 * L.s];
+  let sclHLeft = sclH, sclHRight = sclH;
+  let sclWLeft = sclW, sclWRight = sclW;
+  if (spec.face === 'crossed') {
+    pupL = [0.02 * L.ws, -0.01 * L.s];
+    pupR = [-0.02 * L.ws, -0.01 * L.s];
+  } else if (spec.face === 'derp') {
+    sclWLeft = 0.20 * hw; sclHLeft = 0.22 * hh;
+    sclWRight = 0.13 * hw; sclHRight = 0.13 * hh;
+    pupL = [0, 0.015 * L.s];
+    pupR = [0, -0.015 * L.s];
+  } else if (spec.face === 'sleepy') {
+    sclHLeft = 0.09 * hh; sclHRight = 0.09 * hh;
+    pupL = [0, -0.012 * L.s];
+    pupR = [0, -0.012 * L.s];
+  } else if (spec.face === 'wide') {
+    sclWLeft = 0.20 * hw; sclHLeft = 0.24 * hh;
+    sclWRight = 0.20 * hw; sclHRight = 0.24 * hh;
+    pupW = 0.06 * hw; pupH = 0.07 * hh;
+    pupL = [0, 0];
+    pupR = [0, 0];
+  }
+  // Left eye (sclera, then pupil proud of it).
+  faceBox(out, cx, cz, yaw, -L.eyeLat, L.eyeY, fwd + 0.006, sclWLeft, sclHLeft, 0.008, EYE_WHITE);
+  faceBox(out, cx, cz, yaw, -L.eyeLat + pupL[0], L.eyeY + pupL[1], fwd + 0.012, pupW, pupH, 0.006, PUPIL_COL);
+  // Right eye.
+  faceBox(out, cx, cz, yaw, L.eyeLat, L.eyeY, fwd + 0.006, sclWRight, sclHRight, 0.008, EYE_WHITE);
+  faceBox(out, cx, cz, yaw, L.eyeLat + pupR[0], L.eyeY + pupR[1], fwd + 0.012, pupW, pupH, 0.006, PUPIL_COL);
+  // Brows: hair-coloured bars above the eyes (wonky = one high, one low).
+  if (spec.brow !== 'none') {
+    let browL = 0, browR = 0;
+    if (spec.brow === 'wonky') { browL = 0.02 * L.s; browR = -0.015 * L.s; }
+    else if (spec.brow === 'raised') { browL = 0.02 * L.s; browR = 0.02 * L.s; }
+    else if (spec.brow === 'slant') { browL = 0.025 * L.s; browR = -0.02 * L.s; }
+    faceBox(out, cx, cz, yaw, -L.eyeLat, L.browY + browL, fwd + 0.006, 0.16 * hw, 0.045 * hh, 0.008, spec.hair);
+    faceBox(out, cx, cz, yaw, L.eyeLat, L.browY + browR, fwd + 0.006, 0.16 * hw, 0.045 * hh, 0.008, spec.hair);
+  }
+  // Mouth: dark grin + teeth/tongue per kind.
+  const mY = L.mouthY;
+  if (spec.mouth === 'grin') {
+    faceBox(out, cx, cz, yaw, 0, mY, fwd + 0.006, 0.40 * hw, 0.09 * hh, 0.008, MOUTH_COL);
+    faceBox(out, cx, cz, yaw, 0, mY + 0.012 * L.s, fwd + 0.010, 0.36 * hw, 0.05 * hh, 0.006, TOOTH_COL);
+  } else if (spec.mouth === 'toothy') {
+    faceBox(out, cx, cz, yaw, 0, mY, fwd + 0.006, 0.32 * hw, 0.15 * hh, 0.008, MOUTH_COL);
+    faceBox(out, cx, cz, yaw, -0.06 * L.ws, mY + 0.015 * L.s, fwd + 0.010, 0.09 * hw, 0.12 * hh, 0.006, TOOTH_COL);
+    faceBox(out, cx, cz, yaw, 0.06 * L.ws, mY + 0.015 * L.s, fwd + 0.010, 0.09 * hw, 0.12 * hh, 0.006, TOOTH_COL);
+  } else if (spec.mouth === 'open') {
+    faceBox(out, cx, cz, yaw, 0, mY, fwd + 0.006, 0.22 * hw, 0.20 * hh, 0.008, MOUTH_COL);
+    faceBox(out, cx, cz, yaw, 0, mY - 0.015 * L.s, fwd + 0.010, 0.16 * hw, 0.08 * hh, 0.006, TONGUE_COL);
+  } else if (spec.mouth === 'buck') {
+    faceBox(out, cx, cz, yaw, 0, mY, fwd + 0.006, 0.22 * hw, 0.09 * hh, 0.008, MOUTH_COL);
+    faceBox(out, cx, cz, yaw, 0, mY + 0.005 * L.s, fwd + 0.010, 0.11 * hw, 0.14 * hh, 0.006, TOOTH_COL);
+  } else {
+    // smirk: one-sided grin.
+    faceBox(out, cx, cz, yaw, 0.05 * L.ws, mY, fwd + 0.006, 0.28 * hw, 0.08 * hh, 0.008, MOUTH_COL);
+  }
+  // ---- HAT (or hair, for the rare bare head) ----
   const topY = L.headY1;
   if (spec.hat === 'brim') {
-    emitBox(out, cx, topY + 0.015 * L.s, cz, yaw, 0, 0.46 * L.ws, -0.015 * L.s, 0.015 * L.s, 0.46 * L.ws, spec.hatColor);
-    emitBox(out, cx, topY + 0.03 * L.s + 0.05 * L.s, cz, yaw, 0, 0.3 * L.ws, -0.05 * L.s, 0.05 * L.s, 0.3 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.015 * L.s, cz, yaw, 0, 0.56 * L.ws, -0.015 * L.s, 0.015 * L.s, 0.56 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.03 * L.s + 0.05 * L.s, cz, yaw, 0, 0.32 * L.ws, -0.05 * L.s, 0.05 * L.s, 0.32 * L.ws, spec.hatColor);
     if (spec.goldBand) {
-      emitBox(out, cx, topY + 0.03 * L.s + 0.015 * L.s, cz, yaw, 0, 0.31 * L.ws, -0.015 * L.s, 0.015 * L.s, 0.31 * L.ws, [0.85, 0.65, 0.15]);
+      emitBox(out, cx, topY + 0.03 * L.s + 0.015 * L.s, cz, yaw, 0, 0.33 * L.ws, -0.015 * L.s, 0.015 * L.s, 0.33 * L.ws, [0.85, 0.65, 0.15]);
     }
   } else if (spec.hat === 'cap') {
-    emitBox(out, cx, topY + 0.05 * L.s, cz, yaw, 0, 0.32 * L.ws, -0.05 * L.s, 0.05 * L.s, 0.32 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.05 * L.s, cz, yaw, 0, 0.46 * L.ws, -0.05 * L.s, 0.05 * L.s, 0.46 * L.ws, spec.hatColor);
+  } else if (spec.hat === 'pointed') {
+    // Stepped cone: wide brim + three shrinking tiers.
+    emitBox(out, cx, topY + 0.01 * L.s, cz, yaw, 0, 0.56 * L.ws, -0.01 * L.s, 0.01 * L.s, 0.56 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.05 * L.s, cz, yaw, 0, 0.30 * L.ws, -0.03 * L.s, 0.03 * L.s, 0.30 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.10 * L.s, cz, yaw, 0, 0.20 * L.ws, -0.025 * L.s, 0.025 * L.s, 0.20 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.14 * L.s, cz, yaw, 0, 0.10 * L.ws, -0.02 * L.s, 0.02 * L.s, 0.10 * L.ws, spec.hatColor);
+  } else if (spec.hat === 'flat') {
+    emitBox(out, cx, topY + 0.015 * L.s, cz, yaw, 0, 0.56 * L.ws, -0.015 * L.s, 0.015 * L.s, 0.56 * L.ws, spec.hatColor);
+    emitBox(out, cx, topY + 0.055 * L.s, cz, yaw, 0, 0.36 * L.ws, -0.025 * L.s, 0.025 * L.s, 0.36 * L.ws, spec.hatColor);
   } else if (spec.hat === 'hood') {
     const dark: Rgb = [spec.shirt[0] * 0.7, spec.shirt[1] * 0.7, spec.shirt[2] * 0.7];
-    emitBox(out, cx, topY + 0.06 * L.s, cz, yaw, 0, 0.36 * L.ws, -0.06 * L.s, 0.06 * L.s, 0.34 * L.ws, dark);
+    emitBox(out, cx, topY + 0.06 * L.s, cz, yaw, 0, 0.38 * L.ws, -0.06 * L.s, 0.06 * L.s, 0.36 * L.ws, dark);
+    // Hood falls down the back of the head (centred on the back face,
+    // i.e. offset along -f, the full back direction at any yaw).
+    const backOff = L.headD / 2 + 0.004;
+    emitBox(out, cx - fx * backOff, (L.headY0 + L.headY1) / 2, cz - fz * backOff, yaw, 0, 0.38 * L.ws, -L.headH / 2, L.headH / 2, 0.008, dark);
   } else {
-    // Hair caps the head at the same height as hats (0.12), so every
-    // figure tops out near the 1.48 anchor regardless of headwear.
-    emitBox(out, cx, topY + 0.06 * L.s, cz, yaw, 0, 0.31 * L.ws, -0.06 * L.s, 0.06 * L.s, 0.3 * L.ws, spec.hair);
+    // Bare head (rare now, 5%): hair cap on top + hair down the back,
+    // so the back of the head is not bald skin.
+    emitBox(out, cx, topY + 0.05 * L.s, cz, yaw, 0, 0.45 * L.ws, -0.05 * L.s, 0.05 * L.s, 0.44 * L.ws, spec.hair);
+    const backOff = L.headD / 2 + 0.004;
+    emitBox(out, cx - fx * backOff, (L.headY0 + L.headY1) / 2, cz - fz * backOff, yaw, 0, 0.44 * L.ws, -L.headH / 2, L.headH / 2, 0.008, spec.hair);
   }
 }
