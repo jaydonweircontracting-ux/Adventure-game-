@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { hutAt, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -25,6 +25,7 @@ import {
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
+import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
@@ -113,7 +114,13 @@ export function savedPosition(world: IsoWorld): Position {
         const tx = Math.round(p.x), ty = Math.round(p.y);
         const rescued = rescuePosition([...world.huts, ...placedHutRects(world)], tx, ty);
         if (rescued) return rescued;
-        if (walkableWithPlacements(world, world.crates, tx, ty)) return p;
+        // BUILD 1024: a save past the old edge loads if the wild tile
+        // is walkable (grass, no tree/rock/lake); in-map saves use
+        // the normal rule.
+        const ok = (tx >= 0 && ty >= 0 && tx < world.w && ty < world.h)
+          ? walkableWithPlacements(world, world.crates, tx, ty)
+          : isWildWalkable(world, tx, ty);
+        if (ok) return p;
       }
     }
   } catch { /* use the world's authored spawn */ }
@@ -343,6 +350,34 @@ export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
 
 // Exported for standalone build-verification asserts (synthetic render
 // proofs); the game itself calls it internally only.
+// BUILD 1024: detail emission radii (tiles, player-centred, NOT
+// clamped to the map — the world is infinite now, so the ranges
+// follow the player). Grass tufts are the expensive kind, measured
+// in ~/workspace/verify1024: a ±22 window costs 28k verts at town
+// (54k in full grass), ±32 costs 74k/111k, ±48 costs 200k/224k,
+// ±64 costs 382k/372k, and whole-map grass is 960k verts — 6x the
+// current 186k-vert buffer, genuinely prohibitive, which is why the
+// order's "or farther away" is the shipped form for grass. Flowers
+// and pebbles are cheap (±64: ~9k verts) and wild trees/rocks are
+// sparse (~3k verts at ±64), so they go to the far range, where a
+// flower popping is sub-pixel. The radii are the FPS-measured
+// compromise (see the 1024 probe): ±48 grass cost −30% town FPS
+// and −56% wilderness FPS in the harness (too much — cut to ±32),
+// ±32 grass + ±64 far holds the total vertex growth to the ~+30%
+// band 1022 proved is free. A tuft popping at the ±32 edge is ~11px
+// (was ~16px at ±22); a wild tree popping at the ±64 edge is a far
+// silhouette at the generation frontier, where new land appears as
+// the player walks — disclosed as a limit, not a glitch in the
+// already-generated world. (Measured in the harness, town /
+// wilderness FPS, pristine 1023 = 7.6 / 13.1: ±48 grass = 5.3 / 5.8
+// (−30% / −56%, too much); ±32 = 6.4 / 7.2 (−16% / −45%);
+// ±28 = 6.8 / 7.5 (−11% / −43%), the shipped radii — the
+// wilderness now runs at the old town's speed because it carries a
+// real scene (grass, trees, lakes) instead of an empty buffer.
+// Rebuild hitch: pristine 283ms, ±28 317ms. A tuft popping at the
+// ±28 edge is ~13px (was ~16px at ±22).)
+const DETAIL_GRASS_HALF = 28;
+const DETAIL_FAR_HALF = 64;
 export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Float32Array {
   const data: Vertex = [];
   // BUILD 988 distance fog, BAKED (not shader-side): every emitted
@@ -406,11 +441,15 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],shadeRgb(color, SUN_SHADE.east));
     quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],shadeRgb(color, SUN_SHADE.top));
   };
-  const minX=Math.max(0,Math.floor(center.x)-22), maxX=Math.min(world.w-1,Math.floor(center.x)+22);
-  const minY=Math.max(0,Math.floor(center.y)-22), maxY=Math.min(world.h-1,Math.floor(center.y)+22);
+  // BUILD 1024: the detailed ground window is player-centred and NO
+  // LONGER clamped to the 200x200 map — the world is infinite now, so
+  // the window follows the player past the old edge. Out-of-map tiles
+  // take wild terrain (grass, or a lake) through effTerrain below.
+  const minX=Math.floor(center.x)-22, maxX=Math.floor(center.x)+22;
+  const minY=Math.floor(center.y)-22, maxY=Math.floor(center.y)+22;
   // BUILD 984: placed paths render exactly like generated dirt roads.
   const placedPaths=placedPathKeys(world);
-  const effTerrain=(x:number,y:number)=>placedPaths.has(terrainKey(x,y))?'dirt':terrainAt(world,x,y);
+  const effTerrain=(x:number,y:number)=>placedPaths.has(terrainKey(x,y))?'dirt':(inBounds(world,x,y)?terrainAt(world,x,y):wildTerrainAt(x,y));
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
     const terrain=effTerrain(x,y);
     const c=COLORS[terrain]||COLORS.grass;
@@ -868,11 +907,23 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // across window rebuilds; placed grass from the Build panel renders
   // the same way. Emitted after trees so blades sit above the ground
   // quads, before rocks/crates (draw order is irrelevant — one buffer).
-  emitNaturalGrass(triV, world, effTerrain, minX, maxX, minY, maxY);
-  emitPlacedGrass(triV, world, minX, maxX, minY, maxY);
+  // BUILD 1024: grass, flowers and pebbles NO LONGER stop at the ±22
+  // window — they render over player-centred detail ranges far past
+  // it, so they stop popping in and out as the player walks. Same
+  // functions, same look up close (the near view is pixel-identical
+  // by construction); only the tile set grows. The ranges are NOT
+  // clamped to the map: in the wilderness the detail follows the
+  // player, and out-of-map tiles take wild terrain through
+  // effTerrain (grass, or a lake — never a tuft in water).
+  const gX0=Math.floor(center.x)-DETAIL_GRASS_HALF, gX1=Math.floor(center.x)+DETAIL_GRASS_HALF;
+  const gY0=Math.floor(center.y)-DETAIL_GRASS_HALF, gY1=Math.floor(center.y)+DETAIL_GRASS_HALF;
+  emitNaturalGrass(triV, world, effTerrain, gX0, gX1, gY0, gY1);
+  emitPlacedGrass(triV, world, gX0, gX1, gY0, gY1);
   // BUILD 1015: wildflowers + pebbles (groundDetail3d.ts) — same
-  // window, same determinism as the tufts, a few hundred verts.
-  emitGroundDetail3d(triV, world, effTerrain, minX, maxX, minY, maxY);
+  // determinism as the tufts, a few hundred verts in the old window.
+  const fX0=Math.floor(center.x)-DETAIL_FAR_HALF, fX1=Math.floor(center.x)+DETAIL_FAR_HALF;
+  const fY0=Math.floor(center.y)-DETAIL_FAR_HALF, fY1=Math.floor(center.y)+DETAIL_FAR_HALF;
+  emitGroundDetail3d(triV, world, effTerrain, fX0, fX1, fY0, fY1);
   // BUILD 1007: rocks + crates render at whole-world range (were window-culled).
   // BUILD 1015: rocks vary in size and shade by tile seed (0.5-1.0
   // wide, 0.4-0.9 tall) instead of one identical cube — the wild reads
@@ -883,6 +934,27 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
     cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh]);
+  }
+  // BUILD 1024: wild trees + rocks past the old map edge. The stored
+  // lists stop at 200x200, but the scatter hash continues — so the
+  // wilderness has trees and rocks too, over the same far detail
+  // range as the flowers/pebbles. Same geometry as the stored ones
+  // (treeAt for trees, the seeded cube for rocks, same tile seeds so
+  // a wild rock looks identical to a stored rock on the same tile),
+  // same collision (the whole tile blocks). In-map tiles are skipped
+  // (stored lists govern there); chopped/mined wild items stay gone
+  // via removedWildTrees / removedWildRocks; lake tiles hold no tree
+  // or rock (wildTreeAt/wildRockAt already exclude them).
+  for(let y=fY0;y<=fY1;y++) for(let x=fX0;x<=fX1;x++) {
+    if(x>=0&&y>=0&&x<world.w&&y<world.h) continue;
+    const wkey=x+','+y;
+    if(wildTreeAt(x,y)&&!(world.removedWildTrees??[]).includes(wkey)) treeAt(x,y);
+    else if(wildRockAt(x,y)&&!(world.removedWildRocks??[]).includes(wkey)) {
+      const rw=.5+hash2(x*3.1+21,y*7.7+21)*.5;
+      const rh=.4+hash2(x*5.3+23,y*9.1+23)*.5;
+      const sh=.8+hash2(x*7.7+27,y*3.3+27)*.25;
+      cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh]);
+    }
   }
   // BUILD 986: generated/authored crates + layout prop placeholders render
   // as 983 trees, not brown cubes. Data untouched — the wood interaction
@@ -1422,6 +1494,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(npcActorsRef.current.some(npcNear))return false;
       if(transientActorsRef.current.some(transientNear))return false;
       if(animalActorsRef.current.some(animalNear))return false;
+      // BUILD 1024: past the old map edge the wilderness is walkable
+      // grass (lakes, wild trees and wild rocks block, like their
+      // in-map counterparts). NPCs never reach here — their
+      // walkability (townsfolk3d npcWalkable) stays in-bounds — so
+      // this branch is the player only.
+      if(gx<0||gy<0||gx>=world.w||gy>=world.h) return isWildWalkable(world,gx,gy);
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
     const pickGround=(clientX:number,clientY:number)=>{
@@ -1453,7 +1531,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(dy>=-0.001)return null;
       const t=-eyeY/dy;if(t<=0)return null;
       const x=eyeX+dx*t-.5,y=eyeZ+dz*t-.5;
-      if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=world.w||y>=world.h)return null;
+      // BUILD 1024: no map-bounds refusal — the world is infinite
+      // now, so a tap past the old edge picks the wild ground there.
+      // Every consumer still validates its own domain: tap-to-move
+      // is gated by walkableAt, placements refuse outside the map
+      // (validatePlacement), and remove/move/save look up in-map
+      // items only, so an out-of-map pick finds nothing to do.
+      if(!Number.isFinite(x)||!Number.isFinite(y))return null;
       return {x,y};
     };
     const wheel=(e:WheelEvent)=>{e.preventDefault();applyZoom(e.deltaY*.012);};
@@ -2184,6 +2268,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
         if(tree){world.trees=world.trees.filter(c=>c!==tree);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        // BUILD 1024: wild trees/rocks past the old edge harvest the
+        // same way (2 wood / 1 stone) and stay gone via the
+        // removedWildTrees / removedWildRocks sets. Same 1-tile reach
+        // (the shared key() test) as the stored items above.
+        let wildFound:'tree'|'rock'|null=null;let wildKey='';
+        for(let wy=Math.round(p.y)-1;wy<=Math.round(p.y)+1&&!wildFound;wy++) for(let wx=Math.round(p.x)-1;wx<=Math.round(p.x)+1;wx++){
+          if(!key(wx,wy)) continue;
+          if(wx>=0&&wy>=0&&wx<world.w&&wy<world.h) continue;
+          const k=wx+','+wy;
+          if(wildTreeAt(wx,wy)&&!(world.removedWildTrees??[]).includes(k)){wildFound='tree';wildKey=k;break;}
+          if(wildRockAt(wx,wy)&&!(world.removedWildRocks??[]).includes(k)){wildFound='rock';wildKey=k;break;}
+        }
+        if(wildFound==='tree'){if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        if(wildFound==='rock'){if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         setMessage('Nothing close enough to interact with');return
       }
       // Directional keys are integrated continuously by the render loop;

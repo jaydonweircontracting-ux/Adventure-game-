@@ -29,6 +29,7 @@
 // never its structure.
 
 import { GRASS_MESHES, type BakedGrassMesh } from './grassMeshes';
+import { wildObstacleAt } from './wildTerrain';
 import type { IsoWorld } from '../iso/isoWorld';
 import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles } from './placements';
 
@@ -210,6 +211,12 @@ export function emitNaturalGrass(
     for (let x = minX; x <= maxX; x++) {
       if (effTerrain(x, y) !== 'grass') continue;
       if (blocked.has(x + ',' + y)) continue;
+      // BUILD 1024: out-of-map tiles hold wild trees/rocks, which are
+      // generated from the scatter hash and never enter the world's
+      // stored lists — no tuft may poke through one. (Lakes need no
+      // check here: effTerrain returns 'water' for them, and tufts
+      // only grow on grass.)
+      if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
       const p = naturalTuftForTile(x, y);
       if (!p) continue;
       emitTuft(triV, p, x + 0.5, y + 0.5);

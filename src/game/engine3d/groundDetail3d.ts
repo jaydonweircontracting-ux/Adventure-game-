@@ -14,6 +14,7 @@
 // Colours avoid the forbidden lavender/pink family (asserted).
 import { hash2, type Rgb } from './townLook';
 import { blockedTiles } from './grassTufts';
+import { wildObstacleAt } from './wildTerrain';
 import type { IsoWorld } from '../iso/isoWorld';
 
 export type V3 = [number, number, number];
@@ -113,6 +114,12 @@ export function emitGroundDetail3d(
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       if (blocked.has(x + ',' + y)) continue;
+      // BUILD 1024: out-of-map tiles hold wild trees/rocks, which are
+      // generated from the scatter hash and never enter the world's
+      // stored lists — no flower or pebble may sit under one. (Lakes
+      // need no check here: effTerrain returns 'water' for them, and
+      // flowers take grass, pebbles grass or dirt.)
+      if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
       const t = effTerrain(x, y);
       if (t === 'grass') {
         const f = wildflowerForTile(x, y);

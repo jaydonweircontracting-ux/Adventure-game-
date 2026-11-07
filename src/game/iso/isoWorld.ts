@@ -83,6 +83,16 @@ export interface IsoWorld {
    *  saves load with none (no extra rocks were ever stamped for them
    *  to remove). The iso demo never reads this field. */
   removedRocks?: string[];
+  /** BUILD 1024: terrain keys ("x,y") of WILD (procedurally generated,
+   *  out-of-map) trees the player chopped with E-key, and wild rocks the
+   *  player mined. Wild trees/rocks are not stored in the world lists —
+   *  they are generated from the scatter hash on the fly — so without
+   *  these sets a chopped wild tree would resurrect on the next rebuild
+   *  (same 987/989 rule as removedTrees/removedRocks: removed things
+   *  stay removed). Saved wholesale with the world. Old saves load
+   *  with none. */
+  removedWildTrees?: string[];
+  removedWildRocks?: string[];
 }
 
 /** BUILD 1006: one moved generated hut. Both rects carry doorX/doorY. */
@@ -157,7 +167,10 @@ export function mergeWallRuns(walls: WallTile[]): WallRun[] {
 
 function wp(x: number, y: number): TilePoint { return { tx: x, ty: y }; }
 
-function hash2(x: number, y: number, s: number): number {
+// BUILD 1024: exported so the 3D wilderness (engine3d/wildTerrain.ts)
+// continues the stored scatter EXACTLY — same hash, same salt, same
+// thresholds — instead of a second copy that could drift.
+export function hash2(x: number, y: number, s: number): number {
   let h = (x * 374761393 + y * 668265263 + s * 1442695041) >>> 0;
   h = (h ^ (h >>> 13)) >>> 0; h = (h * 1274126177) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
   return h / 4294967296;
