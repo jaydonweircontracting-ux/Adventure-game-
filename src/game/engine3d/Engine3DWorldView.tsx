@@ -422,9 +422,29 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // same field at their own corners.
     const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
     quadV([x,0,y],colAt(x,y),[x+1,0,y],colAt(x+1,y),[x+1,0,y+1],colAt(x+1,y+1),[x,0,y+1],colAt(x,y+1));
+  }
+  // BUILD 1022: path slabs + cobble shoulders render for the WHOLE map,
+  // not just the ±22 detailed window. They used to pop in and out at the
+  // window edge as the player walked (the window rebuilds on >8-tile
+  // moves, so a cobble tile 23 tiles out was plain grass and 21 tiles
+  // out was dark cobble). The overlay quads below are identical to the
+  // ones the window loop used to emit (same functions, same y heights,
+  // same colours) — the near view is pixel-identical; only the tile set
+  // grows from the window to the map. Cost, counted in
+  // ~/workspace/verify1022 (1,202 dirt tiles, 1,490 near-dirt tiles):
+  // 59,154 overlay verts whole-map vs 18,986 in-window at the default
+  // start (+40,168 verts, +28% of the 143,772-vert world buffer).
+  // Grass tufts, wildflowers and pebbles stay window-only (separate
+  // systems, out of scope for this fix).
+  for(let y=0;y<world.h;y++) for(let x=0;x<world.w;x++) {
+    const terrain=effTerrain(x,y);
     // BUILD 983 street: scattered stone slabs on dirt, grey cobble shoulders
     // on grass/stone tiles beside a dirt tile. Overlays sit slightly above
-    // the ground (slabs staggered per index) so nothing z-fights.
+    // the ground (slabs staggered per index) so nothing z-fights. The
+    // heights clear every far-ring ground layer (band -0.02, far -0.05,
+    // horizon -0.08): the smallest separation is 0.038 at band range,
+    // and no path tile exists past ~283 tiles, where depth resolution
+    // (~0.048) is still under the 0.098 horizon separation.
     if(terrain==='dirt'){
       const slabs=streetSlabsFor(x,y);
       for(let i=0;i<slabs.length;i++){
@@ -1651,7 +1671,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
       if(!gestureMoved)return;
       yaw+=(e.clientX-lx)*.008;
-      if(firstPersonRef.current)lookPitch=Math.max(FP_PITCH_MIN,Math.min(FP_PITCH_MAX,lookPitch+(e.clientY-ly)*.006));
+      // BUILD 1023: first-person pitch is drag-up = look up. It was
+      // inverted (drag up looked down: +dy raised lookPitch, and
+      // lookPitch+ is gaze-up). Orbit keeps its existing sign below.
+      if(firstPersonRef.current)lookPitch=Math.max(FP_PITCH_MIN,Math.min(FP_PITCH_MAX,lookPitch-(e.clientY-ly)*.006));
       else pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));
       lx=e.clientX;ly=e.clientY;
     };
@@ -1920,15 +1943,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // precision at 240 tiles.
       // BUILD 1007: far plane is 700. Two coverings, both measured:
       // (1) worst camera-to-farthest-real-object is 282 (map diagonal)
-      // + 32 (max orbit radius) = 314, far under 700; (2) the clip edge
-      // must sit past the fog-full distance, or hazed-green ground
-      // would end visibly against sky: worst clip-edge distance from
-      // the build centre is 700 - 32 - 8 = 660, past FOG_FAR 600, so
-      // the clipped edge is always uniform horizon colour. Apron
-      // coverage 1000 - 32 = 968 > 700, so the apron always extends
-      // past the far plane. Depth precision at a given distance
-      // depends on the near plane (0.1) and the distance, not the far
-      // plane, so 700 costs nothing versus 300 at 282 tiles.
+      // + 64 (max orbit radius, BUILD 1023 — was 32) = 346, far under
+      // 700; (2) the clip edge must sit past the fog-full distance,
+      // or hazed-green ground would end visibly against sky: worst
+      // clip-edge distance from the build centre is 700 - 64 - 8 =
+      // 628, past FOG_FAR 600, so the clipped edge is always uniform
+      // horizon colour. Apron coverage 1000 - 64 = 936 > 700, so the
+      // apron always extends past the far plane. Depth precision at a
+      // given distance depends on the near plane (0.1) and the
+      // distance, not the far plane, so 700 costs nothing versus 300
+      // at 282 tiles.
       // BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
       // level gaze by default (lookPitch starts 0).
       // BUILD 992: turning first-person-auto OFF while in first person
@@ -2172,6 +2196,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     (window as any).__ag3dTest={
       setYaw:(v:number)=>{yaw=v},
       setLookPitch:(v:number)=>{lookPitch=v},
+      // BUILD 1023 probe hook (read-only): first-person look pitch, so
+      // probes can measure the drag→pitch direction exactly.
+      getLookPitch:()=>lookPitch,
       setFirstPerson:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
       setStreetView:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
       getFirstPerson:()=>firstPersonRef.current,
