@@ -32,7 +32,8 @@ import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interior
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
-import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, type StaminaState } from './sprint';
+import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, LATCH_IDLE_CLEAR_MS, type StaminaState } from './sprint';
+import { resolvePlayerStep } from './playerStep';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 
@@ -930,6 +931,37 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const sprintHeldRef=useRef(false);
   const staminaRef=useRef<StaminaState>({...FULL_STAMINA});
   const sprintingRef=useRef(false);
+  // BUILD 1018: tap-to-toggle sprint latch + robust hold tracking.
+  // sprintLatchRef = the toggle: a quick tap latches sprint ON until
+  // tapped again, until exhaustion, or until 2s with no real movement
+  // (so a stale latch never runs the player into a wall forever).
+  // sprintPointerIdRef = the pointer currently holding the button (or
+  // null); the hold ends ONLY on pointerup for that id — a second
+  // finger's up/cancel can never kill the first finger's hold.
+  // sprintDownRef = where/when the hold started, for the tap test.
+  // lastSprintMoveRef = last frame the player actually moved (drives
+  // the 2s idle clear).
+  const sprintLatchRef=useRef(false);
+  const sprintPointerIdRef=useRef<number|null>(null);
+  const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
+  const lastSprintMoveRef=useRef(0);
+  const [sprintLatchedUi,setSprintLatchedUi]=useState(false);
+  // BUILD 1018: end a Sprint-button hold. Only the pointer that started
+  // the hold can end it (pointerId-gated). A quick, still press is a TAP
+  // and flips the latch; a longer hold just releases. Called from the
+  // button's own pointerup AND the window-level backstop (without pointer
+  // capture, a finger that slides off the button lifts over another
+  // element — the button never sees that up, so the window catches it).
+  const releaseSprintPointer=(pointerId:number,clientX:number,clientY:number,allowToggle:boolean)=>{
+    if(sprintPointerIdRef.current!==pointerId)return;
+    sprintPointerIdRef.current=null;sprintHeldRef.current=false;
+    const down=sprintDownRef.current;sprintDownRef.current=null;
+    if(allowToggle&&down&&isSprintTap(down.t,performance.now(),down.x,down.y,clientX,clientY)){
+      const next=latchAfterTap(sprintLatchRef.current,staminaRef.current.exhausted);
+      sprintLatchRef.current=next;if(next)lastSprintMoveRef.current=performance.now();
+      setSprintLatchedUi(next);
+    }
+  };
   // BUILD 1004: swipe-gesture tracking refs (pointerId-gated, so a
   // second finger never hijacks a swipe already in progress; each
   // resets on pointerup/pointercancel, and a vertical panel scroll
@@ -1256,7 +1288,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
     // BUILD 1003: stamina UI publish throttle (bar updates ~10/s while
     // draining, immediately on exhausted/sprinting flips).
-    let lastStaminaPublish=0,lastStaminaInt=STAMINA_MAX,lastExhaustedPub=false,lastSprintingPub=false;
+    let lastStaminaPublish=0,lastStaminaInt=STAMINA_MAX,lastExhaustedPub=false,lastSprintingPub=false,lastLatchedPub=false;
     let walkingNow=false;
     // BUILD 994: per-figure walk state (player + NPCs). Session-only
     // render state, never saved: last tile center, facing yaw, walk
@@ -1714,6 +1746,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
     };
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
+    // BUILD 1018: Sprint-button hold backstop (window-level, so a hold
+    // ends even when the finger slides off the button and lifts over
+    // another element — without pointer capture the button never sees
+    // that up). PointerId-gated inside releaseSprintPointer, so other
+    // fingers' ups/cancels never touch the hold. touchend with zero
+    // touches left + window blur clear a hold whose pointerup never
+    // arrived (a cancelled touch still ends with a touchend).
+    const sprintWinUp=(e:PointerEvent)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true);
+    const sprintWinCancel=(e:PointerEvent)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false);
+    const sprintWinTouchEnd=(e:TouchEvent)=>{if(e.touches.length===0&&sprintPointerIdRef.current!==null){sprintPointerIdRef.current=null;sprintHeldRef.current=false;sprintDownRef.current=null;}};
+    const sprintWinBlur=()=>{if(sprintPointerIdRef.current!==null){sprintPointerIdRef.current=null;sprintHeldRef.current=false;sprintDownRef.current=null;}};
+    window.addEventListener('pointerup',sprintWinUp);window.addEventListener('pointercancel',sprintWinCancel);window.addEventListener('touchend',sprintWinTouchEnd);window.addEventListener('blur',sprintWinBlur);
     canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0]};
     const lookAt=(eye:number[],center:number[])=>{const norm=(v:number[])=>{const l=Math.hypot(...v)||1;return v.map(n=>n/l)};const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];const sub=(a:number[],b:number[])=>a.map((n,i)=>n-b[i]);const z=norm(sub(eye,center)),x=norm(cross([0,1,0],z)),y=cross(z,x);return [x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]),1]};
@@ -1749,24 +1793,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
       // BUILD 1003: sprint multiplies speed INSIDE this same pipeline —
       // same step, same walkableAt checks, same wall sliding. Hold =
-      // Sprint button or Shift key; exhausted forces walk.
-      const sprintHeld=sprintHeldRef.current||keys.has('shift');
+      // Sprint button or Shift key; exhausted forces walk. BUILD 1018:
+      // the button ALSO latches (tap-to-toggle) — sprintInput merges
+      // hold, latch, and Shift into one sprint input.
+      const sprintHeld=sprintInput(sprintHeldRef.current,sprintLatchRef.current,keys.has('shift'));
       const sprintingNow=sprintHeld&&!staminaRef.current.exhausted&&hasInput;
       // Position before this frame's step, so stamina can tell real
       // displacement from a zero-displacement slide (see below).
       const prevMoveX=player.x,prevMoveY=player.y;
       if(hasInput){
         const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,(sprintingNow?SPRINT_SPEED:WALK_SPEED)*dt);
-        const nx=player.x+moveDx/dist*step,ny=player.y+moveDy/dist*step;
-        if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
-        else{
-          // Slide along walls while retaining smooth world-space movement.
-          const sx=player.x+moveDx/dist*step,sy=player.y;
-          const ax=player.x,ay=player.y+moveDy/dist*step;
-          if(walkableAt(sx,sy)){player={x:sx,y:sy};current.position=player;walkingNow=true;}
-          else if(walkableAt(ax,ay)){player={x:ax,y:ay};current.position=player;walkingNow=true;}
-          else if(moveTarget){moveTarget=null;setMessage('Path blocked');}
-        }
+        // BUILD 1018: step resolution lives in playerStep.ts (pure) —
+        // same direct move + wall sliding, except a slide that leaves
+        // the player exactly where they stand no longer counts as a
+        // move, so a tap-to-move target pinned against a crate clears
+        // with 'Path blocked' instead of retrying forever in place.
+        const res=resolvePlayerStep(player.x,player.y,moveDx,moveDy,dist,step,walkableAt);
+        if(res.moved){player={x:res.x,y:res.y};current.position=player;walkingNow=true;}
+        else if(res.blocked&&moveTarget){moveTarget=null;setMessage('Path blocked');}
         if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
         if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
         if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
@@ -1780,10 +1824,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // player was stuck behind an eastbound traveler at ~1.1 u/s.
       // Session-only: staminaRef is never written to storage.
       const actuallyMoved=player.x!==prevMoveX||player.y!==prevMoveY;
+      if(actuallyMoved)lastSprintMoveRef.current=now;
+      const wasExhausted=staminaRef.current.exhausted;
       const nextStamina=stepStamina(staminaRef.current,dt,sprintHeld,actuallyMoved);
+      // BUILD 1018: the latch clears on exhaustion (the button shows
+      // Tired; tap again to resume once recovered) and after 2s with
+      // no real movement (arrived, pinned, idle) — a latched sprint
+      // never runs away on its own.
+      if(sprintLatchRef.current&&((nextStamina.exhausted&&!wasExhausted)||now-lastSprintMoveRef.current>LATCH_IDLE_CLEAR_MS))sprintLatchRef.current=false;
       staminaRef.current=nextStamina;sprintingRef.current=sprintingNow&&actuallyMoved;
       const nextStaminaInt=Math.round(nextStamina.stamina);
-      if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);}
+      if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub||sprintLatchRef.current!==lastLatchedPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;lastLatchedPub=sprintLatchRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);setSprintLatchedUi(sprintLatchRef.current);}
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
       player=stateRef.current.position;
@@ -2137,6 +2188,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getStamina:()=>({...staminaRef.current}),
       setSprintHeld:(v:boolean)=>{sprintHeldRef.current=v;},
       getSprinting:()=>sprintingRef.current,
+      // BUILD 1018 test hook (read-only): whether the tap-to-toggle
+      // sprint latch is on (probes only — no gameplay effect).
+      getSprintLatched:()=>sprintLatchRef.current,
       // Probe-only: drop a stale tap destination so key-based probe runs
       // are not overridden by an earlier tap (no gameplay effect — taps
       // only ever set moveTarget from the canvas handler).
@@ -2392,7 +2446,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
@@ -2457,10 +2511,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         bottom 110), or the message box (bottom-left). Rendered always
         in normal play; when the Build panel is open it sits under the
         panel (later in DOM, same zIndex) — minimize to reach it, same
-        as the rest of the cluster. Pointer capture so a sliding finger
-        still releases cleanly; green while sprint-moving, dimmed +
-        "Tired" while exhausted (forced walk until 25 stamina). */}
-    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{e.currentTarget.setPointerCapture(e.pointerId);sprintHeldRef.current=true;}} onPointerUp={()=>{sprintHeldRef.current=false;}} onPointerCancel={()=>{sprintHeldRef.current=false;}} onLostPointerCapture={()=>{sprintHeldRef.current=false;}} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:sprintingUi?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':'Sprint'}</button>
+        as the rest of the cluster. BUILD 1018: the button is ALSO
+        tap-to-toggle — a quick tap latches sprint on (green +
+        "Sprinting") until tapped again, exhausted, or 2s idle. No
+        pointer capture: the hold ends on pointerup for the same
+        pointerId (button or window-level backstop), so a second finger
+        can never cancel the first finger's hold. Green while
+        sprint-moving or latched, dimmed + "Tired" while exhausted
+        (forced walk until 25 stamina). */}
+    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':sprintLatchedUi?'Sprinting':'Sprint'}</button>
     {/* BUILD 1004: Remove quick toggle — the SAME toggleRemove the
         panel's Remove button calls, so the two can never diverge.
         Renders in the minimized cluster (same visibility rule as

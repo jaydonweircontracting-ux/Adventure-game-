@@ -46,6 +46,34 @@ export function sprintSpeed(sprintHeld: boolean, exhausted: boolean, hasInput: b
   return sprintHeld && !exhausted && hasInput ? SPRINT_SPEED : WALK_SPEED;
 }
 
+// BUILD 1018: tap-to-toggle sprint. The Sprint button is BOTH hold-to-
+// sprint AND tap-to-toggle: a quick tap latches sprint ON until tapped
+// again, until exhaustion, or until 2s with no real movement (so a stale
+// latch never runs the player into a wall forever). Pure rules — the view
+// owns the pointer events, this module owns the classification + the
+// latch state machine, so the asserts can prove them without a DOM.
+// (Why: the 1017 button was hold-only. A tap did nothing persistent —
+// the user pressed it, saw the press highlight, and the character never
+// went faster. His words were literally "doesn't toggle sprint mode".)
+export const TAP_MAX_MS = 250;
+export const TAP_MAX_PX = 12;
+export const LATCH_IDLE_CLEAR_MS = 2000;
+
+/** A press is a tap when it is short AND the finger barely moved. */
+export function isSprintTap(downMs: number, upMs: number, downX: number, downY: number, upX: number, upY: number): boolean {
+  return upMs - downMs < TAP_MAX_MS && Math.hypot(upX - downX, upY - downY) <= TAP_MAX_PX;
+}
+
+/** Effective sprint input: physical hold, latched toggle, or Shift key. */
+export function sprintInput(held: boolean, latched: boolean, shiftKey: boolean): boolean {
+  return held || latched || shiftKey;
+}
+
+/** A tap flips the latch — unless exhausted, which always unlatches. */
+export function latchAfterTap(latched: boolean, exhausted: boolean): boolean {
+  return exhausted ? false : !latched;
+}
+
 /**
  * One frame of stamina. `moving` means the player ACTUALLY changed
  * position this frame — the view passes real displacement, NOT the
