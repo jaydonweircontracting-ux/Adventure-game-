@@ -32,7 +32,7 @@
 // are free: no cost gating, like every other Build-panel action.
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
-import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, type PaletteKind } from './placements';
+import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, HOUSE_VARIANT_KINDS, type PaletteKind } from './placements';
 
 /** localStorage key for saved chunks. Versioned (v1); separate from
  *  the world save so a world reset never wipes the user's library. */
@@ -48,7 +48,18 @@ export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: numb
  *  was placed, which the grass rule needs). */
 export type ChunkTemplate = { name: string; items: ChunkItem[] };
 
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'house-cottage', 'house-tall', 'house-shop', 'house-grand'];
+/** Every kind captureChunk can emit (see captureChunk below): the
+ *  eight base placed kinds plus every house variant. BUILD 1029:
+ *  the variant tail is derived from HOUSE_VARIANT_KINDS (placements
+ *  .ts) instead of hand-listed — the 1015 gap was exactly this drift:
+ *  the three commercial buildings ('house-inn' / 'house-smith' /
+ *  'house-store') joined the palette and the Build menu but were
+ *  never added here, so validChunkItem silently dropped them on load
+ *  and a saved chunk holding one came back empty. Deriving the tail
+ *  means a future variant cannot be forgotten the same way.
+ *  'custom' is deliberately NOT here: captureChunk never emits it
+ *  (BUILD 997), so it is not a gap. */
+const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', ...HOUSE_VARIANT_KINDS];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;
