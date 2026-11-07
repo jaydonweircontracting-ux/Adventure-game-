@@ -888,7 +888,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   return new Float32Array(data);
 }
 
-export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: () => void; fpAuto?: boolean }) {
+// BUILD 1017: diagnostics snapshot for the Options dialog (GraphicsModeHost).
+// The play screen no longer shows the diagnostic line; the view reports
+// {verts, map, position} to the parent instead, and Options > Diagnostics
+// renders it on demand.
+export interface Diagnostics3D { verts: number; mapW: number; mapH: number; x: number; y: number; }
+
+export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = false, onDiagnostics }: { onExit?: () => void; fpAuto?: boolean; hideUi?: boolean; onDiagnostics?: (d: Diagnostics3D) => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
   // BUILD 992: first person (was the 983 street view, now engaged by
@@ -900,7 +906,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const firstPersonRef=useRef(false);
   const fpAutoRef=useRef(fpAuto);
   useEffect(()=>{fpAutoRef.current=fpAuto;},[fpAuto]);
+  // BUILD 1017: diagnostics snapshot (see Diagnostics3D above) + the
+  // parent callback, mirrored into refs so the render loop (which closes
+  // over refs, not state) can report it without re-running.
+  const diagRef=useRef<Diagnostics3D>({verts:0,mapW:200,mapH:200,x:99,y:105});
+  const onDiagnosticsRef=useRef(onDiagnostics);
+  onDiagnosticsRef.current=onDiagnostics;
   const [position,setPosition]=useState<Position>(()=>savedPosition(applyMosslightTownLayout(loadWorld())));
+  // Report position changes to Options > Diagnostics (verts/map ride along
+  // from the last world rebuild). Placed after the position declaration:
+  // the effect reads position, so it cannot sit above it.
+  useEffect(()=>{const next={...diagRef.current,x:Math.round(position.x),y:Math.round(position.y)};diagRef.current=next;onDiagnosticsRef.current?.(next);},[position]);
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
   // BUILD 1003: stamina UI state (throttled publish from draw(); the
@@ -1775,7 +1791,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
       // the player moves >8 tiles from the last build centre.
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
-      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,built);worldVertCount=built.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      // BUILD 1017: the diagnostic line no longer goes to the play-screen
+      // message — it is reported to Options > Diagnostics instead.
+      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}else{upload(worldBuffer,built);worldVertCount=built.length/6;const snap:Diagnostics3D={verts:worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // BUILD 1011: night factor for this frame — 976's curve on the 3D
       // clock, as one shader uniform (see sky.ts). Set before the sky
@@ -2393,8 +2411,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     onPointerCancel={(e)=>{if(edgeSwipeRef.current?.id===e.pointerId)edgeSwipeRef.current=null;}}
   >
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
-    <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
-    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div>{/* BUILD 1003: stamina HUD — bar + number, green normally, red + "Tired" while exhausted. */}<div style={{marginTop:3}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:120,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired — walk to recover':''}</div><div style={{opacity:.8,marginTop:3}}>{firstPersonOn?'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint':'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint'}</div></div>
+    {/* BUILD 1017: the top banner is gone from the play screen (its text
+        lives in Options > About); the bottom block is replaced by this
+        compact status strip + message line. Help text lives in
+        Options > Controls; the diagnostic line lives in
+        Options > Diagnostics. Hide UI (Options) hides this whole text
+        column; the control buttons always stay visible. The message row
+        is one line with ellipsis so the column height is fixed and it
+        can never grow up into the Enter/Exit buttons (center bottom 110).
+        BUILD 1003 stamina behaviour is kept (bar + number, red + "Tired"
+        while exhausted) — only the long "walk to recover" sentence is
+        dropped, so the row still fits on one line; the Sprint button
+        already shows "Tired" while exhausted. */}
+    {!hideUi && <div data-testid="hud-text" style={{position:'absolute',left:10,bottom:10,maxWidth:260,padding:'6px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>
+      <div title={message} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:240}}>{message}</div>
+      <div style={{marginTop:2}}>HP {health}/100<div style={{display:'inline-block',width:80,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="hp-bar" style={{width:health+'%',height:'100%',background:'#5fbf6f'}} /></div></div>
+      <div style={{marginTop:2}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:100,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired':''}</div>
+      <div style={{marginTop:2}}>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div>
+    </div>}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
         First person now engages on full zoom; its setting lives in the
