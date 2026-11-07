@@ -12,7 +12,7 @@
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
 import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
 
-export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass'
+export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -98,7 +98,7 @@ export function removeExactPlacement(w: IsoWorld, item: PlacedItem): boolean {
 
 /** BUILD 987: remove a GENERATED thing at (x, y) — a whole hut rect or
  *  one dirt path tile. Placed items are NOT handled here (the caller
- *  tries removePlacementAt first); precedence is placed > house > path,
+ *  tries removePlacementAt first); precedence is placed > house > tree > rock > path (see removeAt),
  *  matching the existing first-match pattern. Generated town content is
  *  rebuilt by the 3D adapter on every load, so removals are ALSO
  *  recorded in removedHuts / removedPaths, which the adapter consults
@@ -168,16 +168,38 @@ export function removeGeneratedTreeAt(w: IsoWorld, x: number, y: number): Genera
   return { tree, treeIndex, crate, crateIndex };
 }
 
+/** BUILD 1025: remove a GENERATED rock at (x, y). The mutation is
+ *  exactly E-key mining's (1015): the rock leaves world.rocks and its
+ *  terrain key joins removedRocks, so a mined rock and a removed rock
+ *  are the same state — the adapter's stampExtraRocks skips the key
+ *  and the saved rocks array no longer holds it, so it stays gone
+ *  across reloads, and E-key on the same tile afterwards finds
+ *  nothing (and vice versa: an E-key-mined rock is already absent
+ *  here, so Remove finds nothing to do). This is deletion, NOT
+ *  harvest: no stone is granted here — E-key remains the harvest
+ *  path. Returns what was removed, or null when the tile holds no
+ *  rock. */
+export function removeGeneratedRockAt(w: IsoWorld, x: number, y: number): { x: number; y: number; rockIndex: number } | null {
+  const rockIndex = w.rocks.findIndex((r) => r.tx === x && r.ty === y);
+  if (rockIndex < 0) return null;
+  w.rocks.splice(rockIndex, 1);
+  const key = terrainKey(x, y);
+  if (!w.removedRocks) w.removedRocks = [];
+  if (!w.removedRocks.includes(key)) w.removedRocks.push(key);
+  return { x, y, rockIndex };
+}
+
 /** BUILD 989 refinement: what removeAt WOULD remove at (x, y), without
  *  mutating anything — the snap/paint/preview probe. Returns the kind
  *  only; the view calls removeAt on the snapped tile to do the work,
  *  so probe and action can never disagree about precedence. */
-export type RemovableKind = 'placed' | 'house' | 'tree' | 'path';
+export type RemovableKind = 'placed' | 'house' | 'tree' | 'rock' | 'path';
 
 export function peekRemovableAt(w: IsoWorld, x: number, y: number): RemovableKind | null {
   if (w.placements && w.placements.some((p) => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1)) return 'placed';
   if (hutAt(w, x, y)) return 'house';
   if (w.trees.some((t) => t.tx === x && t.ty === y) || w.crates.some((c) => c.tx === x && c.ty === y)) return 'tree';
+  if (w.rocks.some((r) => r.tx === x && r.ty === y)) return 'rock';
   if (terrainAt(w, x, y) === 'dirt') return 'path';
   return null;
 }
@@ -219,16 +241,22 @@ export function findRemovableNear(w: IsoWorld, fx: number, fy: number, tolerance
  *  precedence is asserted standalone instead of living only in the
  *  view's tap handler. Order: placed item > generated house (whole
  *  rect) > generated tree (real tree and/or crate on the tile) >
- *  generated path (dirt tile). A tree standing on dirt therefore takes
- *  two taps (tree, then path), mirroring 987's hut-over-dirt two-tap.
+ *  generated rock (BUILD 1025) > generated path (dirt tile). A tree
+ *  standing on dirt therefore takes two taps (tree, then path),
+ *  mirroring 987's hut-over-dirt two-tap.
  *  Generated stalls are NOT removed here (not asked): a stall tile
  *  with no tree/crate/house falls through to the path step, which
  *  preserves 987's edge (dirt under a stall is removed, the stall
- *  stands on grass). */
+ *  stands on grass). BUILD 1025: a tile holding both a tree and a
+ *  rock removes the tree first (they look different, so separate taps
+ *  are correct, unlike tree+crate which remove together); rocks never
+ *  sit on dirt, so the rock-before-path step is unreachable in
+ *  practice but explicit. */
 export type RemoveAtResult =
   | { kind: 'placed'; item: PlacedItem; index: number }
   | { kind: 'house'; rect: HutRect; index: number }
   | { kind: 'tree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
+  | { kind: 'rock'; x: number; y: number; rockIndex: number }
   | { kind: 'path'; x: number; y: number };
 
 export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | null {
@@ -240,6 +268,8 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
   }
   const tr = removeGeneratedTreeAt(w, x, y);
   if (tr) return { kind: 'tree', tree: tr.tree, treeIndex: tr.treeIndex, crate: tr.crate, crateIndex: tr.crateIndex };
+  const rk = removeGeneratedRockAt(w, x, y);
+  if (rk) return { kind: 'rock', x: rk.x, y: rk.y, rockIndex: rk.rockIndex };
   const gen = removeGeneratedAt(w, x, y);
   if (gen && gen.kind === 'path') return { kind: 'path', x, y };
   return null;
@@ -272,6 +302,7 @@ export type UndoEntry =
   | { kind: 'unhouse'; rect: HutRect; index: number }
   | { kind: 'unpath'; x: number; y: number }
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
+  | { kind: 'unrock'; x: number; y: number; rockIndex: number }
   | { kind: 'stroke'; entries: UndoEntry[] }
   | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
   | { kind: 'paste'; items: PlacedItem[] }
@@ -310,6 +341,8 @@ export function removeAlongStroke(w: IsoWorld, tiles: Array<{ x: number; y: numb
       removedRects.push({ x0: res.rect.x0, y0: res.rect.y0, x1: res.rect.x1, y1: res.rect.y1 });
     } else if (res.kind === 'tree') {
       entries.push({ kind: 'untree', tree: res.tree, treeIndex: res.treeIndex, crate: res.crate, crateIndex: res.crateIndex });
+    } else if (res.kind === 'rock') {
+      entries.push({ kind: 'unrock', x: res.x, y: res.y, rockIndex: res.rockIndex });
     } else {
       entries.push({ kind: 'unpath', x: res.x, y: res.y });
     }
@@ -375,6 +408,14 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
         }
       }
       return 'Restored tree';
+    }
+    case 'unrock': {
+      const key = terrainKey(entry.x, entry.y);
+      if (w.removedRocks) w.removedRocks = w.removedRocks.filter((k) => k !== key);
+      if (!w.rocks.some((r) => r.tx === entry.x && r.ty === entry.y)) {
+        w.rocks.splice(Math.min(entry.rockIndex, w.rocks.length), 0, { tx: entry.x, ty: entry.y });
+      }
+      return 'Restored rock';
     }
     case 'move': {
       removeExactPlacement(w, entry.newItem);
@@ -504,6 +545,14 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
         if (!w.removedCrates.includes(key)) w.removedCrates.push(key);
       }
       return 'Removed tree';
+    }
+    case 'unrock': {
+      const idx = w.rocks.findIndex((r) => r.tx === entry.x && r.ty === entry.y);
+      if (idx >= 0) w.rocks.splice(idx, 1);
+      const key = terrainKey(entry.x, entry.y);
+      if (!w.removedRocks) w.removedRocks = [];
+      if (!w.removedRocks.includes(key)) w.removedRocks.push(key);
+      return 'Removed rock';
     }
     case 'move': {
       removeExactPlacement(w, entry.oldItem);
@@ -1116,6 +1165,13 @@ export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1:
 export function placedTreeTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'tree')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed rock tiles (BUILD 1025). Single tiles, like placed trees. */
+export function placedRockTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'rock')
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 

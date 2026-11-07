@@ -48,7 +48,7 @@ export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: numb
  *  was placed, which the grass rule needs). */
 export type ChunkTemplate = { name: string; items: ChunkItem[] };
 
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'house-cottage', 'house-tall', 'house-shop', 'house-grand'];
+const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'house-cottage', 'house-tall', 'house-shop', 'house-grand'];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;

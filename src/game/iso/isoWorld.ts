@@ -9,14 +9,14 @@ export interface HutRect { x0: number; y0: number; x1: number; y1: number; doorX
 export interface StallRect { x0: number; y0: number; x1: number }
 /** Player-placed item (BUILD 984, 3D mode; grass added in BUILD 985;
  *  custom GLB uploads added in BUILD 997).
- *  Houses/stalls are rects; paths/trees/grass are single tiles
+ *  Houses/stalls are rects; paths/trees/grass/rocks are single tiles
  *  (x0 === x1, y0 === y1); custom items are rects sized by the
  *  uploaded mesh's footprint, carrying the asset id they render from.
  *  Kept separate from the generated
  *  huts/stalls/trees so the 3D adapter's layout filter (which rebuilds
  *  generated lots near town on every load) can never delete placed
  *  work. Old saves load with none. */
-export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
+export interface PlacedItem { kind: 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'custom'; x0: number; y0: number; x1: number; y1: number; assetId?: string; /** BUILD 1012: which house variant a placed house is (cottage/tall/shop/grand). Absent = the legacy seed-hash house (old saves, and anything placed before variants existed) — it renders exactly as it always did. */ variant?: HouseVariantId }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
 export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }
