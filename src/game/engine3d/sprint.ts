@@ -48,16 +48,29 @@ export function sprintSpeed(sprintHeld: boolean, exhausted: boolean, hasInput: b
 
 // BUILD 1018: tap-to-toggle sprint. The Sprint button is BOTH hold-to-
 // sprint AND tap-to-toggle: a quick tap latches sprint ON until tapped
-// again, until exhaustion, or until 2s with no real movement (so a stale
-// latch never runs the player into a wall forever). Pure rules — the view
-// owns the pointer events, this module owns the classification + the
-// latch state machine, so the asserts can prove them without a DOM.
+// again or until exhaustion. Pure rules — the view owns the pointer
+// events, this module owns the classification + the latch state
+// machine, so the asserts can prove them without a DOM.
 // (Why: the 1017 button was hold-only. A tap did nothing persistent —
 // the user pressed it, saw the press highlight, and the character never
 // went faster. His words were literally "doesn't toggle sprint mode".)
-export const TAP_MAX_MS = 250;
-export const TAP_MAX_PX = 12;
-export const LATCH_IDLE_CLEAR_MS = 2000;
+//
+// BUILD 1026: the 1018 tap window (250ms/12px) was calibrated on fast
+// synthetic harness taps, not real thumbs — repro2 measured a realistic
+// 300ms/15px finger tap and a heavy 400ms/20px tap BOTH failing to
+// latch, while a fast touchscreen.tap latched. The 2.5D toggle has NO
+// classifier at all (any click toggles). Widened to 500ms/24px: still
+// distinguishes a deliberate hold (>500ms, finger stays down) from a
+// tap, but a real thumb press now latches. The 2s idle-clear is also
+// GONE — repro2 measured the latch dying 3s after a tap-then-wait, so
+// tapping sprint and then moving with the other hand gave walk speed.
+// The 2.5D toggle persists until tapped again or exhaustion; the latch
+// now does the same. A stale latch cannot run the player into a wall
+// forever: the latch only sprints while there is input, and a pinned
+// tap-target clears with 'Path blocked' (1018) / slides around it
+// (1020/1021), so the idle-clear was redundant.
+export const TAP_MAX_MS = 500;
+export const TAP_MAX_PX = 24;
 
 /** A press is a tap when it is short AND the finger barely moved. */
 export function isSprintTap(downMs: number, upMs: number, downX: number, downY: number, upX: number, upY: number): boolean {

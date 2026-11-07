@@ -33,7 +33,7 @@ import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interior
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
-import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, LATCH_IDLE_CLEAR_MS, nextSprintRearm, type StaminaState } from './sprint';
+import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -378,6 +378,14 @@ export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
 // ±28 edge is ~13px (was ~16px at ±22).)
 const DETAIL_GRASS_HALF = 28;
 const DETAIL_FAR_HALF = 64;
+// BUILD 1026: WORLD_REBUILD_DIST — the player must move this far from
+// the last build centre before the whole world buffer rebuilds. Was
+// 8 (BUILD 983); repro2 measured one ~150–250ms-above-baseline hitch
+// frame per rebuild, and at sprint speed the rebuilds come 56% more
+// often per second (same per-tile rate, faster travel), which is the
+// stutter the user feels. 16 halves the hitch rate. Safe: the ground
+// window is ±22 (≥6 tiles of margin at 16) and grass ±28 (≥12).
+export const WORLD_REBUILD_DIST = 16;
 export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Float32Array {
   const data: Vertex = [];
   // BUILD 988 distance fog, BAKED (not shader-side): every emitted
@@ -1028,14 +1036,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const sprintingRef=useRef(false);
   // BUILD 1018: tap-to-toggle sprint latch + robust hold tracking.
   // sprintLatchRef = the toggle: a quick tap latches sprint ON until
-  // tapped again, until exhaustion, or until 2s with no real movement
-  // (so a stale latch never runs the player into a wall forever).
+  // tapped again or until exhaustion. (BUILD 1026: the 2s idle-clear
+  // is gone — it killed "tap sprint, then move", and the 2.5D toggle
+  // persists; a stale latch cannot run the player into a wall forever
+  // because it only sprints while there is input, and a pinned target
+  // clears with 'Path blocked' / slides around it.)
   // sprintPointerIdRef = the pointer currently holding the button (or
   // null); the hold ends ONLY on pointerup for that id — a second
   // finger's up/cancel can never kill the first finger's hold.
   // sprintDownRef = where/when the hold started, for the tap test.
-  // lastSprintMoveRef = last frame the player actually moved (drives
-  // the 2s idle clear).
   // BUILD 1020: sprintRearmRef = the exhaustion rearm gate. Once stamina
   // hits 0, sprint stays off until ALL sprint input is released and
   // pressed again — a sustained hold no longer surges sprint→walk→sprint
@@ -1055,8 +1064,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const sprintLatchRef=useRef(false);
   const sprintPointerIdRef=useRef<number|null>(null);
   const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
-  const lastSprintMoveRef=useRef(0);
   const [sprintLatchedUi,setSprintLatchedUi]=useState(false);
+  // BUILD 1026: sprintRearmUi = the exhaustion rearm gate, published
+  // for the button label. Repro2 measured 84 samples after recovery
+  // (stamina >=25) while STILL holding, sprinting=0, gate armed — the
+  // user holds a dead button with no hint. The gate stays (removing it
+  // reintroduces the 1020 sawtooth); the button now says "Release!"
+  // while the gate is armed and stamina has recovered, so the user
+  // knows to lift and press again. Armed + recovered only ever holds
+  // while input is still held (a release disarms the gate on the next
+  // frame), so the label needs no separate input state.
+  const [sprintRearmUi,setSprintRearmUi]=useState(false);
+  // BUILD 1026 probe counters (read-only via __ag3dTest; no gameplay
+  // effect): world-buffer rebuilds and stamina-UI publishes.
+  const rebuildCountRef=useRef(0);
+  const staminaPublishCountRef=useRef(0);
   // BUILD 1018: end a Sprint-button hold. Only the pointer that started
   // the hold can end it (pointerId-gated). A quick, still press is a TAP
   // and flips the latch; a longer hold just releases. Called from the
@@ -1069,7 +1091,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const down=sprintDownRef.current;sprintDownRef.current=null;
     if(allowToggle&&down&&isSprintTap(down.t,performance.now(),down.x,down.y,clientX,clientY)){
       const next=latchAfterTap(sprintLatchRef.current,staminaRef.current.exhausted);
-      sprintLatchRef.current=next;if(next)lastSprintMoveRef.current=performance.now();
+      sprintLatchRef.current=next;
       setSprintLatchedUi(next);
     }
   };
@@ -1402,7 +1424,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
     // BUILD 1003: stamina UI publish throttle (bar updates ~10/s while
     // draining, immediately on exhausted/sprinting flips).
-    let lastStaminaPublish=0,lastStaminaInt=STAMINA_MAX,lastExhaustedPub=false,lastSprintingPub=false,lastLatchedPub=false;
+    let lastStaminaPublish=0,lastStaminaInt=STAMINA_MAX,lastExhaustedPub=false,lastSprintingPub=false,lastLatchedPub=false,lastRearmPub=false;
     let walkingNow=false;
     // BUILD 994: per-figure walk state (player + NPCs). Session-only
     // render state, never saved: last tile center, facing yaw, walk
@@ -1972,14 +1994,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // player was stuck behind an eastbound traveler at ~1.1 u/s.
       // Session-only: staminaRef is never written to storage.
       const actuallyMoved=player.x!==prevMoveX||player.y!==prevMoveY;
-      if(actuallyMoved)lastSprintMoveRef.current=now;
       const wasExhausted=staminaRef.current.exhausted;
       const nextStamina=stepStamina(staminaRef.current,dt,sprintHeld,actuallyMoved);
       // BUILD 1018: the latch clears on exhaustion (the button shows
-      // Tired; tap again to resume once recovered) and after 2s with
-      // no real movement (arrived, pinned, idle) — a latched sprint
-      // never runs away on its own.
-      if(sprintLatchRef.current&&((nextStamina.exhausted&&!wasExhausted)||now-lastSprintMoveRef.current>LATCH_IDLE_CLEAR_MS))sprintLatchRef.current=false;
+      // Tired; tap again to resume once recovered). BUILD 1026: the
+      // 2s idle-clear is gone — it killed "tap sprint, then move", and
+      // the 2.5D toggle persists until tapped again or exhaustion.
+      if(sprintLatchRef.current&&nextStamina.exhausted&&!wasExhausted)sprintLatchRef.current=false;
       // BUILD 1020: rearm gate — exhaustion arms it, releasing all
       // sprint input clears it (nextSprintRearm). While armed, the
       // hold above is ignored, so the speed sawtooth stops here.
@@ -1989,17 +2010,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       sprintRearmRef.current=nextSprintRearm(sprintRearmRef.current,nextStamina.exhausted&&!wasExhausted,sprintRaw,nextStamina.exhausted);
       staminaRef.current=nextStamina;sprintingRef.current=sprintingNow&&actuallyMoved;
       const nextStaminaInt=Math.round(nextStamina.stamina);
-      if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub||sprintLatchRef.current!==lastLatchedPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;lastLatchedPub=sprintLatchRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);setSprintLatchedUi(sprintLatchRef.current);}
+      if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub||sprintLatchRef.current!==lastLatchedPub||sprintRearmRef.current!==lastRearmPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;lastLatchedPub=sprintLatchRef.current;lastRearmPub=sprintRearmRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);setSprintLatchedUi(sprintLatchRef.current);setSprintRearmUi(sprintRearmRef.current);staminaPublishCountRef.current++;}
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
       player=stateRef.current.position;
       // BUILD 983: the old code only rebuilt on resize/interactions, so
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
-      // the player moves >8 tiles from the last build centre.
-      if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
+      // the player moves WORLD_REBUILD_DIST tiles from the last build
+      // centre (BUILD 1026: 16, was 8 — halves the rebuild hitch rate).
+      if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>WORLD_REBUILD_DIST)needsWorldRebuild.current=true;
       // BUILD 1017: the diagnostic line no longer goes to the play-screen
       // message — it is reported to Options > Diagnostics instead.
-      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}else{upload(worldBuffer,built);worldVertCount=built.length/6;const snap:Diagnostics3D={verts:worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}else{upload(worldBuffer,built);worldVertCount=built.length/6;const snap:Diagnostics3D={verts:worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y;rebuildCountRef.current++;}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // BUILD 1011: night factor for this frame — 976's curve on the 3D
       // clock, as one shader uniform (see sky.ts). Set before the sky
@@ -2364,6 +2386,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1018 test hook (read-only): whether the tap-to-toggle
       // sprint latch is on (probes only — no gameplay effect).
       getSprintLatched:()=>sprintLatchRef.current,
+      // BUILD 1026 test hooks (read-only): the exhaustion rearm-gate
+      // state, the world-buffer rebuild count, and the stamina-UI
+      // publish count (probes only — no gameplay effect).
+      getSprintRearm:()=>sprintRearmRef.current,
+      getRebuildCount:()=>rebuildCountRef.current,
+      getStaminaPublishes:()=>staminaPublishCountRef.current,
       // Probe-only: drop a stale tap destination so key-based probe runs
       // are not overridden by an earlier tap (no gameplay effect — taps
       // only ever set moveTarget from the canvas handler).
@@ -2690,13 +2718,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         panel (later in DOM, same zIndex) — minimize to reach it, same
         as the rest of the cluster. BUILD 1018: the button is ALSO
         tap-to-toggle — a quick tap latches sprint on (green +
-        "Sprinting") until tapped again, exhausted, or 2s idle. No
-        pointer capture: the hold ends on pointerup for the same
-        pointerId (button or window-level backstop), so a second finger
-        can never cancel the first finger's hold. Green while
-        sprint-moving or latched, dimmed + "Tired" while exhausted
-        (forced walk until 25 stamina). */}
-    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':sprintLatchedUi?'Sprinting':'Sprint'}</button>
+        "Sprinting") until tapped again or exhausted. BUILD 1026: no
+        more 2s idle-clear, and "Release!" while the rearm gate is
+        armed after recovery (hold → exhausted → recovered → still
+        holding sprints never; the label says what to do). No pointer
+        capture: the hold ends on pointerup for the same pointerId
+        (button or window-level backstop), so a second finger can never
+        cancel the first finger's hold. Green while sprint-moving or
+        latched, dimmed + "Tired" while exhausted (forced walk until
+        25 stamina). */}
+    <button type="button" data-testid="sprint-toggle" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</button>
     {/* BUILD 1004: Remove quick toggle — the SAME toggleRemove the
         panel's Remove button calls, so the two can never diverge.
         Renders in the minimized cluster (same visibility rule as

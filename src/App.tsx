@@ -197,7 +197,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1025';
+const BUILD_NUMBER = '1026';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -245,6 +245,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1023': 'You can zoom out much further in 3D mode now — the camera pulls back twice as far so you can see far more of the world at once. Everything else works exactly as before.',
   '1024': 'The grass and little details now render farther out instead of popping in and out as you walk, and the world keeps generating new land past the old edge instead of stopping at an invisible wall. Everything else works exactly as before.',
   '1025': 'Rocks are in the Build menu now — place one from Build then Props, or tap Remove and then a rock to take it down. A placed rock blocks movement just like the ones already in the wild, and removing a wild rock is the same as mining it. Everything else works exactly as before.',
+  '1026': 'Sprint fixed: a real thumb tap on the Sprint button now latches sprint on, the latch stays on until you tap again or get tired, and the button says Release! when you need to lift and press again after getting tired. The world also rebuilds half as often, so sprinting stutters less. Everything else works exactly as before.',
   '984': 'The giant dark castle skyline in 3D mode is gone, and you can now build in 3D mode: tap Build, pick Pathway, House, Tree, or Market Stall, then tap the ground to place it — free, no resource cost, and your placements save and reload. Tap Remove, then a placed item, to take it back down. Placed houses are decorative for now (no interior yet), and placed items show in 3D mode.',
   '983': 'The 3D town now looks like the medieval street it should be: houses have stone-block ground floors, dark timber framing, cream and tan plaster upper walls, and steep brown and red-tiled roofs, two or three stories tall, with small square windows — some warmly lit — and a few open-front shops with timber posts. The main street is a tan dirt path scattered with stone slabs and flanked by grey cobble, running toward a distant jagged castle silhouette with small red-roofed houses at its foot, under a clear blue sky. Tap the Street view button in 3D mode to walk the street at eye level.',
   '982': 'Mosslight now has a real bank building on the south road: a stone facade with a tall red roof, its own door, and a gold bank pin on the minimap. Brand the merchant minds the bank in the mornings and his market stall after lunch — talk to him at the bank (or anywhere you meet him) to deposit coins, withdraw, or store and take back gear, exactly as before, now with a place to go with it.',
