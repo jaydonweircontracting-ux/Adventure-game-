@@ -14,6 +14,29 @@
 // through to blocked, the tap target clears with 'Path blocked', and the
 // player must tap around the obstacle like anywhere else. Diagonal
 // movement is untouched: both slides genuinely change position there.
+//
+// BUILD 1020: perpendicular slide. The 1018 fix exposed the deeper hole:
+// for a straight push the component slides are DEGENERATE — pushing due
+// north, the x-slide IS the current tile (correctly skipped since 1018)
+// and the y-slide IS the blocked point itself, so a straight push can
+// never slide and the player stops dead on every road crate. Measured:
+// sprinting north from (102,130) flatlines at y≈120.6 against the crate
+// on tile (102,120) — identical on 1017 and 1019 — and the same pin
+// repeats at every road crate, so a latched sprint runs, stops dead,
+// (the latch clears after 2s idle) and must be re-tapped: stop-start
+// movement that reads as shaky and glitchy. Now, when the direct move
+// and both component slides fail, the step tries the two PERPENDICULAR
+// unit steps (east/west for a north/south push, north/south for an
+// east/west push), toward the movement's small component first, then
+// the other side — a full step, lateral only, never backwards. The
+// player slides ALONG the obstacle instead of stopping dead on it.
+// Contract change, stated plainly: the 1018 pin case (a single-tile
+// obstacle straight ahead) now slides around instead of reporting
+// blocked — 'Path blocked' is reserved for truly boxed-in cases where
+// NO direction moves. The 1018 invariant is preserved: a no-op slide
+// is never counted as a move, and every step 1017 took is byte-identical
+// here — the perpendicular slide only adds movement where 1017 stood
+// still.
 
 export interface StepResult {
   x: number;
@@ -45,5 +68,22 @@ export function resolvePlayerStep(
   // is not a move — skip it instead of "succeeding" in place.
   if ((sx !== px || sy !== py) && walkableAt(sx, sy)) return { x: sx, y: sy, moved: true, blocked: false };
   if ((ax !== px || ay !== py) && walkableAt(ax, ay)) return { x: ax, y: ay, moved: true, blocked: false };
+  // BUILD 1020: perpendicular slide. For a straight push the two slides
+  // above are degenerate (one is the current tile, the other is the
+  // blocked point), so try stepping sideways by a full step, toward the
+  // movement's small component first, then the other side. Lateral only
+  // — never backwards — and only into walkable tiles, one step at a
+  // time, exactly like the component slides. A diagonal push already
+  // slides via the components above; this only adds movement where the
+  // old code stood still.
+  if (Math.abs(moveDy) >= Math.abs(moveDx)) {
+    const sgn = moveDx !== 0 ? Math.sign(moveDx) : 1;
+    if (walkableAt(px + sgn * step, py)) return { x: px + sgn * step, y: py, moved: true, blocked: false };
+    if (walkableAt(px - sgn * step, py)) return { x: px - sgn * step, y: py, moved: true, blocked: false };
+  } else {
+    const sgn = moveDy !== 0 ? Math.sign(moveDy) : 1;
+    if (walkableAt(px, py + sgn * step)) return { x: px, y: py + sgn * step, moved: true, blocked: false };
+    if (walkableAt(px, py - sgn * step)) return { x: px, y: py - sgn * step, moved: true, blocked: false };
+  }
   return { x: px, y: py, moved: false, blocked: true };
 }

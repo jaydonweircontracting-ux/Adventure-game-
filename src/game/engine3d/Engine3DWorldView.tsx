@@ -32,7 +32,7 @@ import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interior
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
-import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, LATCH_IDLE_CLEAR_MS, type StaminaState } from './sprint';
+import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, LATCH_IDLE_CLEAR_MS, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep } from './playerStep';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -941,6 +941,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // sprintDownRef = where/when the hold started, for the tap test.
   // lastSprintMoveRef = last frame the player actually moved (drives
   // the 2s idle clear).
+  // BUILD 1020: sprintRearmRef = the exhaustion rearm gate. Once stamina
+  // hits 0, sprint stays off until ALL sprint input is released and
+  // pressed again — a sustained hold no longer surges sprint→walk→sprint
+  // every ~7s. Session-only ref, never saved.
+  const sprintRearmRef=useRef(false);
   const sprintLatchRef=useRef(false);
   const sprintPointerIdRef=useRef<number|null>(null);
   const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
@@ -1795,8 +1800,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // same step, same walkableAt checks, same wall sliding. Hold =
       // Sprint button or Shift key; exhausted forces walk. BUILD 1018:
       // the button ALSO latches (tap-to-toggle) — sprintInput merges
-      // hold, latch, and Shift into one sprint input.
-      const sprintHeld=sprintInput(sprintHeldRef.current,sprintLatchRef.current,keys.has('shift'));
+      // hold, latch, and Shift into one sprint input. BUILD 1020: the
+      // rearm gate — while rearmed (exhaustion hit and the same hold
+      // never lifted) sprint input is ignored, so a sustained hold
+      // cannot auto-resume at 25 and surge again; release + press
+      // re-arms it (nextSprintRearm, updated after the stamina step).
+      const sprintRaw=sprintInput(sprintHeldRef.current,sprintLatchRef.current,keys.has('shift'));
+      const sprintHeld=sprintRearmRef.current?false:sprintRaw;
       const sprintingNow=sprintHeld&&!staminaRef.current.exhausted&&hasInput;
       // Position before this frame's step, so stamina can tell real
       // displacement from a zero-displacement slide (see below).
@@ -1832,6 +1842,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // no real movement (arrived, pinned, idle) — a latched sprint
       // never runs away on its own.
       if(sprintLatchRef.current&&((nextStamina.exhausted&&!wasExhausted)||now-lastSprintMoveRef.current>LATCH_IDLE_CLEAR_MS))sprintLatchRef.current=false;
+      // BUILD 1020: rearm gate — exhaustion arms it, releasing all
+      // sprint input clears it (nextSprintRearm). While armed, the
+      // hold above is ignored, so the speed sawtooth stops here.
+      sprintRearmRef.current=nextSprintRearm(sprintRearmRef.current,nextStamina.exhausted&&!wasExhausted,sprintRaw);
       staminaRef.current=nextStamina;sprintingRef.current=sprintingNow&&actuallyMoved;
       const nextStaminaInt=Math.round(nextStamina.stamina);
       if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub||sprintLatchRef.current!==lastLatchedPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;lastLatchedPub=sprintLatchRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);setSprintLatchedUi(sprintLatchRef.current);}

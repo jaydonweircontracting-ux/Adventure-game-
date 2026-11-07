@@ -69,6 +69,22 @@ export function sprintInput(held: boolean, latched: boolean, shiftKey: boolean):
   return held || latched || shiftKey;
 }
 
+// BUILD 1020: no auto-resume after exhaustion. Holding sprint drains
+// 100→0 in 5s, then exhaustion forces walk until 25 recovers — and while
+// the same hold continues, sprint re-engages the instant 25 is reached,
+// so a sustained hold surges sprint→walk→sprint every ~7s (measured:
+// two full cycles in a 25s sustained sprint on both 1017 and 1019).
+// That speed sawtooth reads as glitchy. The rearm rule: once exhaustion
+// hits, sprint stays off until ALL sprint input is released and pressed
+// again (or tapped again — the latch already clears on exhaustion, so
+// the toggle path needs a re-tap by construction). The numbers do not
+// change (20/s, 12/s, 0, 25). Pure rules — the view owns one boolean
+// ref (rearmed) and calls this once per frame after the stamina step.
+export function nextSprintRearm(prevRearmed: boolean, justExhausted: boolean, rawHeld: boolean): boolean {
+  if (!rawHeld) return false;
+  return prevRearmed || justExhausted;
+}
+
 /** A tap flips the latch — unless exhausted, which always unlatches. */
 export function latchAfterTap(latched: boolean, exhausted: boolean): boolean {
   return exhausted ? false : !latched;
