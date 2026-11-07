@@ -80,9 +80,28 @@ export function sprintInput(held: boolean, latched: boolean, shiftKey: boolean):
 // the toggle path needs a re-tap by construction). The numbers do not
 // change (20/s, 12/s, 0, 25). Pure rules — the view owns one boolean
 // ref (rearmed) and calls this once per frame after the stamina step.
-export function nextSprintRearm(prevRearmed: boolean, justExhausted: boolean, rawHeld: boolean): boolean {
-  if (!rawHeld) return false;
-  return prevRearmed || justExhausted;
+//
+// BUILD 1021: the 1020 gate armed only on the RISING EDGE of
+// exhaustion (justExhausted). A sprint press that starts AFTER that
+// frame — pressing Shift while already tired, or tapping the button
+// while tired — never armed the gate, so sprint auto-engaged at 25
+// while the input was still held, drained to 0, and re-exhausted:
+// the same sawtooth, now triggered by a press-while-tired instead of
+// a continuous hold. Measured on 1020: press Shift at stamina 9.6
+// (tired), keep holding — sprint engages ~100ms after recovery at
+// 25.2 with NO release, drains to 0, re-exhausts (two bursts in 9s);
+// mashing the button while tired gives 8 bursts in 13s. A continuous
+// hold was already proven safe (1020 SUSTAINED25, re-proven: zero
+// bursts in 10s). The fix: the gate is a LEVEL, not an edge — any
+// sprint input while exhausted arms it, and a release only disarms it
+// once recovery has happened. A deliberate fresh press AFTER recovery
+// still sprints (a ~1.25s burst from 25 stamina is the 1003 numbers,
+// unchanged); sprint never re-engages WITHOUT one.
+export function nextSprintRearm(prevRearmed: boolean, justExhausted: boolean, rawHeld: boolean, exhausted: boolean): boolean {
+  if (justExhausted && rawHeld) return true;
+  if (exhausted) return prevRearmed || rawHeld;
+  if (prevRearmed && rawHeld) return true;
+  return false;
 }
 
 /** A tap flips the latch — unless exhausted, which always unlatches. */

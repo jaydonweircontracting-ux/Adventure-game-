@@ -33,7 +33,7 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathN
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, LATCH_IDLE_CLEAR_MS, nextSprintRearm, type StaminaState } from './sprint';
-import { resolvePlayerStep } from './playerStep';
+import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 
@@ -945,7 +945,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // hits 0, sprint stays off until ALL sprint input is released and
   // pressed again — a sustained hold no longer surges sprint→walk→sprint
   // every ~7s. Session-only ref, never saved.
+  // BUILD 1021: the gate is a level, not an edge — a press that starts
+  // while already tired also arms it (nextSprintRearm takes the tired
+  // level now); a release only disarms it after recovery.
   const sprintRearmRef=useRef(false);
+  // BUILD 1021: slidePerpRef = the sticky perpendicular-slide side.
+  // Once a slide-around picks east (or west/north/south), the player
+  // keeps sliding that way until the direct path opens — a tap-to-move
+  // push's lateral sign flips as the player crosses the target's x/y,
+  // and without this the slide ping-pongs and never gets around a
+  // wide obstacle. Cleared on a direct step and whenever there is no
+  // movement input at all (a new journey starts fresh). Session-only.
+  const slidePerpRef=useRef<PerpDir | null>(null);
   const sprintLatchRef=useRef(false);
   const sprintPointerIdRef=useRef<number|null>(null);
   const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
@@ -1796,6 +1807,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         moveDy=(held.includes('s')||held.includes('arrowdown')?1:0)-(held.includes('w')||held.includes('arrowup')?1:0);
         hasInput=moveDx!==0||moveDy!==0;
       }
+      // BUILD 1021: no movement input — a new journey starts fresh, so
+      // a stale slide-around side never carries into the next push.
+      if(!hasInput)slidePerpRef.current=null;
       // BUILD 1003: sprint multiplies speed INSIDE this same pipeline —
       // same step, same walkableAt checks, same wall sliding. Hold =
       // Sprint button or Shift key; exhausted forces walk. BUILD 1018:
@@ -1805,6 +1819,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // never lifted) sprint input is ignored, so a sustained hold
       // cannot auto-resume at 25 and surge again; release + press
       // re-arms it (nextSprintRearm, updated after the stamina step).
+      // BUILD 1021: the gate is a level — a press that starts while
+      // already tired arms it too, and a release only disarms it after
+      // recovery (nextSprintRearm takes the tired level as its 4th arg).
       const sprintRaw=sprintInput(sprintHeldRef.current,sprintLatchRef.current,keys.has('shift'));
       const sprintHeld=sprintRearmRef.current?false:sprintRaw;
       const sprintingNow=sprintHeld&&!staminaRef.current.exhausted&&hasInput;
@@ -1818,7 +1835,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the player exactly where they stand no longer counts as a
         // move, so a tap-to-move target pinned against a crate clears
         // with 'Path blocked' instead of retrying forever in place.
-        const res=resolvePlayerStep(player.x,player.y,moveDx,moveDy,dist,step,walkableAt);
+        // BUILD 1021: the step also takes the sticky slide-around side
+        // (slidePerpRef) and reports which side it used, so a
+        // tap-to-move slide-around keeps one side until the direct
+        // path opens instead of ping-ponging.
+        const res=resolvePlayerStep(player.x,player.y,moveDx,moveDy,dist,step,walkableAt,slidePerpRef.current);
+        if(res.how==='perp')slidePerpRef.current=res.perp;
+        else if(res.how==='direct')slidePerpRef.current=null;
         if(res.moved){player={x:res.x,y:res.y};current.position=player;walkingNow=true;}
         else if(res.blocked&&moveTarget){moveTarget=null;setMessage('Path blocked');}
         if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
@@ -1845,7 +1868,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1020: rearm gate — exhaustion arms it, releasing all
       // sprint input clears it (nextSprintRearm). While armed, the
       // hold above is ignored, so the speed sawtooth stops here.
-      sprintRearmRef.current=nextSprintRearm(sprintRearmRef.current,nextStamina.exhausted&&!wasExhausted,sprintRaw);
+      // BUILD 1021: the gate takes the tired LEVEL (4th arg) — a press
+      // that starts while already tired arms it too, and a release
+      // only disarms it after recovery.
+      sprintRearmRef.current=nextSprintRearm(sprintRearmRef.current,nextStamina.exhausted&&!wasExhausted,sprintRaw,nextStamina.exhausted);
       staminaRef.current=nextStamina;sprintingRef.current=sprintingNow&&actuallyMoved;
       const nextStaminaInt=Math.round(nextStamina.stamina);
       if((now-lastStaminaPublish>100&&nextStaminaInt!==lastStaminaInt)||nextStamina.exhausted!==lastExhaustedPub||sprintingRef.current!==lastSprintingPub||sprintLatchRef.current!==lastLatchedPub){lastStaminaPublish=now;lastStaminaInt=nextStaminaInt;lastExhaustedPub=nextStamina.exhausted;lastSprintingPub=sprintingRef.current;lastLatchedPub=sprintLatchRef.current;setStaminaUi(nextStamina);setSprintingUi(sprintingRef.current);setSprintLatchedUi(sprintLatchRef.current);}
