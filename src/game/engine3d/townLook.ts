@@ -138,13 +138,13 @@ export const ZOOM_HYST = 1.5;
  * widened. The only remaining overlap is window∩band (<=64 tiles,
  * depth resolution <=0.0024 there, far under the 0.02 separation).
  * VIEW_FAR_PLANE is 700: worst camera-to-farthest-object is 282
- * (map diagonal) + 32 (max orbit radius) = 314, but the far plane
+ * (map diagonal) + 64 (max orbit radius) = 346, but the far plane
  * must ALSO push the clip edge past the fog-full distance — the
- * clip edge sits at worst 700 - 32 (orbit) - 8 (staleness) = 660
+ * clip edge sits at worst 700 - 64 (orbit) - 8 (staleness) = 628
  * tiles from the build centre, past FOG_FAR 600, so the clipped edge
  * is always uniform horizon colour meeting the sky's horizon colour
  * (the 1005 failure mode was a hazed-green clip edge). Apron
- * coverage 1000 - 32 = 968 > 700, so the apron always extends past
+ * coverage 1000 - 64 = 936 > 700, so the apron always extends past
  * the far plane. Depth precision at a given distance depends on the
  * near plane and the distance, not the far plane, so 700 costs
  * nothing versus 300 at 282 tiles. */
