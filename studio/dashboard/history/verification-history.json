@@ -83,6 +83,13 @@
       "result": "Verified live: served version.json build 1037 @ 2026-11-08T06:41:23.474Z, run 42455687148 success. Asserts 184 checks pass (parent re-ran directly — ASSERT_DONE 184 checks passed). Sim vs pristine1036 IDENTICAL (parent diffed sim1037.norm.log vs sim1036-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PASS — 33 findings, 0 page errors (yellow overlay visible 'Area 7x8 · 9 items'; move +5 east with rot preserved; rotate to rot 1; one Undo restored the whole group, Redo re-applied it; duplicate placed 9 new items; 115-item town delete required the two-tap confirmation and then cleared). ENHANCE and ADJUST are deferred follow-ups, stated in the player note.",
       "runId": "42455687148",
       "verifiedAt": "2026-11-08T06:41:23.474Z"
+    },
+    {
+      "build": 1038,
+      "commit": "8963bc65",
+      "result": "Verified live: served version.json build 1038 @ 2026-11-08T08:34:33.394Z, run 42463440575 success. Asserts 145 checks pass (parent re-ran directly — ASSERT_DONE 145 checks passed). Sim vs pristine1037 IDENTICAL (parent diffed sim1038.norm.log vs sim1037-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe all steps passed, 0 page errors (green preview 'Windmill · door faces south'; placed house variant 'windmill' 3x3; stays armed after placing; getHouseFx windmills=1 / millVerts=54; R rotates to rot 1, door faces west; blocks movement; AREA SELECT holds both windmills + tree, moved +5 east together; Remove stroke took the rot-0 windmill down). Screenshots viewed: the windmill reads clearly as a windmill (stone tower, pyramid cap, 4 pale sails, brown door); the blades visibly turned between mill-a and mill-b.",
+      "runId": "42463440575",
+      "verifiedAt": "2026-11-08T08:34:33.394Z"
     }
   ],
   "schemaVersion": "1.0"

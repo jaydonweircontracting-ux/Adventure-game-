@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Windmill (build 1038)",
+    "build": "Town Builder Stage 3",
     "commit": null,
-    "description": "A placeable windmill in the Build menu (tower + blades, rotating blades if cleanly doable), placeable/movable/rotatable/removable/undoable/savable like other buildings. Pulled forward from Town Builder Stage 4 by the user's explicit order 'Add a wind mill' (2026-11-07 ~22:58 PST). After it lands, the queue resumes with Town Builder Stage 3 (unlimited undo/redo).",
+    "description": "Unlimited undo/redo: command-based history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history. Note build 991 already has session-only unlimited undo/redo — this stage makes it command-based and complete. NEXT per the queue (after the windmill, which was pulled forward by the user's order).",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -203,25 +203,28 @@
       "runId": "42455687148",
       "status": "verified",
       "verifiedAt": "2026-11-08T06:41:23.474Z"
+    },
+    {
+      "build": 1038,
+      "commit": "8963bc65",
+      "description": "Windmill (pulled forward from Town Builder Stage 4): a placeable windmill in the Build menu (Buildings) — a 3x3 stone tower with a pyramid cap and four big sails on the front that turn slowly in the wind; enterable through its door; rotates with R / the panel buttons so the sails face the way you want. Landed: commit 8963bc65, deploy run 42463440575 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42463440575",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T08:34:33.394Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Windmill (build 1038)",
-      "commit": null,
-      "description": "A placeable windmill in the Build menu (tower + blades, rotating blades if cleanly doable), placeable/movable/rotatable/removable/undoable/savable like other buildings. Pulled forward from Town Builder Stage 4 by the user's explicit order \"Add a wind mill\" (2026-11-07 ~22:58 PST).",
-      "status": "in_progress"
-    },
-    {
       "build": "Town Builder Stage 3 (unlimited undo/redo)",
       "commit": null,
-      "description": "Command-based undo/redo history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history.",
-      "status": "planned"
+      "description": "Command-based undo/redo history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history. Note build 991 already has session-only unlimited undo/redo — this stage makes it command-based and complete.",
+      "status": "in_progress"
     },
     {
       "build": "Town Builder Stage 4 (asset library, remaining)",
       "commit": null,
-      "description": "Lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill pulled forward as build 1038 by the user's order.)",
+      "description": "Lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill landed as build 1038, pulled forward by the user's order.)",
       "status": "planned"
     },
     {
@@ -395,13 +398,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T00:55:17-07:00",
+  "lastUpdateTimestamp": "2026-11-08T03:01:08-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1037,
-    "commit": "67880190",
-    "description": "Town Builder Stage 2 AREA SELECT: drag a yellow rectangle to select a whole area (houses, trees, roads, rocks, walls, decorations, whole town sections); then Move/Rotate/Delete/Duplicate the group together, preserving spacing and rotations, each action one Undo step.",
-    "runId": "42455687148",
-    "verifiedAt": "2026-11-08T06:41:23.474Z"
+    "build": 1038,
+    "commit": "8963bc65",
+    "description": "Windmill (pulled forward from Town Builder Stage 4): a placeable windmill in the Build menu (Buildings) — a 3x3 stone tower with a pyramid cap and four big sails on the front that turn slowly in the wind; enterable through its door; rotates with R / the panel buttons so the sails face the way you want.",
+    "runId": "42463440575",
+    "verifiedAt": "2026-11-08T08:34:33.394Z"
   },
   "measuredBaselines": [
     {
@@ -625,6 +628,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1038,
+      "commit": "8963bc65",
+      "result": "Verified live: served version.json build 1038 @ 2026-11-08T08:34:33.394Z, run 42463440575 success. Asserts 145 checks pass (parent re-ran directly — ASSERT_DONE 145 checks passed). Sim vs pristine1037 IDENTICAL (parent diffed sim1038.norm.log vs sim1037-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe all steps passed, 0 page errors (green preview 'Windmill · door faces south'; placed house variant 'windmill' 3x3; stays armed after placing; getHouseFx windmills=1 / millVerts=54; R rotates to rot 1, door faces west; blocks movement; AREA SELECT holds both windmills + tree, moved +5 east together; Remove stroke took the rot-0 windmill down). Screenshots viewed: the windmill reads clearly as a windmill (stone tower, pyramid cap, 4 pale sails, brown door); the blades visibly turned between mill-a and mill-b.",
+      "runId": "42463440575",
+      "verifiedAt": "2026-11-08T08:34:33.394Z"
+    },
     {
       "build": 1037,
       "commit": "67880190",
