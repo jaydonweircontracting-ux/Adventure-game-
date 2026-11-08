@@ -1,0 +1,75 @@
+{
+  "events": [
+    {
+      "date": "2026-11-07",
+      "description": "Directives §47–§50 added to SOUL.md (speed, 3D direction, autonomous development, autonomous evolution).",
+      "type": "directive"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Ashfall Stage 1 audit DONE (audit + baseline + plan written to ~/workspace/verify1030/ASHFALL-STAGE1.md, 660 lines; repo untouched at 14491c9f, tree clean; headless measurement exit 0, live phone probe 0 page errors).",
+      "type": "audit"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Builds 1026, 1027, 1028, 1029 shipped + verified live (see history/build-ledger.json).",
+      "type": "build"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "BUILD 1030 implemented + code-verified (player A* + NPC pathing fixes; tsc clean, 97+47 asserts pass, sim identical to pristine1029) but NOT shipped: commit/push blocked by environment write failure (git EPERM on overlayfs), phone probe blocked (Chromium SIGTRAP).",
+      "type": "build"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Directives §51 + §52 added to SOUL.md (ultimate engineering, god-tier engineering). §51 was cut off mid-sentence as received ('For risky changes, create a recover') — flagged in SOUL.md; the same self-healing rules are covered in full in §52.",
+      "type": "directive"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Development dashboard built + live (artifact ashfall-development-dashboard). Verification SUCCEEDED: no console errors, no broken assets, no text issues, no phone-width overflow; the Verified ledger filter works; Google Fonts refused only by the audit's egress lockdown, loads on the published page.",
+      "type": "dashboard"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Directives §53–§56 added to SOUL.md (autonomous god-tier, dashboard repair, master integration, quantum code evolution machine).",
+      "type": "directive"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Directives §57 + §58 added to SOUL.md (next evolution layer, game evolution & content creation engine). Pacing instruction recorded: finish the current hour's work, save it, produce an implementation report first, then implement only what is still missing.",
+      "type": "directive"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Directive §59 added to SOUL.md (Muse self-evolution engine). Hard rule: optimize within legitimate limits — never bypass usage limits, evade billing, or conceal usage.",
+      "type": "directive"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "MEMORY.md truncated to 0 bytes by a failed write (open('w') truncated the file, then the write failed with EPERM — the same environment write restriction). Restored from the injected context copy + dated logs (32,172 bytes, verified). Rule: never use a truncating write on a memory file; use the runtime file API or write-to-temp-then-atomic-replace.",
+      "type": "incident"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Three self-evolution files created (working copies in ~/workspace/studio/): MUSE_SOUL.md v1.0 (operating constitution), MUSE_EVOLUTION.md v1.0 (versioned self-improving instructions), CONTINUE_ASHFALL.md (exact persistent resume point). They move into version-controlled project storage (studio/) once BUILD 1030 lands and git can write.",
+      "type": "file"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Dashboard repair (§54) data files created (working copies in ~/workspace/studio/dashboard/): dashboard-data.json, dashboard-schema.json, README.md, MUSE_INSTRUCTIONS.md, snapshots/2026-11-07.json, history/build-ledger.json, verification-history.json, development-history.json. Commit hashes verified against git log (read-only). They move into the repo (studio/dashboard/) once BUILD 1030 lands and git can write.",
+      "type": "dashboard"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Master implementation audit (§55 Stage A) and legacy codebase audit (§52) started as read-only subagents (parallel-safe; they do not touch the repo).",
+      "type": "audit"
+    },
+    {
+      "date": "2026-11-07",
+      "description": "Honesty-gap correction (found by the Master Integration Registry, SS55 Stage A): dashboard-data.json and history/build-ledger.json downgraded qualityGateLevel from 4 (POLISHED) to 3 (VERIFIED) for builds 1016-1029, because formal Level-4 polish gates with per-build evidence do not exist; verifiedAt/verificationTimestamp set to null for 1016-1025 (exact verification timestamps not recorded - only the dates are known from the dated logs). Builds 1026-1029 keep their real timestamps + run IDs. The Nov 7 snapshot (snapshots/2026-11-07.json) is left untouched as the dated historical record.",
+      "type": "correction"
+    }
+  ],
+  "schemaVersion": "1.0"
+}
