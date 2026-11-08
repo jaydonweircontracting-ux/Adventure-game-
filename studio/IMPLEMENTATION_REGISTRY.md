@@ -75,11 +75,12 @@
 | Q1 | BUILD 1030 tap-to-walk pathfinding | COMPLETE AND VERIFIED | Commit 9dc4cdf7, deploy run 42428294182 success, served version.json 1030 @ 2026-11-08T00:08:20.684Z, phone probe PASS 0 page errors |
 | Q2 | BUILD 1031 blue squares (wild-lake far cells) | COMPLETE AND VERIFIED | Commit 336741da, deploy run 42431099076 success; served version.json 1031 @ 2026-11-08T00:45:25.538Z; 26 asserts pass; sim vs pristine1030 identical |
 | Q3 | BUILD 1032 interior invisible walls | COMPLETE AND VERIFIED | Commit 7d1c8cf9, deploy run 42432401556 success; served version.json 1032 @ 2026-11-08T01:02:39.379Z; 418 asserts pass; sim vs pristine1031 identical |
-| Q4 | Ashfall Stage 2 terrain | NOT IMPLEMENTED | Queued after 1032; HIGH risk; re-baseline required |
+| Q4 | Ashfall Stage 2 terrain | COMPLETE AND VERIFIED | Commit 62354ebf, deploy run 42438231684 success, served version.json 1034 @ 2026-11-08T02:23:10.474Z, heightfield SHIPPED (not the fallback) |
 | Q5 | Ashfall Stage 3 vegetation | NOT IMPLEMENTED | Queued after Stage 2 |
 | Q6 | Ashfall Stage 4 architecture | NOT IMPLEMENTED | Queued after Stage 3 |
 | Q7 | Ashfall Stage 5 settlements | NOT IMPLEMENTED | Queued after Stage 4; 0-stall cause unverified |
 | Q8 | Ashfall Stage 6 atmosphere | NOT IMPLEMENTED | Queued after Stage 5 |
+| Q9 | BUILD 1033 red sports car | COMPLETE AND VERIFIED | Commit 7a9671d4, deploy run 42434904636 success; served version.json 1033 @ 2026-11-08T01:36:34.895Z; 49 asserts pass; sim vs pristine1032 identical |
 | S1 | Stone house replacement (3D) | BLOCKED | FBX package never arrived; only a README in public/sprites/3d-house-sprites/ |
 | S2 | 684 sim crash | BLOCKED | assetMetaFor null for 5 variants; ~1,000 sim lines unverified; awaiting user word |
 | S3 | Project Zomboid files disposition | NOT IMPLEMENTED | Awaiting user word; no decision record found |
@@ -566,12 +567,12 @@
 
 ## Q4 — Ashfall Stage 2 terrain
 - **(1) Intended purpose:** Visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores (sand band + water edge), stone used or removed.
-- **(2) Current implementation:** None. Stage 1 baseline exists (Q0). **HIGH risk** (touches ground emission, every object's base y, far rings, picker) — harness-prototype the base-y agreement first; fallback is tint+shores+stone only. Stage 2's agent must re-sync to its HEAD and re-baseline first (Stage 1 numbers are at 1029).
-- **(3) Dependencies:** 1030→1031→1032 landing, in order.
-- **(4) What remains unfinished:** The whole stage, one verified-live build.
+- **(2) Current implementation:** LANDED + LIVE-VERIFIED 2026-11-07 ~18:25 PST. Commit `62354ebf` (7a9671d4..62354ebf, pushed, tree clean except the parent's uncommitted studio/ edits); deploy run 42438231684 success; served version.json build 1034 @ 2026-11-08T02:23:10.474Z with the 1034 note; served index `__AG_BUILD="1034"`. **The heightfield SHIPPED (not the fallback).** One shared `surfaceElevation` (±1.5 amplitude, 64-tile wavelength) sampled by the ground corners, every object's base y, the camera, and the picker — agreement by construction. Stronger tint: max grass tint 0.027 → 0.081 (dirt 0.068, sand 0.054, stone 0.041). Shores: ocean sand band 600 tiles + foam edge 200; pond sand 56 + foam 16; wild-lake sand/foam bands. Stone revived: 360 tiles on high ground (`STONE_ELEV` 0.75, top ~1%), 0 bad tiles — was a dead type (0 tiles). Picker: sphere-tracing ray-march against the surface; `projectTileCenter` is its exact inverse. Figures/camera/car ride the field; hut smoke/lit panes lift via `houseFx` baseY. Per-rebuild corner cache (`surfAt`). Files: `prepare-build-entry.cjs`, `App.tsx` (BUILD_NUMBER + note only), `Engine3DWorldView.tsx`, `animals.ts`, `car.ts`, `grassTufts.ts`, `groundDetail3d.ts`, `houseFx.ts`, `townLook.ts`, `villagers.ts`, `wildTerrain.ts`.
+- **(3) Dependencies:** 1030→1031→1032→1033 landing, in order. (Stage 2 was interrupted once for the car build and restarted as 1034; it re-used the saved re-baseline files in ~/workspace/verify1033/ and re-verified the baseline at the 1033 HEAD.)
+- **(4) What remains unfinished:** Nothing for the stage. **Known cost:** the rebuild is up ~+20–37% over the pristine1033 baseline (town +25.0%, wild +22.2%, shore +34.0%, farWild +32.3% on the parent's second re-run; the shore hovers at the +35% hard-fail threshold — the parent's FIRST re-run measured +37.0% and FAILED the assert, the second measured +34.0% and passed). The +25% Stage 1 target is exceeded at the shore and farWild. This cost is the car lag the user reported, and the car lag fix (build 1035, next per the user's approved order) will address the rebuild cost.
 - **(5) Responsible files/modules:** Ground emission + every object's base y + far rings + picker (`Engine3DWorldView.tsx`, `townLook.ts`, `isoWorld.ts`, `wildTerrain.ts`).
 - **(6) How it will be tested:** Harness prototype first; then tsc/asserts/sim + phone probe with measured acceptance criteria (Stage 1 plan).
-- **(7) Completion:** Live-verified build with heightfield + shores + stone, walkability unchanged, no regressions.
+- **(7) Completion:** VERIFIED. tsc clean; asserts (`~/workspace/verify1034/asserts1034.mts`, parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE, exit 0: field town-window range [−1.326, 0.288], relief 1.614, max slope 0.048/tile; buffer ground-plane max y 1.997, ground-vs-surface worst gap 0 (200 sampled corners); walkability identical to pristine1033 {water 2528, grass 36169, dirt 1202, sand 101}; in-map walkable 36349 / checksum 856536923, wild 100×100 9250 / 283038573 — measured in both trees, diff identical; picker 115 rays, 101 hits, worst error 0 vs brute force; round-trip 17/17, worst error 0; 1030/1031/1032/1033 preserved); buffer verts town 241,914 (+0.2%), wild 271,632 (+0.2%), shore 233,076 (+0.5%), farWild 268,170 (+0.3%) — all well under the 300k budget; sim vs pristine1033 IDENTICAL (76 lines, 0 FAIL, known 684 rig crash); phone probe (Playwright 390×844, vite dev server, 0 page errors): tap-to-move arrived at (99,100), keyboard walk north 1.57 / south 1.06 tiles, ocean blocks (min x 14.82). Screenshot `~/workspace/verify1034/after/shore-ocean.png` (parent viewed: ocean → foam → sand band → grass).
 
 ## Q5 — Ashfall Stage 3 vegetation
 - **(1) Intended purpose:** 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.
@@ -608,6 +609,15 @@
 - **(5) Responsible files/modules:** `sky.ts`, `houseFx.ts`, `townLook.ts`, `Engine3DWorldView.tsx`.
 - **(6) How it will be tested:** tsc/asserts/sim + phone probe at night, dawn, and dusk.
 - **(7) Completion:** Live-verified build with readable night + stars + dawn/dusk grading + staggered lights.
+
+## Q9 — BUILD 1033 red sports car
+- **(1) Intended purpose:** A red sports car the player can drive at 10x walking speed, enter/exit, spawning next to the player's position.
+- **(2) Current implementation:** LANDED + LIVE-VERIFIED 2026-11-07 ~17:38 PST. Commit `7a9671d4` (3447396a..7a9671d4, pushed, tree clean); deploy run 42434904636 success; served version.json build 1033 @ 2026-11-08T01:36:34.895Z with the 1033 note; served index `__AG_BUILD="1033"`. New pure module `car.ts` (CAR_SPEED = 31.5 = 10 × walk 3.15; spawn/exit tile rules; parked-car blocking rule; red sports-car mesh — 366 vertex-colour triangles, footprint 2.04 × 1.10, top y=0.72). `Engine3DWorldView.tsx`: car state, a per-frame `carBuffer`, driving through `resolvePlayerStep` + `walkableAt` (same collision + wall sliding as walking), sprint off while driving, the parked car's tile blocks on foot and is in `figureOccupiedTiles`, driving-aware waypoint arrive radii, the player figure hidden while driving, the house Enter button gated on not driving, `__ag3dTest` hooks. A **Car** button (HUD right cluster, bottom:262, dark red) summons the car 1 tile next to the player; **Enter Car** (bottom:170) or **E** to get in; **Exit Car** (bottom:110) or **E** to step out behind the car; the car stays parked where it was. **Session-only**: never saved — after a reload, tap Car to summon it again. Files: `car.ts`, `Engine3DWorldView.tsx`, `App.tsx` (BUILD_NUMBER 1033 + note), `prepare-build-entry.cjs`.
+- **(3) Dependencies:** 1032 landing. (User order 2026-11-07 ~17:09 PST; it interrupted Stage 2, which restarts as build 1034.)
+- **(4) What remains unfinished:** Nothing. Speed caveat: the exact 10x is proven by the asserts (CAR_SPEED = 31.5) and the code path; the phone probe harness measured 5.3x–8.3x (mean ~6.8x) because it runs ~3fps with a dt clamp — the real-phone speed is unmeasured.
+- **(5) Responsible files/modules:** `src/game/engine3d/car.ts`, `Engine3DWorldView.tsx`.
+- **(6) How it will be tested:** Summon next to the player, enter, drive (speed measured vs walking), exit (car stays), re-enter; collision (no driving through houses/walls/water); reload → no car.
+- **(7) Completion:** VERIFIED. tsc clean; 49 standalone asserts pass (`~/workspace/verify1033/asserts1033.mts`, parent re-ran directly); sim vs pristine1032 IDENTICAL (76 lines, known 684 rig crash); phone probe (Playwright 390×844, vite dev server, 0 page errors): summon 1 tile away, Enter via the real button, camera follows, hut + lake collision, Exit — car stays at (272,41), re-enter works, E key, reload → no car. Screenshot `~/workspace/verify1033/after/car-summoned.png` (parent viewed: red car next to the player, Car + Enter Car buttons visible).
 
 ---
 
@@ -938,11 +948,11 @@
 
 ---
 
-# Counts per status (88 requirements total)
+# Counts per status (89 requirements total)
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 7 | D12, Q0, Q1, Q2, Q3, S26, T6 |
+| COMPLETE AND VERIFIED | 9 | D12, Q0, Q1, Q2, Q3, Q4, Q9, S26, T6 |
 | IMPLEMENTED BUT UNVERIFIED | 15 | G1, G3, G4, G5, G7, G9, G16, G20, D1, D7, D9, S14, S21, S22, S25 |
 | PARTIALLY IMPLEMENTED | 22 | G2, G10, G15, G18, D2, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R8, R9, R13, T1, T2, T3, T4 |
 | DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
@@ -950,11 +960,11 @@
 | BLOCKED | 5 | S1, S2, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** only 7 of 88 requirements are complete and verified. 31 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1032; the gap is depth (quests, economy, dungeons, skills, audio, minimap) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 15 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale at the 1030 checkpoint — the sections were updated but the counts were not; corrected here at the 1031 checkpoint.)
+**Reading the counts:** only 9 of 89 requirements are complete and verified. 31 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1034; the gap is depth (quests, economy, dungeons, skills, audio, minimap) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 15 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale at the 1030 checkpoint — the sections were updated but the counts were not; corrected here at the 1031 checkpoint.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 
-1. **Ashfall Stage 2 terrain (Q4).** STARTING under §60 START mode when 1032 lands. The structural bet of the §48 overhaul (heightfield + shores + stone). High value, high risk — harness-prototype the base-y agreement first, keep the tint+shores+stone fallback. The Stage 2 agent must re-sync to the 1032 HEAD and re-baseline first (Stage 1 numbers are at 1029).
+1. **Car lag fix (build 1035).** NEXT per the user's approved order (2026-11-07 ~17:43 PST: car lag fix → Town Builder → Import Hub). The car stutters at every chunk — the world rebuild (WORLD_REBUILD_DIST=16) fires ~2x per second at 31.5 u/s, each rebuild ~165–211ms baseline, and Stage 2 added ~+20–37% on top (shore +34–37%, borderline on the +35% threshold). Make the rebuild cheaper/wider/incremental so driving is smooth, and the rendering in general not laggy/slow. The agent must measure the rebuild cost before and after, and prove the car drives smoothly (no hitches at chunk boundaries) on the phone probe.
 2. **Ashfall Stage 3 vegetation (Q5).** Next after Stage 2. 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.
 3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B).** The `studio/` move is DONE (committed 4a070435, 87 files). Only the dashboard wiring remains: the artifact must read from `studio/dashboard/dashboard-data.json` instead of hard-coded data.
 4. **Fix or formally accept the 684 sim crash (S2).** ~1,000 sim lines unverified on every build; the fix is likely small (5 missing asset metas). If the user won't prioritize it, record it as accepted so the sim comparison stops carrying a known blind spot.

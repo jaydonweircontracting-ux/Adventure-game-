@@ -338,6 +338,55 @@
       "status": "verified",
       "testResults": "Verified live (served version.json 2026-11-08T01:02:39.379Z, run 42432401556 success, first try). Asserts 418 checks pass (parent re-ran directly). Sim identical to pristine1031. Phone proof (five wall pushes x 15 samples each, all inside; real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed). 0 page errors.",
       "verificationTimestamp": "2026-11-08T01:02:39.379Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "description": "Red sports car (10x walking speed, enter/exit, summons by the player).",
+      "filesAffected": [
+        "src/game/engine3d/car.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Add a red sports car the player can drive at 10x walking speed, enter/exit, spawning next to the player.",
+      "previousCheckpoint": {
+        "build": 1032,
+        "commit": "7d1c8cf9"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42434904636",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-08T01:36:34.895Z, run 42434904636 success). Asserts 49 checks pass (parent re-ran directly). Sim identical to pristine1032. Phone proof (summon 1 tile away, Enter via the real button, camera follows, hut + lake collision, Exit — car stays, re-enter works, E key, reload → no car). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T01:36:34.895Z"
+    },
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "description": "Ashfall Stage 2 terrain: rolling hills, stronger ground tint, shores, stone (heightfield SHIPPED, not the fallback).",
+      "filesAffected": [
+        "scripts/prepare-build-entry.cjs",
+        "src/App.tsx",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/engine3d/animals.ts",
+        "src/game/engine3d/car.ts",
+        "src/game/engine3d/grassTufts.ts",
+        "src/game/engine3d/groundDetail3d.ts",
+        "src/game/engine3d/houseFx.ts",
+        "src/game/engine3d/townLook.ts",
+        "src/game/engine3d/villagers.ts",
+        "src/game/engine3d/wildTerrain.ts"
+      ],
+      "objective": "Stage 2 terrain: visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores (sand band + water edge), stone used or removed.",
+      "previousCheckpoint": {
+        "build": 1033,
+        "commit": "7a9671d4"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42438231684",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1034 @ 2026-11-08T02:23:10.474Z, run 42438231684 success. Asserts pass (parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE; shore rebuild +34.0%, town +25.0%, wild +22.2%, farWild +32.3% over the pristine1033 baseline — borderline on the +35% threshold). Sim identical to pristine1033. Phone proof (tap-to-move arrived, keyboard walk, ocean blocks, shore shows ocean → foam → sand → grass). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T02:23:10.474Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

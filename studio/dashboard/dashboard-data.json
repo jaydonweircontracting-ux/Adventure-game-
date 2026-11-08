@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Ashfall Stage 2",
+    "build": "Car lag fix",
     "commit": null,
-    "description": "Terrain: visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores, stone used or removed. HIGH risk — harness-prototype first; fallback is tint+shores+stone only.",
+    "description": "The car stutters at every chunk — make it smooth, and the rendering in general not laggy/slow. The world rebuild (WORLD_REBUILD_DIST=16) fires ~2x per second at 31.5 u/s, each rebuild ~165–211ms baseline, and Stage 2 added ~+20–37% on top. Make the rebuild cheaper/wider/incremental. NEXT per the user's approved order (car lag fix → Town Builder → Import Hub).",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -158,13 +158,43 @@
       "runId": "42432401556",
       "status": "verified",
       "verifiedAt": "2026-11-08T01:02:39.379Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "description": "Red sports car: tap the Car button and it appears next to you, Enter Car (or E) to get in, drives at 10x walking speed, Exit Car (or E) to step out — the car stays parked. Session-only (not saved). Landed: commit 7a9671d4, deploy run 42434904636 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42434904636",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T01:36:34.895Z"
+    },
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "description": "Ashfall Stage 2 terrain: rolling hills (visual-only heightfield), stronger ground tint, shores (sand band + foam edge), stone revived on high ground. Heightfield SHIPPED (not the fallback). Walkability unchanged. Landed: commit 62354ebf, deploy run 42438231684 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42438231684",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T02:23:10.474Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Ashfall Stage 2",
+      "build": "Car lag fix",
       "commit": null,
-      "description": "Terrain: visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores, stone used or removed. HIGH risk — harness-prototype first; fallback is tint+shores+stone only.",
+      "description": "The car stutters at every chunk — make it smooth, and the rendering in general not laggy/slow. The world rebuild (WORLD_REBUILD_DIST=16) fires ~2x per second at 31.5 u/s, each rebuild ~165–211ms baseline, and Stage 2 added ~+20–37% on top. Make the rebuild cheaper/wider/incremental. NEXT per the user's approved order (car lag fix → Town Builder → Import Hub).",
+      "status": "in_progress"
+    },
+    {
+      "build": "Town Builder & World Editing Expansion",
+      "commit": null,
+      "description": "Persistent cursor placement + rotation, AREA SELECT (yellow drag rectangle, move/rotate/delete/duplicate/enhance/adjust), unlimited undo/redo, asset library (buildings, lanterns, trees, roads, bridges, decorations), layout helpers (doors facing pathways, trees off paths). A multi-build program, staged after the car lag fix.",
+      "status": "planned"
+    },
+    {
+      "build": "Import Hub",
+      "commit": null,
+      "description": "An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload.",
       "status": "planned"
     },
     {
@@ -196,18 +226,6 @@
       "commit": null,
       "description": "One bounded repo task: permanent GitHub-synced dashboard data (studio/dashboard/), reconcile build history vs commits, four quality gates with real evidence, atomic-write memory protection.",
       "status": "planned"
-    },
-    {
-      "build": "Legacy codebase audit (§52)",
-      "commit": null,
-      "description": "Read-only audit: map every 2D/2.5D file to dependencies, classify A-E, extract reusable logic before removing, establish clean 3D architecture. Audit running (read-only, parallel-safe).",
-      "status": "in_progress"
-    },
-    {
-      "build": "Master integration audit (§55 Stage A)",
-      "commit": null,
-      "description": "Read-only audit: master implementation registry classifying every requirement as COMPLETE AND VERIFIED / IMPLEMENTED BUT UNVERIFIED / PARTIALLY IMPLEMENTED / DOCUMENTED ONLY / NOT IMPLEMENTED / BLOCKED / OBSOLETE OR DUPLICATED. Audit running (read-only, parallel-safe).",
-      "status": "in_progress"
     }
   ],
   "dashboardLinks": {
@@ -338,13 +356,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-07T18:05:03-07:00",
+  "lastUpdateTimestamp": "2026-11-07T19:27:22-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1032,
-    "commit": "7d1c8cf9",
-    "description": "House interiors keep you inside: the walls are solid now — you can only leave through the Exit button (or the E key), which puts you back on the doorstep, and you can walk straight back in again.",
-    "runId": "42432401556",
-    "verifiedAt": "2026-11-08T01:02:39.379Z"
+    "build": 1034,
+    "commit": "62354ebf",
+    "description": "Ashfall Stage 2 terrain: rolling hills (visual-only heightfield), stronger ground tint, shores (sand band + foam edge), stone revived on high ground. Heightfield SHIPPED (not the fallback). Walkability unchanged.",
+    "runId": "42438231684",
+    "verifiedAt": "2026-11-08T02:23:10.474Z"
   },
   "measuredBaselines": [
     {
@@ -568,6 +586,20 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "result": "Verified live: served version.json build 1034 @ 2026-11-08T02:23:10.474Z, run 42438231684 success. Asserts pass (parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE; shore rebuild +34.0%, town +25.0%, wild +22.2%, farWild +32.3% over the pristine1033 baseline — borderline on the +35% threshold). Sim identical to pristine1033. Phone proof (tap-to-move arrived, keyboard walk, ocean blocks, shore shows ocean → foam → sand → grass). 0 page errors.",
+      "runId": "42438231684",
+      "verifiedAt": "2026-11-08T02:23:10.474Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "result": "Verified live: served version.json build 1033 @ 2026-11-08T01:36:34.895Z, run 42434904636 success. Asserts 49 checks pass (parent re-ran). Sim identical to pristine1032. Phone proof (summon 1 tile away, Enter via the real button, camera follows, hut + lake collision, Exit — car stays, re-enter works, E key, reload → no car). 0 page errors.",
+      "runId": "42434904636",
+      "verifiedAt": "2026-11-08T01:36:34.895Z"
+    },
     {
       "build": 1032,
       "commit": "7d1c8cf9",

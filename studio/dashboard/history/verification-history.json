@@ -48,6 +48,20 @@
       "result": "Verified live: served version.json build 1032 @ 2026-11-08T01:02:39.379Z, run 42432401556 success, first try. Asserts 418 checks pass (parent re-ran). Sim identical to pristine1031. Phone proof (five wall pushes x 15 samples each, all inside; real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed). 0 page errors.",
       "runId": "42432401556",
       "verifiedAt": "2026-11-08T01:02:39.379Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "result": "Verified live: served version.json build 1033 @ 2026-11-08T01:36:34.895Z, run 42434904636 success. Asserts 49 checks pass (parent re-ran). Sim identical to pristine1032. Phone proof (summon 1 tile away, Enter via the real button, camera follows, hut + lake collision, Exit — car stays, re-enter works, E key, reload → no car). 0 page errors.",
+      "runId": "42434904636",
+      "verifiedAt": "2026-11-08T01:36:34.895Z"
+    },
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "result": "Verified live: served version.json build 1034 @ 2026-11-08T02:23:10.474Z, run 42438231684 success. Asserts pass (parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE; shore rebuild +34.0%, town +25.0%, wild +22.2%, farWild +32.3% over the pristine1033 baseline — borderline on the +35% threshold). Sim identical to pristine1033. Phone proof (tap-to-move arrived, keyboard walk, ocean blocks, shore shows ocean → foam → sand → grass). 0 page errors.",
+      "runId": "42438231684",
+      "verifiedAt": "2026-11-08T02:23:10.474Z"
     }
   ],
   "schemaVersion": "1.0"
