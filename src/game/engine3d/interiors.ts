@@ -26,6 +26,12 @@
  *    session-only: a saved tile strictly inside a hut (not its walkable
  *    door tile) means the player quit while inside, so it returns that
  *    hut's exit point; anything else returns null (keep the save).
+ *  - interiorTileWalkable(hut, tx, ty) [BUILD 1032]: the boundary rule
+ *    the view's walkableAt calls while inside — the walls are solid,
+ *    so only rect tiles are walkable and every tile outside (exit
+ *    point included) is blocked; leaving is via Exit only. Returns
+ *    null when not inside, so the caller falls through to the outdoor
+ *    walkability.
  *
  * Furniture kinds (positions+colour style, no new assets, no textures):
  *  bed (frame + mattress + pillow), table (top + pedestal), chair (seat +
@@ -93,6 +99,25 @@ export function hutInwardTile(hut: HutRect): { x: number; y: number } {
 /** Walkability while inside: every tile in the rect, furniture never blocks. */
 export function interiorWalkable(hut: HutRect, tx: number, ty: number): boolean {
   return tx >= hut.x0 && tx <= hut.x1 && ty >= hut.y0 && ty <= hut.y1;
+}
+
+/**
+ * BUILD 1032 — the interior boundary rule. While inside a hut the
+ * walls are solid: the player may only stand on tiles inside the
+ * rect. Returns the interior verdict when inside (hut non-null):
+ * true for rect tiles (the door tile included — it is the entry
+ * point), false for every tile outside the rect, including the exit
+ * point one tile beyond the door and the tiles just past each wall.
+ * Returns null when not inside, so the caller falls through to the
+ * outdoor walkability. The view's walkableAt MUST use this verdict
+ * as the whole answer while inside — falling through to the outdoor
+ * rule for an exterior tile was the hole: the grass outside a hut is
+ * walkable outdoors, so the player walked straight through the wall.
+ * With this rule the only way out is Exit (button or E key).
+ */
+export function interiorTileWalkable(hut: HutRect | null, tx: number, ty: number): boolean | null {
+  if (!hut) return null;
+  return interiorWalkable(hut, tx, ty);
 }
 
 /**

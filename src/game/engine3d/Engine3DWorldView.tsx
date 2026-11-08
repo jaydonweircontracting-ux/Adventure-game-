@@ -29,7 +29,7 @@ import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed } fr
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
-import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
+import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
@@ -1571,8 +1571,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         return Math.hypot(nx-x,ny-y)<.42;
       };
       const inside=insideHutRef.current;
-      if(inside&&interiorWalkable(inside,gx,gy))
+      // BUILD 1032: while inside, the walls are solid — the interior
+      // verdict is the whole answer. The old branch only returned
+      // walkable for interior tiles and fell through to the outdoor
+      // rule for exterior ones, and the grass outside a hut is
+      // walkable outdoors, so the player walked straight through the
+      // wall. Now every tile outside the rect is blocked; leaving is
+      // via Exit only (button or E key). The NPC proximity check
+      // still applies; NPCs never enter (their movement uses
+      // walkableWithPlacements unchanged).
+      if(inside){
+        if(!interiorTileWalkable(inside,gx,gy))return false;
         return !npcActorsRef.current.some(npcNear)&&!transientActorsRef.current.some(transientNear)&&!animalActorsRef.current.some(animalNear);
+      }
       if(npcActorsRef.current.some(npcNear))return false;
       if(transientActorsRef.current.some(transientNear))return false;
       if(animalActorsRef.current.some(animalNear))return false;
