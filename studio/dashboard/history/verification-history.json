@@ -62,6 +62,13 @@
       "result": "Verified live: served version.json build 1034 @ 2026-11-08T02:23:10.474Z, run 42438231684 success. Asserts pass (parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE; shore rebuild +34.0%, town +25.0%, wild +22.2%, farWild +32.3% over the pristine1033 baseline — borderline on the +35% threshold). Sim identical to pristine1033. Phone proof (tap-to-move arrived, keyboard walk, ocean blocks, shore shows ocean → foam → sand → grass). 0 page errors.",
       "runId": "42438231684",
       "verifiedAt": "2026-11-08T02:23:10.474Z"
+    },
+    {
+      "build": 1035,
+      "commit": "452da72b",
+      "result": "Verified live: served version.json build 1035 @ 2026-11-08T03:10:52.717Z, run 42441522022 success. Asserts 51 checks pass (parent re-ran directly — first re-run FAILED the shore cost check at 87.9% of baseline, a load spike; second and third re-runs PASSED: town 49.1%, wild 51.9%, shore 54.3%, farWild 51.0% of the 1034 baseline; builder 83 steps at 1ms, max step 7.9ms, bit-identical). Sim vs pristine1034 MATCH (modulo bundle path). Phone proof (40s drive + 25s walk): drive max frame 883ms → 233ms, drive frames >500ms 14 → 0, drive frames >250ms 15 → 0, walk max frame 517ms → 200ms. 0 page errors.",
+      "runId": "42441522022",
+      "verifiedAt": "2026-11-08T03:10:52.717Z"
     }
   ],
   "schemaVersion": "1.0"

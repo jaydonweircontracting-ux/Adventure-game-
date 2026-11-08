@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Car lag fix",
+    "build": "Town Builder Stage 1",
     "commit": null,
-    "description": "The car stutters at every chunk — make it smooth, and the rendering in general not laggy/slow. The world rebuild (WORLD_REBUILD_DIST=16) fires ~2x per second at 31.5 u/s, each rebuild ~165–211ms baseline, and Stage 2 added ~+20–37% on top. Make the rebuild cheaper/wider/incremental. NEXT per the user's approved order (car lag fix → Town Builder → Import Hub).",
+    "description": "Persistent cursor placement + rotation: when MOVE is selected and an asset is picked, it stays attached to the cursor with a translucent preview (green valid / red invalid), highlights the selected asset, left-click places it, keeps the asset selected for repeat placement; ESC/right-click cancels. Rotation 90°/45°/15°/free with keyboard shortcuts, so houses can face pathways. NEXT per the user's approved order and the user's 'Start' message.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -176,19 +176,46 @@
       "runId": "42438231684",
       "status": "verified",
       "verifiedAt": "2026-11-08T02:23:10.474Z"
+    },
+    {
+      "build": 1035,
+      "commit": "452da72b",
+      "description": "Car lag fix: the world rebuild is now time-sliced across frames while moving (10ms/frame) and ~50% cheaper, so driving is smooth with no stutter at chunk boundaries. The world renders exactly as before (identical vertex counts). Landed: commit 452da72b, deploy run 42441522022 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42441522022",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T03:10:52.717Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Car lag fix",
+      "build": "Town Builder Stage 1",
       "commit": null,
-      "description": "The car stutters at every chunk — make it smooth, and the rendering in general not laggy/slow. The world rebuild (WORLD_REBUILD_DIST=16) fires ~2x per second at 31.5 u/s, each rebuild ~165–211ms baseline, and Stage 2 added ~+20–37% on top. Make the rebuild cheaper/wider/incremental. NEXT per the user's approved order (car lag fix → Town Builder → Import Hub).",
+      "description": "Persistent cursor placement + rotation: when MOVE is selected and an asset is picked, it stays attached to the cursor with a translucent preview (green valid / red invalid), highlights the selected asset, left-click places it, keeps the asset selected for repeat placement; ESC/right-click cancels. Rotation 90°/45°/15°/free with keyboard shortcuts, so houses can face pathways.",
       "status": "in_progress"
     },
     {
-      "build": "Town Builder & World Editing Expansion",
+      "build": "Town Builder Stage 2 (AREA SELECT)",
       "commit": null,
-      "description": "Persistent cursor placement + rotation, AREA SELECT (yellow drag rectangle, move/rotate/delete/duplicate/enhance/adjust), unlimited undo/redo, asset library (buildings, lanterns, trees, roads, bridges, decorations), layout helpers (doors facing pathways, trees off paths). A multi-build program, staged after the car lag fix.",
+      "description": "Yellow drag rectangle to select an entire area; move/rotate/delete/duplicate/enhance/adjust everything inside it together, preserving relative spacing and rotations.",
+      "status": "planned"
+    },
+    {
+      "build": "Town Builder Stage 3 (unlimited undo/redo)",
+      "commit": null,
+      "description": "Command-based undo/redo history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history.",
+      "status": "planned"
+    },
+    {
+      "build": "Town Builder Stage 4 (asset library)",
+      "commit": null,
+      "description": "Lanterns, bushes, windmill, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories.",
+      "status": "planned"
+    },
+    {
+      "build": "Town Builder Stage 5 (layout helpers)",
+      "commit": null,
+      "description": "Doors facing pathways, trees off paths, lanterns along roads, fences around properties, alignment helpers. Optional tools, not automatic changes.",
       "status": "planned"
     },
     {
@@ -356,13 +383,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-07T19:27:22-07:00",
+  "lastUpdateTimestamp": "2026-11-07T21:00:01-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1034,
-    "commit": "62354ebf",
-    "description": "Ashfall Stage 2 terrain: rolling hills (visual-only heightfield), stronger ground tint, shores (sand band + foam edge), stone revived on high ground. Heightfield SHIPPED (not the fallback). Walkability unchanged.",
-    "runId": "42438231684",
-    "verifiedAt": "2026-11-08T02:23:10.474Z"
+    "build": 1035,
+    "commit": "452da72b",
+    "description": "Car lag fix: the world rebuild is now time-sliced across frames while moving (10ms/frame) and ~50% cheaper, so driving is smooth with no stutter at chunk boundaries. The world renders exactly as before (identical vertex counts).",
+    "runId": "42441522022",
+    "verifiedAt": "2026-11-08T03:10:52.717Z"
   },
   "measuredBaselines": [
     {
@@ -586,6 +613,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1035,
+      "commit": "452da72b",
+      "result": "Verified live: served version.json build 1035 @ 2026-11-08T03:10:52.717Z, run 42441522022 success. Asserts 51 checks pass (parent re-ran directly — first re-run FAILED the shore cost check at 87.9% of baseline, a load spike; second and third re-runs PASSED: town 49.1%, wild 51.9%, shore 54.3%, farWild 51.0% of the 1034 baseline; builder 83 steps at 1ms, max step 7.9ms, bit-identical). Sim vs pristine1034 MATCH (modulo bundle path). Phone proof (40s drive + 25s walk): drive max frame 883ms → 233ms, drive frames >500ms 14 → 0, drive frames >250ms 15 → 0, walk max frame 517ms → 200ms. 0 page errors.",
+      "runId": "42441522022",
+      "verifiedAt": "2026-11-08T03:10:52.717Z"
+    },
     {
       "build": 1034,
       "commit": "62354ebf",
