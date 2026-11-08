@@ -36,6 +36,7 @@ import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, max
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
+import { CAR_SPEED, CAR_MAX_VERTS, emitCar, carSpawnTile, carExitTile, isCarNear, carBlocksTile, type CarState } from './car';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 
@@ -1377,6 +1378,85 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // The Enter button's hut: the nearest door within one tile of the
   // player tile, while not already inside. Recomputed every render.
   const nearDoorHut=!insideHut?nearestDoorHut([...stateRef.current.world.huts,...placedHutRects(stateRef.current.world)],Math.round(position.x),Math.round(position.y)):null;
+  // BUILD 1033: the red sports car. The car is SESSION-ONLY (car.ts):
+  // it is never written to localStorage, so a reload starts without a
+  // car and the player summons it again with one tap. The ref is the
+  // car's live position (parked, or the player position while driving
+  // — updated every frame in the draw loop); the React state mirrors
+  // it only for the buttons, the same ref+state pattern as insideHut.
+  // carYawRef is the car's heading (atan2(dx, dz), the figure yaw
+  // convention): it turns toward the direction of travel while
+  // driving and is parked with the car on exit.
+  const [car,setCar]=useState<CarState|null>(null);
+  const carRef=useRef<CarState|null>(null);
+  const setCarBoth=(c:CarState|null)=>{carRef.current=c;setCar(c);};
+  const [driving,setDriving]=useState(false);
+  const drivingRef=useRef(false);
+  const setDrivingBoth=(d:boolean)=>{drivingRef.current=d;setDriving(d);};
+  const carYawRef=useRef(Math.PI);
+  // A tile is free for the car (summon / exit) when it is statically
+  // walkable, not inside any hut, and no figure stands on it. The
+  // summon also excludes the player's own tile (the car spawns NEXT
+  // to the player); the exit does not (the car's tile is the fallback).
+  const carTileFree=(tx:number,ty:number,excludePlayer:boolean)=>{
+    const world=stateRef.current.world;
+    const p=stateRef.current.position;
+    if(excludePlayer&&Math.round(p.x)===tx&&Math.round(p.y)===ty)return false;
+    if(hutAt(world,tx,ty))return false;
+    if(placedHutRects(world).some(h=>tx>=h.x0&&tx<=h.x1&&ty>=h.y0&&ty<=h.y1))return false;
+    const inMap=tx>=0&&ty>=0&&tx<world.w&&ty<world.h;
+    if(inMap){if(!walkableWithPlacements(world,world.crates,tx,ty))return false;}
+    else if(!isWildWalkable(world,tx,ty))return false;
+    for(const n of npcActorsRef.current)if(n.alive&&Math.round(n.x)===tx&&Math.round(n.y)===ty)return false;
+    for(const t of transientActorsRef.current)if(Math.round(t.x)===tx&&Math.round(t.y)===ty)return false;
+    for(const a of animalActorsRef.current)if(Math.round(a.x)===tx&&Math.round(a.y)===ty)return false;
+    return true;
+  };
+  // Summon the car next to the player (the Car button / the test
+  // hook). Gated on not driving and not inside a hut; when boxed in
+  // the player gets "No room for the car here" instead of a car.
+  const summonCar=()=>{
+    if(drivingRef.current){setMessage('You are already driving');return;}
+    if(insideHutRef.current){setMessage('Cannot summon the car inside');return;}
+    const p=stateRef.current.position;
+    const tile=carSpawnTile(Math.round(p.x),Math.round(p.y),(tx,ty)=>carTileFree(tx,ty,true));
+    if(!tile){setMessage('No room for the car here');return;}
+    setCarBoth({x:tile.x,y:tile.y,yaw:carYawRef.current});
+    setMessage('Sports car summoned — stand by it and tap Enter Car');
+  };
+  // Enter the car: the player snaps onto the car's tile and drives.
+  // The car position becomes the player position (the ref stays live
+  // in the draw loop); the player figure is hidden while driving.
+  const enterCar=()=>{
+    const c=carRef.current;if(!c||drivingRef.current)return;
+    const p=stateRef.current.position;
+    if(!isCarNear(c,p.x,p.y))return;
+    const next={x:c.x,y:c.y};
+    stateRef.current.position=next;setPosition(next);
+    carYawRef.current=c.yaw;
+    setDrivingBoth(true);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
+    needsWorldRebuild.current=true;setMessage('Driving — 10x speed');
+  };
+  // Exit the car: the car stays where it is (parked at the player
+  // position with its current heading) and the player steps onto the
+  // best adjacent tile — behind the car first, then the sides.
+  const exitCar=()=>{
+    if(!drivingRef.current)return;
+    const p=stateRef.current.position;
+    const parked={x:p.x,y:p.y,yaw:carYawRef.current};
+    const tile=carExitTile(parked,(tx,ty)=>carTileFree(tx,ty,false));
+    setCarBoth(parked);
+    setDrivingBoth(false);
+    const next={x:tile.x,y:tile.y};
+    stateRef.current.position=next;setPosition(next);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
+    needsWorldRebuild.current=true;setMessage('Outside');
+  };
+  // The car Enter button's condition: the parked car is within one
+  // tile (Chebyshev, the door rule), while not driving and not inside
+  // a hut. Recomputed every render.
+  const nearCar=!driving&&car&&!insideHut?isCarNear(car,position.x,position.y):false;
   // BUILD 989 refinement: aiming preview for Remove mode. A plain div
   // positioned by direct DOM writes (never React state per pointermove
   // — that would re-render the whole view at pointer frequency). It
@@ -1425,7 +1505,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){setMessage('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));return;}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){setMessage('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));return;}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
-    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!;
+    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!,carBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight');
     if(pLoc<0||cLoc<0||!mLoc||!uNightLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -1444,6 +1524,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // bufferData reallocation stalls the pipeline.
     gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,FX_MAX_VERTS*24,gl.DYNAMIC_DRAW);
+    // BUILD 1033: the car buffer, the same 1011/1014 pattern — allocated
+    // ONCE at CAR_MAX_VERTS and re-uploaded per frame with bufferSubData
+    // when a car exists. The car is dynamic (it moves every frame while
+    // driving), so it must NOT go in the static world buffer.
+    gl.bindBuffer(gl.ARRAY_BUFFER,carBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,CAR_MAX_VERTS*24,gl.DYNAMIC_DRAW);
     const skyBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
@@ -1584,6 +1670,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(!interiorTileWalkable(inside,gx,gy))return false;
         return !npcActorsRef.current.some(npcNear)&&!transientActorsRef.current.some(transientNear)&&!animalActorsRef.current.some(animalNear);
       }
+      // BUILD 1033: the parked car's tile is solid on foot (like a
+      // rock — carBlocksTile). While driving the car IS the player, so
+      // its tile never blocks (the check returns false then). The car
+      // cannot be inside a hut, so this is the outdoor path only.
+      if(carBlocksTile(carRef.current,drivingRef.current,gx,gy))return false;
       if(npcActorsRef.current.some(npcNear))return false;
       if(transientActorsRef.current.some(transientNear))return false;
       if(animalActorsRef.current.some(animalNear))return false;
@@ -1605,6 +1696,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       for(const n of npcActorsRef.current){if(!n.alive)continue;const r=npcRender.get(n.name);add(r?r.x:n.x,r?r.y:n.y);}
       for(const t of transientActorsRef.current){const r=npcRender.get(t.id);add(r?r.x:t.x,r?r.y:t.y);}
       for(const a of animalActorsRef.current){const r=animalRender.get(a.id);add(r?r.x:a.x,r?r.y:a.y);}
+      // BUILD 1033: the parked car blocks tap-to-move paths like a
+      // figure — the A* plans around it immediately instead of the
+      // follower waiting 900ms on the tile and then replanning.
+      const parkedCar=carRef.current;
+      if(parkedCar&&!drivingRef.current)add(parkedCar.x,parkedCar.y);
       return out;
     };
     // BUILD 1030: rebuild the tap journey's path from the current
@@ -1641,7 +1737,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const path=playerPathRef.current;const dest=moveTarget;
       if(!path||!dest)return null;
       const player=stateRef.current.position;
-      while(path.index<path.waypoints.length&&Math.hypot(path.waypoints[path.index].x-player.x,path.waypoints[path.index].y-player.y)<PLAYER_WAYPOINT_ARRIVE)path.index++;
+      // BUILD 1033: a driving car covers ~0.5 tiles/frame (4.5 at
+      // harness frame rates), so it can jump clean over the 0.15
+      // walking arrive radius and ping-pong on a waypoint forever. A
+      // 1-tile arrive radius while driving is the same "reached it"
+      // test at car scale.
+      const arrive=drivingRef.current?1:PLAYER_WAYPOINT_ARRIVE;
+      while(path.index<path.waypoints.length&&Math.hypot(path.waypoints[path.index].x-player.x,path.waypoints[path.index].y-player.y)<arrive)path.index++;
       if(path.index>=path.waypoints.length){playerPathRef.current=null;moveTarget=null;return null;}
       const wp=path.waypoints[path.index];
       const wtx=Math.round(wp.x),wty=Math.round(wp.y);
@@ -2139,13 +2241,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // already tired arms it too, and a release only disarms it after
       // recovery (nextSprintRearm takes the tired level as its 4th arg).
       const sprintRaw=sprintInput(sprintHeldRef.current,sprintLatchRef.current,keys.has('shift'));
-      const sprintHeld=sprintRearmRef.current?false:sprintRaw;
+      // BUILD 1033: no sprint while driving — the car is already 10x
+      // walk, and stamina must not drain for driving (it regens).
+      const sprintHeld=drivingRef.current?false:(sprintRearmRef.current?false:sprintRaw);
       const sprintingNow=sprintHeld&&!staminaRef.current.exhausted&&hasInput;
       // Position before this frame's step, so stamina can tell real
       // displacement from a zero-displacement slide (see below).
       const prevMoveX=player.x,prevMoveY=player.y;
       if(hasInput){
-        const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,(sprintingNow?SPRINT_SPEED:WALK_SPEED)*dt);
+        // BUILD 1033: the car drives at CAR_SPEED (10x walk) through
+        // the same step pipeline — same walkableAt checks, same wall
+        // sliding, so it cannot drive through houses, walls, or water.
+        const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,(drivingRef.current?CAR_SPEED:(sprintingNow?SPRINT_SPEED:WALK_SPEED))*dt);
         // BUILD 1018: step resolution lives in playerStep.ts (pure) —
         // same direct move + wall sliding, except a slide that leaves
         // the player exactly where they stand no longer counts as a
@@ -2171,7 +2278,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             if(r==='failed'){playerPathRef.current=null;moveTarget=null;setMessage('Path blocked');}
           }else{moveTarget=null;setMessage('Path blocked');}
         }
-        if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
+        // BUILD 1033: a driving car covers 0.5 tiles/frame, so the 0.08
+        // walking arrive radius is jumped over forever — 0.5 at car scale.
+        if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<(drivingRef.current?0.5:0.08))moveTarget=null;
         if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
         if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
       }
@@ -2184,6 +2293,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // player was stuck behind an eastbound traveler at ~1.1 u/s.
       // Session-only: staminaRef is never written to storage.
       const actuallyMoved=player.x!==prevMoveX||player.y!==prevMoveY;
+      // BUILD 1033: while driving the car turns toward the direction of
+      // travel (the figure turn rule, turnYawToward) and its position
+      // IS the player position — the ref stays live for the mesh, the
+      // exit, and the test hooks.
+      if(drivingRef.current&&actuallyMoved){
+        carYawRef.current=turnYawToward(carYawRef.current,Math.atan2(player.x-prevMoveX,player.y-prevMoveY),FIGURE_TURN_RATE*dt);
+        carRef.current={x:player.x,y:player.y,yaw:carYawRef.current};
+      }
       const wasExhausted=staminaRef.current.exhausted;
       const nextStamina=stepStamina(staminaRef.current,dt,sprintHeld,actuallyMoved);
       // BUILD 1018: the latch clears on exhaustion (the button shows
@@ -2424,7 +2541,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
       // BUILD 992: in first person the camera IS the player — hide the
       // player figure or it fills the frame. NPC figures still draw.
-      if(!firstPersonRef.current){
+      // BUILD 1033: while driving the car IS the player — hide the
+      // figure or it stands on the car's roof; the car mesh draws instead.
+      if(!firstPersonRef.current&&!drivingRef.current){
         const px=player.x+.5,pz=player.y+.5;
         const prev=figureState.get('__player');
         const dist=prev?Math.hypot(px-prev.px,pz-prev.pz):0;
@@ -2432,6 +2551,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y);
       }
       motionStats={emitted,reused,drawn};
+      // BUILD 1033: the red sports car — a small per-frame buffer (the
+      // sky/fx pattern: allocated once, re-uploaded per frame), drawn
+      // after the actor pass. While driving the car's position IS the
+      // player position and its heading is the live carYawRef; parked
+      // it draws from carRef. Suppressed inside a hut (the car cannot
+      // be inside; the player cannot see outside). Depth-tested like
+      // every other figure, so houses occlude it correctly.
+      if(!insideHutRef.current){
+        const carPos=drivingRef.current?{x:player.x+.5,z:player.y+.5,yaw:carYawRef.current}:(carRef.current?{x:carRef.current.x+.5,z:carRef.current.y+.5,yaw:carRef.current.yaw}:null);
+        if(carPos){
+          const carArr:number[]=[];
+          emitCar(carArr,carPos.x,carPos.z,carPos.yaw);
+          gl.bindBuffer(gl.ARRAY_BUFFER,carBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(carArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+          gl.drawArrays(gl.TRIANGLES,0,carArr.length/6);
+        }
+      }
       const corpseVerts:number[]=[];
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])corpseVerts.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
       for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive)corpse(npc.x+.5,npc.y+.5);
@@ -2470,6 +2605,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         return;
       }
       if(k==='e'){
+        // BUILD 1033: E exits the car first (like Exit from a hut),
+        // then enters the car when standing by it — before the door
+        // check, since the car is the thing just summoned. The Enter
+        // Car button is the phone-first path; E is the desktop one.
+        if(drivingRef.current){exitCar();return;}
+        const parkedCar=carRef.current;
+        if(parkedCar&&isCarNear(parkedCar,p.x,p.y)){enterCar();return;}
         // BUILD 990: E enters/exits houses (the Enter/Exit buttons are
         // the phone-first path; E is the desktop equivalent). Inside →
         // exit first; near a door → enter; otherwise the existing
@@ -2648,6 +2790,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         clockDay: clockRef.current.day,
         npcs: npcActorsRef.current.map(n=>({name:n.name,x:n.x,y:n.y,alive:n.alive})),
       }),
+      // BUILD 1033 test hooks (probes only — no gameplay effect): the
+      // car's live position + heading + driving state, and the same
+      // summon / enter / exit the buttons call.
+      getCar:()=>carRef.current?{...carRef.current,driving:drivingRef.current}:null,
+      summonCar:()=>{summonCar();return carRef.current?{...carRef.current}:null;},
+      enterCar:()=>{enterCar();return drivingRef.current;},
+      exitCar:()=>{exitCar();return drivingRef.current;},
     };
     draw();
     // BUILD 993: the day clock advances 1 game minute per real second
@@ -2865,7 +3014,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
@@ -2918,6 +3067,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         Options dialog. BUILD 984 placement tool: bottom-right, clear of
         Options (top-right) and the diagnostic (bottom-left). */}
     <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode||moveMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
+    {/* BUILD 1033: Car summon — the freed Sprint slot (bottom:262,
+        the 62px step between Redo 200 and Remove 324). Always
+        visible like Build; disabled (dimmed, the Undo/Redo pattern)
+        while driving or inside a hut. Summons the red sports car
+        next to the player. */}
+    <button type="button" data-testid="car-summon" disabled={driving||!!insideHut} onClick={summonCar} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16,opacity:(driving||insideHut)?0.45:1}}>Car</button>
     {/* BUILD 989 minimized cluster, extended by 991, 995, and 996: fixed stack above
         Build (Walk at bottom:76, Undo at bottom:138, Redo at
         bottom:200 — same 62px step) so positions never shift. Walk
@@ -2960,8 +3115,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         minimized cluster (Build 14 / Walk 76 / Undo 138, right side)
         and above the panel (zIndex 6 > panel 4) so entry works with
         the panel open, regardless of the active Build tool. */}
-    {!insideHut&&nearDoorHut&&<button type="button" data-testid="interior-enter" onClick={()=>enterHut(nearDoorHut)} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Enter</button>}
+    {/* BUILD 1033: the house Enter is gated on not driving — while
+        driving the only Enter/Exit is the car's (the car cannot be
+        taken inside a hut). */}
+    {!insideHut&&!driving&&nearDoorHut&&<button type="button" data-testid="interior-enter" onClick={()=>enterHut(nearDoorHut)} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Enter</button>}
     {insideHut&&<button type="button" data-testid="interior-exit" onClick={exitHut} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Exit</button>}
+    {/* BUILD 1033: car Enter/Exit — the same phone-first pattern as
+        houses. Enter Car sits above the house Enter (bottom:170 vs
+        110) so the two never overlap; Exit Car takes the 110 slot
+        (you cannot drive and be inside a hut at once). */}
+    {!driving&&nearCar&&<button type="button" data-testid="car-enter" onClick={enterCar} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:170,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16}}>Enter Car</button>}
+    {driving&&<button type="button" data-testid="car-exit" onClick={exitCar} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16}}>Exit Car</button>}
     {/* BUILD 989 refinement: Remove aiming preview — gold ring + label
         at the snapped tile about to be removed. Positioned by direct
         DOM writes from the pointer handlers (never React state), so it
