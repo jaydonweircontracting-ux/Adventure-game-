@@ -204,7 +204,7 @@ export function selectionItemLabel(ref: SelectionItemRef): string {
       const name = p.kind === 'house'
         ? (p.variant ? (HOUSE_VARIANTS[p.variant]?.label ?? 'House') : 'House')
         : p.kind === 'custom' ? 'Custom model'
-        : ({ path: 'Pathway', tree: 'Tree', stall: 'Market Stall', grass: 'Grass', rock: 'Rock', water: 'Water', wall: 'Wall', lantern: 'Lantern', bush: 'Bush', ore: 'Ore Deposit', bridge: 'Wooden Bridge', farm: 'Farm Land' } as Record<string, string>)[p.kind] ?? p.kind;
+        : ({ path: 'Pathway', tree: 'Tree', stall: 'Market Stall', grass: 'Grass', rock: 'Rock', water: 'Water', wall: 'Wall', lantern: 'Lantern', bush: 'Bush', ore: 'Ore Deposit', bridge: 'Wooden Bridge', farm: 'Farm Land', fence: 'Fence' } as Record<string, string>)[p.kind] ?? p.kind;
       return name + ' at (' + p.x0 + ',' + p.y0 + ')';
     }
     case 'hut': return 'House at (' + ref.rect.x0 + ',' + ref.rect.y0 + ')';

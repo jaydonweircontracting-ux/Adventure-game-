@@ -66,7 +66,7 @@ export type ChunkTemplate = { name: string; items: ChunkItem[] };
  *  means a future variant cannot be forgotten the same way.
  *  'custom' is deliberately NOT here: captureChunk never emits it
  *  (BUILD 997), so it is not a gap. */
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', 'farm', ...HOUSE_VARIANT_KINDS];
+const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', 'farm', 'fence', ...HOUSE_VARIANT_KINDS];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;

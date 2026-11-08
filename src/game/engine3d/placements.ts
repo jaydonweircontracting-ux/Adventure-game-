@@ -24,7 +24,7 @@ import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWo
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
-  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm'
+  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm' | 'fence'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -978,8 +978,9 @@ export function validateBlockingRect(
  * the same one-directional stacking as grass-on-path). A bridge is
  * the opposite exception: it validates ONLY on generated water (the
  * ocean or the pond) and nowhere else, and the tile it lands on
- * becomes walkable (see walkableWithPlacements). A lantern and an ore
- * deposit are ordinary 1x1 blocking items (tree/rock rules).
+ * becomes walkable (see walkableWithPlacements). A lantern, an ore
+ * deposit, and a fence (BUILD 1042) are ordinary 1x1 blocking items
+ * (tree/rock rules).
  */
 /** BUILD 1028: the orientation a newly placed wall tile takes. A
  *  neighbour on the same row extends a horizontal run; a neighbour
@@ -1603,6 +1604,16 @@ export function placedCustomRects(w: IsoWorld): Array<{ x0: number; y0: number; 
 export function placedGrassTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'grass')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed fence tiles (BUILD 1042). Single tiles, like placed walls
+ *  — a fence is a blocking 1x1 item, so it renders and blocks
+ *  exactly like a placed wall (its look is a low wooden fence, not
+ *  a stone cube). */
+export function placedFenceTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'fence')
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 

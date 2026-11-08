@@ -20,8 +20,13 @@ import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
 import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, type FarmStage } from './farm';
 import {
+  doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
+  alignArea, enhanceArea, adjustSpacing,
+  type LayoutResult,
+} from './layoutHelpers';
+import {
   placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
-  placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts,
+  placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts, placedFenceTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange, undoRedoKeyForEvent,
@@ -803,6 +808,21 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // cube is orientation-agnostic — the h only matters to the 2.5D
   // wall-run merge). BUILD 1034: walls stand on the heightfield.
   for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32],surfaceElevation(effTerrain,wall.x+.5,wall.y+.5));
+  // BUILD 1042: placed fences — a low wooden fence: four corner posts
+  // plus two rails on each side, timber brown, standing on the
+  // heightfield. One tile reads as a fence segment; a run of tiles
+  // reads as a fence line. Fences block movement, like walls.
+  const FENCE_TIMBER:Vec3=[.45,.32,.18];
+  for(const f of placedFenceTiles(world)) if(f.tx>=minX&&f.tx<=maxX&&f.ty>=minY&&f.ty<=maxY){
+    const fy=surfaceElevation(effTerrain,f.tx+.5,f.ty+.5);
+    for(const [px,pz] of [[.08,.08],[.92,.08],[.08,.92],[.92,.92]] as const) cube(f.tx+px,f.ty+pz,.09,.55,.09,FENCE_TIMBER,fy);
+    for(const ry of [.22,.42]){
+      cube(f.tx+.5,f.ty+.06,.84,.07,.05,FENCE_TIMBER,fy+ry);
+      cube(f.tx+.5,f.ty+.94,.84,.07,.05,FENCE_TIMBER,fy+ry);
+      cube(f.tx+.06,f.ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
+      cube(f.tx+.94,f.ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
+    }
+  }
   // BUILD 986: generated/authored stalls render as 983 trees, not brown
   // counter cubes. Stall data + collision are untouched; only the mesh
   // changes. User-PLACED stalls keep the brown counter cube below — a
@@ -1640,7 +1660,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store','house-windmill':'Windmill','house-mine':'Mine',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store','house-windmill':'Windmill','house-mine':'Mine',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land',fence:'Fence'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
@@ -1648,7 +1668,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // and would crash the preview/message path). BUILD 1012: a placed
   // house shows its variant's label (Cottage / Tall House /
   // Shopfront / Grand House); a legacy variant-less house is 'House'.
-  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land'} as Record<string,string>)[item.kind]??item.kind;
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land',fence:'Fence'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName,areaSelectMode);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
@@ -1690,6 +1710,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
     clearAreaSelection();
     setMessage('Deleted '+res.removed+' item'+(res.removed===1?'':'s')+' — one Undo restores them');
+  };
+  // BUILD 1042: Town Builder Stage 5 — LAYOUT HELPERS. One shared
+  // runner for the nine optional tools in the actions menu: each
+  // helper is a pure function over (world, selection, actors) that
+  // returns ONE group undo entry (or null when nothing changed), and
+  // this runner does the same save + rebuild + history + re-select
+  // + message shape as doAreaRotate. Nothing runs until the player
+  // taps a button; a failed helper changes nothing; a no-op helper
+  // reports what is already true instead of pushing history.
+  const runLayoutHelper=(fn:(w:IsoWorld,s:AreaSelection,pt:{x:number;y:number},nt:Array<{x:number;y:number}>)=>LayoutResult,already:string)=>{
+    const sel=areaSelectionRef.current;if(!sel)return;
+    const world=stateRef.current.world;const {playerTile,npcTiles}=areaActorTiles();
+    const res=fn(world,sel,playerTile,npcTiles);
+    if(!res.ok){setMessage('Cannot do that here: '+res.reason);return;}
+    if(!res.entry){setMessage(already+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':''));return;}
+    saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
+    setAreaSelection(selectArea(world,sel.rect));setAreaDeleteArmed(false);
+    setMessage(res.message+(res.skipped.length?', '+res.skipped.length+' skipped: '+res.skipped[0].reason:'')+' — one Undo undoes it');
   };
   // BUILD 1004: "build UI is minimized" — panel hidden but a tool
   // still armed. Only in this state do the right-edge strip swipe and
@@ -1741,7 +1779,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // Infrastructure). Mapping, stated plainly: Houses = the four house
   // designs; Shops = the three commercial buildings + the market
   // stall; Buildings = the two landmark structures with interiors
-  // (windmill, mine); Decorations = lantern + wall; Roads = path +
+  // (windmill, mine); Decorations = lantern + wall + fence; Roads = path +
   // wooden bridge (the thing you walk on); Nature = tree, bush,
   // grass, rock, water; Infrastructure = the ore deposit (the
   // resource node — wells join it when they are built). A kind lives
@@ -1756,7 +1794,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // legacy placed kind (old saves only) and is not offered here.
     {id:'houses',label:'Houses',kinds:['house-cottage','house-tall','house-shop','house-grand']},
     {id:'shops',label:'Shops',kinds:['house-inn','house-smith','house-store','stall']},
-    {id:'decorations',label:'Decorations',kinds:['lantern','wall']},
+    {id:'decorations',label:'Decorations',kinds:['lantern','wall','fence']},
     {id:'roads',label:'Roads',kinds:['path','bridge']},
     // BUILD 1041: farm land joins Nature (it is tilled ground, like
     // the grass and the bush — a field, not a building).
@@ -1793,6 +1831,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     bridge:{label:'Wooden Bridge',swatch:'linear-gradient(135deg,#8f6a38 0 50%,#6b4a2b 50% 100%)'},
     // BUILD 1041 swatch: farm land tilled brown / ready wheat gold.
     farm:{label:'Farm Land',swatch:'linear-gradient(135deg,#593d24 0 50%,#d9a833 50% 100%)'},
+    // BUILD 1042 swatch: fence timber browns (posts + rails).
+    fence:{label:'Fence',swatch:'linear-gradient(135deg,#7a5a30 0 50%,#5a3d1e 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     // BUILD 1025: Rock — the generated rock's own grey (seeded cube
@@ -4058,7 +4098,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
         <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>
@@ -4164,6 +4204,37 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             <button type="button" data-testid="build-area-rotate-cw" onClick={()=>doAreaRotate(1)} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Rotate right ⟳</button>
           </div>
           <button type="button" data-testid="build-area-delete" onClick={()=>{if(!areaSelection)return;const n=selectionCount(areaSelection);if(n>10&&!areaDeleteArmed){setAreaDeleteArmed(true);setMessage('Delete '+n+' items? Tap Delete again to confirm — Undo restores them');return;}doAreaDelete();}} style={{display:'block',width:'100%',marginTop:8,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:areaDeleteArmed?'#7a3b2e':'#5a2e24',color:'#fff',fontWeight:700,fontSize:14}}>{areaDeleteArmed?'Tap again to confirm delete':'Delete area'}</button>
+          {/* BUILD 1042: Town Builder Stage 5 — LAYOUT HELPERS. Optional
+            tools, nothing moves unless you tap one: each button runs
+            its helper on this selection only, as one Undo step. Doors
+            face paths turns each selected house (in place) so its door
+            faces the nearest road or path. Trees off paths moves trees
+            standing on a path to the nearest clear tile beside it.
+            Lanterns along roads puts a lantern on the road's edge
+            every few tiles. Fence property puts a low wooden fence
+            around each selected house, with a gap at the door. Align
+            row / Align column line the selected items up. ENHANCE
+            fills empty ground with grass, bushes, and the odd tree —
+            it never moves or removes anything. Spread out / Pack
+            together move the selected items one tile apart / together.
+            Scale, elevation, tree rotation, and vegetation size are
+            NOT here — there is no per-item size feature yet, so those
+            stay pending and are not faked. */}
+          <div style={{marginTop:10,borderTop:'1px solid #c4d1bd',paddingTop:10}}>
+            <div style={{fontSize:12,fontWeight:700}}>Layout helpers — optional tools, nothing moves unless you tap one</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+              <button type="button" data-testid="build-layout-doors" onClick={()=>runLayoutHelper(doorsFacePaths,'Doors already face the nearest path')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Doors face paths</button>
+              <button type="button" data-testid="build-layout-trees" onClick={()=>runLayoutHelper(treesOffPaths,'No trees standing on paths here')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Trees off paths</button>
+              <button type="button" data-testid="build-layout-lanterns" onClick={()=>runLayoutHelper(lanternsAlongRoads,'No lanterns fit along these roads')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Lanterns along roads</button>
+              <button type="button" data-testid="build-layout-fence" onClick={()=>runLayoutHelper(fencesAroundProperty,'No fence fits around these houses')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Fence property</button>
+              <button type="button" data-testid="build-layout-align-row" onClick={()=>runLayoutHelper((w,s,pt,nt)=>alignArea(w,s,'row',pt,nt),'Already aligned to a row')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Align row</button>
+              <button type="button" data-testid="build-layout-align-col" onClick={()=>runLayoutHelper((w,s,pt,nt)=>alignArea(w,s,'col',pt,nt),'Already aligned to a column')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Align column</button>
+              <button type="button" data-testid="build-layout-enhance" onClick={()=>runLayoutHelper(enhanceArea,'Nothing to enhance here — the ground is already full')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>ENHANCE</button>
+              <button type="button" data-testid="build-layout-spread" onClick={()=>runLayoutHelper((w,s,pt,nt)=>adjustSpacing(w,s,'spread',pt,nt),'Nothing moved')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Spread out</button>
+              <button type="button" data-testid="build-layout-pack" onClick={()=>runLayoutHelper((w,s,pt,nt)=>adjustSpacing(w,s,'pack',pt,nt),'Nothing moved')} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Pack together</button>
+            </div>
+            <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>Each helper acts only on this selection, and one Undo undoes the whole thing. Scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not here.</div>
+          </div>
           {areaSelection.notes.length>0&&<div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>{areaSelection.notes.join(' · ')}</div>}
           <div style={{marginTop:10}}>
             <div style={{fontSize:11,opacity:.75}}>Items in this area — tap × to drop one from the group (the world is untouched):</div>
