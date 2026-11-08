@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { hutAt, inBounds, isWalkableWorld, loadWorld, oceanCoastX, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -25,7 +25,7 @@ import {
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
-import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
+import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed } from './wildTerrain';
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
@@ -573,26 +573,22 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // straddles the ocean coastline" (analytic coast test — the coast
     // is a smooth 1D function, so sampling it across the cell's
     // y-range is enough, no per-tile scan of the infinite west).
-    // Wild lakes stay centre-sampled at distance (the 1024 accepted
-    // limit — small far silhouettes, not a coherent edge). Dirt can
-    // only exist inside the map (terrainAt falls back to grass
-    // outside it, placed paths are bounds-checked), so the mix scan
-    // is clipped to the cell ∩ map rectangle — far cells outside the
-    // map skip the scan entirely, and the coast test is analytic.
+    // BUILD 1031 — the mix scan is no longer clipped to the map for
+    // small cells: cellIsMixed (wildTerrain.ts) scans the WHOLE cell
+    // when it is <=256 tiles (band 4x4, far 16x16), so wild lakes
+    // render as their actual tiles and stay put as the player-centred
+    // grid shifts. This RETIRES the 1024 accepted limit ("wild lakes
+    // stay centre-sampled at distance") — it became the user-reported
+    // bug: a lake whose centre tile was water rendered as one solid
+    // blue quad, one whose centre was grass rendered as no water at
+    // all, and both flipped as the player walked. Horizon cells
+    // (64x64) keep the clipped scan + coast test: a full scan there
+    // is ~1.2M noise calls per rebuild and the ring starts at 240
+    // tiles, past the ~150-tile visible ground at max zoom-out.
+    // Dirt can only exist inside the map (terrainAt falls back to
+    // grass outside it, placed paths are bounds-checked).
     const quadCellMixed=(x0:number,x1:number,y0:number,y1:number,y:number)=>{
-      const sx0=Math.max(x0,0), sx1=Math.min(x1,world.w-1), sy0=Math.max(y0,0), sy1=Math.min(y1,world.h-1);
-      let firstT:string|null=null, mixed=false;
-      for(let yy=sy0;yy<=sy1&&!mixed;yy++) for(let xx=sx0;xx<=sx1;xx++){const t=effTerrain(xx,yy); if(firstT===null)firstT=t; else if(t!==firstT){mixed=true;break;}}
-      if(!mixed){
-        // Coast test: the cell straddles the coastline when the
-        // coast's min/max over the cell's y-range overlaps the cell's
-        // x-range. Conservative — a wavy coast may over-trigger by a
-        // cell; subdivision is correct there, just a few extra quads.
-        let cMin=Infinity, cMax=-Infinity;
-        for(let yy=y0;yy<=y1+1;yy+=4){const c=oceanCoastX(yy); if(c<cMin)cMin=c; if(c>cMax)cMax=c;}
-        const cEnd=oceanCoastX(y1+1); if(cEnd<cMin)cMin=cEnd; if(cEnd>cMax)cMax=cEnd;
-        mixed=cMin<=x1+1 && cMax>=x0;
-      }
+      const mixed=cellIsMixed(x0,x1,y0,y1,effTerrain,world.w,world.h);
       if(!mixed){
         const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
         const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass;
