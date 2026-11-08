@@ -394,7 +394,19 @@ const DETAIL_FAR_HALF = 64;
 // stutter the user feels. 16 halves the hitch rate. Safe: the ground
 // window is ±22 (≥6 tiles of margin at 16) and grass ±28 (≥12).
 export const WORLD_REBUILD_DIST = 16;
-export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Float32Array {
+// BUILD 1035 — REBUILD_STEP_BUDGET_MS: the per-frame time budget for
+// one step of a time-sliced world rebuild while the player is MOVING
+// (driving/walking). 10ms leaves headroom for the frame's own draw
+// (~8ms on a real phone) inside a 16ms frame, so no frame hitches;
+// a ~200ms rebuild then finishes in ~20 frames (~0.33s), during which
+// the car travels ~10 tiles — inside the ±22 window, so the player
+// never outruns the buffer. While STATIONARY the driver passes
+// Infinity (run to completion in one frame), so a placement or an
+// enter/exit appears immediately, exactly like the old synchronous
+// path — the budget only binds while moving, which is when the
+// stutter lived.
+export const REBUILD_STEP_BUDGET_MS = 10;
+export function* buildWorldVerticesGen(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Generator<void, Float32Array, void> {
   const data: Vertex = [];
   // BUILD 988 distance fog, BAKED (not shader-side): every emitted
   // vertex colour is mixed toward the horizon colour by ground-plane
@@ -414,7 +426,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // by this baked form. NOTE: figures are NOT fogged (see the actor
   // section) — deliberate, so people stay visible at range.
   const fogAt = (x: number, z: number) => {
-    const d = Math.hypot(x - (center.x + .5), z - (center.y + .5));
+    // BUILD 1035: Math.sqrt, not Math.hypot — identical values for
+    // these magnitudes (no overflow: |dx|,|dz| < 2000), and hypot's
+    // varargs/overflow handling is measurably slower per call.
+    const dx = x - (center.x + .5), dz = z - (center.y + .5);
+    const d = Math.sqrt(dx * dx + dz * dz);
     const t = Math.min(1, Math.max(0, (d - FOG_NEAR) / (FOG_FAR - FOG_NEAR)));
     return t * t * (3 - 2 * t);
   };
@@ -492,6 +508,28 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     if(v===undefined){v=surfaceElevation(effTerrain,cx,cy);surfCache.set(key,v);}
     return v;
   };
+  // BUILD 1035: per-rebuild tint cache. groundTintDelta is pure in
+  // (terrain, x, y) and the same corner is evaluated 2-4x — shared
+  // corners across adjacent tiles, runs and cells — each evaluation
+  // costing 4 groundNoise calls (16 sin-hash calls; the CPU profile
+  // put groundTintDelta at ~17% of rebuild time). The cache makes
+  // repeats a Map hit; values are identical, only faster. Key: the
+  // terrain code in the high bits + the integer tile key. Dropped
+  // with the rebuild (local, like surfCache).
+  const tintCache=new Map<number,Vec3>();
+  const tintAt=(terrain:string,x:number,y:number):Vec3=>{
+    const tc=terrain==='grass'?0:terrain==='dirt'?1:terrain==='sand'?2:terrain==='stone'?3:terrain==='water'?4:5;
+    const key=tc*16777216+(x+2048)*4096+(y+2048);
+    let v=tintCache.get(key);
+    if(v===undefined){v=groundTintDelta(terrain,x,y);tintCache.set(key,v);}
+    return v;
+  };
+  // BUILD 1035: time-sliced rebuild — the generator yields between
+  // work chunks so the render loop can spread one rebuild over many
+  // frames (see createWorldBuilder). Each yield below is a chunk
+  // boundary; no single chunk may run long (the driver budgets ~10ms
+  // while the player moves). The synchronous wrapper below runs the
+  // generator to completion for the sim and the first frame.
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
     // BUILD 1034: display terrain (shores + stone, via renderTerrain)
     // and the heightfield: every ground corner sits on the shared
@@ -505,9 +543,10 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // reads as rolling variation, not a checkerboard, and the window
     // edge is invisible because the band cells beyond it sample the
     // same field at their own corners.
-    const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
+    const colAt=(cx:number,cy:number):Vec3=>{const t=tintAt(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
     const yAt=(cx:number,cy:number):number=>surfAt(cx,cy);
     quadV([x,yAt(x,y),y],colAt(x,y),[x+1,yAt(x+1,y),y],colAt(x+1,y),[x+1,yAt(x+1,y+1),y+1],colAt(x+1,y+1),[x,yAt(x,y+1),y+1],colAt(x,y+1));
+    if(x===maxX&&(y-minY)%4===3)yield;
   }
   // BUILD 1022: path slabs + cobble shoulders render for the WHOLE map,
   // not just the ±22 detailed window. They used to pop in and out at the
@@ -548,6 +587,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         }
       }
     }
+    if(x===world.w-1&&y%5===4)yield;
   }
   // BUILD 1002 — far ground: the detailed window above ends 22 tiles
   // out, but the visible ground reaches ~79 tiles at default orbit
@@ -643,7 +683,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         // gradient of the same field the window samples directly, so
         // the cell edges vanish. Adjacent cells share corner positions
         // and therefore colours exactly — no seams at any ring edge.
-        const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(bt,cx,cy);return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];};
+        const colAt=(cx:number,cy:number):Vec3=>{const t=tintAt(bt,cx,cy);return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];};
         quadV([x0,yAt(x0,y0),y0],colAt(x0,y0),[x1+1,yAt(x1+1,y0),y0],colAt(x1+1,y0),[x1+1,yAt(x1+1,y1+1),y1+1],colAt(x1+1,y1+1),[x0,yAt(x0,y1+1),y1+1],colAt(x0,y1+1));
         return;
       }
@@ -658,7 +698,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
             // varies smoothly along its length instead of stepping
             // once per run.
             const bc=COLORS[runT]||COLORS.grass;
-            const colAt=(cx:number,cy:number):Vec3=>{const tt=groundTintDelta(runT,cx,cy);return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];};
+            const colAt=(cx:number,cy:number):Vec3=>{const tt=tintAt(runT,cx,cy);return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];};
             quadV([runStart,yAt(runStart,yy),yy],colAt(runStart,yy),[xx,yAt(xx,yy),yy],colAt(xx,yy),[xx,yAt(xx,yy+1),yy+1],colAt(xx,yy+1),[runStart,yAt(runStart,yy+1),yy+1],colAt(runStart,yy+1));
             runStart=xx; runT=t!;
           }
@@ -671,22 +711,23 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     for(let y=by0;y<=by1;y+=VIEW_BAND_CELL) for(let x=bx0;x<=bx1;x+=VIEW_BAND_CELL){
       const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
       quadCellMixed(x,x+w-1,y,y+d-1,VIEW_BAND_Y,renderTf);
+      if(x+VIEW_BAND_CELL>bx1)yield;
     }
-    const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number,tf:(x:number,y:number)=>string)=>{
-      for(let yy=y0;yy<=y1;yy+=cell) for(let xx=x0;xx<=x1;xx+=cell){
+    function* fillCells(x0:number,x1:number,y0:number,y1:number,cell:number,y:number,tf:(x:number,y:number)=>string):Generator<void,void,void>{
+      for(let yy=y0;yy<=y1;yy+=cell){ for(let xx=x0;xx<=x1;xx+=cell){
         const w=Math.min(cell,x1+1-xx), d=Math.min(cell,y1+1-yy);
         quadCellMixed(xx,xx+w-1,yy,yy+d-1,y,tf);
-      }
-    };
-    const fillRing=(inner:number,outer:number,cell:number,y:number,tf:(x:number,y:number)=>string)=>{
+      } yield; }
+    }
+    function* fillRing(inner:number,outer:number,cell:number,y:number,tf:(x:number,y:number)=>string):Generator<void,void,void>{
       const cx=Math.floor(center.x), cy=Math.floor(center.y);
-      fillCells(cx-outer,cx+outer,cy+inner+1,cy+outer,cell,y,tf);
-      fillCells(cx-outer,cx+outer,cy-outer,cy-inner-1,cell,y,tf);
-      fillCells(cx-outer,cx-inner-1,cy-inner,cy+inner,cell,y,tf);
-      fillCells(cx+inner+1,cx+outer,cy-inner,cy+inner,cell,y,tf);
-    };
-    fillRing(VIEW_BAND_HALF,VIEW_FAR_BAND_HALF,VIEW_FAR_BAND_CELL,VIEW_FAR_BAND_Y,effTerrain);
-    fillRing(VIEW_FAR_BAND_HALF,VIEW_HORIZON_BAND_HALF,VIEW_HORIZON_BAND_CELL,VIEW_HORIZON_BAND_Y,effTerrain);
+      yield* fillCells(cx-outer,cx+outer,cy+inner+1,cy+outer,cell,y,tf);
+      yield* fillCells(cx-outer,cx+outer,cy-outer,cy-inner-1,cell,y,tf);
+      yield* fillCells(cx-outer,cx-inner-1,cy-inner,cy+inner,cell,y,tf);
+      yield* fillCells(cx+inner+1,cx+outer,cy-inner,cy+inner,cell,y,tf);
+    }
+    yield* fillRing(VIEW_BAND_HALF,VIEW_FAR_BAND_HALF,VIEW_FAR_BAND_CELL,VIEW_FAR_BAND_Y,effTerrain);
+    yield* fillRing(VIEW_FAR_BAND_HALF,VIEW_HORIZON_BAND_HALF,VIEW_HORIZON_BAND_CELL,VIEW_HORIZON_BAND_Y,effTerrain);
     {
       const cx=Math.floor(center.x), cy=Math.floor(center.y), A=VIEW_APRON_HALF, I=VIEW_HORIZON_BAND_HALF, y=VIEW_APRON_Y;
       quad([cx-A,y,cy+I+1],[cx+A+1,y,cy+I+1],[cx+A+1,y,cy+A+1],[cx-A,y,cy+A+1],COLORS.grass);
@@ -742,6 +783,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 1007: stalls render at whole-world range (were window-culled).
   for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) treeAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  yield;
   // BUILD 997: uploaded custom meshes — static vertex-colour
   // triangles in the world buffer (like placed stalls, not the
   // per-frame actor buffer: uploads never move on their own). Mesh
@@ -760,7 +802,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       triV([ccx+asset.positions[a],asset.positions[a+1]+baseY,ccz+asset.positions[a+2]],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
         [ccx+asset.positions[b],asset.positions[b+1]+baseY,ccz+asset.positions[b+2]],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
         [ccx+asset.positions[c],asset.positions[c+1]+baseY,ccz+asset.positions[c+2]],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
+      // BUILD 1035: a big uploaded mesh is many triangles — yield
+      // every 64 so one placement cannot exceed the step budget.
+      if(i%192===189)yield;
     }
+    yield;
   }
   // BUILD 983 town look (reference match): varied low-poly houses —
   // stone-block ground floors, dark timber framing, plaster upper walls,
@@ -987,9 +1033,12 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         houseBox(facePlane(.45),aC-spanA*.35,.35,.35,.35,.5+hy,[.5,.27,.14]);
       }
     }
+    yield;
   }
   // BUILD 1007: trees render at whole-world range (were window-culled).
-  for(const t of [...world.trees, ...placedTreeTiles(world)]) {
+  const allTrees=[...world.trees, ...placedTreeTiles(world)];
+  for(let ti=0;ti<allTrees.length;ti++) {
+    const t=allTrees[ti];
     // BUILD 1027: a stored tree standing in water never renders — the
     // ocean scatter skips water tiles, but an old save's stored list
     // (or a placed tree under a placed water tile, which removeAt
@@ -1001,6 +1050,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // treeAt renderer (identical geometry). BUILD 1034: the tree
     // stands on the heightfield.
     treeAt(t.tx,t.ty,surfaceElevation(effTerrain,t.tx+.5,t.ty+.5));
+    if(ti%16===15)yield;
   }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
   // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x
@@ -1018,13 +1068,14 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // effTerrain (grass, or a lake — never a tuft in water).
   const gX0=Math.floor(center.x)-DETAIL_GRASS_HALF, gX1=Math.floor(center.x)+DETAIL_GRASS_HALF;
   const gY0=Math.floor(center.y)-DETAIL_GRASS_HALF, gY1=Math.floor(center.y)+DETAIL_GRASS_HALF;
-  emitNaturalGrass(triV, world, effTerrain, gX0, gX1, gY0, gY1);
-  emitPlacedGrass(triV, world, effTerrain, gX0, gX1, gY0, gY1);
+  // BUILD 1035: grass + detail emit in 16-row bands (the ranges are
+  // inclusive, so the bands tile exactly) with a yield between bands.
+  for(let gy=gY0;gy<=gY1;gy+=4){const gy1=Math.min(gy+3,gY1);emitNaturalGrass(triV, world, effTerrain, gX0, gX1, gy, gy1);emitPlacedGrass(triV, world, effTerrain, gX0, gX1, gy, gy1);yield;}
   // BUILD 1015: wildflowers + pebbles (groundDetail3d.ts) — same
   // determinism as the tufts, a few hundred verts in the old window.
   const fX0=Math.floor(center.x)-DETAIL_FAR_HALF, fX1=Math.floor(center.x)+DETAIL_FAR_HALF;
   const fY0=Math.floor(center.y)-DETAIL_FAR_HALF, fY1=Math.floor(center.y)+DETAIL_FAR_HALF;
-  emitGroundDetail3d(triV, world, effTerrain, fX0, fX1, fY0, fY1);
+  for(let fy=fY0;fy<=fY1;fy+=4){const fy1=Math.min(fy+3,fY1);emitGroundDetail3d(triV, world, effTerrain, fX0, fX1, fy, fy1);yield;}
   // BUILD 1007: rocks + crates render at whole-world range (were window-culled).
   // BUILD 1015: rocks vary in size and shade by tile seed (0.5-1.0
   // wide, 0.4-0.9 tall) instead of one identical cube — the wild reads
@@ -1033,7 +1084,9 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 1025: placed rocks render through this same loop (a placed
   // rock on a tile uses the tile's seed, so it looks identical to a
   // generated rock there) — same pattern as placed trees above.
-  for(const r of [...world.rocks, ...placedRockTiles(world)]){
+  const allRocks=[...world.rocks, ...placedRockTiles(world)];
+  for(let ri=0;ri<allRocks.length;ri++){
+    const r=allRocks[ri];
     // BUILD 1027: a stored rock standing in water never renders —
     // the ocean scatter skips water tiles, but an old save's stored
     // list can hold one; water wins, the rock does not.
@@ -1042,6 +1095,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
     cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,r.tx+.5,r.ty+.5));
+    if(ri%16===15)yield;
   }
   // BUILD 1024: wild trees + rocks past the old map edge. The stored
   // lists stop at 200x200, but the scatter hash continues — so the
@@ -1064,12 +1118,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       const sh=.8+hash2(x*7.7+27,y*3.3+27)*.25;
       cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,x+.5,y+.5));
     }
+    if(x===fX1&&(y-fY0)%4===3)yield;
   }
   // BUILD 986: generated/authored crates + layout prop placeholders render
   // as 983 trees, not brown cubes. Data untouched — the wood interaction
   // still finds and removes the crate entry (see the E-key handler).
   // BUILD 1034: crates stand on the heightfield.
-  for(const c of world.crates) treeAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5));
+  for(let ci=0;ci<world.crates.length;ci++){const c=world.crates[ci];treeAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5));if(ci%16===15)yield;}
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
@@ -1089,6 +1144,58 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // where the tint band already reads; it is not worth an unverified
   // draw path. If a future harness has a real GPU, revisit.
   return new Float32Array(data);
+}
+
+// BUILD 1035 — time-sliced world rebuild. The generator above yields
+// between work chunks; this wrapper runs it to completion for the
+// callers that need the whole buffer synchronously (the sim, the
+// measure harness, and the first frame — the world must exist before
+// the first draw). The render loop uses createWorldBuilder instead,
+// stepping the same generator a few milliseconds per frame while the
+// player moves, so driving never blocks on a ~350ms rebuild.
+// The buffer is BIT-IDENTICAL either way: the generator emits the
+// same vertices in the same order; only the timing differs.
+/** Synchronous world-buffer build (unchanged behaviour, runs the generator to completion). */
+export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): Float32Array {
+  const gen = buildWorldVerticesGen(world, center, enteredHut, customAssets);
+  let r = gen.next();
+  while (!r.done) r = gen.next();
+  return r.value;
+}
+
+/** A resumable world-buffer build: step() runs the generator until
+ *  the time budget is spent (or it finishes) and reports completion.
+ *  `center` is the build centre the buffer was built around — the
+ *  driver records it as the last build centre on upload (NOT the
+ *  player's position at upload time, which has moved on). */
+export interface WorldBuilder {
+  readonly center: Position;
+  readonly enteredHut: HutRect | null;
+  readonly customAssets: CustomAsset[];
+  step(budgetMs: number): boolean;
+  result(): Float32Array;
+}
+export function createWorldBuilder(world: IsoWorld, center: Position, enteredHut: HutRect | null = null, customAssets: CustomAsset[] = []): WorldBuilder {
+  const gen = buildWorldVerticesGen(world, center, enteredHut, customAssets);
+  let done = false;
+  let value: Float32Array | null = null;
+  return {
+    center,
+    enteredHut,
+    customAssets,
+    step(budgetMs: number): boolean {
+      if (done) return true;
+      const t0 = performance.now();
+      let r = gen.next();
+      while (!r.done && performance.now() - t0 < budgetMs) r = gen.next();
+      if (r.done) { done = true; value = r.value; return true; }
+      return false;
+    },
+    result(): Float32Array {
+      if (!done || !value) throw new Error('WorldBuilder: result() before completion');
+      return value;
+    },
+  };
 }
 
 // BUILD 1017: diagnostics snapshot for the Options dialog (GraphicsModeHost).
@@ -1186,6 +1293,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // effect): world-buffer rebuilds and stamina-UI publishes.
   const rebuildCountRef=useRef(0);
   const staminaPublishCountRef=useRef(0);
+  // BUILD 1035: time-sliced rebuild driver state (see the draw loop).
+  // worldBuilderRef = the in-progress builder (null when idle);
+  // prevPlayerRef = the player position last frame, for the adaptive
+  // budget (moving → 10ms/frame, stationary → run to completion);
+  // buildFramesRef/buildMsRef = the frames/ms the current build has
+  // taken; rebuildStepStatsRef = the probe-visible step statistics
+  // (count, worst single step, worst single step WHILE MOVING, total
+  // step time, last build's frames and ms — read-only via __ag3dTest
+  // getRebuildStats). maxStepMsMoving is the invariant that matters:
+  // a stationary build is ALLOWED to run to completion in one step
+  // (the load build does, ~200ms on a phone, ~500ms cold under
+  // SwiftShader), so the raw maxStepMs is not the hitch signal — a
+  // step while the player is moving is.
+  const worldBuilderRef=useRef<WorldBuilder|null>(null);
+  const prevPlayerRef=useRef<{x:number;y:number}|null>(null);
+  const buildFramesRef=useRef(0);
+  const buildMsRef=useRef(0);
+  const rebuildStepStatsRef=useRef({count:0,maxStepMs:0,maxStepMsMoving:0,totalStepMs:0,lastBuildFrames:0,lastBuildMs:0});
   // BUILD 1018: end a Sprint-button hold. Only the pointer that started
   // the hold can end it (pointerId-gated). A quick, still press is a TAP
   // and flips the latch; a longer hold just releases. Called from the
@@ -2402,7 +2527,46 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>WORLD_REBUILD_DIST)needsWorldRebuild.current=true;
       // BUILD 1017: the diagnostic line no longer goes to the play-screen
       // message — it is reported to Options > Diagnostics instead.
-      if(needsWorldRebuild.current){const built=buildWorldVertices(world,player,insideHutRef.current,customAssetsRef.current);if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}else{upload(worldBuffer,built);worldVertCount=built.length/6;const snap:Diagnostics3D={verts:worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y;rebuildCountRef.current++;}
+      // BUILD 1035: time-sliced world rebuild (see createWorldBuilder).
+      // The old code built the whole ~350ms buffer synchronously here,
+      // so every chunk boundary froze the frame — at car speed (31.5
+      // u/s) that was a hitch every ~0.5s. Now the build runs as a
+      // generator stepped a few ms per frame while the player moves,
+      // and runs to completion in one frame while stationary (so a
+      // placement or an enter/exit still appears immediately, exactly
+      // like the old path). The last build centre is the BUILDER's
+      // centre (where the buffer was actually built around), not the
+      // player's position at upload time — the player has moved on.
+      // Abort: if the player entered/exited a house or the custom
+      // assets changed since this builder started, its captured
+      // enteredHut/customAssets are stale — drop it and start fresh
+      // (the next frame rebuilds with the current state). World edits
+      // (placements) need no abort: they set needsWorldRebuild, so a
+      // fresh builder follows this one immediately.
+      const prevP=prevPlayerRef.current;
+      const playerMoved=prevP!==null&&(player.x!==prevP.x||player.y!==prevP.y);
+      prevPlayerRef.current={x:player.x,y:player.y};
+      if(needsWorldRebuild.current){
+        const b0=worldBuilderRef.current;
+        if(b0&&(b0.enteredHut!==insideHutRef.current||b0.customAssets!==customAssetsRef.current))worldBuilderRef.current=null;
+        if(!worldBuilderRef.current){worldBuilderRef.current=createWorldBuilder(world,player,insideHutRef.current,customAssetsRef.current);buildFramesRef.current=0;buildMsRef.current=0;}
+        const budget=playerMoved?REBUILD_STEP_BUDGET_MS:Infinity;
+        const t0=performance.now();
+        const done=worldBuilderRef.current.step(budget);
+        const stepMs=performance.now()-t0;
+        buildFramesRef.current++;buildMsRef.current+=stepMs;
+        const st=rebuildStepStatsRef.current;
+        st.totalStepMs+=stepMs;if(stepMs>st.maxStepMs)st.maxStepMs=stepMs;
+        if(playerMoved&&stepMs>st.maxStepMsMoving)st.maxStepMsMoving=stepMs;
+        if(done){
+          const b=worldBuilderRef.current;worldBuilderRef.current=null;
+          const built=b.result();
+          if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}
+          else{upload(worldBuffer,built);worldVertCount=built.length/6;const snap:Diagnostics3D={verts:worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}
+          needsWorldRebuild.current=false;lastBuildX=b.center.x;lastBuildY=b.center.y;rebuildCountRef.current++;
+          st.count=rebuildCountRef.current;st.lastBuildFrames=buildFramesRef.current;st.lastBuildMs=buildMsRef.current;
+        }
+      }
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // BUILD 1011: night factor for this frame — 976's curve on the 3D
       // clock, as one shader uniform (see sky.ts). Set before the sky
@@ -2817,6 +2981,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // publish count (probes only — no gameplay effect).
       getSprintRearm:()=>sprintRearmRef.current,
       getRebuildCount:()=>rebuildCountRef.current,
+      // BUILD 1035 test hook (read-only): the time-sliced rebuild step
+      // statistics — how many builds finished, the worst single step
+      // in ms, the worst single step WHILE MOVING (the hitch signal;
+      // a stationary build may run to completion in one step), the
+      // total step time, and the last build's frame count and ms
+      // (probes only — no gameplay effect).
+      getRebuildStats:()=>({...rebuildStepStatsRef.current}),
       getStaminaPublishes:()=>staminaPublishCountRef.current,
       // Probe-only: drop a stale tap destination so key-based probe runs
       // are not overridden by an earlier tap (no gameplay effect — taps

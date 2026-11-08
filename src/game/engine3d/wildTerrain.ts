@@ -47,7 +47,7 @@
 // ordered: landscape, no town, no NPCs, no quests.
 import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, type Terrain } from '../iso/isoWorld';
 import { groundNoise, groundElevation } from './townLook';
-import { placedPathKeys, placedWaterKeys } from './placements';
+import { placedPathKeyInts, placedWaterKeyInts, tileKeyInt } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** Salt of the stored wilderness scatter (defaultWorld). */
@@ -66,7 +66,7 @@ export function wildScatter(x: number, y: number): number {
 
 /** True when the smooth lake field puts water on this tile. */
 export function wildLakeAt(x: number, y: number): boolean {
-  return groundNoise(x, y, WILD_LAKE_SPACING) > WILD_LAKE_THRESHOLD;
+  return lakeNoiseAt(x, y) > WILD_LAKE_THRESHOLD;
 }
 
 /** True when the scatter hash puts a wild tree on this tile
@@ -183,11 +183,82 @@ export function isWildWalkable(w: IsoWorld, x: number, y: number): boolean {
  *  effTerrain closure (identical rule) so the ground, the surface, the
  *  picker and the camera share ONE definition: placed water wins, then
  *  placed paths read as dirt, then the stored map terrain, then wild
- *  terrain past the edge. The placement key Sets are built once per call. */
+ *  terrain past the edge. The placement key Sets are built once per call.
+ *  BUILD 1035: integer keys (tileKeyInt — no "x,y" string allocation
+ *  per call; the CPU profile put the old string-key closure at 20.4%
+ *  of rebuild time) and a per-closure cache for the IN-MAP terrain
+ *  (terrainAt builds a string key and scans removedWater per call, and
+ *  the overlay loop, landBlendAt and the window all query the same
+ *  tiles repeatedly — the cache makes repeats a Map hit). Wild tiles
+ *  are NOT cached here (the far ring queries each once; the lake field
+ *  below is the wild cache). The cache is per closure — a fresh
+ *  effTerrainFor call (a new rebuild, a new frame, a new tap) starts
+ *  empty, so a world edit can never read a stale entry from an older
+ *  closure; an edit DURING a time-sliced rebuild is corrected by the
+ *  rebuild the edit itself queues. */
 export function effTerrainFor(world: IsoWorld): (x: number, y: number) => Terrain {
-  const placedWater = placedWaterKeys(world);
-  const placedPaths = placedPathKeys(world);
-  return (x, y) => placedWater.has(terrainKey(x, y)) ? 'water' : (placedPaths.has(terrainKey(x, y)) ? 'dirt' : (inBounds(world, x, y) ? terrainAt(world, x, y) : wildTerrainAt(x, y)));
+  const placedWater = placedWaterKeyInts(world);
+  const placedPaths = placedPathKeyInts(world);
+  const cache = new Map<number, Terrain>();
+  return (x, y) => {
+    const k = tileKeyInt(x, y);
+    if (placedWater.has(k)) return 'water';
+    if (placedPaths.has(k)) return 'dirt';
+    if (inBounds(world, x, y)) {
+      let t = cache.get(k);
+      if (t === undefined) { t = terrainAt(world, x, y); cache.set(k, t); }
+      return t;
+    }
+    return wildTerrainAt(x, y);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// BUILD 1035 — the lake noise field, cached per 16x16 chunk.
+//
+// The far ring scans ~214k wild tiles per rebuild through wildLakeAt,
+// and each call ran groundNoise (4 sin-hash calls). The field is pure
+// position — it never changes — so the values are cached in 16x16
+// chunks (Float64Array, one per chunk) and reused across rebuilds.
+// A chunk is computed once (256 groundNoise calls) and then serves
+// every later rebuild that touches it; driving only computes the new
+// chunks at the ring's leading edge. Values are EXACTLY groundNoise
+// (same function, same args) — the world looks identical, only faster.
+// Float64Array, not Float32Array: a float32 round-trip shifts a value
+// by ~2.5e-8, which could flip a tile whose noise sits exactly on the
+// 0.90 lake threshold; float64 keeps the cached value bit-identical.
+// Cap: 8192 chunks (~2M tiles, ~16MB); when exceeded the whole cache
+// clears and repopulates (one slower, still time-sliced, rebuild).
+// Callers pass INTEGER tile coords only (wildLakeAt, isShoreSand,
+// isFoam all do); a fractional coord would index the chunk wrong.
+// ---------------------------------------------------------------------------
+/** Lake-field chunk side (tiles). */
+export const LAKE_CHUNK = 16;
+/** Max cached lake chunks before a full clear. */
+export const LAKE_CHUNK_CACHE_MAX = 8192;
+const lakeChunks = new Map<number, Float64Array>();
+
+/** Raw lake-field noise at an integer tile — exactly groundNoise(x, y,
+ *  WILD_LAKE_SPACING), served from the chunk cache. */
+export function lakeNoiseAt(x: number, y: number): number {
+  const cx = Math.floor(x / LAKE_CHUNK), cy = Math.floor(y / LAKE_CHUNK);
+  const key = (cx + 2048) * 4096 + (cy + 2048);
+  let chunk = lakeChunks.get(key);
+  if (!chunk) {
+    if (lakeChunks.size >= LAKE_CHUNK_CACHE_MAX) lakeChunks.clear();
+    chunk = new Float64Array(LAKE_CHUNK * LAKE_CHUNK);
+    const x0 = cx * LAKE_CHUNK, y0 = cy * LAKE_CHUNK;
+    for (let yy = 0; yy < LAKE_CHUNK; yy++) for (let xx = 0; xx < LAKE_CHUNK; xx++) {
+      chunk[yy * LAKE_CHUNK + xx] = groundNoise(x0 + xx, y0 + yy, WILD_LAKE_SPACING);
+    }
+    lakeChunks.set(key, chunk);
+  }
+  return chunk[(y - cy * LAKE_CHUNK) * LAKE_CHUNK + (x - cx * LAKE_CHUNK)];
+}
+
+/** Cached lake chunks (test/observability only). */
+export function lakeChunkCacheSize(): number {
+  return lakeChunks.size;
 }
 
 /** Land-ness at a continuous point: bilinear interpolation of the
@@ -245,7 +316,7 @@ export function isShoreSand(effTerrain: (x: number, y: number) => Terrain, t: Te
   const coast = oceanCoastX(y);
   if (x >= coast && x < coast + SHORE_SAND_DIST) return true;
   if (x >= POND_RECT.x0 - 2 && x <= POND_RECT.x1 + 2 && y >= POND_RECT.y0 - 2 && y <= POND_RECT.y1 + 2) return true;
-  const n = groundNoise(x, y, WILD_LAKE_SPACING);
+  const n = lakeNoiseAt(x, y);
   if (n <= LAKE_SHORE_LO || n > WILD_LAKE_THRESHOLD) return false;
   // Lake edge: a direct neighbour is lake water.
   return (effTerrain(x - 1, y) === 'water' && wildLakeAt(x - 1, y))
@@ -267,7 +338,7 @@ export function isFoam(t: Terrain, x: number, y: number): boolean {
     && (x === POND_RECT.x0 || x === POND_RECT.x1 || y === POND_RECT.y0 || y === POND_RECT.y1)) return true;
   if (x < coast) return false;
   if (x >= POND_RECT.x0 && x <= POND_RECT.x1 && y >= POND_RECT.y0 && y <= POND_RECT.y1) return false;
-  const n = groundNoise(x, y, WILD_LAKE_SPACING);
+  const n = lakeNoiseAt(x, y);
   return n > WILD_LAKE_THRESHOLD && n <= LAKE_FOAM_HI;
 }
 

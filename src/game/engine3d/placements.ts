@@ -1381,3 +1381,35 @@ export function placedWaterKeys(w: IsoWorld): Set<string> {
   }
   return keys;
 }
+
+// BUILD 1035 — integer tile keys for the hot terrain loop. terrainKey
+// builds a "x,y" STRING per call, and effTerrainFor calls it twice per
+// tile — ~600k string allocations per world rebuild (the CPU profile
+// put the effTerrain closure at 20.4% of rebuild time). Integer keys
+// are allocation-free: (x+2048)*4096+(y+2048) is collision-free for
+// tile coords in [-2048, 2048) (same scheme as the surfAt corner cache
+// in Engine3DWorldView). The string-key functions above stay untouched
+// (transients.ts and the save format use them); these integer versions
+// serve ONLY the hot effTerrain closure.
+/** Integer key for a tile (allocation-free; coords in [-2048, 2048)). */
+export function tileKeyInt(x: number, y: number): number {
+  return (x + 2048) * 4096 + (y + 2048);
+}
+
+/** Integer keys of placed path tiles (see tileKeyInt). */
+export function placedPathKeyInts(w: IsoWorld): Set<number> {
+  const keys = new Set<number>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'path') keys.add(tileKeyInt(p.x0, p.y0));
+  }
+  return keys;
+}
+
+/** Integer keys of placed water tiles (see tileKeyInt). */
+export function placedWaterKeyInts(w: IsoWorld): Set<number> {
+  const keys = new Set<number>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'water') keys.add(tileKeyInt(p.x0, p.y0));
+  }
+  return keys;
+}
