@@ -500,6 +500,33 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1039 @ 2026-11-08T10:22:21.688Z, run 42470997314 success. Asserts 135 checks pass (parent re-ran directly — ASSERT_DONE 135 checks passed). Sim vs pristine1038 IDENTICAL (parent diffed sim1039.norm.log vs sim1038-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe ALL CHECKS PASS, 0 page errors (place → Undo button → Redo button; real keyboard Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; Remove → Undo; Move drag → Undo; rot-1 cottage → Undo → Redo with rot 1 kept; AREA SELECT move → ONE Undo restores the whole group; new action clears Redo, Redo button disabled). Scaling undo is honestly pending — no scaling feature exists yet, stated in the player note.",
       "verificationTimestamp": "2026-11-08T10:22:21.688Z"
+    },
+    {
+      "build": 1040,
+      "commit": "58aa5ecd",
+      "description": "Town Builder Stage 4 asset library: lanterns, bushes, mine, ore deposits, wooden bridge + Build-menu categories.",
+      "filesAffected": [
+        "src/game/engine3d/lantern.ts",
+        "src/game/engine3d/placements.ts",
+        "src/game/engine3d/townLook.ts",
+        "src/game/engine3d/houseFx.ts",
+        "src/game/engine3d/areaSelect.ts",
+        "src/game/engine3d/templates.ts",
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Expand the Build menu with a complete asset library — lanterns, bushes, mine, ore deposits, and a wooden-plank bridge tile over water — organized into categories (Buildings / Houses / Shops / Decorations / Roads / Nature / Infrastructure).",
+      "previousCheckpoint": {
+        "build": 1039,
+        "commit": "fa257044"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42480115688",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1040 @ 2026-11-08T12:26:01.132Z, run 42480115688 success. Asserts 185 checks pass (parent re-ran directly — ASSERT_DONE 185 checks passed). Sim vs pristine1039 IDENTICAL (parent diffed sim1040.norm.log vs sim1039-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PROBE DONE, 35 findings, 0 page errors (all 11 category/kind checks pass; lantern placed + lit at 21:00; bush placed + walked onto; mine placed + Enter prompt at its door; ore placed; 3 bridge tiles placed over the ocean and walked across; one Undo removed the last bridge, Redo brought it back). Honest note: no mining system yet — ore deposits are decoration for now.",
+      "verificationTimestamp": "2026-11-08T12:26:01.132Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

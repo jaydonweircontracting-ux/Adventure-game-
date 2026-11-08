@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Town Builder Stage 4",
+    "build": "Farm land for the windmill",
     "commit": null,
-    "description": "Asset library (remaining): lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill landed as build 1038, pulled forward by the user's order.) NEXT per the queue.",
+    "description": "Placeable farm land that auto-regrows to wheat and can be harvested by villagers or the player. Ordered by the user (2026-11-08 ~06:37 PST). NEXT per the queue (after Stage 4, ahead of Stage 5).",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -221,13 +221,22 @@
       "runId": "42470997314",
       "status": "verified",
       "verifiedAt": "2026-11-08T10:22:21.688Z"
+    },
+    {
+      "build": 1040,
+      "commit": "58aa5ecd",
+      "description": "Town Builder Stage 4 asset library: the Build menu is now organized into categories (Buildings / Houses / Shops / Decorations / Roads / Nature / Infrastructure). New: Lanterns (glow at night), Bushes (walk-through), the Mine (enterable), Ore Deposits, and the Wooden Bridge (place it over the ocean or the pond and walk straight across the water). Landed: commit 58aa5ecd, deploy run 42480115688 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42480115688",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T12:26:01.132Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Town Builder Stage 4 (asset library, remaining)",
+      "build": "Farm land for the windmill (build 1041)",
       "commit": null,
-      "description": "Lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill landed as build 1038, pulled forward by the user's order.)",
+      "description": "Placeable farm land that auto-regrows to wheat and can be harvested by villagers or the player. Ordered by the user (2026-11-08 ~06:37 PST): \"Add farm land for the windmill we can place and it auto grows back to wheat and can be harvested by villagers or the player\".",
       "status": "in_progress"
     },
     {
@@ -401,13 +410,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T05:01:29-07:00",
+  "lastUpdateTimestamp": "2026-11-08T13:09:12-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1039,
-    "commit": "fa257044",
-    "description": "Town Builder Stage 3 unlimited undo/redo: CTRL+Z undoes and CTRL+Y (or CTRL+Shift+Z) redoes, and the Undo/Redo buttons do the same — for every Build-mode change (placing, deleting, moving, rotating, pasting a chunk, whole AREA SELECT moves/rotations/deletions/duplications, each as one step), with no limit on how far back you can go.",
-    "runId": "42470997314",
-    "verifiedAt": "2026-11-08T10:22:21.688Z"
+    "build": 1040,
+    "commit": "58aa5ecd",
+    "description": "Town Builder Stage 4 asset library: the Build menu is now organized into categories (Buildings / Houses / Shops / Decorations / Roads / Nature / Infrastructure). New: Lanterns (glow at night), Bushes (walk-through), the Mine (enterable), Ore Deposits, and the Wooden Bridge (place it over the ocean or the pond and walk straight across the water).",
+    "runId": "42480115688",
+    "verifiedAt": "2026-11-08T12:26:01.132Z"
   },
   "measuredBaselines": [
     {
@@ -631,6 +640,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1040,
+      "commit": "58aa5ecd",
+      "result": "Verified live: served version.json build 1040 @ 2026-11-08T12:26:01.132Z, run 42480115688 success. Asserts 185 checks pass (parent re-ran directly — ASSERT_DONE 185 checks passed). Sim vs pristine1039 IDENTICAL (parent diffed sim1040.norm.log vs sim1039-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PROBE DONE, 35 findings, 0 page errors (all 11 category/kind checks pass; lantern placed + lit at 21:00; bush placed + walked onto; mine placed + Enter prompt at its door; ore placed; 3 bridge tiles placed over the ocean and walked across; one Undo removed the last bridge, Redo brought it back). Honest note: no mining system yet — ore deposits are decoration for now.",
+      "runId": "42480115688",
+      "verifiedAt": "2026-11-08T12:26:01.132Z"
+    },
     {
       "build": 1039,
       "commit": "fa257044",
