@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Town Builder Stage 3",
+    "build": "Town Builder Stage 4",
     "commit": null,
-    "description": "Unlimited undo/redo: command-based history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history. Note build 991 already has session-only unlimited undo/redo — this stage makes it command-based and complete. NEXT per the queue (after the windmill, which was pulled forward by the user's order).",
+    "description": "Asset library (remaining): lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill landed as build 1038, pulled forward by the user's order.) NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -212,20 +212,23 @@
       "runId": "42463440575",
       "status": "verified",
       "verifiedAt": "2026-11-08T08:34:33.394Z"
+    },
+    {
+      "build": 1039,
+      "commit": "fa257044",
+      "description": "Town Builder Stage 3 unlimited undo/redo: CTRL+Z undoes and CTRL+Y (or CTRL+Shift+Z) redoes, and the Undo/Redo buttons do the same — for every Build-mode change (placing, deleting, moving, rotating, pasting a chunk, whole AREA SELECT moves/rotations/deletions/duplications, each as one step), with no limit on how far back you can go. Landed: commit fa257044, deploy run 42470997314 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42470997314",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T10:22:21.688Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Town Builder Stage 3 (unlimited undo/redo)",
-      "commit": null,
-      "description": "Command-based undo/redo history covering placement, deletion, movement, rotation, scaling, and area operations. CTRL+Z / CTRL+Y + dedicated buttons. Never silently discard history. Note build 991 already has session-only unlimited undo/redo — this stage makes it command-based and complete.",
-      "status": "in_progress"
-    },
-    {
       "build": "Town Builder Stage 4 (asset library, remaining)",
       "commit": null,
       "description": "Lanterns, bushes, mine, ore deposits, bridge tile, more buildings/trees/roads/decorations in the Build menu, organized into categories. (Windmill landed as build 1038, pulled forward by the user's order.)",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Town Builder Stage 5 (layout helpers)",
@@ -398,13 +401,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T03:01:08-07:00",
+  "lastUpdateTimestamp": "2026-11-08T05:01:29-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1038,
-    "commit": "8963bc65",
-    "description": "Windmill (pulled forward from Town Builder Stage 4): a placeable windmill in the Build menu (Buildings) — a 3x3 stone tower with a pyramid cap and four big sails on the front that turn slowly in the wind; enterable through its door; rotates with R / the panel buttons so the sails face the way you want.",
-    "runId": "42463440575",
-    "verifiedAt": "2026-11-08T08:34:33.394Z"
+    "build": 1039,
+    "commit": "fa257044",
+    "description": "Town Builder Stage 3 unlimited undo/redo: CTRL+Z undoes and CTRL+Y (or CTRL+Shift+Z) redoes, and the Undo/Redo buttons do the same — for every Build-mode change (placing, deleting, moving, rotating, pasting a chunk, whole AREA SELECT moves/rotations/deletions/duplications, each as one step), with no limit on how far back you can go.",
+    "runId": "42470997314",
+    "verifiedAt": "2026-11-08T10:22:21.688Z"
   },
   "measuredBaselines": [
     {
@@ -628,6 +631,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1039,
+      "commit": "fa257044",
+      "result": "Verified live: served version.json build 1039 @ 2026-11-08T10:22:21.688Z, run 42470997314 success. Asserts 135 checks pass (parent re-ran directly — ASSERT_DONE 135 checks passed). Sim vs pristine1038 IDENTICAL (parent diffed sim1039.norm.log vs sim1038-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe ALL CHECKS PASS, 0 page errors (place → Undo button → Redo button; real keyboard Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; Remove → Undo; Move drag → Undo; rot-1 cottage → Undo → Redo with rot 1 kept; AREA SELECT move → ONE Undo restores the whole group; new action clears Redo, Redo button disabled). Scaling undo is honestly pending — no scaling feature exists yet, stated in the player note.",
+      "runId": "42470997314",
+      "verifiedAt": "2026-11-08T10:22:21.688Z"
+    },
     {
       "build": 1038,
       "commit": "8963bc65",
