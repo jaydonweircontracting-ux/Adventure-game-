@@ -49,6 +49,7 @@
 //   builder does. Smoke runs day AND night.
 
 import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
+import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, movedRecordForHut } from './placements';
 import { sameHut } from './interiors';
@@ -303,6 +304,11 @@ export interface HouseFxDetail {
   slots: WindowSlot[];
   schedule: LightSchedule;
   hut: { x0: number; y0: number; x1: number; y1: number };
+  /** BUILD 1038: the placed variant, so the emitter can find windmills
+   *  for their rotating blades. */
+  variant?: HouseVariantId;
+  /** BUILD 1038: the hut's heightfield base y — the blade hub rides it. */
+  baseY: number;
 }
 
 /** Resolve every input to its design-derived fx state at this minute.
@@ -325,6 +331,8 @@ export function resolveHouseFx(inputs: HouseFxInput[], minutes: number): HouseFx
       slots: windowSlotsFor(cx, cz, w, d, design.doorFace, design.stories, inp.baseY ?? 0),
       schedule: lightScheduleFor(inp.seedX0, inp.seedY0),
       hut: { x0: inp.x0, y0: inp.y0, x1: inp.x1, y1: inp.y1 },
+      variant: inp.variant,
+      baseY: inp.baseY ?? 0,
     });
   }
   return out;
@@ -390,6 +398,10 @@ export interface HouseFxCounts {
   chimneys: number;
   litHouses: number;
   smokeVerts: number;
+  /** BUILD 1038: windmills whose blades were emitted this frame. */
+  windmills: number;
+  /** BUILD 1038: blade verts (in the night segment). */
+  millVerts: number;
 }
 
 /**
@@ -404,8 +416,8 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
-  let chimneys = 0, litHouses = 0, smokeVerts = 0;
-  // Pass 1 — smoke + dark panes (drawn with the night factor).
+  let chimneys = 0, litHouses = 0, smokeVerts = 0, windmills = 0, millVerts = 0;
+  // Pass 1 — smoke + dark panes + windmill blades (drawn with the night factor).
   for (const r of details) {
     if (r.lit) litHouses++;
     if (r.top) {
@@ -422,6 +434,20 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
         pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_DARK);
       }
     }
+    // BUILD 1038: the windmill's blades turn on the same drift clock
+    // as the smoke, so they rotate every frame with no world rebuild.
+    // Timber + canvas, in the night segment like the smoke (they
+    // darken at night). The hub rides the heightfield base y, and the
+    // door face — which rotates with the mill — picks the plane.
+    if (r.variant === 'windmill') {
+      const cost = MILL_TRIS_PER_MILL * 3;
+      if (fits(cost)) {
+        windmills++;
+        millVerts += cost;
+        const hub = millHubFor(r.cx, r.cz, r.w, r.d, r.doorFace, r.baseY);
+        for (const t of millBladesFor(hub, r.doorFace, driftSec * MILL_ROT_SPEED)) pushTri(out, t.a, t.b, t.c, t.col);
+      }
+    }
   }
   const nightVerts = (out.length - base) / 6;
   // Pass 2 — lit panes (drawn with uNight=0: self-luminous).
@@ -432,5 +458,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts };
 }

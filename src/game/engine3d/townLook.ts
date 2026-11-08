@@ -220,7 +220,7 @@ export interface HouseDesign {
  *  timber and roof stay seed-driven (town behaviour —
  *  two cottages at different spots differ in those, exactly like two
  *  town houses do). No new models, no new parameter values. */
-export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand' | 'inn' | 'smith' | 'store';
+export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand' | 'inn' | 'smith' | 'store' | 'windmill';
 export interface HouseVariant {
   id: HouseVariantId;
   label: string;
@@ -243,8 +243,17 @@ export const HOUSE_VARIANTS: Record<HouseVariantId, HouseVariant> = {
   inn: { id: 'inn', label: 'Inn', w: 6, d: 5, stories: 3, openFront: false },
   smith: { id: 'smith', label: 'Blacksmith', w: 5, d: 4, stories: 2, openFront: false },
   store: { id: 'store', label: 'General Store', w: 5, d: 4, stories: 2, openFront: true },
+  // BUILD 1038: the placeable windmill — a 3x3 stone tower, 2 stories,
+  // no open front. It is a house variant so it rides the whole
+  // building system (placement, rotation, save/load, undo/redo, move,
+  // chunks, AREA SELECT), but it is NOT a house shape: the view
+  // branches on the variant and emits a tower + pyramid cap instead
+  // of floors + pitched roof, and houseDesignForVariant forces no
+  // chimney (a windmill has no smoke). Its rotating blades are
+  // per-frame fx (windmill.ts + houseFx.ts), not part of the design.
+  windmill: { id: 'windmill', label: 'Windmill', w: 3, d: 3, stories: 2, openFront: false },
 };
-export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand', 'inn', 'smith', 'store'];
+export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand', 'inn', 'smith', 'store', 'windmill'];
 
 /** Derive a house's full look from its hut rect + door tile. The door
  *  face comes from the layout's door position (door on the y0 edge =
@@ -303,6 +312,8 @@ export function houseDesignForVariant(
     out.building = 'smith'; out.chimney = true; out.wideChimney = true;
     out.stone = [0.38, 0.38, 0.36];
   } else if (variant.id === 'store') { out.building = 'store'; }
+  // BUILD 1038: a windmill has no chimney and no smoke.
+  else if (variant.id === 'windmill') { out.chimney = false; }
   return out;
 }
 

@@ -16,6 +16,7 @@ import {
 import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, FX_MAX_VERTS } from './houseFx';
+import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
@@ -916,6 +917,44 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       quad([x-w/2-.45+.25,.005+hy,z-d/2-.45+.35],[x+w/2+.45+.25,.005+hy,z-d/2-.45+.35],[x+w/2+.45+.25,.005+hy,z+d/2+.45+.35],[x-w/2-.45+.25,.005+hy,z+d/2+.45+.35],[.28,.27,.24]);
       quad([x-w/2-.15+.12,.008+hy,z-d/2-.15+.15],[x+w/2+.15+.12,.008+hy,z-d/2-.15+.15],[x+w/2+.15+.12,.008+hy,z+d/2+.15+.15],[x-w/2-.15+.12,.008+hy,z+d/2+.15+.15],[.2,.19,.17]);
     }
+    // BUILD 1038: the windmill is a house variant, but it is NOT a house
+    // shape — a straight stone tower (two stories tall) with a pyramid
+    // cap, a door on the door face, and window frames at the shared
+    // windowSlotsFor positions (so the per-frame fx panes land inside
+    // them, lit at night like any house). No pitched roof, no upper
+    // plaster floors, no chimney, no commercial dressing. The rotating
+    // blades are NOT here: they are per-frame fx (houseFx.ts), driven
+    // by the drift clock, so they turn with no world rebuild. The tower
+    // top (topY) is the cap base; the hub height in windmill.ts must
+    // agree with it (WINDMILL_TOWER_H = GROUND_FLOOR_H +
+    // UPPER_FLOOR_H, and stories is fixed to 2 by the variant).
+    if(hutVariant==='windmill'){
+      houseBox(x,z,w,WINDMILL_TOWER_H,d,hy,design.stone);
+      (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d,hy));
+      // Door + timber lintel + stone step on the door face (same as a house).
+      faceRect(face,aC,DOOR_W,DOOR_H/2+hy,DOOR_H,facePlane(.02),DOOR_WOOD);
+      faceRect(face,aC,1.21,GROUND_FLOOR_H+.06+hy,.12,facePlane(.02),design.timber);
+      if(face==='south')houseBox(x,z+d/2+.15,1.21,.12,.3,hy,design.stone);
+      else if(face==='north')houseBox(x,z-d/2-.15,1.21,.12,.3,hy,design.stone);
+      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,1.21,hy,design.stone);
+      else houseBox(x+w/2+.15,z,.12,.12,1.21,hy,design.stone);
+      // Window frames at the shared slots (fx panes land inside them).
+      for(const s of windowSlotsFor(x,z,w,d,face,design.stories,hy)){
+        const fixed=s.face==='south'?z+d/2:s.face==='north'?z-d/2:s.face==='west'?x-w/2:x+w/2;
+        const out=s.face==='south'||s.face==='east'?1:-1;
+        faceRect(s.face,s.a,.46,s.y,.56,fixed+out*.015,design.timber);
+      }
+      // Pyramid cap (roof colour, slight overhang), one triangle per face.
+      const ce=.18;
+      const cx0=x-w/2-ce,cx1=x+w/2+ce,cz0=z-d/2-ce,cz1=z+d/2+ce;
+      const apex:[number,number,number]=[x,topY+WINDMILL_CAP_H,z];
+      tri([cx0,topY,cz0],[cx1,topY,cz0],apex,shadeRgb(design.roof,SUN_SHADE.north));
+      tri([cx1,topY,cz0],[cx1,topY,cz1],apex,shadeRgb(design.roof,SUN_SHADE.east));
+      tri([cx1,topY,cz1],[cx0,topY,cz1],apex,shadeRgb(design.roof,SUN_SHADE.south));
+      tri([cx0,topY,cz1],[cx0,topY,cz0],apex,shadeRgb(design.roof,SUN_SHADE.west));
+      yield;
+      continue;
+    }
     // Stone ground floor + mortar joints on all faces.
     houseBox(x,z,w,GROUND_FLOOR_H,d,hy,design.stone);
     (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d,hy));
@@ -1484,7 +1523,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store','house-windmill':'Windmill'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
@@ -1587,7 +1626,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // the one bare 'house' kind — each is its own palette entry with
     // its own look, footprint, and interior. Bare 'house' is the
     // legacy placed kind (old saves only) and is not offered here.
-    {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand','house-inn','house-smith','house-store']},
+    {id:'buildings',label:'Buildings',kinds:['house-cottage','house-tall','house-shop','house-grand','house-inn','house-smith','house-store','house-windmill']},
     {id:'plants',label:'Plants',kinds:['tree']},
     {id:'props',label:'Props',kinds:['stall','rock','wall']},
   ];
@@ -1608,6 +1647,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     'house-inn':{label:'Inn',swatch:'linear-gradient(135deg,#d6c799 0 50%,#c79540 50% 100%)'},
     'house-smith':{label:'Blacksmith',swatch:'linear-gradient(135deg,#61615c 0 50%,#b35a1e 50% 100%)'},
     'house-store':{label:'General Store',swatch:'linear-gradient(135deg,#c2a678 0 50%,#8c402e 50% 100%)'},
+    // BUILD 1038 swatch: windmill stone grey / timber brown.
+    'house-windmill':{label:'Windmill',swatch:'linear-gradient(135deg,#9a9a94 0 50%,#6b4a2b 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     // BUILD 1025: Rock — the generated rock's own grey (seeded cube
@@ -1815,7 +1856,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let worldVertCount=0;
     // BUILD 1014: last frame's house-fx emission stats, for the
     // getHouseFx test hook (probes only).
-    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0};
+    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0};
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     // BUILD 992: one zoom parameter for pinch + wheel, routed through
@@ -2996,7 +3037,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // and panes are hidden with it).
       const fxArr:number[]=[];
       const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current);
-      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts};
+      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts};
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
@@ -3306,7 +3347,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // probes see exactly the live state); smokeSample is the first
       // chimney's live puff centres (pure function of the drift clock,
       // for the smoke-movement proof).
-      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit})),smokeSample:sample};},
+      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit,variant:d.variant??null,baseY:d.baseY})),smokeSample:sample};},
       // BUILD 999: a teleport must also drop the NPC's cached A* path.
       // Paths store ABSOLUTE tiles planned from the old position; the
       // timer only replans when the DESTINATION changes, so a moved
@@ -3813,7 +3854,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
         <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses and stalls rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, and the windmill rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','terrain','buildings','plants','props','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props',custom:'Custom'}[cat]}</button>)}
       </div>
