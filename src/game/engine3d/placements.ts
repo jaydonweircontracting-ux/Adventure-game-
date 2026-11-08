@@ -24,7 +24,7 @@ import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWo
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
-  | 'lantern' | 'bush' | 'ore' | 'bridge'
+  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -1061,10 +1061,11 @@ export function validatePlacement(
     if (terrain === 'water') return { ok: false, reason: 'water' };
     if (kind === 'path') {
       if (terrain === 'dirt') return { ok: false, reason: 'already a path or road' };
-    } else if (kind === 'grass' || kind === 'bush') {
+    } else if (kind === 'grass' || kind === 'bush' || kind === 'farm') {
       // No terrain rejection: grass grows on paths, squares and lawns,
-      // and a bush (BUILD 1040, walk-through decor like grass) sits
-      // on paths, squares and lawns alike.
+      // and a bush (BUILD 1040, walk-through decor like grass) or farm
+      // land (BUILD 1041, tilled soil) sits on paths, squares and
+      // lawns alike. Water is refused above, for every kind.
     } else {
       if (terrain === 'dirt') return { ok: false, reason: 'a path or road' };
       if (terrain === 'sand') return { ok: false, reason: 'the town square' };
@@ -1091,12 +1092,23 @@ export function validatePlacement(
           return { ok: false, reason: 'something you already placed' };
         }
       }
+    } else if (kind === 'farm') {
+      // BUILD 1041: farm land stacks on a path or a grass patch (a
+      // field on the lawn), but never on another farm tile or on
+      // anything else — one tile, one crop.
+      for (const p of placementsOf(w)) {
+        if (t.x >= p.x0 && t.x <= p.x1 && t.y >= p.y0 && t.y <= p.y1) {
+          if (p.kind === 'path' || p.kind === 'grass') continue;
+          if (p.kind === 'farm') return { ok: false, reason: 'farm land already here' };
+          return { ok: false, reason: 'something you already placed' };
+        }
+      }
     } else {
       const pl = placedBlock(w, t.x, t.y);
       if (pl) return { ok: false, reason: pl };
     }
   }
-  if (kind !== 'path' && kind !== 'grass' && kind !== 'bush') {
+  if (kind !== 'path' && kind !== 'grass' && kind !== 'bush' && kind !== 'farm') {
     for (const t of tiles) {
       if (t.x === playerTile.x && t.y === playerTile.y) return { ok: false, reason: 'where you are standing' };
       if (npcTiles.some((n) => n.x === t.x && n.y === t.y)) return { ok: false, reason: 'where someone is standing' };
@@ -1191,6 +1203,10 @@ export function movePlacement(
   // must not flip what the thing is (validatePlacement would
   // re-orient it to its new neighbours).
   if (item.kind === 'wall' && item.h !== undefined) result.item.h = item.h;
+  // BUILD 1041: a moved farm tile keeps its growth clock — a move
+  // must not re-plant what is nearly wheat (validatePlacement builds
+  // a fresh item with no stamp).
+  if (item.kind === 'farm' && item.farmPlantedAt !== undefined) result.item.farmPlantedAt = item.farmPlantedAt;
   const at = Math.min(index, list.length);
   list.splice(at, 0, result.item);
   return { ok: true, item: result.item, index: at };
@@ -1498,12 +1514,13 @@ export function isPlacedBridge(w: IsoWorld, x: number, y: number): boolean {
 }
 
 /** True when a placed house/stall/tree blocks the tile. Placed paths,
- *  grass, bushes, and bridges never block — a bush is walk-through
- *  decor (like grass), a bridge is walkable ground over water (like
+ *  grass, bushes, farm land, and bridges never block — a bush is
+ *  walk-through decor (like grass), farm land is walk-through tilled
+ *  soil (BUILD 1041), a bridge is walkable ground over water (like
  *  a path). */
 export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
   for (const p of placementsOf(w)) {
-    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'bridge') continue;
+    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'farm' || p.kind === 'bridge') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return true;
   }
   return false;
@@ -1628,6 +1645,17 @@ export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number }
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 
+/** Placed farm-land tiles (BUILD 1041). Single tiles, like placed
+ *  grass — farm land is walk-through tilled soil, so it never blocks
+ *  movement. It carries the growth stamp (farmPlantedAt) so the
+ *  renderer, the E-key harvest, and the farmer detour can read the
+ *  stage without re-deriving it. */
+export function placedFarmTiles(w: IsoWorld): Array<{ tx: number; ty: number; plantedAt: number | undefined }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'farm')
+    .map((p) => ({ tx: p.x0, ty: p.y0, plantedAt: p.farmPlantedAt }));
+}
+
 /** Terrain keys of placed path tiles, for the terrain loop's effective terrain. */
 export function placedPathKeys(w: IsoWorld): Set<string> {
   const keys = new Set<string>();
@@ -1667,6 +1695,17 @@ export function placedPathKeyInts(w: IsoWorld): Set<number> {
   const keys = new Set<number>();
   for (const p of placementsOf(w)) {
     if (p.kind === 'path') keys.add(tileKeyInt(p.x0, p.y0));
+  }
+  return keys;
+}
+
+/** Integer keys of placed farm-land tiles (BUILD 1041, see
+ *  tileKeyInt) — the whole-map overlay loop reads this set to paint
+ *  the tilled-soil slab on farm tiles. */
+export function placedFarmKeyInts(w: IsoWorld): Set<number> {
+  const keys = new Set<number>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'farm') keys.add(tileKeyInt(p.x0, p.y0));
   }
   return keys;
 }

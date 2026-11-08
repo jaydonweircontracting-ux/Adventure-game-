@@ -44,7 +44,10 @@ export const TEMPLATES_KEY = 'ag-3d-templates-v1';
  *  BUILD 1036: rot rides along (house/stall only, absent = 0) so a
  *  rotated house pastes with its door on the same face it was saved
  *  with — paste validates with the rotation, and the shape guard
- *  compares against the rotated rect. */
+ *  compares against the rotated rect.
+ *  BUILD 1041: a chunk carries no growth state — a captured farm
+ *  tile pastes as a FRESH planting (the view stamps farmPlantedAt
+ *  at paste time), never as the growth stage it was captured at. */
 export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: number; ry1: number; rot?: Rotation };
 
 /** A saved chunk: a name plus its captured items, in source list
@@ -63,7 +66,7 @@ export type ChunkTemplate = { name: string; items: ChunkItem[] };
  *  means a future variant cannot be forgotten the same way.
  *  'custom' is deliberately NOT here: captureChunk never emits it
  *  (BUILD 997), so it is not a gap. */
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', ...HOUSE_VARIANT_KINDS];
+const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', 'farm', ...HOUSE_VARIANT_KINDS];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;

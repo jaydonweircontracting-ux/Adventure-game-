@@ -18,13 +18,14 @@ import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
+import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, type FarmStage } from './farm';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
-  placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles,
+  placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange, undoRedoKeyForEvent,
-  isHouseKind, rotateFace, placementRectFor,
+  isHouseKind, rotateFace, placementRectFor, tileKeyInt,
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
@@ -571,6 +572,10 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // start (+40,168 verts, +28% of the 143,772-vert world buffer).
   // Grass tufts, wildflowers and pebbles stay window-only (separate
   // systems, out of scope for this fix).
+  // BUILD 1041: farm-land soil rides this same whole-map loop (the
+  // wheat stalks are per-frame fx, also whole-map, so a field reads
+  // the same at every zoom — soil and wheat never disagree).
+  const farmKeys=placedFarmKeyInts(world);
   for(let y=0;y<world.h;y++) for(let x=0;x<world.w;x++) {
     const terrain=effTerrain(x,y);
     // BUILD 1034: overlays ride the heightfield — a slab/cobble at a
@@ -595,6 +600,18 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
           const qy=surfaceElevation(effTerrain,x+sq.dx+sq.size/2,y+sq.dz+sq.size/2)+.022;
           quad([x+sq.dx,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz+sq.size],[x+sq.dx,qy,y+sq.dz+sq.size],[sq.shade,sq.shade,sq.shade*.97]);
         }
+      }
+    }
+    // BUILD 1041: farm land — a tilled-soil slab riding the
+    // heightfield (+0.03, the slab offset) with three darker furrow
+    // strips, so a field reads as ploughed earth even before the
+    // wheat grows. The wheat itself is per-frame fx (houseFx.ts).
+    if(farmKeys.has(tileKeyInt(x,y))){
+      const sy=surfaceElevation(effTerrain,x+.5,y+.5)+.03;
+      quad([x,sy,y],[x+1,sy,y],[x+1,sy,y+1],[x,sy,y+1],FARM_SOIL);
+      for(let f=0;f<3;f++){
+        const fz=y+.22+f*.28,fy=sy+.002;
+        quad([x+.06,fy,fz],[x+.94,fy,fz],[x+.94,fy,fz+.12],[x+.06,fy,fz+.12],FARM_FURROW);
       }
     }
     if(x===world.w-1&&y%5===4)yield;
@@ -1623,7 +1640,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store','house-windmill':'Windmill','house-mine':'Mine',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store','house-windmill':'Windmill','house-mine':'Mine',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
@@ -1631,7 +1648,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // and would crash the preview/message path). BUILD 1012: a placed
   // house shows its variant's label (Cottage / Tall House /
   // Shopfront / Grand House); a legacy variant-less house is 'House'.
-  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge'} as Record<string,string>)[item.kind]??item.kind;
+  const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',farm:'Farm Land'} as Record<string,string>)[item.kind]??item.kind;
   const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName,areaSelectMode);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
@@ -1741,7 +1758,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     {id:'shops',label:'Shops',kinds:['house-inn','house-smith','house-store','stall']},
     {id:'decorations',label:'Decorations',kinds:['lantern','wall']},
     {id:'roads',label:'Roads',kinds:['path','bridge']},
-    {id:'nature',label:'Nature',kinds:['tree','bush','grass','rock','water']},
+    // BUILD 1041: farm land joins Nature (it is tilled ground, like
+    // the grass and the bush — a field, not a building).
+    {id:'nature',label:'Nature',kinds:['tree','bush','grass','rock','water','farm']},
     {id:'infrastructure',label:'Infrastructure',kinds:['ore']},
   ];
   const KIND_META:Record<PaletteKind,{label:string;swatch:string}>={
@@ -1772,6 +1791,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     bush:{label:'Bush',swatch:'linear-gradient(135deg,#2e5c2b 0 50%,#4a7a3a 50% 100%)'},
     ore:{label:'Ore Deposit',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#d9a833 50% 100%)'},
     bridge:{label:'Wooden Bridge',swatch:'linear-gradient(135deg,#8f6a38 0 50%,#6b4a2b 50% 100%)'},
+    // BUILD 1041 swatch: farm land tilled brown / ready wheat gold.
+    farm:{label:'Farm Land',swatch:'linear-gradient(135deg,#593d24 0 50%,#d9a833 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     // BUILD 1025: Rock — the generated rock's own grey (seeded cube
@@ -1979,7 +2000,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let worldVertCount=0;
     // BUILD 1014: last frame's house-fx emission stats, for the
     // getHouseFx test hook (probes only).
-    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0};
+    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0};
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     // BUILD 992: one zoom parameter for pinch + wheel, routed through
@@ -2712,6 +2733,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             const res=duplicateArea(world,sel,{x:ax,y:ay},playerTile,npcTiles);
             if(!res.entry){setMessage('Nothing landed here: '+res.skipped[0]?.reason);setAreaDuplicateArmedBoth(false);}
             else{
+              // BUILD 1041: a duplicated farm tile is a FRESH planting
+              // (the copy does not inherit the original's growth stage).
+              for(const it of res.landed)if(it.kind==='farm'&&it.farmPlantedAt===undefined)it.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);
               saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
               const w=sel.rect.x1-sel.rect.x0,h=sel.rect.y1-sel.rect.y0;
               const newRect={x0:ax,y0:ay,x1:ax+w,y1:ay+h};
@@ -2788,7 +2812,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
                 const res=pasteChunk(world,template,{x:tx,y:ty},playerTile,npcTiles);
                 if(res.landed.length===0){setMessage('Nothing pasted from \''+template.name+'\': '+(res.skipped[0]?res.skipped[0].reason:'blocked'));}
-                else{saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'paste',items:res.landed});setMessage('Pasted '+res.landed.length+' of '+template.items.length+' from \''+template.name+'\''+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':'')+' · tap again to paste more, or tap the chunk to stop');}
+                // BUILD 1041: a pasted farm tile is a FRESH planting
+                // (chunks carry no growth state) — stamp it now, like
+                // a fresh placement, so it grows from today.
+                else{for(const it of res.landed)if(it.kind==='farm'&&it.farmPlantedAt===undefined)it.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'paste',items:res.landed});setMessage('Pasted '+res.landed.length+' of '+template.items.length+' from \''+template.name+'\''+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':'')+' · tap again to paste more, or tap the chunk to stop');}
               }
             } else if(build.removeMode){
               // BUILD 989: full chain — placed > generated house (whole
@@ -2835,7 +2862,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // another copy without re-selecting the menu.
               const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,placementRotRef.current);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
-              else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
+              // BUILD 1041: a fresh farm tile is planted NOW (the
+              // growth clock starts at placement); move/undo carry
+              // the stamp, paste/duplicate stamp their own copies.
+              else{if(result.item.kind==='farm')result.item.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
             }
           }
         } else if(!areaTapConsumed) {
@@ -3172,8 +3202,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // placedLanternTiles with the heightfield base y, so the glow
       // box lands exactly on the static glass box.
       const lanternInputs=placedLanternTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5)}));
-      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs);
-      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts};
+      // BUILD 1041: wheat rides the same fx call — the stalks are
+      // time-varying (they appear and grow as the clock advances), so
+      // they emit per frame like the blades. The stage is a pure
+      // function of (plantedAt, clock), so a harvest or a reload
+      // changes the field with no world rebuild.
+      const nowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
+      const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs) as FarmStage}));
+      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs);
+      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts};
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
@@ -3425,6 +3462,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         }
         if(wildFound==='tree'){if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         if(wildFound==='rock'){if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        // BUILD 1041: farm land — E harvests a ready wheat tile
+        // within the shared 1-tile reach (the same key() test as
+        // crates/trees/rocks). The tile resets to planted and
+        // regrows on its own, so no re-planting is ever needed. No
+        // world rebuild: the soil is static and the wheat is
+        // per-frame fx, so the field updates next frame on its own.
+        // A growing tile answers plainly instead of harvesting.
+        const farmNowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
+        const farmReady=placedFarmTiles(world).find(t=>key(t.tx,t.ty)&&farmStageAt(t.plantedAt,farmNowAbs)==='ready');
+        if(farmReady){const res=harvestFarmTile(world,farmReady.tx,farmReady.ty,farmNowAbs);if(res.ok){saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wheat:(currentInventory.wheat||0)+res.wheat};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}setMessage('Harvested wheat · +'+res.wheat+' wheat');return}}
+        const farmNear=placedFarmTiles(world).find(t=>key(t.tx,t.ty));
+        if(farmNear){setMessage('Wheat is still growing — it is ready in a few in-game hours');return}
         setMessage('Nothing close enough to interact with');return
       }
       // Directional keys are integrated continuously by the render loop;
@@ -3448,6 +3497,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
+      // BUILD 1041 test hook (read-only): farm tiles with their live
+      // growth stage (probes only — no gameplay effect).
+      getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes))})),
       // BUILD 996 test hooks: chunk library, save selection, armed
       // paste template (probes only — no gameplay effect).
       getTemplates:()=>JSON.parse(JSON.stringify(templatesRef.current)),
@@ -3628,11 +3680,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const idx=npcByName.get(actor.name);if(idx===undefined)return;
         const sched=scheduleTileFor(ROSTER_3D[idx],idx,anchors,clock.minutes,clock.day,world);
         const cx=Math.round(actor.x),cy=Math.round(actor.y);
-        if(cx===sched.tx&&cy===sched.ty){npcPath.delete(actor.name);return;}
-        const destKey=sched.tx+','+sched.ty;
+        // BUILD 1041: farmers detour to a ready wheat tile within
+        // FARM_VILLAGER_RADIUS and harvest it on arrival (the tile
+        // resets to planted and regrows — the village's wheat, no
+        // counter). The detour is a destination swap, not a schedule
+        // change: the farmer resumes their schedule the next tick
+        // after harvesting (or if the wheat is gone when they arrive
+        // — harvested by the player or another farmer first).
+        const farmNowAbs=absMinutes(clock.day,clock.minutes);
+        const farmDest=rosterArchetype(actor.name)==='farmer'?nearestReadyFarmTile(world,cx,cy,farmNowAbs):null;
+        const dest=farmDest??{tx:sched.tx,ty:sched.ty};
+        if(cx===dest.tx&&cy===dest.ty){
+          if(farmDest){
+            const res=harvestFarmTile(world,farmDest.tx,farmDest.ty,farmNowAbs);
+            if(res.ok){saveWorld(world);setMessage(actor.name+' harvested wheat');}
+          }
+          npcPath.delete(actor.name);return;
+        }
+        const destKey=dest.tx+','+dest.ty;
         let w=npcPath.get(actor.name);
         if(!w||w.dest!==destKey){
-          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0,blockedTicks:0,detour:false};
+          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[],index:0,noPathTicks:0,blockedTicks:0,detour:false};
           npcPath.set(actor.name,w);
         }
         if(w.path.length===0){
@@ -3640,7 +3708,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           // the world changed (a placed item removed).
           w.noPathTicks++;
           if(w.noPathTicks>=11){
-            w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
+            w.path=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[];
             w.index=0;w.noPathTicks=0;w.detour=false;
           }
           return;
@@ -3651,7 +3719,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // placed item landed on a later tile) — replan now, not just
         // when the NPC walks up to the blocker.
         if(pathHasUnwalkableTile(world,w.path,w.index)){
-          w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
+          w.path=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[];
           w.index=0;w.noPathTicks=0;w.blockedTicks=0;w.detour=false;
           return;
         }
@@ -3673,7 +3741,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           if(blockedAction(w.blockedTicks)==='replan'){
             let resolved=false;
             if(!w.detour){
-              const detour=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty},4000,new Set([next.x+','+next.y]));
+              const detour=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty},4000,new Set([next.x+','+next.y]));
               if(detour){w.path=detour;w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=true;resolved=true;}
             }
             if(!resolved){
@@ -3859,7 +3927,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           Consequence, stated: Hide UI hides this whole strip, so the
           icon hides with it (the old button stayed visible) — the
           user asked for it next to Gold, which lives in this strip. */}
-      <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
+      <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
     </div>}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
@@ -3990,7 +4058,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
         <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, or bridge to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>

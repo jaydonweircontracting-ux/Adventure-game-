@@ -51,6 +51,7 @@
 import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
 import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
 import { LANTERN_GLOW, LANTERN_GLOW_BOX, lanternBoxCentre } from './lantern';
+import { wheatStalksFor, type FarmWheatInput } from './farm';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, movedRecordForHut } from './placements';
 import { sameHut } from './interiors';
@@ -411,6 +412,11 @@ export interface HouseFxCounts {
   lanterns: number;
   /** BUILD 1040: lantern glow verts (in the lit segment). */
   lanternVerts: number;
+  /** BUILD 1041: farm tiles whose wheat stalks were emitted this
+   *  frame (in the night segment). Planted tiles emit nothing. */
+  wheatTiles: number;
+  /** BUILD 1041: wheat stalk verts (in the night segment). */
+  wheatVerts: number;
 }
 
 /** One axis-aligned glow box (12 tris, 36 verts), all faces the
@@ -439,8 +445,11 @@ export interface LanternFxInput { tx: number; ty: number; baseY: number; }
  * do not fit is skipped whole, deterministically (town first).
  * Layout: [smoke + dark panes][lit panes + lantern glows], so the caller draws the
  * first nightVerts with uNight and the rest with uNight=0.
+ * BUILD 1041: wheat stalks ride the same call (a 6th argument) — they
+ * are time-varying like the blades, so they cannot live in the static
+ * world buffer. They emit in the night segment (they darken at night).
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = []): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = []): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -477,6 +486,21 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       }
     }
   }
+  // BUILD 1041: wheat stalks — planted tiles emit nothing (bare soil
+  // shows); growing tiles emit short green shoots, ready tiles tall
+  // golden stalks. In the night segment like the smoke and blades
+  // (they darken at night). A tile whose stalks do not fit stops the
+  // wheat pass (deterministic — the field is one pass, town first).
+  let wheatTiles = 0, wheatVerts = 0;
+  for (const t of wheat) {
+    const tris = wheatStalksFor(t.tx, t.ty, t.baseY, t.stage);
+    if (tris.length === 0) continue;
+    const cost = tris.length * 3;
+    if (!fits(cost)) break;
+    wheatTiles++;
+    wheatVerts += cost;
+    for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
+  }
   const nightVerts = (out.length - base) / 6;
   // Pass 2 — lit panes + lantern glows (drawn with uNight=0:
   // self-luminous). BUILD 1040: a lantern glows on the SAME
@@ -502,5 +526,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts };
 }

@@ -204,7 +204,7 @@ export function selectionItemLabel(ref: SelectionItemRef): string {
       const name = p.kind === 'house'
         ? (p.variant ? (HOUSE_VARIANTS[p.variant]?.label ?? 'House') : 'House')
         : p.kind === 'custom' ? 'Custom model'
-        : ({ path: 'Pathway', tree: 'Tree', stall: 'Market Stall', grass: 'Grass', rock: 'Rock', water: 'Water', wall: 'Wall', lantern: 'Lantern', bush: 'Bush', ore: 'Ore Deposit', bridge: 'Wooden Bridge' } as Record<string, string>)[p.kind] ?? p.kind;
+        : ({ path: 'Pathway', tree: 'Tree', stall: 'Market Stall', grass: 'Grass', rock: 'Rock', water: 'Water', wall: 'Wall', lantern: 'Lantern', bush: 'Bush', ore: 'Ore Deposit', bridge: 'Wooden Bridge', farm: 'Farm Land' } as Record<string, string>)[p.kind] ?? p.kind;
       return name + ' at (' + p.x0 + ',' + p.y0 + ')';
     }
     case 'hut': return 'House at (' + ref.rect.x0 + ',' + ref.rect.y0 + ')';
@@ -480,6 +480,10 @@ function applyPlannedMoves(
       // A moved wall keeps its own orientation (the 1028 rule —
       // validatePlacement would re-orient it to its new neighbours).
       if (p.oldItem.kind === 'wall' && p.oldItem.h !== undefined) res.item.h = p.oldItem.h;
+      // BUILD 1041: a moved farm tile keeps its growth clock (the
+      // 1041 rule — validatePlacement builds a fresh item with no
+      // stamp, so a group move/rotate must not re-plant it).
+      if (p.oldItem.kind === 'farm' && p.oldItem.farmPlantedAt !== undefined) res.item.farmPlantedAt = p.oldItem.farmPlantedAt;
       if (!w.placements) w.placements = [];
       w.placements.splice(Math.min(p.index, w.placements.length), 0, res.item);
       entries.push({ kind: 'move', oldItem: p.oldItem, newItem: res.item, index: p.index });
