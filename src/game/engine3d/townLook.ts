@@ -220,7 +220,7 @@ export interface HouseDesign {
  *  timber and roof stay seed-driven (town behaviour —
  *  two cottages at different spots differ in those, exactly like two
  *  town houses do). No new models, no new parameter values. */
-export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand' | 'inn' | 'smith' | 'store' | 'windmill';
+export type HouseVariantId = 'cottage' | 'tall' | 'shop' | 'grand' | 'inn' | 'smith' | 'store' | 'windmill' | 'mine';
 export interface HouseVariant {
   id: HouseVariantId;
   label: string;
@@ -252,8 +252,20 @@ export const HOUSE_VARIANTS: Record<HouseVariantId, HouseVariant> = {
   // chimney (a windmill has no smoke). Its rotating blades are
   // per-frame fx (windmill.ts + houseFx.ts), not part of the design.
   windmill: { id: 'windmill', label: 'Windmill', w: 3, d: 3, stories: 2, openFront: false },
+  // BUILD 1040: the placeable mine — a 3x3 stone structure, 2
+  // stories by the type (the render branch ignores stories, like
+  // the windmill's). It is a house variant so it rides the whole
+  // building system (placement, rotation, save/load, undo/redo,
+  // move, chunks, AREA SELECT), but it is NOT a house shape: the
+  // view branches on the variant and emits a rocky mound + dark
+  // entrance instead of floors + pitched roof, and
+  // houseDesignForVariant forces no chimney (a mine has no smoke)
+  // and houseFx gives it no window panes (its branch emits no
+  // frames, so panes would float in the air). It IS enterable like
+  // any house (a bare interior for now — no mining inside yet).
+  mine: { id: 'mine', label: 'Mine', w: 3, d: 3, stories: 2, openFront: false },
 };
-export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand', 'inn', 'smith', 'store', 'windmill'];
+export const HOUSE_VARIANT_IDS: HouseVariantId[] = ['cottage', 'tall', 'shop', 'grand', 'inn', 'smith', 'store', 'windmill', 'mine'];
 
 /** Derive a house's full look from its hut rect + door tile. The door
  *  face comes from the layout's door position (door on the y0 edge =
@@ -314,6 +326,8 @@ export function houseDesignForVariant(
   } else if (variant.id === 'store') { out.building = 'store'; }
   // BUILD 1038: a windmill has no chimney and no smoke.
   else if (variant.id === 'windmill') { out.chimney = false; }
+  // BUILD 1040: a mine has no chimney and no smoke either.
+  else if (variant.id === 'mine') { out.chimney = false; }
   return out;
 }
 

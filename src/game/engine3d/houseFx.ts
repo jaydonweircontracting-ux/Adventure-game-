@@ -50,6 +50,7 @@
 
 import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
 import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
+import { LANTERN_GLOW, LANTERN_GLOW_BOX, lanternBoxCentre } from './lantern';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, movedRecordForHut } from './placements';
 import { sameHut } from './interiors';
@@ -328,7 +329,11 @@ export function resolveHouseFx(inputs: HouseFxInput[], minutes: number): HouseFx
       doorFace: design.doorFace, stories: design.stories,
       top: chimneyTopFor(cx, cz, w, d, design, inp.baseY ?? 0),
       lit: houseLitAt(minutes, lightScheduleFor(inp.seedX0, inp.seedY0)),
-      slots: windowSlotsFor(cx, cz, w, d, design.doorFace, design.stories, inp.baseY ?? 0),
+      // BUILD 1040: a mine has no windows — its render branch emits
+      // no frames, so panes here would float in the air where no
+      // window is. Empty slots, and the mine still gets its light
+      // schedule (harmless — nothing reads it).
+      slots: inp.variant === 'mine' ? [] : windowSlotsFor(cx, cz, w, d, design.doorFace, design.stories, inp.baseY ?? 0),
       schedule: lightScheduleFor(inp.seedX0, inp.seedY0),
       hut: { x0: inp.x0, y0: inp.y0, x1: inp.x1, y1: inp.y1 },
       variant: inp.variant,
@@ -402,17 +407,40 @@ export interface HouseFxCounts {
   windmills: number;
   /** BUILD 1038: blade verts (in the night segment). */
   millVerts: number;
+  /** BUILD 1040: lanterns glowing this frame (in the lit segment). */
+  lanterns: number;
+  /** BUILD 1040: lantern glow verts (in the lit segment). */
+  lanternVerts: number;
 }
+
+/** One axis-aligned glow box (12 tris, 36 verts), all faces the
+ *  same colour — a lantern's night glow is self-luminous, so no
+ *  face shading (unlike the smoke puff box). The caller draws it
+ *  with uNight=0, so it stays full warm yellow against the night. */
+function pushGlowBox(out: number[], cx: number, cy: number, cz: number, size: number, col: Vec3): void {
+  const h = size / 2;
+  const x0 = cx - h, x1 = cx + h, y0 = cy - h, y1 = cy + h, z0 = cz - h, z1 = cz + h;
+  pushQuad(out, [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], col);
+  pushQuad(out, [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], col);
+  pushQuad(out, [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], col);
+  pushQuad(out, [x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], col);
+  pushQuad(out, [x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], col);
+  pushQuad(out, [x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], col);
+}
+
+/** A placed lantern, with its heightfield base y (the view computes
+ *  it — the fx module never samples the terrain itself). */
+export interface LanternFxInput { tx: number; ty: number; baseY: number; }
 
 /**
  * Emit the house fx for one frame into `out` (6 floats per vertex:
  * pos + rgb, the sky.ts convention). `out` must start empty; emission
  * never pushes past FX_MAX_VERTS total — a house whose smoke or panes
  * do not fit is skipped whole, deterministically (town first).
- * Layout: [smoke + dark panes][lit panes], so the caller draws the
+ * Layout: [smoke + dark panes][lit panes + lantern glows], so the caller draws the
  * first nightVerts with uNight and the rest with uNight=0.
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = []): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -450,7 +478,23 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     }
   }
   const nightVerts = (out.length - base) / 6;
-  // Pass 2 — lit panes (drawn with uNight=0: self-luminous).
+  // Pass 2 — lit panes + lantern glows (drawn with uNight=0:
+  // self-luminous). BUILD 1040: a lantern glows on the SAME
+  // schedule as the house windows (lightScheduleFor, seeded by its
+  // tile) — on 17:30-19:30, off by 05:30 — so the lanterns light up
+  // with the town and go dark with it. An unlit lantern emits
+  // nothing here: its dark glass box is already in the world buffer.
+  // The glow box is a touch larger than the glass box (lantern.ts),
+  // so its faces sit proud and cannot z-fight the glass.
+  let litLanterns = 0, lanternGlowVerts = 0;
+  for (const l of lanterns) {
+    if (!houseLitAt(minutes, lightScheduleFor(l.tx, l.ty))) continue;
+    if (!fits(36)) break;
+    const c = lanternBoxCentre(l.tx, l.ty, l.baseY);
+    pushGlowBox(out, c[0], c[1], c[2], LANTERN_GLOW_BOX, LANTERN_GLOW);
+    litLanterns++;
+    lanternGlowVerts += 36;
+  }
   for (const r of details) {
     if (!r.lit) continue;
     for (const s of r.slots) {
@@ -458,5 +502,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts };
 }

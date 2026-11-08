@@ -24,20 +24,22 @@ import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWo
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
+  | 'lantern' | 'bush' | 'ore' | 'bridge'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
-  | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill';
+  | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
- *  three commercial buildings join them; BUILD 1038: the windmill).
+ *  three commercial buildings join them; BUILD 1038: the windmill;
+ *  BUILD 1040: the mine).
  *  'house' itself is NOT in this list: it is the legacy placed kind
  *  (old saves, and anything placed before variants existed) — it
  *  validates and renders exactly as it always did, but the palette
  *  no longer offers it. */
-export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand', 'house-inn', 'house-smith', 'house-store', 'house-windmill'];
-export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' {
+export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand', 'house-inn', 'house-smith', 'house-store', 'house-windmill', 'house-mine'];
+export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
   return (HOUSE_VARIANT_KINDS as string[]).includes(kind);
 }
 /** True for the legacy 'house' kind and every variant kind. */
-export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' {
+export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
   return kind === 'house' || isHouseVariantKind(kind);
 }
 export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
@@ -50,6 +52,7 @@ export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
     case 'house-smith': return 'smith';
     case 'house-store': return 'store';
     case 'house-windmill': return 'windmill';
+    case 'house-mine': return 'mine';
     default: return null;
   }
 }
@@ -969,7 +972,14 @@ export function validateBlockingRect(
  * walk-through decor: it may be placed on paths, the square and lawns
  * alike, under the player or an NPC, and on top of a placed path, but
  * never on water, walls, buildings, stalls, trees, rocks or crates,
- * and never twice on one tile. It never blocks movement.
+ * and never twice on one tile. It never blocks movement. BUILD 1040:
+ * a bush is walk-through decor under the same rules as grass (it
+ * also stacks on a grass patch, where grass cannot stack on a bush —
+ * the same one-directional stacking as grass-on-path). A bridge is
+ * the opposite exception: it validates ONLY on generated water (the
+ * ocean or the pond) and nowhere else, and the tile it lands on
+ * becomes walkable (see walkableWithPlacements). A lantern and an ore
+ * deposit are ordinary 1x1 blocking items (tree/rock rules).
  */
 /** BUILD 1028: the orientation a newly placed wall tile takes. A
  *  neighbour on the same row extends a horizontal run; a neighbour
@@ -1004,6 +1014,29 @@ export function validatePlacement(
   // passing 'custom' here is a bug, and failing loudly beats placing
   // a 1x1 tile for a 3x3 mesh.
   if ((kind as string) === 'custom') return { ok: false, reason: 'use validateCustomPlacement' };
+  // BUILD 1040: a wooden-plank bridge tile goes ON WATER and is
+  // WALKABLE (the one exception to the water rule — every other
+  // kind is refused on water). It validates only on GENERATED water
+  // (terrainAt 'water': the ocean and the authored pond) — a placed
+  // water tile is itself a placed item, so the overlap rule below
+  // refuses the bridge there; remove the placed water first, then
+  // bridge the gap. Water tiles hold no generated objects, so no
+  // generatedBlock check is needed here; the player/NPC/waypoint
+  // checks are belt-and-braces (nobody can stand on water).
+  if (kind === 'bridge') {
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return { ok: false, reason: 'outside the map' };
+    // Placed water is a placed item on dry land — terrainAt does not
+    // see it, so it needs its own check first: the bridge goes over
+    // generated water (ocean/pond), not over a water tile the player
+    // placed. That tile has to come down first.
+    if (placementsOf(w).some((p) => p.kind === 'water' && p.x0 === tx && p.y0 === ty)) return { ok: false, reason: 'remove the placed water first' };
+    if (terrainAt(w, tx, ty) !== 'water') return { ok: false, reason: 'a bridge goes over water — place it on the ocean or the pond' };
+    if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
+    if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
+    if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
+    if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+  }
   const tiles: Array<{ x: number; y: number }> = [];
   if (isHouseKind(kind)) {
     // BUILD 1036: the footprint rotates with the house — an odd rot
@@ -1028,8 +1061,10 @@ export function validatePlacement(
     if (terrain === 'water') return { ok: false, reason: 'water' };
     if (kind === 'path') {
       if (terrain === 'dirt') return { ok: false, reason: 'already a path or road' };
-    } else if (kind === 'grass') {
-      // No terrain rejection: grass grows on paths, squares and lawns.
+    } else if (kind === 'grass' || kind === 'bush') {
+      // No terrain rejection: grass grows on paths, squares and lawns,
+      // and a bush (BUILD 1040, walk-through decor like grass) sits
+      // on paths, squares and lawns alike.
     } else {
       if (terrain === 'dirt') return { ok: false, reason: 'a path or road' };
       if (terrain === 'sand') return { ok: false, reason: 'the town square' };
@@ -1046,12 +1081,22 @@ export function validatePlacement(
           return { ok: false, reason: 'something you already placed' };
         }
       }
+    } else if (kind === 'bush') {
+      // BUILD 1040: a bush stacks on a path or a grass patch (a bush
+      // in the grass), but never on another bush or on anything else.
+      for (const p of placementsOf(w)) {
+        if (t.x >= p.x0 && t.x <= p.x1 && t.y >= p.y0 && t.y <= p.y1) {
+          if (p.kind === 'path' || p.kind === 'grass') continue;
+          if (p.kind === 'bush') return { ok: false, reason: 'bush already here' };
+          return { ok: false, reason: 'something you already placed' };
+        }
+      }
     } else {
       const pl = placedBlock(w, t.x, t.y);
       if (pl) return { ok: false, reason: pl };
     }
   }
-  if (kind !== 'path' && kind !== 'grass') {
+  if (kind !== 'path' && kind !== 'grass' && kind !== 'bush') {
     for (const t of tiles) {
       if (t.x === playerTile.x && t.y === playerTile.y) return { ok: false, reason: 'where you are standing' };
       if (npcTiles.some((n) => n.x === t.x && n.y === t.y)) return { ok: false, reason: 'where someone is standing' };
@@ -1446,19 +1491,33 @@ export function moveGeneratedTree(
   return { ok: true, same: false, entry };
 }
 
-/** True when a placed house/stall/tree blocks the tile. Placed paths
- *  and grass never block. */
+/** BUILD 1040: a bridge tile is walkable ground over water — the
+ *  one placed kind that makes a water tile walkable. */
+export function isPlacedBridge(w: IsoWorld, x: number, y: number): boolean {
+  return placementsOf(w).some((p) => p.kind === 'bridge' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
+/** True when a placed house/stall/tree blocks the tile. Placed paths,
+ *  grass, bushes, and bridges never block — a bush is walk-through
+ *  decor (like grass), a bridge is walkable ground over water (like
+ *  a path). */
 export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
   for (const p of placementsOf(w)) {
-    if (p.kind === 'path' || p.kind === 'grass') continue;
+    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'bridge') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return true;
   }
   return false;
 }
 
 /** Generated walkability plus placed blocks. This is the only walkability
- *  check the 3D view's movement, NPC steps, and spawn restore may use. */
+ *  check the 3D view's movement, NPC steps, and spawn restore may use.
+ *  BUILD 1040: a bridge tile is walkable BEFORE the terrain check —
+ *  the terrain under it is water (which isWalkableWorld refuses), so
+ *  the bridge must win first. A bridge tile holds nothing else (no
+ *  hut, tree, or crate can stand on water), so returning true here is
+ *  safe — the tile is walkable ground, period. */
 export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], x: number, y: number): boolean {
+  if (isPlacedBridge(w, x, y)) return true;
   if (!isWalkableWorld(w, crates, x, y)) return false;
   return !isPlacedBlocking(w, x, y);
 }
@@ -1527,6 +1586,45 @@ export function placedCustomRects(w: IsoWorld): Array<{ x0: number; y0: number; 
 export function placedGrassTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'grass')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed lantern tiles (BUILD 1040). Single tiles, like placed trees
+ *  and rocks — a lantern is a blocking post, so it renders and blocks
+ *  exactly like a placed tree (its glow is per-frame fx, houseFx.ts). */
+export function placedLanternTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'lantern')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed bush tiles (BUILD 1040). Single tiles, like placed grass —
+ *  a bush is walk-through decor, so it never blocks movement. It
+ *  renders as a bush (low wide blobs), never as a pine tree. */
+export function placedBushTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'bush')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed ore-deposit tiles (BUILD 1040). Single tiles, like placed
+ *  rocks — an ore deposit is a blocking rock node with visible ore.
+ *  It is a placeable node/decoration in this build: there is no
+ *  mining system yet, so E-key does nothing on it (see the 1040
+ *  note) — real mining is pending on a mining system. */
+export function placedOreTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'ore')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed bridge tiles (BUILD 1040). Single tiles, like placed water
+ *  — a bridge sits ON water and makes it walkable (see
+ *  walkableWithPlacements). It renders as wooden planks above the
+ *  water surface, never as a water tile. */
+export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'bridge')
     .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 
