@@ -527,6 +527,32 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1040 @ 2026-11-08T12:26:01.132Z, run 42480115688 success. Asserts 185 checks pass (parent re-ran directly — ASSERT_DONE 185 checks passed). Sim vs pristine1039 IDENTICAL (parent diffed sim1040.norm.log vs sim1039-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PROBE DONE, 35 findings, 0 page errors (all 11 category/kind checks pass; lantern placed + lit at 21:00; bush placed + walked onto; mine placed + Enter prompt at its door; ore placed; 3 bridge tiles placed over the ocean and walked across; one Undo removed the last bridge, Redo brought it back). Honest note: no mining system yet — ore deposits are decoration for now.",
       "verificationTimestamp": "2026-11-08T12:26:01.132Z"
+    },
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "description": "Farm land for the windmill: placeable tilled soil that auto-grows wheat, harvestable by the player (E key, +2 wheat) and by farmer villagers, regrows on its own.",
+      "filesAffected": [
+        "src/game/engine3d/farm.ts",
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/placements.ts",
+        "src/game/engine3d/templates.ts",
+        "src/game/engine3d/houseFx.ts",
+        "src/game/engine3d/areaSelect.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Placeable farm land that auto-regrows to wheat and can be harvested by villagers or the player. Ordered by the user (2026-11-08 ~06:37 PST).",
+      "previousCheckpoint": {
+        "build": 1040,
+        "commit": "58aa5ecd"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42520672033",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
+      "verificationTimestamp": "2026-11-08T20:34:11.972Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

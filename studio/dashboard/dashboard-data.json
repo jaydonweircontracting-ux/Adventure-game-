@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Farm land for the windmill",
+    "build": "Town Builder Stage 5",
     "commit": null,
-    "description": "Placeable farm land that auto-regrows to wheat and can be harvested by villagers or the player. Ordered by the user (2026-11-08 ~06:37 PST). NEXT per the queue (after Stage 4, ahead of Stage 5).",
+    "description": "Layout helpers: doors facing pathways, trees off paths, lanterns along roads, fences around properties, alignment helpers. Optional tools, not automatic changes. ENHANCE and ADJUST from the AREA SELECT order also live here as follow-ups. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -230,20 +230,23 @@
       "runId": "42480115688",
       "status": "verified",
       "verifiedAt": "2026-11-08T12:26:01.132Z"
+    },
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "description": "Farm land for the windmill: placeable tilled soil (Nature) that grows green shoots after 1 in-game hour and tall golden wheat after 3 in-game hours; stand next to ready wheat and press E to harvest 2 wheat (Wheat counter next to Wood/Stone/Gold); farmer villagers walk to ready wheat and harvest it too; after harvest it regrows on its own, so you never re-plant. Landed: commit 58529b47, deploy run 42520672033 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42520672033",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T20:34:11.972Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Farm land for the windmill (build 1041)",
-      "commit": null,
-      "description": "Placeable farm land that auto-regrows to wheat and can be harvested by villagers or the player. Ordered by the user (2026-11-08 ~06:37 PST): \"Add farm land for the windmill we can place and it auto grows back to wheat and can be harvested by villagers or the player\".",
-      "status": "in_progress"
-    },
-    {
       "build": "Town Builder Stage 5 (layout helpers)",
       "commit": null,
       "description": "Doors facing pathways, trees off paths, lanterns along roads, fences around properties, alignment helpers. Optional tools, not automatic changes. ENHANCE and ADJUST from the AREA SELECT order also live here as follow-ups.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Import Hub",
@@ -410,13 +413,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T13:09:12-07:00",
+  "lastUpdateTimestamp": "2026-11-08T15:19:45-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1040,
-    "commit": "58aa5ecd",
-    "description": "Town Builder Stage 4 asset library: the Build menu is now organized into categories (Buildings / Houses / Shops / Decorations / Roads / Nature / Infrastructure). New: Lanterns (glow at night), Bushes (walk-through), the Mine (enterable), Ore Deposits, and the Wooden Bridge (place it over the ocean or the pond and walk straight across the water).",
-    "runId": "42480115688",
-    "verifiedAt": "2026-11-08T12:26:01.132Z"
+    "build": 1041,
+    "commit": "58529b47",
+    "description": "Farm land for the windmill: placeable tilled soil (Nature) that grows green shoots after 1 in-game hour and tall golden wheat after 3 in-game hours; stand next to ready wheat and press E to harvest 2 wheat (Wheat counter next to Wood/Stone/Gold); farmer villagers walk to ready wheat and harvest it too; after harvest it regrows on its own, so you never re-plant.",
+    "runId": "42520672033",
+    "verifiedAt": "2026-11-08T20:34:11.972Z"
   },
   "measuredBaselines": [
     {
@@ -640,6 +643,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "result": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
+      "runId": "42520672033",
+      "verifiedAt": "2026-11-08T20:34:11.972Z"
+    },
     {
       "build": 1040,
       "commit": "58aa5ecd",

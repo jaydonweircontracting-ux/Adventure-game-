@@ -104,6 +104,13 @@
       "result": "Verified live: served version.json build 1040 @ 2026-11-08T12:26:01.132Z, run 42480115688 success. Asserts 185 checks pass (parent re-ran directly — ASSERT_DONE 185 checks passed). Sim vs pristine1039 IDENTICAL (parent diffed sim1040.norm.log vs sim1039-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PROBE DONE, 35 findings, 0 page errors (all 11 category/kind checks pass; lantern placed + lit at 21:00; bush placed + walked onto; mine placed + Enter prompt at its door; ore placed; 3 bridge tiles placed over the ocean and walked across; one Undo removed the last bridge, Redo brought it back). Honest note: no mining system yet — ore deposits are decoration for now.",
       "runId": "42480115688",
       "verifiedAt": "2026-11-08T12:26:01.132Z"
+    },
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "result": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
+      "runId": "42520672033",
+      "verifiedAt": "2026-11-08T20:34:11.972Z"
     }
   ],
   "schemaVersion": "1.0"
