@@ -29,6 +29,12 @@ import { emitGroundDetail3d } from './groundDetail3d';
 import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed, effTerrainFor, surfaceElevation, renderTerrain, rayHitSurface } from './wildTerrain';
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
+import {
+  selectArea, selectionCount, selectionCounts, areaCentreTile, rotateRect,
+  moveArea, rotateArea, deleteArea, duplicateArea,
+  toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
+  type AreaSelection,
+} from './areaSelect';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
@@ -1373,8 +1379,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [saveSelection,setSaveSelection]=useState<{x0:number;y0:number;x1:number;y1:number;count:number}|null>(null);
   const saveSelectionRef=useRef<{x0:number;y0:number;x1:number;y1:number;count:number}|null>(null);
   saveSelectionRef.current=saveSelection;
+  // BUILD 1037: AREA SELECT. areaSelectMode arms the rectangle drag;
+  // areaSelection is the live selection (rect + contents, mirrored
+  // into areaSelectionRef for the pointer handlers and the draw loop,
+  // like saveSelection). areaMoveArmed arms drag-to-move (tap Move,
+  // then drag anywhere); areaDuplicateArmed arms tap-to-place a copy.
+  // areaDeleteArmed is the two-tap delete confirmation (panel only).
+  // All three arms mirror into buildRef like every other tool.
+  const [areaSelectMode,setAreaSelectMode]=useState(false);
+  const [areaSelection,setAreaSelection]=useState<AreaSelection|null>(null);
+  const areaSelectionRef=useRef<AreaSelection|null>(null);
+  areaSelectionRef.current=areaSelection;
+  const [areaMoveArmed,setAreaMoveArmed]=useState(false);
+  const [areaDuplicateArmed,setAreaDuplicateArmed]=useState(false);
+  const [areaDeleteArmed,setAreaDeleteArmed]=useState(false);
+  // The yellow selection overlay div + label (direct-DOM, like the
+  // save-area preview — never React state per pointermove). Declared
+  // here, with the state, so the action helpers can hide it.
+  const areaSelectPreviewRef=useRef<HTMLDivElement|null>(null);
+  const areaSelectPreviewLabelRef=useRef<HTMLSpanElement|null>(null);
   const [chunkName,setChunkName]=useState('');
-  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean;saveAreaMode:boolean;pasteName:string|null;customAssetId:string|null}>({palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null});
+  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean;saveAreaMode:boolean;pasteName:string|null;customAssetId:string|null;areaSelectMode:boolean;areaMoveArmed:boolean;areaDuplicateArmed:boolean}>({palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false});
   // BUILD 1036: placement rotation (quarter-turns clockwise) + the
   // placement preview. Rotation is a placement setting: it persists
   // across asset switches and cancels, and resets only when the
@@ -1459,7 +1484,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null)=>pn?('Paste '+pn):sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean,sa?:boolean,pn?:string|null,as?:boolean)=>pn?('Paste '+pn):as?'Area select':sa?'Save area':mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass','house-cottage':'Cottage','house-tall':'Tall House','house-shop':'Shopfront','house-grand':'Grand House','house-inn':'Inn','house-smith':'Blacksmith','house-store':'General Store'} as Record<PaletteKind,string>)[p]:'';
   // BUILD 997: display name for a placed item — built-in kinds use
   // the catalog label; a custom item uses its upload's name (or a
   // fallback when the upload is gone). Used by Move/Remove messages
@@ -1468,18 +1493,53 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // house shows its variant's label (Cottage / Tall House /
   // Shopfront / Grand House); a legacy variant-less house is 'House'.
   const placementLabel=(item:PlacedItem)=>item.kind==='custom'?(customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall'} as Record<string,string>)[item.kind]??item.kind;
-  const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
+  const walkToolLabel=()=>{const t=toolLabel(palette,removeMode,moveMode,saveAreaMode,pasteName,areaSelectMode);if(t)return t;if(customSelection){const a=customAssets.find(x=>x.id===customSelection);return a?a.name:'Custom';}return '';};
   // BUILD 1004: the ONE Remove toggle. The panel's Remove button and
   // the minimized-cluster quick button both call this, so the two can
   // never diverge. Body is the panel toggle's original handler, moved
   // verbatim: turning Remove on clears any palette/custom choice and
   // Move/Save/Paste; turning it off keeps the palette it displaced.
-  const toggleRemove=()=>{const next=!removeMode;setRemoveMode(next);if(next){setPalette(null);setCustomSelection(null);}setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};};
+  const toggleRemove=()=>{const next=!removeMode;setRemoveMode(next);if(next){setPalette(null);setCustomSelection(null);}setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId,areaSelectMode:buildRef.current.areaSelectMode,areaMoveArmed:buildRef.current.areaMoveArmed,areaDuplicateArmed:buildRef.current.areaDuplicateArmed};};
+  // BUILD 1037: the ONE Area-select toggle. Turning it on clears any
+  // palette/custom choice and Move/Remove/Save/Paste (the Save-area
+  // toggle's rule); turning it off KEEPS the selection — the yellow
+  // area stays so the actions menu still works, and Clear or × drops
+  // it. Move/Duplicate arms are dropped with the tool (they refer to
+  // the drag, not the selection).
+  const toggleAreaSelect=()=>{const next=!areaSelectMode;setAreaSelectMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);}setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next?null:pasteName,customAssetId:next?null:buildRef.current.customAssetId,areaSelectMode:next,areaMoveArmed:false,areaDuplicateArmed:false};};
+  const setAreaMoveArmedBoth=(v:boolean)=>{setAreaMoveArmed(v);buildRef.current={...buildRef.current,areaMoveArmed:v};};
+  const setAreaDuplicateArmedBoth=(v:boolean)=>{setAreaDuplicateArmed(v);buildRef.current={...buildRef.current,areaDuplicateArmed:v};};
+  const clearAreaSelection=()=>{setAreaSelection(null);setAreaMoveArmedBoth(false);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);const el=areaSelectPreviewRef.current;if(el)el.style.display='none';};
+  // BUILD 1037: the area-select action handlers (panel buttons). They
+  // share the doUndo/doRedo shape (save + rebuild + one history entry
+  // + message) and re-select the group afterwards, so the user can
+  // rotate a group they just moved without re-dragging the rectangle.
+  const areaActorTiles=()=>{const player=stateRef.current.position;return {playerTile:{x:Math.round(player.x),y:Math.round(player.y)},npcTiles:[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))]};};
+  const doAreaRotate=(steps:1|-1)=>{
+    const sel=areaSelectionRef.current;if(!sel)return;
+    const world=stateRef.current.world;const {playerTile,npcTiles}=areaActorTiles();
+    const res=rotateArea(world,sel,steps===1?1:3,playerTile,npcTiles);
+    if(!res.ok){setMessage('Cannot rotate here: '+res.reason);return;}
+    if(!res.entry)return;
+    saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
+    const c=areaCentreTile(sel.rect);const newRect=rotateRect(c.x,c.y,sel.rect,steps===1?1:3);
+    setAreaSelection(selectArea(world,newRect));setAreaDeleteArmed(false);
+    setMessage('Rotated area '+(steps===1?'90° clockwise':'90° counter-clockwise')+' ('+res.moved+' item'+(res.moved===1?'':'s')+(res.skipped.length?', '+res.skipped.length+' skipped: '+res.skipped[0].reason:'')+')');
+  };
+  const doAreaDelete=()=>{
+    const sel=areaSelectionRef.current;if(!sel)return;
+    const world=stateRef.current.world;
+    const res=deleteArea(world,sel);
+    if(!res.entry){setMessage('Nothing selected to delete');return;}
+    saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
+    clearAreaSelection();
+    setMessage('Deleted '+res.removed+' item'+(res.removed===1?'':'s')+' — one Undo restores them');
+  };
   // BUILD 1004: "build UI is minimized" — panel hidden but a tool
   // still armed. Only in this state do the right-edge strip swipe and
   // the minimized handle reopen the panel; a full close (×) clears
   // the tools, so nothing reopens until Build is tapped again.
-  const buildMinimized=!buildOpen&&!!(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName);
+  const buildMinimized=!buildOpen&&!!(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection);
   // BUILD 997: upload a .glb file picked in the panel. Every failure
   // is a message, never a crash: bad magic, wrong version, external
   // buffers, non-triangle geometry, oversize file or full library
@@ -2052,7 +2112,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const ae=document.activeElement;
       const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
       if(!typing){
-        if(k==='escape'){if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){cancelPlacement();setMessage('Placement cancelled');}return;}
+        if(k==='escape'){if(buildRef.current.areaDuplicateArmed||buildRef.current.areaMoveArmed){setAreaMoveArmedBoth(false);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);setMessage('Area action cancelled — the selection is kept');}else if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){cancelPlacement();setMessage('Placement cancelled');}return;}
         if(k==='r'&&buildRef.current.palette&&!insideHutRef.current){
           e.preventDefault();
           const next=(((placementRotRef.current+(e.shiftKey?3:1))%4) as Rotation);
@@ -2286,6 +2346,85 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setBuildOpen(true);
       setMessage('Area selected ('+(rect.x1-rect.x0+1)+'×'+(rect.y1-rect.y0+1)+', '+count+' placed item'+(count===1?'':'s')+') — name it in the Build panel to save it');
     };
+    // BUILD 1037: AREA SELECT drag helpers (effect-local, like the
+    // Save-area/Move previews — they need pickGround/projectTileCenter).
+    // The yellow overlay is ONE div serving four jobs: the select-drag
+    // preview, the move-drag preview, the duplicate destination
+    // preview, and the persistent selection (repositioned by the draw
+    // loop as the camera moves). All positioning goes through
+    // positionAreaSelectRect, so the four jobs can never disagree
+    // about the rectangle.
+    const hideAreaSelectPreview=()=>{const el=areaSelectPreviewRef.current;if(el)el.style.display='none';};
+    const positionAreaSelectRect=(rect:{x0:number;y0:number;x1:number;y1:number},label:string)=>{
+      const el=areaSelectPreviewRef.current;if(!el)return;
+      const p0=projectTileCenter(rect.x0,rect.y0),p1=projectTileCenter(rect.x1,rect.y1);
+      if(!p0||!p1){el.style.display='none';return;}
+      const half=26;
+      el.style.display='block';
+      el.style.left=(Math.min(p0.cx,p1.cx)-half)+'px';
+      el.style.top=(Math.min(p0.cy,p1.cy)-half)+'px';
+      el.style.width=(Math.abs(p1.cx-p0.cx)+half*2)+'px';
+      el.style.height=(Math.abs(p1.cy-p0.cy)+half*2)+'px';
+      const lab=areaSelectPreviewLabelRef.current;
+      if(lab)lab.textContent=label;
+    };
+    const areaSelectionLabel=(sel:AreaSelection)=>'Area '+(sel.rect.x1-sel.rect.x0+1)+'×'+(sel.rect.y1-sel.rect.y0+1)+' · '+selectionCount(sel)+' item'+(selectionCount(sel)===1?'':'s');
+    let areaSelectDragging:{start:{x:number;y:number}}|null=null;
+    let areaMoveDragging:{start:{x:number;y:number};sel:AreaSelection}|null=null;
+    let areaCamKey='';
+    const showAreaSelectPreview=(start:{x:number;y:number},clientX:number,clientY:number)=>{
+      const destination=pickGround(clientX,clientY);if(!destination){hideAreaSelectPreview();return;}
+      const ex=Math.round(destination.x),ey=Math.round(destination.y);
+      const rect={x0:Math.min(start.x,ex),y0:Math.min(start.y,ey),x1:Math.max(start.x,ex),y1:Math.max(start.y,ey)};
+      const world=stateRef.current.world;
+      const count=selectionCount(selectArea(world,rect));
+      positionAreaSelectRect(rect,'Area '+(rect.x1-rect.x0+1)+'×'+(rect.y1-rect.y0+1)+' · '+count+' item'+(count===1?'':'s'));
+    };
+    const showAreaMovePreview=(clientX:number,clientY:number)=>{
+      if(!areaMoveDragging)return;
+      const destination=pickGround(clientX,clientY);if(!destination){hideAreaSelectPreview();return;}
+      const dx=Math.round(destination.x)-areaMoveDragging.start.x,dy=Math.round(destination.y)-areaMoveDragging.start.y;
+      const r=areaMoveDragging.sel.rect;
+      positionAreaSelectRect({x0:r.x0+dx,y0:r.y0+dy,x1:r.x1+dx,y1:r.y1+dy},'Move area '+(dx===0&&dy===0?'— drop to cancel':'to ('+(r.x0+dx)+','+(r.y0+dy)+')'));
+    };
+    const showAreaDuplicatePreview=(clientX:number,clientY:number)=>{
+      const sel=areaSelectionRef.current;if(!sel)return;
+      const destination=pickGround(clientX,clientY);if(!destination){hideAreaSelectPreview();return;}
+      const ax=Math.round(destination.x),ay=Math.round(destination.y);
+      const w=sel.rect.x1-sel.rect.x0,h=sel.rect.y1-sel.rect.y0;
+      positionAreaSelectRect({x0:ax,y0:ay,x1:ax+w,y1:ay+h},'Duplicate here — tap to place');
+    };
+    const finalizeAreaSelection=(clientX:number,clientY:number,drag:{start:{x:number;y:number}})=>{
+      const destination=pickGround(clientX,clientY);
+      if(!destination){setMessage('Drag on the ground to select an area');return;}
+      const ex=Math.round(destination.x),ey=Math.round(destination.y);
+      const rect={x0:Math.min(drag.start.x,ex),y0:Math.min(drag.start.y,ey),x1:Math.max(drag.start.x,ex),y1:Math.max(drag.start.y,ey)};
+      const world=stateRef.current.world;
+      const sel=selectArea(world,rect);
+      const count=selectionCount(sel);
+      if(count===0){setMessage('Nothing selectable in this area — drag a bigger rectangle');setAreaSelection(null);hideAreaSelectPreview();return;}
+      setAreaSelection(sel);setAreaMoveArmedBoth(false);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);
+      setBuildOpen(true);
+      positionAreaSelectRect(rect,areaSelectionLabel(sel));
+      setMessage('Area selected ('+(rect.x1-rect.x0+1)+'×'+(rect.y1-rect.y0+1)+', '+count+' item'+(count===1?'':'s')+') — Move, Rotate, Delete, or Duplicate it in the Build panel'+(sel.notes.length?' · '+sel.notes[0]:''));
+    };
+    const finalizeAreaMove=(clientX:number,clientY:number,drag:{start:{x:number;y:number};sel:AreaSelection})=>{
+      const destination=pickGround(clientX,clientY);
+      if(!destination){setMessage('Drag the yellow area to move it');return;}
+      const dx=Math.round(destination.x)-drag.start.x,dy=Math.round(destination.y)-drag.start.y;
+      if(dx===0&&dy===0){positionAreaSelectRect(drag.sel.rect,areaSelectionLabel(drag.sel));return;}
+      const world=stateRef.current.world;
+      const {playerTile,npcTiles}=areaActorTiles();
+      const res=moveArea(world,drag.sel,dx,dy,playerTile,npcTiles);
+      if(!res.ok){setMessage('Cannot move here: '+res.reason);positionAreaSelectRect(drag.sel.rect,areaSelectionLabel(drag.sel));return;}
+      if(!res.entry){positionAreaSelectRect(drag.sel.rect,areaSelectionLabel(drag.sel));return;}
+      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
+      const newRect={x0:drag.sel.rect.x0+dx,y0:drag.sel.rect.y0+dy,x1:drag.sel.rect.x1+dx,y1:drag.sel.rect.y1+dy};
+      const newSel=selectArea(world,newRect);
+      setAreaSelection(newSel);setAreaMoveArmedBoth(false);setAreaDeleteArmed(false);
+      positionAreaSelectRect(newRect,areaSelectionLabel(newSel));
+      setMessage('Moved area ('+res.moved+' item'+(res.moved===1?'':'s')+(res.skipped.length?', '+res.skipped.length+' skipped: '+res.skipped[0].reason:'')+')');
+    };
     const paintRemoveAt=(clientX:number,clientY:number)=>{
       const destination=pickGround(clientX,clientY);if(!destination)return;
       const world=stateRef.current.world;
@@ -2304,9 +2443,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       needsWorldRebuild.current=true;
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const fx=Math.round(dest.x),fy=Math.round(dest.y);const areaSel=areaSelectionRef.current;const insideSel=!!(areaSel&&fx>=areaSel.rect.x0&&fx<=areaSel.rect.x1&&fy>=areaSel.rect.y0&&fy<=areaSel.rect.y1);if(areaSel&&(buildRef.current.areaMoveArmed||insideSel)){areaMoveDragging={start:{x:fx,y:fy},sel:areaSel};showAreaMovePreview(e.clientX,e.clientY);}else if(buildRef.current.areaSelectMode&&!buildRef.current.areaDuplicateArmed&&!buildRef.current.areaMoveArmed){areaSelectDragging={start:{x:fx,y:fy}};showAreaSelectPreview(areaSelectDragging.start,e.clientX,e.clientY);}}}if(!removeDragging&&!moveDragging&&!areaMoveDragging&&!areaSelectDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}return;}
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}return;}
       if(moveDragging){
         if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
         showMovePreview(e.clientX,e.clientY);
@@ -2325,6 +2464,25 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         showSavePreview(saveDragging.start,e.clientX,e.clientY);
         return;
       }
+      // BUILD 1037: an area-select drag paints the yellow rectangle
+      // instead of orbiting (same override Remove/Save use); an area
+      // move-drag paints the yellow rectangle at the new location;
+      // while Duplicate is armed the hover paints the destination
+      // rectangle. Pinch cancels all three with no commit.
+      if(areaSelectDragging){
+        if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
+        showAreaSelectPreview(areaSelectDragging.start,e.clientX,e.clientY);
+        return;
+      }
+      if(areaMoveDragging){
+        if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
+        showAreaMovePreview(e.clientX,e.clientY);
+        return;
+      }
+      if(buildRef.current.areaDuplicateArmed&&areaSelectionRef.current){
+        showAreaDuplicatePreview(e.clientX,e.clientY);
+        return;
+      }
       if(!drag)return;
       if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
       if(!gestureMoved)return;
@@ -2341,17 +2499,83 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const wasMoveDrag=moveDragging;moveDragging=null;hideMovePreview();
       const wasRemoveDrag=removeDragging;removeDragging=false;hideRemovePreview();
       const wasSaveDrag=saveDragging;saveDragging=null;hideSavePreview();
+      const wasAreaMoveDrag=areaMoveDragging;areaMoveDragging=null;
+      const wasAreaSelectDrag=areaSelectDragging;areaSelectDragging=null;
       if(wasMoveDrag){
         if(gestureMoved)finalizeMove(e.clientX,e.clientY,wasMoveDrag);
         else setMessage('Drag an item to move it');
       }
       else if(wasRemoveDrag&&removeStrokeEntries.length>0){finalizeRemoveStroke();}
+      // BUILD 1037: an area move-drag commits the whole group to the
+      // new location; an area select-drag finalizes the rectangle.
+      // A tap inside the selection (no drag) falls through to the
+      // tap-to-toggle branch below instead of moving anything.
+      else if(wasAreaMoveDrag){
+        if(gestureMoved)finalizeAreaMove(e.clientX,e.clientY,wasAreaMoveDrag);
+        else positionAreaSelectRect(wasAreaMoveDrag.sel.rect,areaSelectionLabel(wasAreaMoveDrag.sel));
+      }
+      else if(wasAreaSelectDrag){finalizeAreaSelection(e.clientX,e.clientY,wasAreaSelectDrag);}
       // BUILD 996: a save-area drag (or tap) finalizes the selection
       // instead of walking or placing — the naming row in the panel
       // does the actual save. A tap selects its single tile.
       else if(wasSaveDrag){finalizeSaveSelection(e.clientX,e.clientY,wasSaveDrag);}
       else if(wasTap){
         const build=buildRef.current;
+        // BUILD 1037: a tap the area-select branches consume must not
+        // also walk/place — areaTapConsumed guards the toolActive/walk
+        // logic below. A toggle tap outside the rect leaves it false
+        // so the tap walks normally.
+        let areaTapConsumed=false;
+        // BUILD 1037: while Duplicate is armed, a tap places the copy
+        // with its corner on the tapped tile (the paste pattern) and
+        // the selection MOVES to the copy. It beats every tool below.
+        if(build.areaDuplicateArmed&&areaSelectionRef.current){
+          areaTapConsumed=true;
+          const destination=pickGround(e.clientX,e.clientY);
+          if(!destination){setMessage('Tap the ground to place the copy');}
+          else{
+            const world=stateRef.current.world;const sel=areaSelectionRef.current;
+            const ax=Math.round(destination.x),ay=Math.round(destination.y);
+            const {playerTile,npcTiles}=areaActorTiles();
+            const res=duplicateArea(world,sel,{x:ax,y:ay},playerTile,npcTiles);
+            if(!res.entry){setMessage('Nothing landed here: '+res.skipped[0]?.reason);setAreaDuplicateArmedBoth(false);}
+            else{
+              saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory(res.entry);
+              const w=sel.rect.x1-sel.rect.x0,h=sel.rect.y1-sel.rect.y0;
+              const newRect={x0:ax,y0:ay,x1:ax+w,y1:ay+h};
+              const newSel=selectArea(world,newRect);
+              setAreaSelection(newSel);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);
+              positionAreaSelectRect(newRect,areaSelectionLabel(newSel));
+              setMessage('Duplicated area ('+res.landed.length+' item'+(res.landed.length===1?'':'s')+(res.skipped.length?', '+res.skipped.length+' skipped: '+res.skipped[0].reason:'')+') — the selection moved to the copy');
+            }
+          }
+        }
+        // BUILD 1037: a tap inside a live selection toggles that one
+        // object in/out of the group (removeAt precedence, so a tap
+        // on a house toggles the house, not the path under it). It
+        // beats walking/placing — the yellow area is a mode, not a
+        // decoration. Dropping to zero items clears the selection.
+        else if(areaSelectionRef.current){
+          const destination=pickGround(e.clientX,e.clientY);
+          if(destination){
+            const world=stateRef.current.world;
+            const tx=Math.round(destination.x),ty=Math.round(destination.y);
+            const sel=areaSelectionRef.current;
+            if(tx>=sel.rect.x0&&tx<=sel.rect.x1&&ty>=sel.rect.y0&&ty<=sel.rect.y1){
+              const toggled=toggleSelectionMember(sel,world,tx,ty);
+              if(toggled){
+                areaTapConsumed=true;
+                const after=selectionCount(toggled.sel);
+                if(after===0){clearAreaSelection();setMessage('Selection cleared — nothing left in it');}
+                else{
+                  setAreaSelection(toggled.sel);setAreaDeleteArmed(false);
+                  positionAreaSelectRect(toggled.sel.rect,areaSelectionLabel(toggled.sel));
+                  setMessage((toggled.action==='added'?'Added ':'Removed ')+toggled.label+(toggled.action==='added'?' to':' from')+' the area ('+after+' items)');
+                }
+              }
+            }
+          }
+        }
         // BUILD 989: Walk suspension pauses the tool without clearing
         // it — a suspended tap walks exactly like a no-tool tap. The
         // walk branch below is the only other path, so suspended taps
@@ -2360,7 +2584,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // BUILD 990: while inside, Build placement/removal is disabled —
         // taps move only, even with a tool selected (the Enter button
         // is separate UI, so entry works regardless of the active tool).
-        const toolActive=!insideHutRef.current&&!walkRef.current&&(build.palette||build.customAssetId||build.removeMode||build.pasteName);
+        const toolActive=!areaTapConsumed&&!insideHutRef.current&&!walkRef.current&&(build.palette||build.customAssetId||build.removeMode||build.pasteName);
         if(toolActive){
           // BUILD 984: a build-mode tap places or removes instead of
           // moving. Build taps never set moveTarget.
@@ -2442,7 +2666,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
             }
           }
-        } else {
+        } else if(!areaTapConsumed) {
           const destination=pickGround(e.clientX,e.clientY);
           if(!destination){/* no ground picked — nothing to do */}
           else if(!walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
@@ -2937,6 +3161,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])corpseVerts.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
       for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive)corpse(npc.x+.5,npc.y+.5);
       if(corpseVerts.length){upload(corpseBuffer,new Float32Array(corpseVerts));gl.drawArrays(gl.TRIANGLES,0,corpseVerts.length/6);}
+      // BUILD 1037: keep the yellow selection overlay glued to the
+      // ground as the camera moves — reposition it at the live
+      // selection rect each frame, but only when the camera key
+      // (yaw/zoom/player) changed, so a still camera costs no DOM
+      // writes. Skipped while a drag or Duplicate is armed — those
+      // previews own the overlay then (their handlers position it
+      // per pointer).
+      {
+        const sel=areaSelectionRef.current;
+        if(sel&&!areaSelectDragging&&!areaMoveDragging&&!buildRef.current.areaDuplicateArmed){
+          const camKey=yaw.toFixed(4)+'|'+zoom.toFixed(2)+'|'+stateRef.current.position.x.toFixed(2)+'|'+stateRef.current.position.y.toFixed(2);
+          if(camKey!==areaCamKey){areaCamKey=camKey;positionAreaSelectRect(sel.rect,areaSelectionLabel(sel));}
+        }
+      }
       raf=requestAnimationFrame(draw);
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
@@ -3045,6 +3283,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // rotate the R key / rotation buttons perform.
       getPlacement:()=>({palette:buildRef.current.palette,rot:placementRotRef.current,moveMode:buildRef.current.moveMode}),
       rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
+      // BUILD 1037 test hooks (probes only — no gameplay effect): the
+      // live area selection, the armed tool, and a direct way to set
+      // a selection from a rectangle (the drag's end state).
+      getAreaSelection:()=>areaSelectionRef.current?JSON.parse(JSON.stringify(areaSelectionRef.current)):null,
+      getAreaSelectMode:()=>buildRef.current.areaSelectMode,
+      setAreaSelect:(rect:{x0:number;y0:number;x1:number;y1:number})=>{const sel=selectArea(stateRef.current.world,rect);setAreaSelection(sel);setBuildOpen(true);positionAreaSelectRect(rect,areaSelectionLabel(sel));return sel;},
+      selectAreaRect:(x0:number,y0:number,x1:number,y1:number)=>{const rect={x0,y0,x1,y1};const sel=selectArea(stateRef.current.world,rect);setAreaSelection(sel);setBuildOpen(true);positionAreaSelectRect(rect,areaSelectionLabel(sel));return sel;},
       getPlayer:()=>({...stateRef.current.position}),
       // BUILD 993 test hooks: day clock read/set + NPC teleport (probes
       // only — no gameplay effect). setClock persists like the live clock.
@@ -3463,9 +3708,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         button is rendered while the panel is open. Move, Save area,
         and Paste count as tools for all three buttons, exactly like
         palette and Remove. */}
-    {!buildOpen&&(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(walkToolLabel()?'Resume '+walkToolLabel():'Resume'):'Walk'}</button>}
-    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
-    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
+    {!buildOpen&&(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(walkToolLabel()?'Resume '+walkToolLabel():'Resume'):'Walk'}</button>}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
     {/* BUILD 1028: the big right-side Sprint button is gone — the
         control is now a small ⚡ icon at the bottom next to Gold in
         the HUD strip (same handlers, same latch/rearm/Tired states).
@@ -3480,7 +3725,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         opening the panel at all. Hidden while the panel is open,
         where the panel's own toggle is the path; it sits under the
         panel's footprint exactly like Sprint does. */}
-    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-remove-quick-toggle" onClick={toggleRemove} style={{position:'absolute',right:12,bottom:324,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:removeMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>Remove</button>}
+    {!buildOpen&&((palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-remove-quick-toggle" onClick={toggleRemove} style={{position:'absolute',right:12,bottom:324,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:removeMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>Remove</button>}
     {/* BUILD 1004: minimized handle — a visible tab at the right edge
         while build UI is minimized (panel hidden, tool still armed),
         clear of the cluster (cluster top is bottom:376, handle spans
@@ -3519,6 +3764,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     <div ref={movePreviewRef} data-testid="build-move-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',transform:'translate(-50%,-50%)',width:52,height:52,border:'3px solid #ffd94d',borderRadius:'50%',boxShadow:'0 0 0 2px rgba(0,0,0,.55)'}}>
       <span ref={movePreviewLabelRef} style={{position:'absolute',left:'50%',top:56,transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
     </div>
+    {/* BUILD 1037: AREA SELECT overlay — a translucent yellow
+        rectangle with a solid border, spanning the selection's corner
+        tiles (projected centres ± half a ring width), with a label
+        giving the rectangle size and item count. Same direct-DOM
+        technique as the save-area preview (never React state per
+        pointermove); pointerEvents none so it never eats a tap. It
+        doubles as the drag preview, the move preview, and the
+        duplicate destination preview — the draw loop repositions it
+        at the live selection rect as the camera moves, so the yellow
+        area stays glued to the ground it selects. */}
+    <div ref={areaSelectPreviewRef} data-testid="build-area-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px solid #ffd94d',borderRadius:6,background:'rgba(255,217,77,.18)',boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
+      <span ref={areaSelectPreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
+    </div>
     {/* BUILD 996: save-area rectangle preview — dashed gold rectangle
         positioned by direct DOM writes from the drag handlers; the
         label gives the rectangle size in tiles. pointerEvents none
@@ -3553,7 +3811,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
       <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses and stalls rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
@@ -3563,7 +3821,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         {CATALOG_SECTIONS.filter(sec=>catalogCategory==='all'||catalogCategory===sec.id).map(sec=><div key={sec.id}>
           <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>{sec.label}</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
-            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:null};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
+            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);buildRef.current={palette:next,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
               <span style={{display:'block',height:26,borderRadius:6,background:KIND_META[kind].swatch,marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
               {KIND_META[kind].label}
             </button>)}
@@ -3581,7 +3839,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — upload a .glb file below.</div>
             : <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
                 {customAssets.map(a=><div key={a.id} style={{display:'flex',flexDirection:'column',gap:6}}>
-                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:next};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
+                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:next,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
                     <span style={{display:'block',height:26,borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
                     {a.name}
                   </button>
@@ -3611,7 +3869,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>R = rotate 90° clockwise, Shift+R = 90° counter-clockwise. Rotate a house so its door faces the road or path. 90° steps only — the world is built from tile rectangles, so 45°/15°/free rotation cannot exist for houses.</div>
       </div>}
       <button type="button" data-testid="build-remove-toggle" onClick={toggleRemove} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
-      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);buildRef.current={...buildRef.current,moveMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}buildRef.current={...buildRef.current,moveMode:next,areaSelectMode:next?false:buildRef.current.areaSelectMode,areaMoveArmed:next?false:buildRef.current.areaMoveArmed,areaDuplicateArmed:next?false:buildRef.current.areaDuplicateArmed};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       {/* BUILD 996: saved chunks (build templates). Save area arms the
           rectangle drag; the naming row appears after a selection
           finalizes (panel reopens if minimized, so the row is
@@ -3623,7 +3881,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid #8c9b8d'}}>
         <div style={{fontSize:13,fontWeight:700}}>Saved chunks</div>
         <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Turn Save area on, then drag a rectangle on the ground — or tap one tile — to select it. Name it and save it as a chunk. Tap a saved chunk, then tap the ground to stamp it there (its corner lands on the tapped tile); items that cannot fit are skipped and reported, never blocking the rest. One Undo removes a whole paste. Chunks save only what you placed — generated houses, paths, and trees are not captured, and custom uploads are not captured yet.</div>
-        <button type="button" data-testid="build-save-area-toggle" onClick={()=>{const next=!saveAreaMode;setSaveAreaMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setPasteName(null);}setSaveSelection(null);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next,pasteName:next?null:pasteName,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:saveAreaMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Save area: {saveAreaMode?'On':'Off'}</button>
+        <button type="button" data-testid="build-save-area-toggle" onClick={()=>{const next=!saveAreaMode;setSaveAreaMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}setSaveSelection(null);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next,pasteName:next?null:pasteName,customAssetId:next?null:buildRef.current.customAssetId,areaSelectMode:next?false:areaSelectMode,areaMoveArmed:next?false:areaMoveArmed,areaDuplicateArmed:next?false:areaDuplicateArmed};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:saveAreaMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Save area: {saveAreaMode?'On':'Off'}</button>
+        {/* BUILD 1037: AREA SELECT — drag a yellow rectangle on the
+            ground to select everything inside it (houses, trees,
+            paths, rocks, walls, decorations — placed and generated),
+            then Move, Rotate, Delete, or Duplicate the whole group
+            from the actions menu below. A drag that starts inside a
+            live selection moves it; a tap inside it toggles one
+            object in or out. */}
+        <div style={{fontSize:11,opacity:.75,marginTop:10,lineHeight:1.4}}>Area select: turn it on, then drag a yellow rectangle on the ground to select everything inside it — houses, trees, roads, decorations, whole town sections. Then Move, Rotate, Delete, or Duplicate the group below. Drag inside the yellow area to move it; tap an object inside it to toggle that one object in or out.</div>
+        <button type="button" data-testid="build-area-select-toggle" onClick={toggleAreaSelect} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'3px solid #ffd94d',background:areaSelectMode?'#8a6d1f':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Area select: {areaSelectMode?'On':'Off'}</button>
         {saveSelection&&<div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
           <div style={{fontSize:12}}>Area {(saveSelection.x1-saveSelection.x0+1)}×{(saveSelection.y1-saveSelection.y0+1)} · {saveSelection.count} placed item{saveSelection.count===1?'':'s'}</div>
           <input type="text" data-testid="build-chunk-name-input" value={chunkName} onChange={e=>setChunkName(e.target.value)} placeholder={'Chunk '+(templates.length+1)} style={{display:'block',width:'100%',marginTop:8,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:14,boxSizing:'border-box'}} />
@@ -3632,10 +3899,44 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             <button type="button" data-testid="build-chunk-cancel" onClick={()=>{setSaveSelection(null);setChunkName('');}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Cancel</button>
           </div>
         </div>}
+        {/* BUILD 1037: AREA SELECT actions menu — appears when a
+            selection is live. MOVE arms a drag (or drag inside the
+            yellow area directly); ROTATE turns the whole group 90°
+            around the selection centre (houses keep their door face
+            rotating with them); DELETE removes exactly the selected
+            items (two taps when there are more than 10); DUPLICATE
+            arms a tap-to-place copy (the selection moves to the copy).
+            Every action is ONE Undo step. The item list below is the
+            per-object control — × drops one object from the group
+            without touching the world. */}
+        {areaSelection&&<div data-testid="build-area-menu" style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'3px solid #ffd94d'}}>
+          <div style={{fontSize:12,fontWeight:700}}>Area {(areaSelection.rect.x1-areaSelection.rect.x0+1)}×{(areaSelection.rect.y1-areaSelection.rect.y0+1)} · {selectionCount(areaSelection)} item{selectionCount(areaSelection)===1?'':'s'}</div>
+          <div style={{fontSize:11,opacity:.75,marginTop:2}}>{(()=>{const c=selectionCounts(areaSelection);return [c.houses>0?'Houses '+c.houses:null,c.trees>0?'Trees '+c.trees:null,c.paths>0?'Paths '+c.paths:null,c.rocks>0?'Rocks '+c.rocks:null,c.walls>0?'Walls '+c.walls:null,c.placed>0?'Other placed '+c.placed:null].filter(Boolean).join(' · ');})()}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
+            <button type="button" data-testid="build-area-move" onClick={()=>{if(!areaSelection)return;setAreaMoveArmedBoth(!areaMoveArmed);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);setMessage(areaMoveArmed?'Move cancelled':'Drag the yellow area to a new location — everything moves together, keeping its layout');}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:areaMoveArmed?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move</button>
+            <button type="button" data-testid="build-area-duplicate" onClick={()=>{if(!areaSelection)return;setAreaDuplicateArmedBoth(!areaDuplicateArmed);setAreaMoveArmedBoth(false);setAreaDeleteArmed(false);setMessage(areaDuplicateArmed?'Duplicate cancelled':'Tap the ground to place a copy of the area — its corner lands on the tapped tile');}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:areaDuplicateArmed?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Duplicate</button>
+            <button type="button" data-testid="build-area-rotate-ccw" onClick={()=>doAreaRotate(-1)} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>⟲ Rotate left</button>
+            <button type="button" data-testid="build-area-rotate-cw" onClick={()=>doAreaRotate(1)} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Rotate right ⟳</button>
+          </div>
+          <button type="button" data-testid="build-area-delete" onClick={()=>{if(!areaSelection)return;const n=selectionCount(areaSelection);if(n>10&&!areaDeleteArmed){setAreaDeleteArmed(true);setMessage('Delete '+n+' items? Tap Delete again to confirm — Undo restores them');return;}doAreaDelete();}} style={{display:'block',width:'100%',marginTop:8,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:areaDeleteArmed?'#7a3b2e':'#5a2e24',color:'#fff',fontWeight:700,fontSize:14}}>{areaDeleteArmed?'Tap again to confirm delete':'Delete area'}</button>
+          {areaSelection.notes.length>0&&<div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>{areaSelection.notes.join(' · ')}</div>}
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11,opacity:.75}}>Items in this area — tap × to drop one from the group (the world is untouched):</div>
+            {selectionItems(areaSelection).map((it,i)=>{
+              const label=selectionItemLabel(it);
+              const key=label+'|'+i;
+              return <div key={key} style={{display:'flex',alignItems:'center',gap:8,marginTop:4,fontSize:12}}>
+                <span style={{flex:1}}>{label}</span>
+                <button type="button" data-testid="build-area-item-remove" aria-label={'Remove '+label+' from selection'} onClick={()=>{if(!areaSelection)return;const next=excludeItem(areaSelection,it);const after=selectionCount(next);if(after===0){clearAreaSelection();setMessage('Selection cleared — nothing left in it');}else{setAreaSelection(next);setAreaDeleteArmed(false);const lab=areaSelectPreviewLabelRef.current;if(lab)lab.textContent='Area '+(next.rect.x1-next.rect.x0+1)+'×'+(next.rect.y1-next.rect.y0+1)+' · '+after+' item'+(after===1?'':'s');setMessage('Removed '+label+' from the area ('+after+' items)');}}} style={{padding:'4px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>×</button>
+              </div>;
+            })}
+          </div>
+          <button type="button" data-testid="build-area-clear" onClick={()=>{clearAreaSelection();setMessage('Area selection cleared');}} style={{display:'block',width:'100%',marginTop:10,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Clear selection</button>
+        </div>}
         {templates.length===0
           ? <div style={{fontSize:12,opacity:.7,marginTop:10}}>No saved chunks yet.</div>
           : <div style={{marginTop:10}}>{templates.map(t=><div key={t.name} style={{display:'flex',gap:8,marginTop:6}}>
-              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:buildRef.current.moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next,customAssetId:next?null:buildRef.current.customAssetId};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
+              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:buildRef.current.moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next,customAssetId:next?null:buildRef.current.customAssetId,areaSelectMode:next?false:areaSelectMode,areaMoveArmed:next?false:areaMoveArmed,areaDuplicateArmed:next?false:areaDuplicateArmed};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
               <button type="button" data-testid="build-chunk-delete" aria-label={'Delete '+t.name} onClick={()=>{setTemplates(prev=>prev.filter(x=>x.name!==t.name));if(pasteName===t.name){setPasteName(null);buildRef.current={...buildRef.current,pasteName:null};}setMessage('Deleted chunk \''+t.name+'\'');}} style={{padding:'10px 12px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:13}}>×</button>
             </div>)}</div>}
       </div>

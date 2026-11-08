@@ -411,7 +411,12 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  each (see moveGeneratedHut/moveGeneratedPath/moveGeneratedTree).
  *  moveGenHouse stores BARE prevTo/to rects (doors are always recomputed
  *  from the facing derived from `from`'s door, so undo/redo can never
- *  disagree with the adapter about a door); `from` carries its door. */
+ *  disagree with the adapter about a door); `from` carries its door.
+ *  BUILD 1037: a ROTATED hut also carries `face` (pre-rotation) and
+ *  `toFace` (post-rotation) — a plain move leaves both absent, and the
+ *  `from` door is the face. Without them, undo/redo of a rotation
+ *  would restore the rect with the original face, not the face the
+ *  hut had before/after this rotation. */
 export type UndoEntry =
   | { kind: 'place'; item: PlacedItem }
   | { kind: 'unplace'; item: PlacedItem; index: number }
@@ -424,9 +429,16 @@ export type UndoEntry =
   | { kind: 'stroke'; entries: UndoEntry[] }
   | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
   | { kind: 'paste'; items: PlacedItem[] }
-  | { kind: 'moveGenHouse'; from: HutRect; prevTo: HutRect; to: HutRect; index: number }
+  | { kind: 'moveGenHouse'; from: HutRect; prevTo: HutRect; to: HutRect; index: number; face?: 'north' | 'south' | 'west' | 'east'; toFace?: 'north' | 'south' | 'west' | 'east' }
   | { kind: 'moveGenPath'; fromX: number; fromY: number; toX: number; toY: number }
-  | { kind: 'moveGenTree'; fromX: number; fromY: number; toX: number; toY: number; hasTree: boolean; hasCrate: boolean; treeIndex: number; crateIndex: number };
+  | { kind: 'moveGenTree'; fromX: number; fromY: number; toX: number; toY: number; hasTree: boolean; hasCrate: boolean; treeIndex: number; crateIndex: number }
+  /** BUILD 1037: `group` = a whole AREA SELECT operation (move /
+   *  rotate of many items, of mixed kinds) as ONE undo step — the
+   *  generalisation of `stroke` for group moves/rotates. Sub-entries
+   *  apply in reverse on undo, forward on redo, exactly like a
+   *  stroke. `label` is the user-facing name ('Moved area',
+   *  'Rotated area'). */
+  | { kind: 'group'; entries: UndoEntry[]; label: string };
 
 /** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
  *  each tile of a stroke, in order, with the SAME precedence,
@@ -486,6 +498,38 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       for (let i = entry.entries.length - 1; i >= 0; i--) applyUndo(w, entry.entries[i]);
       const n = entry.entries.length;
       return 'Undid ' + n + (n === 1 ? ' removal' : ' removals');
+    }
+    case 'group': {
+      // BUILD 1037: a whole AREA SELECT operation as one undo step.
+      // The `move` sub-entries undo in TWO phases — remove every new
+      // position first, then restore every old position. A rotation
+      // can map one item's destination onto another item's source (a
+      // cycle: A's new rect == D's old rect). Undoing one entry at a
+      // time would let the rect-based removal eat the other entry's
+      // just-restored item, and the `exists` guard would then skip
+      // the restore — silently losing an item (found by the 1037
+      // probe: a rotation undone lost a path). Removing every new
+      // position first (like the forward lift-all) makes the
+      // restores collision-free. The restores go in ASCENDING
+      // recorded-index order, which rebuilds the original list order
+      // exactly (each insert lands at its final index because every
+      // item that belongs before it is already in place). The other
+      // kinds (huts, trees, paths, rocks, walls) live in separate
+      // collections, so they undo in reverse order around the two
+      // phases.
+      const moves = entry.entries.filter((e) => e.kind === 'move');
+      for (let i = entry.entries.length - 1; i >= 0; i--) {
+        if (entry.entries[i].kind !== 'move') applyUndo(w, entry.entries[i]);
+      }
+      for (const m of moves) removeExactPlacement(w, m.newItem);
+      const byIndex = [...moves].sort((a, b) => a.index - b.index);
+      for (const m of byIndex) {
+        if (!w.placements) w.placements = [];
+        const old = m.oldItem;
+        const exists = w.placements.some((p) => p.kind === old.kind && p.x0 === old.x0 && p.y0 === old.y0 && p.x1 === old.x1 && p.y1 === old.y1);
+        if (!exists) w.placements.splice(Math.min(m.index, w.placements.length), 0, old);
+      }
+      return 'Undid ' + entry.label;
     }
     case 'place': {
       removeExactPlacement(w, entry.item);
@@ -573,7 +617,12 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       // the restored hut's door always agrees with the adapter's
       // formula. A first move (prevTo == from) drops the moved record;
       // a chained move rewinds the record's `to` to prevTo.
-      const face = hutFace(entry.from);
+      // BUILD 1037: a rotated hut carries its pre-rotation face in
+      // `face` (a plain move leaves it absent, and the `from` door
+      // is the pre-move face — same value). Without it, undoing a
+      // rotation would restore the rect with the ORIGINAL face, not
+      // the face the hut had before this rotation.
+      const face = entry.face ?? hutFace(entry.from);
       const prevDoor = doorForRect(entry.prevTo.x0, entry.prevTo.y0, entry.prevTo.x1, entry.prevTo.y1, face);
       w.huts = w.huts.filter((h) => !rectEqual(h, entry.to));
       const prevHut: HutRect = { ...entry.prevTo, doorX: prevDoor.x, doorY: prevDoor.y };
@@ -642,6 +691,29 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       for (const sub of entry.entries) applyRedo(w, sub);
       const n = entry.entries.length;
       return 'Redid ' + n + (n === 1 ? ' removal' : ' removals');
+    }
+    case 'group': {
+      // BUILD 1037: a whole AREA SELECT operation as one redo step.
+      // The `move` sub-entries redo in TWO phases — remove every old
+      // position first, then place every new position — mirroring
+      // the undo's two phases. A rotation cycle (A's new rect == D's
+      // old rect) would otherwise let the rect-based removal eat the
+      // other entry's just-placed item and lose one. The placements
+      // go in ASCENDING recorded-index order, which rebuilds the
+      // post-move list order exactly.
+      const moves = entry.entries.filter((e) => e.kind === 'move');
+      for (const sub of entry.entries) {
+        if (sub.kind !== 'move') applyRedo(w, sub);
+      }
+      for (const m of moves) removeExactPlacement(w, m.oldItem);
+      const byIndex = [...moves].sort((a, b) => a.index - b.index);
+      for (const m of byIndex) {
+        if (!w.placements) w.placements = [];
+        const item = m.newItem;
+        const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+        if (!exists) w.placements.splice(Math.min(m.index, w.placements.length), 0, item);
+      }
+      return 'Redid ' + entry.label;
     }
     case 'place': {
       if (!w.placements) w.placements = [];
@@ -718,7 +790,12 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       return 'Moved ' + item.kind;
     }
     case 'moveGenHouse': {
-      const face = hutFace(entry.from);
+      // BUILD 1037: a rotated hut carries its post-rotation face in
+      // `toFace` (a plain move leaves it absent, and the `from` door
+      // is the face — same value). Without it, redoing a rotation
+      // would stamp the `to` rect with the ORIGINAL face, not the
+      // rotated one.
+      const face = entry.toFace ?? hutFace(entry.from);
       const toDoor = doorForRect(entry.to.x0, entry.to.y0, entry.to.x1, entry.to.y1, face);
       w.huts = w.huts.filter((h) => !rectEqual(h, entry.prevTo));
       const toHut: HutRect = { ...entry.to, doorX: toDoor.x, doorY: toDoor.y };
@@ -1202,8 +1279,10 @@ export function edgeConnectedTiles(w: IsoWorld): Set<string> {
  *  (in preFree) but not free AFTER (absent from the current world's
  *  edge set). Actors already sealed before the move are NOT newly
  *  trapped — a freeing move stays legal and an unrelated move is never
- *  refused because of a pre-existing pocket. */
-function newlyTrapped(
+ *  refused because of a pre-existing pocket. BUILD 1037: exported —
+ *  the AREA SELECT group move/rotate does one trap check for the
+ *  whole group instead of one per item. */
+export function newlyTrapped(
   preFree: Set<string>,
   w: IsoWorld,
   playerTile: { x: number; y: number },
