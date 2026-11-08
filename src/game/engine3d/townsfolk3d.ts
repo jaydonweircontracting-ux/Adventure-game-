@@ -285,6 +285,12 @@ export function planPathNpc(
   // The Manhattan heuristic stays admissible (min cost is 1) and
   // consistent (|Δh| ≤ 1 ≤ cost), so first-pop optimality still holds.
   cost?: (x: number, y: number) => number,
+  // BUILD 1030: optional walkability override — the player paths with
+  // door tiles allowed (playerWalkable in playerPath.ts), NPCs keep
+  // npcWalkable. The goal tile is exempt from extraBlocked: a
+  // destination occupied by a standing figure is still reachable
+  // (the follower waits there), instead of the plan failing outright.
+  walkable: (world: IsoWorld, x: number, y: number) => boolean = npcWalkable,
 ): { x: number; y: number }[] | null {
   if (from.x === to.x && from.y === to.y) return [];
   const key = (x: number, y: number) => x + ',' + y;
@@ -317,8 +323,12 @@ export function planPathNpc(
       const nx = cur.x + dx;
       const ny = cur.y + dy;
       const nk = key(nx, ny);
-      if (closed.has(nk) || (extraBlocked && extraBlocked.has(nk))) continue;
-      if (!npcWalkable(world, nx, ny)) continue;
+      // BUILD 1030: the goal tile is exempt from extraBlocked — a
+      // destination occupied by a standing figure is still reachable
+      // (the follower waits there), instead of the plan failing.
+      const isGoal = nx === to.x && ny === to.y;
+      if (closed.has(nk) || (extraBlocked && !isGoal && extraBlocked.has(nk))) continue;
+      if (!walkable(world, nx, ny)) continue;
       const g = cur.g + (cost ? cost(nx, ny) : 1);
       if (g < (gScore.get(nk) ?? Infinity)) {
         gScore.set(nk, g);
@@ -331,6 +341,54 @@ export function planPathNpc(
 }
 
 // ------------------------------------------------------------ static anchors
+
+/**
+ * BUILD 1030: true when any remaining waypoint (from index onward) is no
+ * longer walkable — a placed item landed on a later path tile, not just
+ * the next step. Callers replan early instead of walking up to the
+ * blocker first. Pure.
+ */
+export function pathHasUnwalkableTile(
+  world: IsoWorld,
+  path: { x: number; y: number }[],
+  index: number,
+  walkable: (world: IsoWorld, x: number, y: number) => boolean = npcWalkable,
+): boolean {
+  for (let i = index; i < path.length; i++) {
+    if (!walkable(world, path[i].x, path[i].y)) return true;
+  }
+  return false;
+}
+
+/**
+ * BUILD 1030: a sidestep tile for a head-on deadlock with no detour.
+ * When the persistent-block replan fails (the only route is through
+ * the blocking tile — a 1-wide stretch), the NPC steps aside to an
+ * adjacent walkable, unoccupied tile instead of sealing and waiting
+ * in place; the next tick replans fresh from there. Prefers the
+ * adjacent tile farthest from the blocking tile (step away), ties
+ * broken in fixed N/E/S/W order for determinism. Returns null when no
+ * adjacent tile works (caller keeps the sealed wait). Pure.
+ */
+export function sidestepTile(
+  world: IsoWorld,
+  from: { x: number; y: number },
+  blocked: { x: number; y: number },
+  occupied: (x: number, y: number) => boolean,
+): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestD = -1;
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+    const nx = from.x + dx;
+    const ny = from.y + dy;
+    if (nx === blocked.x && ny === blocked.y) continue;
+    if (!npcWalkable(world, nx, ny)) continue;
+    if (occupied(nx, ny)) continue;
+    const d = Math.abs(nx - blocked.x) + Math.abs(ny - blocked.y);
+    if (d > bestD) { bestD = d; best = { x: nx, y: ny }; }
+  }
+  return best;
+}
 
 export type StaticAnchors3D = {
   plaza: { x: number; y: number };

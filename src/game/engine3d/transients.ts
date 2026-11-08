@@ -68,7 +68,7 @@
  */
 
 import { terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
-import { npcWalkable, planPathNpc } from './townsfolk3d';
+import { npcWalkable, planPathNpc, pathHasUnwalkableTile, sidestepTile } from './townsfolk3d';
 import { placedPathKeys } from './placements';
 import { blockedAction } from './npcMotion';
 import { emitVillager, hashStr, villagerSpecFor } from './villagers';
@@ -260,6 +260,11 @@ export interface TransientPathState {
   index: number;
   noPathTicks: number;
   blockedTicks: number;
+  /** BUILD 1030: true when this path is itself a detour replan. An actor
+   *  blocked on a detour steps aside instead of replanning again —
+   *  two head-on actors both detour into the same lane and ping-pong
+   *  between lanes forever if each replans again. */
+  detour: boolean;
 }
 
 /**
@@ -304,29 +309,45 @@ export function stepTransient(
   const cost = roadCostFn(world);
   let w = path;
   if (!w || w.dest !== destKey) {
-    w = { dest: destKey, path: planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [], index: 0, noPathTicks: 0, blockedTicks: 0 };
+    w = { dest: destKey, path: planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
   }
   if (w.path.length === 0) {
     w.noPathTicks++;
     if (w.noPathTicks >= 11) {
       w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [];
-      w.index = 0; w.noPathTicks = 0;
+      w.index = 0; w.noPathTicks = 0; w.detour = false;
     }
     return { path: w, despawn: false };
   }
   const next = w.path[w.index];
   if (!next) return { path: undefined, despawn: false };
-  if (!npcWalkable(world, next.x, next.y)) {
+  // BUILD 1030: any remaining path tile became unwalkable (a placed
+  // item landed on a later tile) — replan now, not just when the
+  // transient walks up to the blocker.
+  if (pathHasUnwalkableTile(world, w.path, w.index)) {
     w.path = planPathNpc(world, { x: cx, y: cy }, dest, 4000, undefined, cost) ?? [];
-    w.index = 0; w.noPathTicks = 0; w.blockedTicks = 0;
+    w.index = 0; w.noPathTicks = 0; w.blockedTicks = 0; w.detour = false;
     return { path: w, despawn: false };
   }
   if (occupied(next.x, next.y)) {
     w.blockedTicks++;
     if (blockedAction(w.blockedTicks) === 'replan') {
-      const detour = planPathNpc(world, { x: cx, y: cy }, dest, 4000, new Set([next.x + ',' + next.y]), cost);
-      if (detour) { w.path = detour; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; }
-      else { w.path = []; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; }
+      // BUILD 1030: a detour replan only when this path is not itself
+      // a detour. Two actors head-on both detour into the same lane
+      // and ping-pong between lanes forever if each replans again;
+      // an actor blocked on a detour steps aside instead, which
+      // breaks the symmetry (the other one passes). A failed detour
+      // also falls through to the sidestep (1-wide stretch).
+      let resolved = false;
+      if (!w.detour) {
+        const detour = planPathNpc(world, { x: cx, y: cy }, dest, 4000, new Set([next.x + ',' + next.y]), cost);
+        if (detour) { w.path = detour; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; w.detour = true; resolved = true; }
+      }
+      if (!resolved) {
+        const aside = sidestepTile(world, { x: cx, y: cy }, next, occupied);
+        if (aside) { w.path = [aside]; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; w.detour = false; resolved = true; }
+      }
+      if (!resolved) { w.path = []; w.index = 0; w.blockedTicks = 0; w.noPathTicks = 0; w.detour = false; }
     }
     return { path: w, despawn: false };
   }

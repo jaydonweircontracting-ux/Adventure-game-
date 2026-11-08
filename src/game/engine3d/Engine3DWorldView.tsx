@@ -30,11 +30,12 @@ import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
-import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
+import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
+import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 
@@ -1103,6 +1104,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // wide obstacle. Cleared on a direct step and whenever there is no
   // movement input at all (a new journey starts fresh). Session-only.
   const slidePerpRef=useRef<PerpDir | null>(null);
+  // BUILD 1030: tap-to-walk path state. playerPathRef = the A* waypoints
+  // for the active tap journey (null = direct push, e.g. interior taps
+  // or D-pad). The other refs are the follower's bookkeeping: replan
+  // throttle, figure-block wait, and stuck detection. Session-only.
+  const playerPathRef=useRef<PlayerPath | null>(null);
+  const playerPathReplanRef=useRef(0);
+  const playerPathWaitRef=useRef<{since:number;x:number;y:number}|null>(null);
+  const playerPathStuckRef=useRef<{x:number;y:number;since:number}|null>(null);
   const sprintLatchRef=useRef(false);
   const sprintPointerIdRef=useRef<number|null>(null);
   const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
@@ -1579,6 +1588,90 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(gx<0||gy<0||gx>=world.w||gy>=world.h) return isWildWalkable(world,gx,gy);
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
+    // BUILD 1030: tiles currently occupied by figures, for tap-to-walk
+    // planning (extraBlocked). Rounded tiles, using RENDER positions
+    // like walkableAt (what the player sees). The player's own tile is
+    // excluded — it is the path start.
+    const figureOccupiedTiles=():Set<string>=>{
+      const out=new Set<string>();
+      const add=(x:number,y:number)=>{out.add(Math.round(x)+','+Math.round(y));};
+      for(const n of npcActorsRef.current){if(!n.alive)continue;const r=npcRender.get(n.name);add(r?r.x:n.x,r?r.y:n.y);}
+      for(const t of transientActorsRef.current){const r=npcRender.get(t.id);add(r?r.x:t.x,r?r.y:t.y);}
+      for(const a of animalActorsRef.current){const r=animalRender.get(a.id);add(r?r.x:a.x,r?r.y:a.y);}
+      return out;
+    };
+    // BUILD 1030: rebuild the tap journey's path from the current
+    // position to moveTarget, optionally excluding one tile (the tile
+    // ahead when pinned, or a figure's tile after waiting). Returns
+    // 'ok' (new path), 'throttled' (too soon — try again next frame),
+    // or 'failed' (no route exists). Never reports 'Path blocked'
+    // itself — the caller decides, so a throttled replan is a wait,
+    // not a false dead end.
+    const replanPlayerPath=(exclude?:{x:number;y:number}):'ok'|'throttled'|'failed'=>{
+      const nowMs=performance.now();
+      if(nowMs-playerPathReplanRef.current<PLAYER_REPLAN_MS)return 'throttled';
+      const dest=moveTarget;if(!dest)return 'failed';
+      playerPathReplanRef.current=nowMs;
+      const blocked=figureOccupiedTiles();
+      if(exclude)blocked.add(exclude.x+','+exclude.y);
+      const path=planPlayerPath(stateRef.current.world,stateRef.current.position,dest,blocked);
+      if(!path)return 'failed';
+      playerPathRef.current=path;playerPathWaitRef.current=null;playerPathStuckRef.current=null;
+      return 'ok';
+    };
+    // BUILD 1030: tap-to-walk path follower. Called once per frame
+    // while a tap journey is active. Returns the push (dx, dy) toward
+    // the current waypoint, or null when the player should wait this
+    // frame (a figure on the next waypoint, a throttled replan) or the
+    // journey ended. Handles: waypoint advance, static-block replan (a
+    // placed item landed on a waypoint — replan now, it won't move),
+    // figure-block wait-then-replan, and stuck detection (no real
+    // progress while pushing — micro-slides, a figure pacing the
+    // player). A replan recurses once to recompute from the new path;
+    // the 500ms throttle bounds the depth (the recursive call's own
+    // replan would return 'throttled').
+    const followPlayerPath=(nowMs:number):{dx:number;dy:number}|null=>{
+      const path=playerPathRef.current;const dest=moveTarget;
+      if(!path||!dest)return null;
+      const player=stateRef.current.position;
+      while(path.index<path.waypoints.length&&Math.hypot(path.waypoints[path.index].x-player.x,path.waypoints[path.index].y-player.y)<PLAYER_WAYPOINT_ARRIVE)path.index++;
+      if(path.index>=path.waypoints.length){playerPathRef.current=null;moveTarget=null;return null;}
+      const wp=path.waypoints[path.index];
+      const wtx=Math.round(wp.x),wty=Math.round(wp.y);
+      const w=stateRef.current.world;
+      if(!playerWalkable(w,wtx,wty)){
+        const r=replanPlayerPath();
+        if(r==='ok')return followPlayerPath(nowMs);
+        if(r==='throttled')return null;
+        playerPathRef.current=null;moveTarget=null;setMessage('Path blocked');
+        return null;
+      }
+      if(!walkableAt(wp.x,wp.y)){
+        const wait=playerPathWaitRef.current;
+        if(!wait||wait.x!==wtx||wait.y!==wty){playerPathWaitRef.current={since:nowMs,x:wtx,y:wty};return null;}
+        if(nowMs-wait.since>PLAYER_WAIT_MS){
+          const r=replanPlayerPath({x:wtx,y:wty});
+          if(r==='ok'){playerPathWaitRef.current=null;return followPlayerPath(nowMs);}
+          if(r==='throttled')return null;
+          playerPathRef.current=null;moveTarget=null;setMessage('Path blocked');
+          return null;
+        }
+        return null;
+      }
+      playerPathWaitRef.current=null;
+      const stuck=playerPathStuckRef.current;
+      if(!stuck){playerPathStuckRef.current={x:player.x,y:player.y,since:nowMs};}
+      else if(Math.hypot(player.x-stuck.x,player.y-stuck.y)>=0.05){playerPathStuckRef.current={x:player.x,y:player.y,since:nowMs};}
+      else if(nowMs-stuck.since>PLAYER_STUCK_MS){
+        const ahead={x:Math.round(player.x+Math.sign(wp.x-player.x)),y:Math.round(player.y+Math.sign(wp.y-player.y))};
+        const r=replanPlayerPath(ahead);
+        if(r==='ok')return followPlayerPath(nowMs);
+        if(r==='throttled')return null;
+        playerPathRef.current=null;moveTarget=null;setMessage('Path blocked');
+        return null;
+      }
+      return {dx:wp.x-player.x,dy:wp.y-player.y};
+    };
     const pickGround=(clientX:number,clientY:number)=>{
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
       const nx=((clientX-rect.left)/rect.width)*2-1,ny=1-((clientY-rect.top)/rect.height)*2;
@@ -1944,8 +2037,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           }
         } else {
           const destination=pickGround(e.clientX,e.clientY);
-          if(destination&&walkableAt(destination.x,destination.y)){moveTarget=destination;setMessage('Walking to destination');}
-          else if(destination){setMessage('That destination is blocked');}
+          if(!destination){/* no ground picked — nothing to do */}
+          else if(!walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
+          else if(insideHutRef.current){
+            // Inside a hut: short interior walk, direct push + sliding
+            // (the A* walkable set is the outdoor one). The draw loop
+            // clears any outdoor path on entry.
+            moveTarget=destination;playerPathRef.current=null;setMessage('Walking to destination');
+          } else {
+            // BUILD 1030: tap-to-walk plans an A* route around trees,
+            // houses, rocks, water, walls, and figures — no more
+            // re-tapping around every obstacle. A walkable destination
+            // with no route at all reports 'Path blocked'.
+            const path=planPlayerPath(stateRef.current.world,stateRef.current.position,destination,figureOccupiedTiles());
+            if(!path){setMessage('Path blocked');}
+            else{playerPathRef.current=path;playerPathReplanRef.current=performance.now();playerPathWaitRef.current=null;playerPathStuckRef.current=null;moveTarget=destination;setMessage('Walking to destination');}
+          }
         }
       }
       if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
@@ -1986,19 +2093,32 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       let player=current.position;
       walkingNow=false;
       let moveDx=0,moveDy=0,hasInput=false;
-      if(moveTarget){
-        moveDx=moveTarget.x-player.x;moveDy=moveTarget.y-player.y;
-        if(Math.hypot(moveDx,moveDy)<.08){moveTarget=null;moveDx=0;moveDy=0;}
-        else hasInput=true;
-      }else{
-        const held=[...keys].filter(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
-        moveDx=(held.includes('d')||held.includes('arrowright')?1:0)-(held.includes('a')||held.includes('arrowleft')?1:0);
-        moveDy=(held.includes('s')||held.includes('arrowdown')?1:0)-(held.includes('w')||held.includes('arrowup')?1:0);
-        hasInput=moveDx!==0||moveDy!==0;
+      // BUILD 1030: keys / D-pad (which dispatches key events) take
+      // over a tap journey — the user steers directly, the path is
+      // dropped. Otherwise a tap journey follows its A* waypoints;
+      // a direct push (interior taps) keeps the old behaviour.
+      const heldKeys=[...keys].filter(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+      if(heldKeys.length>0){
+        if(playerPathRef.current||moveTarget){playerPathRef.current=null;moveTarget=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;}
+        moveDx=(heldKeys.includes('d')||heldKeys.includes('arrowright')?1:0)-(heldKeys.includes('a')||heldKeys.includes('arrowleft')?1:0);
+        moveDy=(heldKeys.includes('s')||heldKeys.includes('arrowdown')?1:0)-(heldKeys.includes('w')||heldKeys.includes('arrowup')?1:0);
+        hasInput=true;
+      }else if(moveTarget){
+        // Entering a hut ends an outdoor tap journey (the waypoints
+        // are outside; interior taps walk direct, see the tap handler).
+        if(insideHutRef.current&&playerPathRef.current){playerPathRef.current=null;moveTarget=null;}
+        else if(playerPathRef.current){
+          const push=followPlayerPath(now);
+          if(push){moveDx=push.dx;moveDy=push.dy;hasInput=true;}
+        }else{
+          moveDx=moveTarget.x-player.x;moveDy=moveTarget.y-player.y;
+          if(Math.hypot(moveDx,moveDy)<.08){moveTarget=null;moveDx=0;moveDy=0;}
+          else hasInput=true;
+        }
       }
       // BUILD 1021: no movement input — a new journey starts fresh, so
       // a stale slide-around side never carries into the next push.
-      if(!hasInput)slidePerpRef.current=null;
+      if(!hasInput){slidePerpRef.current=null;playerPathStuckRef.current=null;}
       // BUILD 1003: sprint multiplies speed INSIDE this same pipeline —
       // same step, same walkableAt checks, same wall sliding. Hold =
       // Sprint control or Shift key; exhausted forces walk. BUILD 1018:
@@ -2032,7 +2152,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(res.how==='perp')slidePerpRef.current=res.perp;
         else if(res.how==='direct')slidePerpRef.current=null;
         if(res.moved){player={x:res.x,y:res.y};current.position=player;walkingNow=true;}
-        else if(res.blocked&&moveTarget){moveTarget=null;setMessage('Path blocked');}
+        else if(res.blocked&&moveTarget){
+          // BUILD 1030: a blocked step on a tap journey replans (the
+          // way may have closed after planning) — only a failed replan
+          // reports 'Path blocked'. A throttled replan is a wait, not
+          // a dead end. Direct pushes (no path) keep the old immediate
+          // message.
+          if(playerPathRef.current){
+            const ahead={x:Math.round(player.x+Math.sign(moveDx)),y:Math.round(player.y+Math.sign(moveDy))};
+            const r=replanPlayerPath(ahead);
+            if(r==='failed'){playerPathRef.current=null;moveTarget=null;setMessage('Path blocked');}
+          }else{moveTarget=null;setMessage('Path blocked');}
+        }
         if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
         if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
         if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
@@ -2446,8 +2577,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getStaminaPublishes:()=>staminaPublishCountRef.current,
       // Probe-only: drop a stale tap destination so key-based probe runs
       // are not overridden by an earlier tap (no gameplay effect — taps
-      // only ever set moveTarget from the canvas handler).
-      clearMoveTarget:()=>{moveTarget=null;},
+      // only ever set moveTarget from the canvas handler). BUILD 1030:
+      // also drops the tap journey's A* path, or the follower would
+      // keep driving toward the cleared destination.
+      clearMoveTarget:()=>{moveTarget=null;playerPathRef.current=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;},
       getTransients:()=>transientActorsRef.current.map(t=>({id:t.id,kind:t.kind,name:t.name,x:t.x,y:t.y,state:t.state,slotId:t.slotId,exit:t.exit})),
       spawnTransient:(kind:'traveler'|'adventurer')=>{const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
       // BUILD 1013 test hooks (probes only — no gameplay effect):
@@ -2529,7 +2662,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const npcByName=new Map(ROSTER_3D.map((n,i)=>[n.name,i]));
     // Path state per NPC (session-only, never saved). blockedTicks
     // counts consecutive ticks behind the same occupied tile (998).
-    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number;blockedTicks:number}>();
+    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number;blockedTicks:number;detour:boolean}>();
     const npcTimer=window.setInterval(()=>{
       const actors=npcActorsRef.current;
       const clock=clockRef.current;
@@ -2543,7 +2676,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const destKey=sched.tx+','+sched.ty;
         let w=npcPath.get(actor.name);
         if(!w||w.dest!==destKey){
-          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0,blockedTicks:0};
+          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[],index:0,noPathTicks:0,blockedTicks:0,detour:false};
           npcPath.set(actor.name,w);
         }
         if(w.path.length===0){
@@ -2552,16 +2685,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           w.noPathTicks++;
           if(w.noPathTicks>=11){
             w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
-            w.index=0;w.noPathTicks=0;
+            w.index=0;w.noPathTicks=0;w.detour=false;
           }
           return;
         }
         const next=w.path[w.index];
         if(!next){npcPath.delete(actor.name);return;}
-        if(!npcWalkable(world,next.x,next.y)){
-          // Path tile became unwalkable (placed item / removal): replan.
+        // BUILD 1030: any remaining path tile became unwalkable (a
+        // placed item landed on a later tile) — replan now, not just
+        // when the NPC walks up to the blocker.
+        if(pathHasUnwalkableTile(world,w.path,w.index)){
           w.path=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty})??[];
-          w.index=0;w.noPathTicks=0;w.blockedTicks=0;
+          w.index=0;w.noPathTicks=0;w.blockedTicks=0;w.detour=false;
           return;
         }
         const player=stateRef.current.position;
@@ -2573,11 +2708,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           // the blocking tile excluded so head-on and standing blocks
           // route around instead of deadlocking. A failed replan falls
           // into the sealed wait + 11-tick retry (empty path below).
+          // BUILD 1030: a detour replan only when this path is not
+          // itself a detour — two head-on actors both detour into the
+          // same lane and ping-pong between lanes forever if each
+          // replans again; an actor blocked on a detour steps aside
+          // instead, which breaks the symmetry (the other one passes).
           w.blockedTicks++;
           if(blockedAction(w.blockedTicks)==='replan'){
-            const detour=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty},4000,new Set([next.x+','+next.y]));
-            if(detour){w.path=detour;w.index=0;w.blockedTicks=0;w.noPathTicks=0;}
-            else{w.path=[];w.index=0;w.blockedTicks=0;w.noPathTicks=0;}
+            let resolved=false;
+            if(!w.detour){
+              const detour=planPathNpc(world,{x:cx,y:cy},{x:sched.tx,y:sched.ty},4000,new Set([next.x+','+next.y]));
+              if(detour){w.path=detour;w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=true;resolved=true;}
+            }
+            if(!resolved){
+              const occupiedFn=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)||actors.some((other,j)=>j!==i&&Math.round(other.x)===x&&Math.round(other.y)===y);
+              const aside=sidestepTile(world,{x:cx,y:cy},next,occupiedFn);
+              if(aside){w.path=[aside];w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=false;resolved=true;}
+            }
+            if(!resolved){w.path=[];w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=false;}
           }
         }
       });
