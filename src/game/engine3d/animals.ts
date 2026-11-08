@@ -1215,11 +1215,12 @@ export function maxAnimalVerts(): number {
  * flying (h >= 0.05) — a bird in the air casts no blob here.
  * Half-size by kind: bird 0.22, deer 0.55, goat/wolf 0.45.
  */
-export function emitAnimalBlob(out: number[], kind: AnimalKind, cx: number, cz: number, h: number): void {
+export function emitAnimalBlob(out: number[], kind: AnimalKind, cx: number, cz: number, h: number, baseY = 0): void {
   if (h >= 0.05) return;
   const bs = kind === 'bird' ? 0.22 : kind === 'chicken' ? 0.25 : kind === 'deer' ? 0.55 : 0.45;
+  const y = 0.005 + baseY;
   out.push(
-    cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17,
-    cx - bs, 0.005, cz - bs, 0.2, 0.19, 0.17, cx + bs, 0.005, cz + bs, 0.2, 0.19, 0.17, cx - bs, 0.005, cz + bs, 0.2, 0.19, 0.17,
+    cx - bs, y, cz - bs, 0.2, 0.19, 0.17, cx + bs, y, cz - bs, 0.2, 0.19, 0.17, cx + bs, y, cz + bs, 0.2, 0.19, 0.17,
+    cx - bs, y, cz - bs, 0.2, 0.19, 0.17, cx + bs, y, cz + bs, 0.2, 0.19, 0.17, cx - bs, y, cz + bs, 0.2, 0.19, 0.17,
   );
 }

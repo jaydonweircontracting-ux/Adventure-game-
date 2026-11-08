@@ -14,8 +14,8 @@
 // Colours avoid the forbidden lavender/pink family (asserted).
 import { hash2, type Rgb } from './townLook';
 import { blockedTiles } from './grassTufts';
-import { wildObstacleAt } from './wildTerrain';
-import type { IsoWorld } from '../iso/isoWorld';
+import { wildObstacleAt, surfaceElevation } from './wildTerrain';
+import type { IsoWorld, Terrain } from '../iso/isoWorld';
 
 export type V3 = [number, number, number];
 
@@ -70,27 +70,29 @@ export function pebbleForTile(x: number, y: number): Pebble | null {
 
 type TriV = (a: V3, ca: V3, b: V3, cb: V3, c: V3, cc: V3) => void;
 
-function emitFlower(triV: TriV, f: Wildflower, originX: number, originZ: number): void {
+function emitFlower(triV: TriV, f: Wildflower, originX: number, originZ: number, baseY = 0): void {
   const x = originX + f.ox, z = originZ + f.oz;
   const s = f.scale;
   const w = 0.05 * s, h = 0.16 * s, hw = 0.07 * s;
   // Stem: thin vertical quad (2 tris), head: small quad (2 tris).
-  const a: V3 = [x - w, 0.01, z], b: V3 = [x + w, 0.01, z];
-  const c: V3 = [x + w, 0.01 + h, z], d: V3 = [x - w, 0.01 + h, z];
+  // BUILD 1034: baseY lifts the flower onto the heightfield.
+  const a: V3 = [x - w, baseY + 0.01, z], b: V3 = [x + w, baseY + 0.01, z];
+  const c: V3 = [x + w, baseY + 0.01 + h, z], d: V3 = [x - w, baseY + 0.01 + h, z];
   triV(a, FLOWER_STEM, b, FLOWER_STEM, c, FLOWER_STEM);
   triV(a, FLOWER_STEM, c, FLOWER_STEM, d, FLOWER_STEM);
-  const hy = 0.01 + h;
+  const hy = baseY + 0.01 + h;
   const e: V3 = [x - hw, hy, z], g: V3 = [x + hw, hy, z];
   const i: V3 = [x + hw, hy + hw, z], j: V3 = [x - hw, hy + hw, z];
   triV(e, f.color, g, f.color, i, f.color);
   triV(e, f.color, i, f.color, j, f.color);
 }
 
-function emitPebble(triV: TriV, p: Pebble, originX: number, originZ: number): void {
+function emitPebble(triV: TriV, p: Pebble, originX: number, originZ: number, baseY = 0): void {
   const x = originX + p.ox, z = originZ + p.oz;
   const h = p.size / 2;
   const co = Math.cos(p.rot), si = Math.sin(p.rot);
-  const corner = (sx: number, sz: number): V3 => [x + sx * co + sz * si, 0.012, z - sx * si + sz * co];
+  // BUILD 1034: baseY lifts the pebble onto the heightfield.
+  const corner = (sx: number, sz: number): V3 => [x + sx * co + sz * si, baseY + 0.012, z - sx * si + sz * co];
   const col: V3 = [PEBBLE_GREY[0] * p.shade, PEBBLE_GREY[1] * p.shade, PEBBLE_GREY[2] * p.shade];
   const a = corner(-h, -h), b = corner(h, -h), c = corner(h, h), d = corner(-h, h);
   triV(a, col, b, col, c, col);
@@ -103,7 +105,7 @@ function emitPebble(triV: TriV, p: Pebble, originX: number, originZ: number): vo
 export function emitGroundDetail3d(
   triV: TriV,
   world: IsoWorld,
-  effTerrain: (x: number, y: number) => string,
+  effTerrain: (x: number, y: number) => Terrain,
   minX: number,
   maxX: number,
   minY: number,
@@ -121,13 +123,15 @@ export function emitGroundDetail3d(
       // flowers take grass, pebbles grass or dirt.)
       if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
       const t = effTerrain(x, y);
+      // BUILD 1034: flowers and pebbles sit on the heightfield.
+      const baseY = surfaceElevation(effTerrain, x + 0.5, y + 0.5);
       if (t === 'grass') {
         const f = wildflowerForTile(x, y);
-        if (f) { emitFlower(triV, f, x + 0.5, y + 0.5); flowers++; }
+        if (f) { emitFlower(triV, f, x + 0.5, y + 0.5, baseY); flowers++; }
       }
       if (t === 'grass' || t === 'dirt') {
         const p = pebbleForTile(x, y);
-        if (p) { emitPebble(triV, p, x + 0.5, y + 0.5); pebbles++; }
+        if (p) { emitPebble(triV, p, x + 0.5, y + 0.5, baseY); pebbles++; }
       }
     }
   }

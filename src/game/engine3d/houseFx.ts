@@ -52,6 +52,7 @@ import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise,
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, movedRecordForHut } from './placements';
 import { sameHut } from './interiors';
+import { effTerrainFor, surfaceElevation } from './wildTerrain';
 import type { HutRect, IsoWorld } from '../iso/isoWorld';
 
 export type Vec3 = [number, number, number];
@@ -152,7 +153,7 @@ export interface WindowSlot { face: DoorFace; a: number; y: number; }
  * 1 back), in the exact order the old win() closure emitted them.
  * cx/cz are the hut centre, w/d the footprint, face the door face.
  */
-export function windowSlotsFor(cx: number, cz: number, w: number, d: number, face: DoorFace, stories: number): WindowSlot[] {
+export function windowSlotsFor(cx: number, cz: number, w: number, d: number, face: DoorFace, stories: number, baseY = 0): WindowSlot[] {
   const aC = face === 'south' || face === 'north' ? cx : cz;
   const spanA = face === 'south' || face === 'north' ? w : d;
   const sideA = face === 'south' || face === 'north' ? cz : cx;
@@ -161,7 +162,9 @@ export function windowSlotsFor(cx: number, cz: number, w: number, d: number, fac
   const back: DoorFace = face === 'south' ? 'north' : face === 'north' ? 'south' : face === 'west' ? 'east' : 'west';
   const slots: WindowSlot[] = [];
   for (let s = 1; s < stories; s++) {
-    const yC = GROUND_FLOOR_H + (s - 1) * UPPER_FLOOR_H + UPPER_FLOOR_H / 2;
+    // BUILD 1034: baseY lifts the slots onto the heightfield with the
+    // hut, so the world builder's frames and this module's panes agree.
+    const yC = baseY + GROUND_FLOOR_H + (s - 1) * UPPER_FLOOR_H + UPPER_FLOOR_H / 2;
     slots.push(
       { face, a: aC - spanA * 0.22, y: yC },
       { face, a: aC + spanA * 0.22, y: yC },
@@ -184,9 +187,9 @@ export function panePlaneFor(face: DoorFace, cx: number, cz: number, w: number, 
  * chimney. Single-sourced with the house loop: the chimney box runs
  * ridgeY-.3 to ridgeY+.8 and the cap quad sits at ridgeY+.8.
  */
-export function chimneyTopFor(cx: number, cz: number, w: number, d: number, design: HouseDesign): Vec3 | null {
+export function chimneyTopFor(cx: number, cz: number, w: number, d: number, design: HouseDesign, baseY = 0): Vec3 | null {
   if (!design.chimney) return null;
-  const topY = GROUND_FLOOR_H + (design.stories - 1) * UPPER_FLOOR_H;
+  const topY = baseY + GROUND_FLOOR_H + (design.stories - 1) * UPPER_FLOOR_H;
   const span = design.roofAxis === 'x' ? d : w;
   const ridgeY = topY + roofRise(span);
   return [design.roofAxis === 'x' ? cx + w * 0.28 : cx, ridgeY + 0.8, design.roofAxis === 'x' ? cz : cz + d * 0.28];
@@ -257,6 +260,10 @@ export interface HouseFxInput {
   seedX0: number; seedY0: number;
   variant?: HouseVariantId;
   entered: boolean;
+  /** BUILD 1034: the hut's base y on the heightfield (the shared
+   *  surface at its centre), so the smoke and lit panes lift with the
+   *  house instead of starting inside it. Absent = 0 (flat). */
+  baseY?: number;
 }
 
 /**
@@ -268,6 +275,9 @@ export interface HouseFxInput {
  */
 export function houseFxInputsFor(world: IsoWorld, enteredHut: HutRect | null): HouseFxInput[] {
   const out: HouseFxInput[] = [];
+  // BUILD 1034: one effTerrain for the whole input list (the placement
+  // Sets are built once), then each hut's base y from the shared surface.
+  const effTerrain = effTerrainFor(world);
   for (const hut of [...world.huts, ...placedHutRects(world)]) {
     const seedHut = movedRecordForHut(world, hut)?.from ?? hut;
     const variant = (hut as { variant?: string }).variant;
@@ -278,6 +288,7 @@ export function houseFxInputsFor(world: IsoWorld, enteredHut: HutRect | null): H
       seedX0: seedHut.x0, seedY0: seedHut.y0,
       variant: variant && HOUSE_VARIANTS[variant as keyof typeof HOUSE_VARIANTS] ? (variant as HouseVariantId) : undefined,
       entered: !!enteredHut && sameHut(hut, enteredHut),
+      baseY: surfaceElevation(effTerrain, (hut.x0 + hut.x1 + 1) / 2, (hut.y0 + hut.y1 + 1) / 2),
     });
   }
   return out;
@@ -309,9 +320,9 @@ export function resolveHouseFx(inputs: HouseFxInput[], minutes: number): HouseFx
     out.push({
       cx, cz, w, d, seedX0: inp.seedX0, seedY0: inp.seedY0,
       doorFace: design.doorFace, stories: design.stories,
-      top: chimneyTopFor(cx, cz, w, d, design),
+      top: chimneyTopFor(cx, cz, w, d, design, inp.baseY ?? 0),
       lit: houseLitAt(minutes, lightScheduleFor(inp.seedX0, inp.seedY0)),
-      slots: windowSlotsFor(cx, cz, w, d, design.doorFace, design.stories),
+      slots: windowSlotsFor(cx, cz, w, d, design.doorFace, design.stories, inp.baseY ?? 0),
       schedule: lightScheduleFor(inp.seedX0, inp.seedY0),
       hut: { x0: inp.x0, y0: inp.y0, x1: inp.x1, y1: inp.y1 },
     });

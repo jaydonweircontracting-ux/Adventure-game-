@@ -17,7 +17,7 @@ import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, FX_MAX_VERTS } from './houseFx';
 import {
-  placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys, placedRockTiles, placedWaterKeys, placedWallTiles,
+  placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
@@ -25,7 +25,7 @@ import {
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
-import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed } from './wildTerrain';
+import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed, effTerrainFor, surfaceElevation, renderTerrain, rayHitSurface } from './wildTerrain';
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
@@ -54,6 +54,9 @@ function readSaved<T>(key: string, fallback: T): T {
 const COLORS: Record<string, Vec3> = {
   grass: [0.31, 0.41, 0.22], dirt: DIRT_TAN, sand: [0.68, 0.59, 0.39],
   stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
+  // BUILD 1034: foam — the pale water edge (Stage 2 shores). Display
+  // only; walkability still reads the water terrain underneath.
+  foam: [0.72, 0.84, 0.87],
 };
 // BUILD 988: one camera FOV for both cameras + the ground picker. Was
 // 60 degrees (Math.PI/3) for both; 66 widens the view ~12% linearly
@@ -446,8 +449,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 988: cube faces use the unified SUN_SHADE table (sun from
   // northwest-high, matching the house shadow blobs): +z south shaded,
   // -z north lit, -x west near-lit, +x east darkest, top brightest.
-  const cube = (x: number, z: number, w: number, h: number, d: number, color: Vec3) => {
-    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y0=0,y1=h;
+  // BUILD 1034: baseY lifts the cube onto the heightfield (the ground
+  // it stands on); 0 keeps the old flat behaviour for callers that
+  // already pass an absolute y0 (houseBox/box do their own).
+  const cube = (x: number, z: number, w: number, h: number, d: number, color: Vec3, baseY = 0) => {
+    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y0=baseY,y1=baseY+h;
     quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],shadeRgb(color, SUN_SHADE.south));
     quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],shadeRgb(color, SUN_SHADE.north));
     quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],shadeRgb(color, SUN_SHADE.west));
@@ -464,11 +470,34 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 1027: placed water renders exactly like generated water
   // (ocean/pond) — and wins over a placed path on the same tile, so a
   // water tile can never silently read as dirt.
-  const placedPaths=placedPathKeys(world);
-  const placedWater=placedWaterKeys(world);
-  const effTerrain=(x:number,y:number)=>placedWater.has(terrainKey(x,y))?'water':(placedPaths.has(terrainKey(x,y))?'dirt':(inBounds(world,x,y)?terrainAt(world,x,y):wildTerrainAt(x,y)));
+  // BUILD 1034: the effective terrain is now the shared wildTerrain
+  // effTerrainFor (identical rule — placed water wins, then placed
+  // paths read as dirt, then stored terrain, then wild terrain) so the
+  // ground, the surface, the picker and the camera all read one
+  // definition instead of a local copy.
+  const effTerrain=effTerrainFor(world);
+  // BUILD 1034: the ground corners are shared between adjacent cells,
+  // so the surface is computed once per corner per rebuild (a Map
+  // keyed by the integer corner coords) instead of 4x per cell. Without
+  // this the heightfield costs ~+30% rebuild time (68k surface calls);
+  // with it the cost is ~+5% (17k unique corners). The cache is local
+  // to this rebuild — the field is deterministic, so a per-rebuild
+  // cache is always correct, and it is dropped when the rebuild ends.
+  // (Coords are integers in [-1000,1000]; the key is collision-free
+  // for cy+2048 in [0,4096).)
+  const surfCache=new Map<number,number>();
+  const surfAt=(cx:number,cy:number):number=>{
+    const key=(cx+2048)*4096+(cy+2048);
+    let v=surfCache.get(key);
+    if(v===undefined){v=surfaceElevation(effTerrain,cx,cy);surfCache.set(key,v);}
+    return v;
+  };
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
-    const terrain=effTerrain(x,y);
+    // BUILD 1034: display terrain (shores + stone, via renderTerrain)
+    // and the heightfield: every ground corner sits on the shared
+    // surface, so the window rolls with the hills and adjacent tiles
+    // share corner heights exactly — no cracks, no floating tiles.
+    const terrain=renderTerrain(effTerrain,x,y);
     const c=COLORS[terrain]||COLORS.grass;
     // BUILD 1009: tint evaluated PER CORNER from the continuous 1009
     // field (see townLook groundTintDelta). Adjacent tiles share corner
@@ -477,7 +506,8 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // edge is invisible because the band cells beyond it sample the
     // same field at their own corners.
     const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
-    quadV([x,0,y],colAt(x,y),[x+1,0,y],colAt(x+1,y),[x+1,0,y+1],colAt(x+1,y+1),[x,0,y+1],colAt(x,y+1));
+    const yAt=(cx:number,cy:number):number=>surfAt(cx,cy);
+    quadV([x,yAt(x,y),y],colAt(x,y),[x+1,yAt(x+1,y),y],colAt(x+1,y),[x+1,yAt(x+1,y+1),y+1],colAt(x+1,y+1),[x,yAt(x,y+1),y+1],colAt(x,y+1));
   }
   // BUILD 1022: path slabs + cobble shoulders render for the WHOLE map,
   // not just the ±22 detailed window. They used to pop in and out at the
@@ -494,25 +524,27 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // systems, out of scope for this fix).
   for(let y=0;y<world.h;y++) for(let x=0;x<world.w;x++) {
     const terrain=effTerrain(x,y);
-    // BUILD 983 street: scattered stone slabs on dirt, grey cobble shoulders
-    // on grass/stone tiles beside a dirt tile. Overlays sit slightly above
-    // the ground (slabs staggered per index) so nothing z-fights. The
-    // heights clear every far-ring ground layer (band -0.02, far -0.05,
-    // horizon -0.08): the smallest separation is 0.038 at band range,
-    // and no path tile exists past ~283 tiles, where depth resolution
-    // (~0.048) is still under the 0.098 horizon separation.
+    // BUILD 1034: overlays ride the heightfield — a slab/cobble at a
+    // fixed y would float over a hollow or sink into a rise. Slabs and
+    // cobble squares take the surface at their centre (+ the offset);
+    // the full-tile cobble shoulder takes per-corner surface heights
+    // like the ground quad under it. The offsets still clear the ring
+    // layers (band -0.02, far -0.05, horizon -0.08) because both the
+    // overlays and the rings are measured from the same surface.
     if(terrain==='dirt'){
       const slabs=streetSlabsFor(x,y);
       for(let i=0;i<slabs.length;i++){
-        const s=slabs[i],sy=.03+i*.002;
+        const s=slabs[i],sy=surfaceElevation(effTerrain,x+s.dx+s.w/2,y+s.dz+s.d/2)+.03+i*.002;
         quad([x+s.dx,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz+s.d],[x+s.dx,sy,y+s.dz+s.d],[s.shade,s.shade,s.shade*.96]);
       }
     } else if(terrain==='grass'||terrain==='stone'){
       const nearDirt=(x>0&&effTerrain(x-1,y)==='dirt')||(x<world.w-1&&effTerrain(x+1,y)==='dirt')||(y>0&&effTerrain(x,y-1)==='dirt')||(y<world.h-1&&effTerrain(x,y+1)==='dirt');
       if(nearDirt){
-        quad([x,.018,y],[x+1,.018,y],[x+1,.018,y+1],[x,.018,y+1],COBBLE_GAP);
+        const cY=(cx:number,cy:number):number=>surfAt(cx,cy)+.018;
+        quadV([x,cY(x,y),y],COBBLE_GAP,[x+1,cY(x+1,y),y],COBBLE_GAP,[x+1,cY(x+1,y+1),y+1],COBBLE_GAP,[x,cY(x,y+1),y+1],COBBLE_GAP);
         for(const sq of cobbleSquaresFor(x,y)){
-          quad([x+sq.dx,.022,y+sq.dz],[x+sq.dx+sq.size,.022,y+sq.dz],[x+sq.dx+sq.size,.022,y+sq.dz+sq.size],[x+sq.dx,.022,y+sq.dz+sq.size],[sq.shade,sq.shade,sq.shade*.97]);
+          const qy=surfaceElevation(effTerrain,x+sq.dx+sq.size/2,y+sq.dz+sq.size/2)+.022;
+          quad([x+sq.dx,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz+sq.size],[x+sq.dx,qy,y+sq.dz+sq.size],[sq.shade,sq.shade,sq.shade*.97]);
         }
       }
     }
@@ -588,11 +620,23 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // tiles, past the ~150-tile visible ground at max zoom-out.
     // Dirt can only exist inside the map (terrainAt falls back to
     // grass outside it, placed paths are bounds-checked).
-    const quadCellMixed=(x0:number,x1:number,y0:number,y1:number,y:number)=>{
-      const mixed=cellIsMixed(x0,x1,y0,y1,effTerrain,world.w,world.h);
+    // BUILD 1034: the far cells ride the heightfield too — every ring
+    // quad's corners sit on the shared surface plus the ring's y offset
+    // (band -0.02, far -0.05, horizon -0.08), so the rings step down
+    // exactly as before and never z-fight where they overlap. `tf` is
+    // the DISPLAY terrain: the band (close enough to see) uses
+    // renderTerrain (shores + stone), so a grass+stone cell subdivides
+    // and the outcrop renders; the far/horizon rings use plain
+    // effTerrain (a 1-3 tile shore or outcrop is sub-pixel past 64
+    // tiles, and the full renderTerrain scan there would cost ~130ms).
+    // The corner heights always use effTerrain (the real water/land),
+    // never the display terrain — the land blend is about water.
+    const quadCellMixed=(x0:number,x1:number,y0:number,y1:number,y:number,tf:(x:number,y:number)=>string)=>{
+      const yAt=(cx:number,cy:number):number=>surfAt(cx,cy)+y;
+      const mixed=cellIsMixed(x0,x1,y0,y1,tf,world.w,world.h);
       if(!mixed){
         const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
-        const bt=effTerrain(sx,sy), bc=COLORS[bt]||COLORS.grass;
+        const bt=tf(sx,sy), bc=COLORS[bt]||COLORS.grass;
         // BUILD 1009: per-corner tint from the continuous field. The
         // old single centre-sampled tint made every far cell one flat
         // block; corner sampling turns the same cell into a smooth
@@ -600,13 +644,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
         // the cell edges vanish. Adjacent cells share corner positions
         // and therefore colours exactly — no seams at any ring edge.
         const colAt=(cx:number,cy:number):Vec3=>{const t=groundTintDelta(bt,cx,cy);return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];};
-        quadV([x0,y,y0],colAt(x0,y0),[x1+1,y,y0],colAt(x1+1,y0),[x1+1,y,y1+1],colAt(x1+1,y1+1),[x0,y,y1+1],colAt(x0,y1+1));
+        quadV([x0,yAt(x0,y0),y0],colAt(x0,y0),[x1+1,yAt(x1+1,y0),y0],colAt(x1+1,y0),[x1+1,yAt(x1+1,y1+1),y1+1],colAt(x1+1,y1+1),[x0,yAt(x0,y1+1),y1+1],colAt(x0,y1+1));
         return;
       }
       for(let yy=y0;yy<=y1;yy++){
-        let runStart=x0, runT=effTerrain(x0,yy);
+        let runStart=x0, runT=tf(x0,yy);
         for(let xx=x0+1;xx<=x1+1;xx++){
-          const t=xx<=x1?effTerrain(xx,yy):null;
+          const t=xx<=x1?tf(xx,yy):null;
           if(t!==runT){
             // BUILD 1009: dirt runs keep the 1008 subdivision geometry
             // (roads still render to their ends) but take per-corner
@@ -615,33 +659,34 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
             // once per run.
             const bc=COLORS[runT]||COLORS.grass;
             const colAt=(cx:number,cy:number):Vec3=>{const tt=groundTintDelta(runT,cx,cy);return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];};
-            quadV([runStart,y,yy],colAt(runStart,yy),[xx,y,yy],colAt(xx,yy),[xx,y,yy+1],colAt(xx,yy+1),[runStart,y,yy+1],colAt(runStart,yy+1));
+            quadV([runStart,yAt(runStart,yy),yy],colAt(runStart,yy),[xx,yAt(xx,yy),yy],colAt(xx,yy),[xx,yAt(xx,yy+1),yy+1],colAt(xx,yy+1),[runStart,yAt(runStart,yy+1),yy+1],colAt(runStart,yy+1));
             runStart=xx; runT=t!;
           }
         }
       }
     };
+    const renderTf=(x:number,y:number):string=>renderTerrain(effTerrain,x,y);
     const bx0=Math.floor(center.x)-VIEW_BAND_HALF, bx1=Math.floor(center.x)+VIEW_BAND_HALF;
     const by0=Math.floor(center.y)-VIEW_BAND_HALF, by1=Math.floor(center.y)+VIEW_BAND_HALF;
     for(let y=by0;y<=by1;y+=VIEW_BAND_CELL) for(let x=bx0;x<=bx1;x+=VIEW_BAND_CELL){
       const w=Math.min(VIEW_BAND_CELL,bx1+1-x), d=Math.min(VIEW_BAND_CELL,by1+1-y);
-      quadCellMixed(x,x+w-1,y,y+d-1,VIEW_BAND_Y);
+      quadCellMixed(x,x+w-1,y,y+d-1,VIEW_BAND_Y,renderTf);
     }
-    const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number)=>{
+    const fillCells=(x0:number,x1:number,y0:number,y1:number,cell:number,y:number,tf:(x:number,y:number)=>string)=>{
       for(let yy=y0;yy<=y1;yy+=cell) for(let xx=x0;xx<=x1;xx+=cell){
         const w=Math.min(cell,x1+1-xx), d=Math.min(cell,y1+1-yy);
-        quadCellMixed(xx,xx+w-1,yy,yy+d-1,y);
+        quadCellMixed(xx,xx+w-1,yy,yy+d-1,y,tf);
       }
     };
-    const fillRing=(inner:number,outer:number,cell:number,y:number)=>{
+    const fillRing=(inner:number,outer:number,cell:number,y:number,tf:(x:number,y:number)=>string)=>{
       const cx=Math.floor(center.x), cy=Math.floor(center.y);
-      fillCells(cx-outer,cx+outer,cy+inner+1,cy+outer,cell,y);
-      fillCells(cx-outer,cx+outer,cy-outer,cy-inner-1,cell,y);
-      fillCells(cx-outer,cx-inner-1,cy-inner,cy+inner,cell,y);
-      fillCells(cx+inner+1,cx+outer,cy-inner,cy+inner,cell,y);
+      fillCells(cx-outer,cx+outer,cy+inner+1,cy+outer,cell,y,tf);
+      fillCells(cx-outer,cx+outer,cy-outer,cy-inner-1,cell,y,tf);
+      fillCells(cx-outer,cx-inner-1,cy-inner,cy+inner,cell,y,tf);
+      fillCells(cx+inner+1,cx+outer,cy-inner,cy+inner,cell,y,tf);
     };
-    fillRing(VIEW_BAND_HALF,VIEW_FAR_BAND_HALF,VIEW_FAR_BAND_CELL,VIEW_FAR_BAND_Y);
-    fillRing(VIEW_FAR_BAND_HALF,VIEW_HORIZON_BAND_HALF,VIEW_HORIZON_BAND_CELL,VIEW_HORIZON_BAND_Y);
+    fillRing(VIEW_BAND_HALF,VIEW_FAR_BAND_HALF,VIEW_FAR_BAND_CELL,VIEW_FAR_BAND_Y,effTerrain);
+    fillRing(VIEW_FAR_BAND_HALF,VIEW_HORIZON_BAND_HALF,VIEW_HORIZON_BAND_CELL,VIEW_HORIZON_BAND_Y,effTerrain);
     {
       const cx=Math.floor(center.x), cy=Math.floor(center.y), A=VIEW_APRON_HALF, I=VIEW_HORIZON_BAND_HALF, y=VIEW_APRON_Y;
       quad([cx-A,y,cy+I+1],[cx+A+1,y,cy+I+1],[cx+A+1,y,cy+A+1],[cx-A,y,cy+A+1],COLORS.grass);
@@ -680,22 +725,23 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // generated stalls — one renderer, never a second tree.
   // BUILD 992 proportion pass: tiers from townLook (total 4.44 =
   // 3.00x character). Same tiles, same collision — only the mesh grows.
-  const treeAt=(tx:number,ty:number)=>{
-    for(const t of TREE_TIERS) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0,t.color);
+  // BUILD 1034: baseY lifts the tree onto the heightfield.
+  const treeAt=(tx:number,ty:number,baseY=0)=>{
+    for(const t of TREE_TIERS) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0+baseY,t.color);
   };
   // Walls and stall counters use the editor-authored collision geometry.
   // BUILD 1028: placed walls render as the same 1x0.85x1 cube as a
   // generated wall tile (placedWallTiles carries the h, but the 3D
   // cube is orientation-agnostic — the h only matters to the 2.5D
-  // wall-run merge).
-  for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
+  // wall-run merge). BUILD 1034: walls stand on the heightfield.
+  for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32],surfaceElevation(effTerrain,wall.x+.5,wall.y+.5));
   // BUILD 986: generated/authored stalls render as 983 trees, not brown
   // counter cubes. Stall data + collision are untouched; only the mesh
   // changes. User-PLACED stalls keep the brown counter cube below — a
   // deliberate Build-panel choice is never silently converted.
   // BUILD 1007: stalls render at whole-world range (were window-culled).
-  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) treeAt(x,stall.y0);
-  for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) treeAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   // BUILD 997: uploaded custom meshes — static vertex-colour
   // triangles in the world buffer (like placed stalls, not the
   // per-frame actor buffer: uploads never move on their own). Mesh
@@ -707,11 +753,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   for(const p of (world.placements??[])) if(p.kind==='custom'){
     const asset=customAssets.find(a=>a.id===p.assetId);if(!asset)continue;
     const ccx=(p.x0+p.x1+1)/2,ccz=(p.y0+p.y1+1)/2;
+    // BUILD 1034: the mesh sits on the heightfield at its centre.
+    const baseY=surfaceElevation(effTerrain,ccx,ccz);
     for(let i=0;i<asset.indices.length;i+=3){
       const a=asset.indices[i]*3,b=asset.indices[i+1]*3,c=asset.indices[i+2]*3;
-      triV([ccx+asset.positions[a],asset.positions[a+1],ccz+asset.positions[a+2]],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
-        [ccx+asset.positions[b],asset.positions[b+1],ccz+asset.positions[b+2]],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
-        [ccx+asset.positions[c],asset.positions[c+1],ccz+asset.positions[c+2]],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
+      triV([ccx+asset.positions[a],asset.positions[a+1]+baseY,ccz+asset.positions[a+2]],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
+        [ccx+asset.positions[b],asset.positions[b+1]+baseY,ccz+asset.positions[b+2]],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
+        [ccx+asset.positions[c],asset.positions[c+1]+baseY,ccz+asset.positions[c+2]],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
     }
   }
   // BUILD 983 town look (reference match): varied low-poly houses —
@@ -737,13 +785,14 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   };
   // Mortar joints for one stone ground-floor face: horizontal courses plus
   // staggered vertical joints, drawn proud of the stone box.
-  const stoneJoints=(face:FaceDir,cx:number,cz:number,w:number,d:number)=>{
+  // BUILD 1034: baseY lifts the joints onto the heightfield with the hut.
+  const stoneJoints=(face:FaceDir,cx:number,cz:number,w:number,d:number,baseY=0)=>{
     const fixed=face==='south'?cz+d/2+.008:face==='north'?cz-d/2-.008:face==='west'?cx-w/2-.008:cx+w/2+.008;
     const span=face==='south'||face==='north'?w:d;
     const a0=face==='south'||face==='north'?cx-w/2:cz-d/2;
     const courses=3,courseH=GROUND_FLOOR_H/courses,blockW=.85;
     for(let c=0;c<courses;c++){
-      const y0=c*courseH,y1=(c+1)*courseH;
+      const y0=c*courseH+baseY,y1=(c+1)*courseH+baseY;
       if(c>0)faceRect(face,a0+span/2,span,y0,.035,fixed,MORTAR);
       const joints=Math.max(1,Math.round(span/blockW));
       const step=span/joints,offset=(c%2)*step/2;
@@ -759,6 +808,13 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // — even in-town views were missing houses past 22 tiles).
   for(const hut of [...world.huts, ...placedHutRects(world)]) {
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
+    // BUILD 1034: the hut's base y — the shared surface at its centre.
+    // Every part of the house (floor, walls, roof, chimney, shadow)
+    // lifts by this one value, so the house sits ON the hill, never
+    // floating or buried. The 1034 harness proves the worst footprint
+    // variation is 0.25 tiles, so one base y per hut is enough (no
+    // per-corner tilt).
+    const hy=surfaceElevation(effTerrain,x,z);
     const hutDist=Math.hypot(x-(center.x+.5),z-(center.y+.5));
     // BUILD 990 shell-hide overlay: the entered house renders its
     // generated interior INSTEAD of its shell — no walls, roof,
@@ -775,9 +831,9 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     if(enteredHut && sameHut(hut, enteredHut)) {
       for(let fy=hut.y0;fy<=hut.y1;fy++) for(let fx=hut.x0;fx<=hut.x1;fx++) {
         const fc=interiorFloorColor(fx,fy);
-        quad([fx,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy+1],[fx,INTERIOR_FLOOR_Y,fy+1],fc);
+        quad([fx,INTERIOR_FLOOR_Y+hy,fy],[fx+1,INTERIOR_FLOOR_Y+hy,fy],[fx+1,INTERIOR_FLOOR_Y+hy,fy+1],[fx,INTERIOR_FLOOR_Y+hy,fy+1],fc);
       }
-      for(const b of interiorBoxes(hut, seedHut)) box(b.x,b.z,b.w,b.h,b.d,b.y0,b.color);
+      for(const b of interiorBoxes(hut, seedHut)) box(b.x,b.z,b.w,b.h,b.d,b.y0+hy,b.color);
       continue;
     }
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
@@ -790,7 +846,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const design=hutVariant&&HOUSE_VARIANTS[hutVariant as keyof typeof HOUSE_VARIANTS]
       ?houseDesignForVariant(HOUSE_VARIANTS[hutVariant as keyof typeof HOUSE_VARIANTS],hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0)
       :houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0);
-    const topY=GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
+    const topY=hy+GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
     const span=design.roofAxis==='x'?d:w;
     const ridgeY=topY+roofRise(span);
     const face=design.doorFace;
@@ -804,48 +860,48 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // BUILD 1007: blobs gated to FAR_BLOB_RANGE — cross-map views drop
     // a decal that would be a couple of dark pixels under a ~10px house.
     if(hutDist<=FAR_BLOB_RANGE){
-      quad([x-w/2-.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z-d/2-.45+.35],[x+w/2+.45+.25,.005,z+d/2+.45+.35],[x-w/2-.45+.25,.005,z+d/2+.45+.35],[.28,.27,.24]);
-      quad([x-w/2-.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z-d/2-.15+.15],[x+w/2+.15+.12,.008,z+d/2+.15+.15],[x-w/2-.15+.12,.008,z+d/2+.15+.15],[.2,.19,.17]);
+      quad([x-w/2-.45+.25,.005+hy,z-d/2-.45+.35],[x+w/2+.45+.25,.005+hy,z-d/2-.45+.35],[x+w/2+.45+.25,.005+hy,z+d/2+.45+.35],[x-w/2-.45+.25,.005+hy,z+d/2+.45+.35],[.28,.27,.24]);
+      quad([x-w/2-.15+.12,.008+hy,z-d/2-.15+.15],[x+w/2+.15+.12,.008+hy,z-d/2-.15+.15],[x+w/2+.15+.12,.008+hy,z+d/2+.15+.15],[x-w/2-.15+.12,.008+hy,z+d/2+.15+.15],[.2,.19,.17]);
     }
     // Stone ground floor + mortar joints on all faces.
-    houseBox(x,z,w,GROUND_FLOOR_H,d,0,design.stone);
-    (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d));
+    houseBox(x,z,w,GROUND_FLOOR_H,d,hy,design.stone);
+    (['north','south','west','east'] as const).forEach(f=>stoneJoints(f,x,z,w,d,hy));
     if(design.openFront){
       // Dark shopfront interior on the door face, timber posts + beam in
       // front of it, door offset to one side on the dark face.
-      faceRect(face,aC,spanA-.3,GROUND_FLOOR_H/2,GROUND_FLOOR_H-.14,facePlane(.01),[.12,.1,.08]);
+      faceRect(face,aC,spanA-.3,GROUND_FLOOR_H/2+hy,GROUND_FLOOR_H-.14,facePlane(.01),[.12,.1,.08]);
       const posts=3;
       for(let i=0;i<posts;i++){
         const a=aC-spanA/2+spanA*(i+1)/(posts+1);
-        if(face==='south'||face==='north')houseBox(a,facePlane(.06),.14,GROUND_FLOOR_H,.14,0,design.timber);
-        else houseBox(facePlane(.06),a,.14,GROUND_FLOOR_H,.14,0,design.timber);
+        if(face==='south'||face==='north')houseBox(a,facePlane(.06),.14,GROUND_FLOOR_H,.14,hy,design.timber);
+        else houseBox(facePlane(.06),a,.14,GROUND_FLOOR_H,.14,hy,design.timber);
       }
-      if(face==='south'||face==='north')houseBox(x,facePlane(.06),w,.14,.14,GROUND_FLOOR_H-.14,design.timber);
-      else houseBox(facePlane(.06),z,.14,.14,d,GROUND_FLOOR_H-.14,design.timber);
-      faceRect(face,aC+spanA*.28,DOOR_W,DOOR_H/2,DOOR_H,facePlane(.03),DOOR_WOOD);
+      if(face==='south'||face==='north')houseBox(x,facePlane(.06),w,.14,.14,GROUND_FLOOR_H-.14+hy,design.timber);
+      else houseBox(facePlane(.06),z,.14,.14,d,GROUND_FLOOR_H-.14+hy,design.timber);
+      faceRect(face,aC+spanA*.28,DOOR_W,DOOR_H/2+hy,DOOR_H,facePlane(.03),DOOR_WOOD);
     } else {
       // Door + timber lintel + stone step on the door face.
       // BUILD 992: door 0.87 x 1.78 (1.20x character); lintel + step
       // span the wider door (1.21 = door + margin).
-      faceRect(face,aC,DOOR_W,DOOR_H/2,DOOR_H,facePlane(.02),DOOR_WOOD);
-      faceRect(face,aC,1.21,GROUND_FLOOR_H+.06,.12,facePlane(.02),design.timber);
-      if(face==='south')houseBox(x,z+d/2+.15,1.21,.12,.3,0,design.stone);
-      else if(face==='north')houseBox(x,z-d/2-.15,1.21,.12,.3,0,design.stone);
-      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,1.21,0,design.stone);
-      else houseBox(x+w/2+.15,z,.12,.12,1.21,0,design.stone);
+      faceRect(face,aC,DOOR_W,DOOR_H/2+hy,DOOR_H,facePlane(.02),DOOR_WOOD);
+      faceRect(face,aC,1.21,GROUND_FLOOR_H+.06+hy,.12,facePlane(.02),design.timber);
+      if(face==='south')houseBox(x,z+d/2+.15,1.21,.12,.3,hy,design.stone);
+      else if(face==='north')houseBox(x,z-d/2-.15,1.21,.12,.3,hy,design.stone);
+      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,1.21,hy,design.stone);
+      else houseBox(x+w/2+.15,z,.12,.12,1.21,hy,design.stone);
     }
     // Upper floors: plaster boxes + timber corner posts + floor beams.
     for(let s=1;s<design.stories;s++){
-      const y0=GROUND_FLOOR_H+(s-1)*UPPER_FLOOR_H;
+      const y0=hy+GROUND_FLOOR_H+(s-1)*UPPER_FLOOR_H;
       houseBox(x,z,w,UPPER_FLOOR_H,d,y0,design.plaster);
     }
     const po=.06;
-    houseBox(x-w/2+po,z-d/2+po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
-    houseBox(x+w/2-po,z-d/2+po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
-    houseBox(x-w/2+po,z+d/2-po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
-    houseBox(x+w/2-po,z+d/2-po,.13,topY-GROUND_FLOOR_H,.13,GROUND_FLOOR_H,design.timber);
+    houseBox(x-w/2+po,z-d/2+po,.13,(design.stories-1)*UPPER_FLOOR_H,.13,hy+GROUND_FLOOR_H,design.timber);
+    houseBox(x+w/2-po,z-d/2+po,.13,(design.stories-1)*UPPER_FLOOR_H,.13,hy+GROUND_FLOOR_H,design.timber);
+    houseBox(x-w/2+po,z+d/2-po,.13,(design.stories-1)*UPPER_FLOOR_H,.13,hy+GROUND_FLOOR_H,design.timber);
+    houseBox(x+w/2-po,z+d/2-po,.13,(design.stories-1)*UPPER_FLOOR_H,.13,hy+GROUND_FLOOR_H,design.timber);
     for(let s=0;s<design.stories-1;s++){
-      const y=GROUND_FLOOR_H+s*UPPER_FLOOR_H;
+      const y=hy+GROUND_FLOOR_H+s*UPPER_FLOOR_H;
       houseBox(x,z+d/2+.01,w,.13,.07,y-.065,design.timber);
       houseBox(x,z-d/2-.01,w,.13,.07,y-.065,design.timber);
       houseBox(x-w/2-.01,z,.07,.13,d,y-.065,design.timber);
@@ -859,7 +915,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // minutes) — no world rebuild when a light flips. Positions are
     // single-sourced from windowSlotsFor, so frames and panes can
     // never disagree.
-    for(const s of windowSlotsFor(x,z,w,d,face,design.stories)){
+    for(const s of windowSlotsFor(x,z,w,d,face,design.stories,hy)){
       const fixed=s.face==='south'?z+d/2:s.face==='north'?z-d/2:s.face==='west'?x-w/2:x+w/2;
       const out=s.face==='south'||s.face==='east'?1:-1;
       faceRect(s.face,s.a,.46,s.y,.56,fixed+out*.015,design.timber);
@@ -889,7 +945,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // smoke starts at exactly this cap (ridgeY+.8). BUILD 1015: the
     // blacksmith's chimney is wider (0.55); the cap lip scales with
     // it, the cap HEIGHT is unchanged so the smoke needs no case.
-    const chimTop=chimneyTopFor(x,z,w,d,design);
+    const chimTop=chimneyTopFor(x,z,w,d,design,hy);
     if(chimTop){
       const chw=design.wideChimney?.55:.35;
       houseBox(chimTop[0],chimTop[2],chw,1.1,chw,chimTop[1]-1.1,design.stone);
@@ -906,29 +962,29 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     if(design.building==='inn'){
       const signA=aC+spanA*.32;
       if(face==='south'||face==='north'){
-        houseBox(signA,facePlane(.16),.08,.08,.3,2.32,design.timber);
-        houseBox(signA,facePlane(.32),.7,.45,.06,2.02,[.78,.58,.25]);
+        houseBox(signA,facePlane(.16),.08,.08,.3,2.32+hy,design.timber);
+        houseBox(signA,facePlane(.32),.7,.45,.06,2.02+hy,[.78,.58,.25]);
       } else {
-        houseBox(facePlane(.16),signA,.3,.08,.08,2.32,design.timber);
-        houseBox(facePlane(.32),signA,.06,.45,.7,2.02,[.78,.58,.25]);
+        houseBox(facePlane(.16),signA,.3,.08,.08,2.32+hy,design.timber);
+        houseBox(facePlane(.32),signA,.06,.45,.7,2.02+hy,[.78,.58,.25]);
       }
     } else if(design.building==='store'){
       const aw=spanA/2-.3;
       const a0=aC-aw,a1=aC+aw;
       if(face==='south'||face==='north'){
-        quad([a0,2.0,facePlane(.02)],[a1,2.0,facePlane(.02)],[a1,1.65,facePlane(.78)],[a0,1.65,facePlane(.78)],[.55,.25,.18]);
-        houseBox(a0,facePlane(.78),.08,1.65,.08,0,design.timber);
-        houseBox(a1,facePlane(.78),.08,1.65,.08,0,design.timber);
-        houseBox(aC-spanA*.35,facePlane(.45),.5,.5,.5,0,[.57,.31,.16]);
-        houseBox(aC+spanA*.35,facePlane(.45),.5,.5,.5,0,[.57,.31,.16]);
-        houseBox(aC-spanA*.35,facePlane(.45),.35,.35,.35,.5,[.5,.27,.14]);
+        quad([a0,2.0+hy,facePlane(.02)],[a1,2.0+hy,facePlane(.02)],[a1,1.65+hy,facePlane(.78)],[a0,1.65+hy,facePlane(.78)],[.55,.25,.18]);
+        houseBox(a0,facePlane(.78),.08,1.65,.08,hy,design.timber);
+        houseBox(a1,facePlane(.78),.08,1.65,.08,hy,design.timber);
+        houseBox(aC-spanA*.35,facePlane(.45),.5,.5,.5,hy,[.57,.31,.16]);
+        houseBox(aC+spanA*.35,facePlane(.45),.5,.5,.5,hy,[.57,.31,.16]);
+        houseBox(aC-spanA*.35,facePlane(.45),.35,.35,.35,.5+hy,[.5,.27,.14]);
       } else {
-        quad([facePlane(.02),2.0,a0],[facePlane(.02),2.0,a1],[facePlane(.78),1.65,a1],[facePlane(.78),1.65,a0],[.55,.25,.18]);
-        houseBox(facePlane(.78),a0,.08,1.65,.08,0,design.timber);
-        houseBox(facePlane(.78),a1,.08,1.65,.08,0,design.timber);
-        houseBox(facePlane(.45),aC-spanA*.35,.5,.5,.5,0,[.57,.31,.16]);
-        houseBox(facePlane(.45),aC+spanA*.35,.5,.5,.5,0,[.57,.31,.16]);
-        houseBox(facePlane(.45),aC-spanA*.35,.35,.35,.35,.5,[.5,.27,.14]);
+        quad([facePlane(.02),2.0+hy,a0],[facePlane(.02),2.0+hy,a1],[facePlane(.78),1.65+hy,a1],[facePlane(.78),1.65+hy,a0],[.55,.25,.18]);
+        houseBox(facePlane(.78),a0,.08,1.65,.08,hy,design.timber);
+        houseBox(facePlane(.78),a1,.08,1.65,.08,hy,design.timber);
+        houseBox(facePlane(.45),aC-spanA*.35,.5,.5,.5,hy,[.57,.31,.16]);
+        houseBox(facePlane(.45),aC+spanA*.35,.5,.5,.5,hy,[.57,.31,.16]);
+        houseBox(facePlane(.45),aC-spanA*.35,.35,.35,.35,.5+hy,[.5,.27,.14]);
       }
     }
   }
@@ -942,8 +998,9 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     // BUILD 983: low-poly tapered tree (trunk + 3 shrinking foliage
     // tiers) instead of the old single green cube. Visual only — same
     // tile, same collision, same positions. BUILD 986: now the shared
-    // treeAt renderer (identical geometry).
-    treeAt(t.tx,t.ty);
+    // treeAt renderer (identical geometry). BUILD 1034: the tree
+    // stands on the heightfield.
+    treeAt(t.tx,t.ty,surfaceElevation(effTerrain,t.tx+.5,t.ty+.5));
   }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
   // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x
@@ -962,7 +1019,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   const gX0=Math.floor(center.x)-DETAIL_GRASS_HALF, gX1=Math.floor(center.x)+DETAIL_GRASS_HALF;
   const gY0=Math.floor(center.y)-DETAIL_GRASS_HALF, gY1=Math.floor(center.y)+DETAIL_GRASS_HALF;
   emitNaturalGrass(triV, world, effTerrain, gX0, gX1, gY0, gY1);
-  emitPlacedGrass(triV, world, gX0, gX1, gY0, gY1);
+  emitPlacedGrass(triV, world, effTerrain, gX0, gX1, gY0, gY1);
   // BUILD 1015: wildflowers + pebbles (groundDetail3d.ts) — same
   // determinism as the tufts, a few hundred verts in the old window.
   const fX0=Math.floor(center.x)-DETAIL_FAR_HALF, fX1=Math.floor(center.x)+DETAIL_FAR_HALF;
@@ -984,7 +1041,7 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
     const rw=.5+hash2(r.tx*3.1+21,r.ty*7.7+21)*.5;
     const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
-    cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh]);
+    cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,r.tx+.5,r.ty+.5));
   }
   // BUILD 1024: wild trees + rocks past the old map edge. The stored
   // lists stop at 200x200, but the scatter hash continues — so the
@@ -999,18 +1056,20 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   for(let y=fY0;y<=fY1;y++) for(let x=fX0;x<=fX1;x++) {
     if(x>=0&&y>=0&&x<world.w&&y<world.h) continue;
     const wkey=x+','+y;
-    if(wildTreeAt(x,y)&&!(world.removedWildTrees??[]).includes(wkey)) treeAt(x,y);
+    // BUILD 1034: wild trees and rocks stand on the heightfield too.
+    if(wildTreeAt(x,y)&&!(world.removedWildTrees??[]).includes(wkey)) treeAt(x,y,surfaceElevation(effTerrain,x+.5,y+.5));
     else if(wildRockAt(x,y)&&!(world.removedWildRocks??[]).includes(wkey)) {
       const rw=.5+hash2(x*3.1+21,y*7.7+21)*.5;
       const rh=.4+hash2(x*5.3+23,y*9.1+23)*.5;
       const sh=.8+hash2(x*7.7+27,y*3.3+27)*.25;
-      cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh]);
+      cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,x+.5,y+.5));
     }
   }
   // BUILD 986: generated/authored crates + layout prop placeholders render
   // as 983 trees, not brown cubes. Data untouched — the wood interaction
   // still finds and removes the crate entry (see the E-key handler).
-  for(const c of world.crates) treeAt(c.tx,c.ty);
+  // BUILD 1034: crates stand on the heightfield.
+  for(const c of world.crates) treeAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5));
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
@@ -1785,14 +1844,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
       const nx=((clientX-rect.left)/rect.width)*2-1,ny=1-((clientY-rect.top)/rect.height)*2;
       const p=stateRef.current.position;
-      const tx=p.x+.5,tz=p.y+.5,ty=.8;
+      const tx=p.x+.5,tz=p.y+.5;
+      // BUILD 1034: the picker ray-marches against the heightfield, not
+      // the flat y=0 plane — a tap on a hill must pick the hill's tile,
+      // not the tile the flat plane would give. The eye sits on the
+      // surface at the player, exactly like the camera.
+      const effTerrainPick=effTerrainFor(stateRef.current.world);
+      const pickBaseY=surfaceElevation(effTerrainPick,tx,tz);
+      const ty=pickBaseY+.8;
       // BUILD 984: first person uses the eye-level camera, not the orbit
       // camera — the old code always used orbit math, so first-person
       // taps mis-picked (BUILD 983 delta #4). Branching here fixes both
       // first-person tap-to-move and placement taps.
       let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
       if(firstPersonRef.current){
-        eyeX=tx;eyeZ=tz;eyeY=FIRST_PERSON_EYE;
+        eyeX=tx;eyeZ=tz;eyeY=pickBaseY+FIRST_PERSON_EYE;
         forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];
       } else {
         eyeX=tx+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=tz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=ty+zoom*Math.sin(pitch);
@@ -1808,8 +1874,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const dy=forward[1]+right[1]*nx*scale*aspect+up[1]*ny*scale;
       const dz=forward[2]+right[2]*nx*scale*aspect+up[2]*ny*scale;
       if(dy>=-0.001)return null;
-      const t=-eyeY/dy;if(t<=0)return null;
-      const x=eyeX+dx*t-.5,y=eyeZ+dz*t-.5;
+      const hit=rayHitSurface(effTerrainPick,eyeX,eyeY,eyeZ,dx,dy,dz,2000);
+      if(!hit)return null;
+      const x=hit.x-.5,y=hit.z-.5;
       // BUILD 1024: no map-bounds refusal — the world is infinite
       // now, so a tap past the old edge picks the wild ground there.
       // Every consumer still validates its own domain: tap-to-move
@@ -1841,14 +1908,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // (forward/right/up, same FOV), so ring and pick agree exactly.
     const projectTileCenter=(tx:number,ty:number)=>{
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
-      const p=stateRef.current.position;const px=p.x+.5,pz=p.y+.5,py=.8;
+      const p=stateRef.current.position;const px=p.x+.5,pz=p.y+.5;
+      // BUILD 1034: the inverse of pickGround on the same surface — the
+      // eye sits on the heightfield at the player, and the tile's ground
+      // height is the surface at its centre, so the ring and the pick
+      // agree exactly.
+      const effTerrainProj=effTerrainFor(stateRef.current.world);
+      const projBaseY=surfaceElevation(effTerrainProj,px,pz);
+      const py=projBaseY+.8;
       let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
-      if(firstPersonRef.current){eyeX=px;eyeZ=pz;eyeY=FIRST_PERSON_EYE;forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];}
+      if(firstPersonRef.current){eyeX=px;eyeZ=pz;eyeY=projBaseY+FIRST_PERSON_EYE;forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];}
       else{eyeX=px+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=pz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=py+zoom*Math.sin(pitch);forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];}
       const right=[Math.cos(yaw),0,-Math.sin(yaw)];
       const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
       const scale=Math.tan(WORLD_FOV_RAD/2),aspect=rect.width/rect.height;
-      const vx=tx+.5-eyeX,vy=0-eyeY,vz=ty+.5-eyeZ;
+      const vx=tx+.5-eyeX,vy=surfaceElevation(effTerrainProj,tx+.5,ty+.5)-eyeY,vz=ty+.5-eyeZ;
       const depth=vx*forward[0]+vy*forward[1]+vz*forward[2];if(depth<=0)return null;
       const nx=(vx*right[0]+vy*right[1]+vz*right[2])/(depth*scale*aspect);
       const ny=(vx*up[0]+vy*up[1]+vz*up[2])/(depth*scale);
@@ -2347,7 +2421,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // Keeping the camera target and orbit origin aligned prevents the player
       // sprite drifting sideways while the camera rotates; pitch now controls
       // the actual orbit elevation as well.
-      const targetX=player.x+.5,targetZ=player.y+.5,targetY=.8;
+      // BUILD 1034: the camera rides the heightfield — the orbit target
+      // and the first-person eye sit on the shared surface at the player,
+      // so the camera never sinks into a hill or floats over a hollow.
+      // effTerrainDraw is this frame's effective terrain (the placement
+      // Sets are built once per frame); playerBaseY is the ground under
+      // the player, reused by the player figure and the car below.
+      const effTerrainDraw=effTerrainFor(world);
+      const playerBaseY=surfaceElevation(effTerrainDraw,player.x+.5,player.y+.5);
+      const targetX=player.x+.5,targetZ=player.y+.5,targetY=playerBaseY+.8;
       const horizontal=zoom*Math.cos(pitch);
       const ex=targetX+Math.sin(yaw)*horizontal,ez=targetZ+Math.cos(yaw)*horizontal,ey=targetY+zoom*Math.sin(pitch);
       // BUILD 983 first-person camera: eye-level camera at the player,
@@ -2381,7 +2463,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // alone cannot see the toggle flip).
       if(firstPersonRef.current&&!fpAutoRef.current){firstPersonRef.current=false;setFirstPersonOn(false);zoom=ZOOM_MIN;}
       const mat=firstPersonRef.current
-        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,VIEW_FAR_PLANE),lookAt([targetX,FIRST_PERSON_EYE,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,FIRST_PERSON_EYE+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
+        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,VIEW_FAR_PLANE),lookAt([targetX,playerBaseY+FIRST_PERSON_EYE,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,playerBaseY+FIRST_PERSON_EYE+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
         : mul(perspective(WORLD_FOV_RAD,w/h,.1,VIEW_FAR_PLANE),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
@@ -2399,7 +2481,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // night factor, sun/moon with uNight=0 (self-luminous). Suppressed
       // entirely while inside a house (990: emitSkyObjects returns empty
       // when insideHut is set).
-      const skyEye:Vec3=firstPersonRef.current?[targetX,FIRST_PERSON_EYE,targetZ]:[ex,ey,ez];
+      const skyEye:Vec3=firstPersonRef.current?[targetX,playerBaseY+FIRST_PERSON_EYE,targetZ]:[ex,ey,ez];
       const skyArr:number[]=[];
       const skyCounts=emitSkyObjects(skyArr,skyEye,player.x+.5,player.y+.5,clockRef.current.minutes,skyDriftRef.current,!!insideHutRef.current);
       if(skyCounts.totalVerts>0){
@@ -2442,11 +2524,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!actorSlotsAllocated){gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.bufferData(gl.ARRAY_BUFFER,figureSlots.totalVerts*24,gl.DYNAMIC_DRAW);actorSlotsAllocated=true;}
       gl.bindBuffer(gl.ARRAY_BUFFER,actorBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       let emitted=0,reused=0,drawn=0;
-      const emitFigureSlot=(slot:number,cx:number,cz:number,yaw:number,phase:number,spec:VillagerSpec,child:boolean,rx:number,rz:number,pre?:number[])=>{
+      const emitFigureSlot=(slot:number,cx:number,cz:number,yaw:number,phase:number,spec:VillagerSpec,child:boolean,rx:number,rz:number,pre?:number[],baseY=0)=>{
         const key:FigurePoseKey={x:rx,z:rz,yaw,phase};
         if(!poseKeyEquals(slotUploaded.get(slot)??null,key)){
           const tmp:number[]=pre??[];
-          if(!pre)emitVillager(tmp,cx,cz,yaw,phase,spec,child);
+          // BUILD 1034: baseY lifts the figure onto the heightfield.
+          // The pose key need not carry it — a standing figure's tile
+          // (and so its base y) never changes while the key is stable,
+          // and a moving figure re-emits every frame anyway.
+          if(!pre)emitVillager(tmp,cx,cz,yaw,phase,spec,child,baseY);
           const count=pre?pre.length/6:figureSlotCounts[slot];
           figureScratch.set(tmp);
           gl.bufferSubData(gl.ARRAY_BUFFER,figureSlots.offsets[slot]*24,figureScratch.subarray(0,count*6));
@@ -2474,7 +2560,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
         const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
         st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y);
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
       }
       // BUILD 1000: transient figures (travelers + adventurers) ride
       // the same glide/yaw/phase/slot machinery as residents: logical
@@ -2498,8 +2584,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
         st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
         const pre:number[]=[];
-        emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false);
-        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre);
+        // BUILD 1034: transients stand on the heightfield (the pre
+        // array is emitted here, so the base y goes into emitVillager).
+        const tBaseY=surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5);
+        emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,tBaseY);
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre,tBaseY);
       }
       // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
       // machinery as residents and transients: logical tiles come from
@@ -2531,13 +2620,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         st.graze+=Math.max(-2.5*dtNpc,Math.min(2.5*dtNpc,targetGraze-st.graze));
         if(Math.abs(st.h-st.eh)>0.01||Math.abs(st.graze-st.eg)>0.01){slotUploaded.delete(slot);st.eh=st.h;st.eg=st.graze;}
         const pre:number[]=[];
-        emitAnimal(pre,a.kind,st.x+.5,st.y+.5,st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying',flutter:a.state==='scuttling'});
+        // BUILD 1034: animals stand on the heightfield — the yBase is
+        // the ground plus the flight height (birds), and the shadow
+        // blob sits on the ground under them.
+        const aBaseY=surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5);
+        emitAnimal(pre,a.kind,st.x+.5,st.y+.5,aBaseY+st.h,yaw,phase,animalSpecFor(a.id,a.kind),{graze:st.graze,flying:a.state==='flying',flutter:a.state==='scuttling'});
         // BUILD 1015 polish: shadow blob under ground animals (1013
         // shipped none; emitAnimalBlob in animals.ts). Landing/takeoff
         // forces a slot re-emit via the h-change check above, so the
         // blob appears and disappears with the bird.
-        emitAnimalBlob(pre,a.kind,st.x+.5,st.y+.5,st.h);
-        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,PLAYER_SPEC,false,st.x,st.y,pre);
+        emitAnimalBlob(pre,a.kind,st.x+.5,st.y+.5,st.h,aBaseY);
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,PLAYER_SPEC,false,st.x,st.y,pre,aBaseY);
       }
       // BUILD 992: in first person the camera IS the player — hide the
       // player figure or it fills the frame. NPC figures still draw.
@@ -2548,7 +2641,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const prev=figureState.get('__player');
         const dist=prev?Math.hypot(px-prev.px,pz-prev.pz):0;
         const pose=figurePose('__player',px,pz,nowMs,dt*1000,dist>0,dist);
-        emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y);
+        emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y,undefined,playerBaseY);
       }
       motionStats={emitted,reused,drawn};
       // BUILD 1033: the red sports car — a small per-frame buffer (the
@@ -2562,7 +2655,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const carPos=drivingRef.current?{x:player.x+.5,z:player.y+.5,yaw:carYawRef.current}:(carRef.current?{x:carRef.current.x+.5,z:carRef.current.y+.5,yaw:carRef.current.yaw}:null);
         if(carPos){
           const carArr:number[]=[];
-          emitCar(carArr,carPos.x,carPos.z,carPos.yaw);
+          // BUILD 1034: the car sits on the heightfield at its position.
+          emitCar(carArr,carPos.x,carPos.z,carPos.yaw,surfaceElevation(effTerrainDraw,carPos.x,carPos.z));
           gl.bindBuffer(gl.ARRAY_BUFFER,carBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(carArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
           gl.drawArrays(gl.TRIANGLES,0,carArr.length/6);
         }

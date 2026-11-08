@@ -403,6 +403,23 @@ export function groundNoise(x: number, z: number, spacing: number): number {
   return top + (bot - top) * uz;
 }
 
+/**
+ * BUILD 1034 — the heightfield (Stage 2 terrain). A single low octave
+ * of the 1009 ground noise at a 64-tile wavelength, re-centred from
+ * [0, 1] to [-1, 1] and scaled to ±1.5 tiles: gentle rolling hills,
+ * never mountains. Pure position, no world state — the ground, every
+ * object, the picker and the camera all sample this SAME function, so
+ * they agree by construction. Max slope ~0.07 per tile (the noise
+ * gradient over a 64-tile cell), so a 6-tile house footprint varies
+ * by at most ~0.4 tiles and a 1-tile step is never a wall. Walkability
+ * is untouched: the field is visual only, the tile step model is flat.
+ */
+export const GROUND_FIELD_SPACING = 64;
+export const GROUND_FIELD_AMPLITUDE = 1.5;
+export function groundElevation(x: number, z: number): number {
+  return (groundNoise(x, z, GROUND_FIELD_SPACING) * 2 - 1) * GROUND_FIELD_AMPLITUDE;
+}
+
 /** BUILD 988 ground tint, REWORKED in BUILD 1009: deterministic colour
  *  variation so lawns and dirt stop reading as flat paint. The 988 form
  *  sampled hash2 per tile, so adjacent tiles differed randomly
@@ -431,11 +448,16 @@ export function groundTintDelta(terrain: string, x: number, y: number): Rgb {
   // worst 4-tile interpolation error to ~1/4 of the old hash jump.
   const n = groundNoise(x, y, 8) * 0.8 + groundNoise(x, y, 2.5) * 0.2 - 0.5; // -0.5..0.5
   const n2 = groundNoise(x + 37.2, y + 11.8, 8) * 0.8 + groundNoise(x + 37.2, y + 11.8, 2.5) * 0.2 - 0.5;
+  // BUILD 1034 — tint amplitude ~3x the 1009 values (Stage 2 terrain):
+  // the 1009 tint was measured at max 0.027, nearly invisible against
+  // the flat ground. These give a measured max grass delta >= 0.08 —
+  // the ground reads as varied patches, not a uniform lawn — while
+  // staying far below the level where adjacent tiles clash.
   switch (terrain) {
-    case 'grass': return [n * 0.04, n * 0.06, n2 * 0.02];
-    case 'dirt': return [n * 0.05, n * 0.04, n2 * 0.03];
-    case 'sand': return [n * 0.04, n * 0.03, n2 * 0.02];
-    case 'stone': return [n * 0.03, n * 0.03, n * 0.03];
+    case 'grass': return [n * 0.12, n * 0.18, n2 * 0.06];
+    case 'dirt': return [n * 0.15, n * 0.12, n2 * 0.09];
+    case 'sand': return [n * 0.12, n * 0.09, n2 * 0.06];
+    case 'stone': return [n * 0.09, n * 0.09, n * 0.09];
     case 'water': return [0, 0, 0];
     default: return [n * 0.03, n * 0.03, n * 0.03];
   }

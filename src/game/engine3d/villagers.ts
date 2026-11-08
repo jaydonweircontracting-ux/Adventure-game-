@@ -326,7 +326,7 @@ export interface FigureLayout {
 }
 
 /** Pure figure geometry for one spec. Same spec + child + bob → same layout. */
-export function figureLayout(spec: VillagerSpec, child: boolean, bob: number): FigureLayout {
+export function figureLayout(spec: VillagerSpec, child: boolean, bob: number, baseY = 0): FigureLayout {
   const s = child ? 0.7 : 1;
   const H = CHARACTER_H * spec.heightScale * s;
   const ws = spec.widthScale * s;
@@ -338,7 +338,10 @@ export function figureLayout(spec: VillagerSpec, child: boolean, bob: number): F
   const legH = legFrac * H;
   const torsoH = torsoFrac * H;
   const headH = headFrac * H;
-  const hipY = legH + bob;
+  // BUILD 1034: baseY lifts the whole figure onto the heightfield —
+  // every y anchor (hips, torso, head, eyes, mouth, brows, hat)
+  // derives from hipY, so one offset lifts the figure intact.
+  const hipY = legH + bob + baseY;
   const torsoY0 = hipY;
   const torsoY1 = hipY + torsoH;
   const headY0 = torsoY1;
@@ -406,9 +409,10 @@ export function emitVillager(
   yaw: number, phase: number,
   spec: VillagerSpec,
   child: boolean,
+  baseY = 0,
 ): void {
   const bob = Math.abs(Math.sin(phase)) * WALK_BOB;
-  const L = figureLayout(spec, child, bob);
+  const L = figureLayout(spec, child, bob, baseY);
   const legSwing = Math.sin(phase) * LEG_SWING;
   const armSwing = Math.sin(phase) * ARM_SWING;
   // Lateral axis for limb placement (BUILD 1001 — see doc above).

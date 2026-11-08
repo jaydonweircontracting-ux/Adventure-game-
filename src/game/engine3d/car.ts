@@ -171,7 +171,7 @@ function shadeForNormal(n: Vec3): number {
  * toward the rear, four black wheels, pale headlights, a rear
  * spoiler, and a dark shadow blob under it.
  */
-export function emitCar(out: number[], cx: number, cz: number, yaw: number): number {
+export function emitCar(out: number[], cx: number, cz: number, yaw: number, baseY = 0): number {
   const start = out.length;
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
@@ -202,9 +202,10 @@ export function emitCar(out: number[], cx: number, cz: number, yaw: number): num
     y1: number,
     color: Rgb,
   ) => {
+    // BUILD 1034: baseY lifts the car onto the heightfield.
     const corner = (f: number, r: number, y: number): Vec3 => {
       const [wx, wz] = toWorld(f, r);
-      return [wx, y, wz];
+      return [wx, y + baseY, wz];
     };
     // Local corners: f = forward, r = left (r+ is the car's left).
     const b0 = corner(lf - hf, lr - hr, y0); // back-right-bottom
@@ -229,7 +230,7 @@ export function emitCar(out: number[], cx: number, cz: number, yaw: number): num
   // Shadow blob under the car (a flat dark quad, the animal-blob
   // pattern — no alpha in this renderer, so it is a dark quad).
   {
-    const y = 0.015;
+    const y = 0.015 + baseY;
     const [a0, a1] = [toWorld(-1.02, -0.55), toWorld(1.02, -0.55)];
     const [b0, b1] = [toWorld(1.02, 0.55), toWorld(-1.02, 0.55)];
     quad([a0[0], y, a0[1]], [a1[0], y, a1[1]], [b0[0], y, b0[1]], [b1[0], y, b1[1]], CAR_SHADOW);

@@ -45,8 +45,9 @@
 // (walkableWithPlacements -> isWalkableWorld) stays in-bounds. The
 // wilderness is player-only by construction — "empty chunks", as
 // ordered: landscape, no town, no NPCs, no quests.
-import { hash2 as scatterHash, oceanAt, oceanCoastX } from '../iso/isoWorld';
-import { groundNoise } from './townLook';
+import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, type Terrain } from '../iso/isoWorld';
+import { groundNoise, groundElevation } from './townLook';
+import { placedPathKeys, placedWaterKeys } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** Salt of the stored wilderness scatter (defaultWorld). */
@@ -168,4 +169,169 @@ export function isWildWalkable(w: IsoWorld, x: number, y: number): boolean {
   if (wildTreeAt(x, y) && !(w.removedWildTrees ?? []).includes(key)) return false;
   if (wildRockAt(x, y) && !(w.removedWildRocks ?? []).includes(key)) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// BUILD 1034 — Stage 2 terrain: the heightfield surface, shores, stone,
+// and the picker ray-march. All pure, all sampling ONE surface function
+// (surfaceElevation) so the ground, every object, the picker and the
+// camera agree by construction. Walkability is NOT here: the field is
+// visual only, the tile step model stays flat (see the Stage 1 audit).
+// ---------------------------------------------------------------------------
+
+/** The effective terrain at a tile — hoisted from buildWorldVertices'
+ *  effTerrain closure (identical rule) so the ground, the surface, the
+ *  picker and the camera share ONE definition: placed water wins, then
+ *  placed paths read as dirt, then the stored map terrain, then wild
+ *  terrain past the edge. The placement key Sets are built once per call. */
+export function effTerrainFor(world: IsoWorld): (x: number, y: number) => Terrain {
+  const placedWater = placedWaterKeys(world);
+  const placedPaths = placedPathKeys(world);
+  return (x, y) => placedWater.has(terrainKey(x, y)) ? 'water' : (placedPaths.has(terrainKey(x, y)) ? 'dirt' : (inBounds(world, x, y) ? terrainAt(world, x, y) : wildTerrainAt(x, y)));
+}
+
+/** Land-ness at a continuous point: bilinear interpolation of the
+ *  per-tile land values (1 = land, 0 = water) over the tile grid.
+ *  Exactly 1 deep on land, exactly 0 deep in water, ramping over the
+ *  one tile either side of a shoreline — so the surface slopes down
+ *  into the water and the water stays flat at 0. */
+export function landBlendAt(effTerrain: (x: number, y: number) => Terrain, x: number, z: number): number {
+  const fx = Math.floor(x), fz = Math.floor(z);
+  const ux = x - fx, uz = z - fz;
+  const land = (tx: number, ty: number): number => effTerrain(tx, ty) === 'water' ? 0 : 1;
+  const l00 = land(fx, fz), l10 = land(fx + 1, fz), l01 = land(fx, fz + 1), l11 = land(fx + 1, fz + 1);
+  const top = l00 + (l10 - l00) * ux;
+  const bot = l01 + (l11 - l01) * ux;
+  return top + (bot - top) * uz;
+}
+
+/** THE surface: the heightfield at a continuous point, blended to 0 in
+ *  water. The ground corners, every object's base y, the camera and the
+ *  picker all sample this one function — agreement is by construction,
+ *  not by four separate copies of the math. */
+export function surfaceElevation(effTerrain: (x: number, y: number) => Terrain, x: number, z: number): number {
+  return groundElevation(x, z) * landBlendAt(effTerrain, x, z);
+}
+
+/** The authored 5x5 pond (1027): tiles (119-123, 81-85). A documented
+ *  constant (isoWorld.ts stores it as water terrain); the shore rules
+ *  below use it so the pond gets a sand band + foam edge like the ocean. */
+export const POND_RECT = { x0: 119, y0: 81, x1: 123, y1: 85 };
+/** Ocean sand band: grass within this many tiles east of the coast. */
+export const SHORE_SAND_DIST = 3;
+/** Wild-lake shore bands in the lake field (threshold 0.90): grass in
+ *  (0.86, 0.90] is sand, water in (0.90, 0.94] is foam. */
+export const LAKE_SHORE_LO = 0.86;
+export const LAKE_FOAM_HI = 0.94;
+/** Stone outcrops: grass whose raw field at the tile centre exceeds
+ *  this. Tuned by the 1034 harness: the smoothed field's map max is
+ *  0.793 (p99 0.747), so 0.75 puts stone on the top ~1% — the high
+ *  ground only, as coherent outcrops, not a stone desert (0.5 would
+ *  be 4380 tiles; 0.7 is 1066). The raw field, not the blended
+ *  surface — the blend is a shoreline effect, and the shore check
+ *  runs first anyway. */
+export const STONE_ELEV = 0.75;
+
+/** True when a grass tile is shore sand: within 3 tiles east of the
+ *  ocean coast, within 2 of the pond rect, or on the grass side of a
+ *  wild lake's edge. The lake band needs a REAL lake next door, not
+ *  just the lake field in range: the field is a global noise function
+ *  and also reads in-band on in-map grass, where it is not the terrain
+ *  — so the band is only a cheap pre-filter, and a direct neighbour
+ *  must actually be lake water (water via effTerrain, and the lake
+ *  field over the threshold there). `t` is the tile's effTerrain. */
+export function isShoreSand(effTerrain: (x: number, y: number) => Terrain, t: Terrain, x: number, y: number): boolean {
+  if (t !== 'grass') return false;
+  const coast = oceanCoastX(y);
+  if (x >= coast && x < coast + SHORE_SAND_DIST) return true;
+  if (x >= POND_RECT.x0 - 2 && x <= POND_RECT.x1 + 2 && y >= POND_RECT.y0 - 2 && y <= POND_RECT.y1 + 2) return true;
+  const n = groundNoise(x, y, WILD_LAKE_SPACING);
+  if (n <= LAKE_SHORE_LO || n > WILD_LAKE_THRESHOLD) return false;
+  // Lake edge: a direct neighbour is lake water.
+  return (effTerrain(x - 1, y) === 'water' && wildLakeAt(x - 1, y))
+    || (effTerrain(x + 1, y) === 'water' && wildLakeAt(x + 1, y))
+    || (effTerrain(x, y - 1) === 'water' && wildLakeAt(x, y - 1))
+    || (effTerrain(x, y + 1) === 'water' && wildLakeAt(x, y + 1));
+}
+
+/** True when a water tile is foam (the water edge): the ocean tile just
+ *  west of the coast, a pond tile on the pond rect's boundary, or lake
+ *  water just inside the lake edge. The lake band is gated on the tile
+ *  actually being lake water (the field over the threshold) and not
+ *  ocean or pond water, so it never speckles the deep ocean. */
+export function isFoam(t: Terrain, x: number, y: number): boolean {
+  if (t !== 'water') return false;
+  const coast = oceanCoastX(y);
+  if (x >= coast - 1 && x < coast) return true;
+  if (x >= POND_RECT.x0 && x <= POND_RECT.x1 && y >= POND_RECT.y0 && y <= POND_RECT.y1
+    && (x === POND_RECT.x0 || x === POND_RECT.x1 || y === POND_RECT.y0 || y === POND_RECT.y1)) return true;
+  if (x < coast) return false;
+  if (x >= POND_RECT.x0 && x <= POND_RECT.x1 && y >= POND_RECT.y0 && y <= POND_RECT.y1) return false;
+  const n = groundNoise(x, y, WILD_LAKE_SPACING);
+  return n > WILD_LAKE_THRESHOLD && n <= LAKE_FOAM_HI;
+}
+
+/** Display terrain: the colour the ground renders as. 'foam' is display
+ *  only — never a walkability terrain (foam tiles are water and still
+ *  block; walkability reads effTerrain, never this). 'stone' is the
+ *  1031-dead type, revived: grass on high ground renders as rock. */
+export type RenderTerrain = Terrain | 'foam';
+export function renderTerrain(effTerrain: (x: number, y: number) => Terrain, x: number, y: number): RenderTerrain {
+  const t = effTerrain(x, y);
+  if (t === 'grass') {
+    if (isShoreSand(effTerrain, t, x, y)) return 'sand';
+    if (groundElevation(x + 0.5, y + 0.5) > STONE_ELEV) return 'stone';
+    return 'grass';
+  }
+  if (t === 'water' && isFoam(t, x, y)) return 'foam';
+  return t;
+}
+
+/** Ray-march a ray against the surface: sphere-tracing with a step of
+ *  half the height above the surface (the surface slope is <= ~0.07/tile,
+ *  so half the clearance never overshoots it). Returns the hit point, or
+ *  null when the ray never meets the ground within maxDist. The picker
+ *  uses this instead of the flat y=0 plane intersection. */
+export function rayHitSurface(
+  effTerrain: (x: number, y: number) => Terrain,
+  ox: number, oy: number, oz: number,
+  dx: number, dy: number, dz: number,
+  maxDist: number,
+): { x: number; y: number; z: number } | null {
+  // Sphere-tracing ray-march against the heightfield. The step is
+  // clearance x 0.5 (conservative: the surface slope is <= ~0.07/tile,
+  // so the surface cannot rise into the ray within half the clearance).
+  // BUILD 1034 fix: the first version returned as soon as the clearance
+  // dropped to 0.01 — for a shallow ray (dy ~ -0.05) 0.01 of vertical
+  // clearance is ~0.2 tiles of horizontal travel, so the hit landed up
+  // to 0.3 tiles early, and shallow rays ran out of the 200-step cap
+  // before converging at all. Now the march runs to 400 steps and, on
+  // a sign change, BISECTS between the last clear point and the hit to
+  // find the actual surface crossing (the picker must resolve the
+  // right tile, not the tile 0.3 away).
+  let t = 0;
+  let prevT = 0;
+  let prevClearance = oy - surfaceElevation(effTerrain, ox, oz);
+  if (prevClearance <= 0) return { x: ox, y: surfaceElevation(effTerrain, ox, oz), z: oz };
+  for (let i = 0; i < 400; i++) {
+    if (t > maxDist) return null;
+    const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
+    const surf = surfaceElevation(effTerrain, x, z);
+    const clearance = y - surf;
+    if (clearance <= 0) {
+      let lo = prevT, hi = t;
+      for (let j = 0; j < 24; j++) {
+        const mid = (lo + hi) / 2;
+        const mx = ox + dx * mid, my = oy + dy * mid, mz = oz + dz * mid;
+        if (my - surfaceElevation(effTerrain, mx, mz) <= 0) hi = mid; else lo = mid;
+      }
+      const tHit = (lo + hi) / 2;
+      const hx = ox + dx * tHit, hz = oz + dz * tHit;
+      return { x: hx, y: surfaceElevation(effTerrain, hx, hz), z: hz };
+    }
+    prevT = t;
+    prevClearance = clearance;
+    t += Math.max(0.05, clearance * 0.5);
+  }
+  return null;
 }

@@ -29,8 +29,8 @@
 // never its structure.
 
 import { GRASS_MESHES, type BakedGrassMesh } from './grassMeshes';
-import { wildObstacleAt } from './wildTerrain';
-import type { IsoWorld } from '../iso/isoWorld';
+import { wildObstacleAt, surfaceElevation } from './wildTerrain';
+import type { IsoWorld, Terrain } from '../iso/isoWorld';
 import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles, placedWallTiles } from './placements';
 
 export type V3 = [number, number, number];
@@ -143,7 +143,7 @@ export function tuftColor(v: number, wx: number, wz: number): V3 {
 
 type TriV = (a: V3, ca: V3, b: V3, cb: V3, c: V3, cc: V3) => void;
 
-function emitTuft(triV: TriV, p: TuftParams, originX: number, originZ: number): void {
+function emitTuft(triV: TriV, p: TuftParams, originX: number, originZ: number, baseY = 0): void {
   const cos = Math.cos(p.rot);
   const sin = Math.sin(p.rot);
   const { positions, uvs, indices } = p.mesh;
@@ -157,7 +157,9 @@ function emitTuft(triV: TriV, p: TuftParams, originX: number, originZ: number): 
       const lz = positions[vi * 3 + 2] * p.scale;
       const wx = originX + p.ox + lx * cos + lz * sin;
       const wz = originZ + p.oz - lx * sin + lz * cos;
-      vs.push([wx, 0.01 + ly, wz]);
+      // BUILD 1034: baseY lifts the tuft onto the heightfield (the
+      // blades grow from the surface, not from y=0).
+      vs.push([wx, baseY + 0.01 + ly, wz]);
       cs.push(tuftColor(uvs[vi * 2 + 1], wx, wz));
     }
     triV(vs[0], cs[0], vs[1], cs[1], vs[2], cs[2]);
@@ -204,7 +206,7 @@ export function blockedTiles(world: IsoWorld): Set<string> {
 export function emitNaturalGrass(
   triV: TriV,
   world: IsoWorld,
-  effTerrain: (x: number, y: number) => string,
+  effTerrain: (x: number, y: number) => Terrain,
   minX: number,
   maxX: number,
   minY: number,
@@ -223,7 +225,8 @@ export function emitNaturalGrass(
       if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
       const p = naturalTuftForTile(x, y);
       if (!p) continue;
-      emitTuft(triV, p, x + 0.5, y + 0.5);
+      // BUILD 1034: the tuft grows from the heightfield at its tile.
+      emitTuft(triV, p, x + 0.5, y + 0.5, surfaceElevation(effTerrain, x + 0.5, y + 0.5));
     }
   }
 }
@@ -231,6 +234,7 @@ export function emitNaturalGrass(
 export function emitPlacedGrass(
   triV: TriV,
   world: IsoWorld,
+  effTerrain: (x: number, y: number) => Terrain,
   minX: number,
   maxX: number,
   minY: number,
@@ -239,6 +243,7 @@ export function emitPlacedGrass(
   const items = (world.placements || []).filter((p) => p.kind === 'grass');
   for (const it of items) {
     if (it.x0 < minX || it.x0 > maxX || it.y0 < minY || it.y0 > maxY) continue;
-    emitTuft(triV, tuftParamsForTile(it.x0, it.y0), it.x0 + 0.5, it.y0 + 0.5);
+    // BUILD 1034: placed grass grows from the heightfield too.
+    emitTuft(triV, tuftParamsForTile(it.x0, it.y0), it.x0 + 0.5, it.y0 + 0.5, surfaceElevation(effTerrain, it.x0 + 0.5, it.y0 + 0.5));
   }
 }
