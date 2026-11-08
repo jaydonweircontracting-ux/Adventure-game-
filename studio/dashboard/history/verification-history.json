@@ -69,6 +69,13 @@
       "result": "Verified live: served version.json build 1035 @ 2026-11-08T03:10:52.717Z, run 42441522022 success. Asserts 51 checks pass (parent re-ran directly — first re-run FAILED the shore cost check at 87.9% of baseline, a load spike; second and third re-runs PASSED: town 49.1%, wild 51.9%, shore 54.3%, farWild 51.0% of the 1034 baseline; builder 83 steps at 1ms, max step 7.9ms, bit-identical). Sim vs pristine1034 MATCH (modulo bundle path). Phone proof (40s drive + 25s walk): drive max frame 883ms → 233ms, drive frames >500ms 14 → 0, drive frames >250ms 15 → 0, walk max frame 517ms → 200ms. 0 page errors.",
       "runId": "42441522022",
       "verifiedAt": "2026-11-08T03:10:52.717Z"
+    },
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "result": "Verified live: served version.json build 1036 @ 2026-11-08T04:34:26.069Z, run 42446451401 success. Asserts 255 checks pass (parent re-ran directly — ASSERT_DONE 255 checks passed). Sim vs pristine1035 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site, 0 FAILs. Phone proof (place twice without re-selecting, rotate a house so its door faces a path, ESC + right-click cancel; focused door probe: rot-1 cottage with its door tile immediately adjacent to a dirt path tile, first-person shot shows the brown door filling the frame with the Enter button showing). 0 page errors.",
+      "runId": "42446451401",
+      "verifiedAt": "2026-11-08T04:34:26.069Z"
     }
   ],
   "schemaVersion": "1.0"

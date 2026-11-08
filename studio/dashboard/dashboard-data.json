@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Town Builder Stage 1",
+    "build": "Town Builder Stage 2",
     "commit": null,
-    "description": "Persistent cursor placement + rotation: when MOVE is selected and an asset is picked, it stays attached to the cursor with a translucent preview (green valid / red invalid), highlights the selected asset, left-click places it, keeps the asset selected for repeat placement; ESC/right-click cancels. Rotation 90°/45°/15°/free with keyboard shortcuts, so houses can face pathways. NEXT per the user's approved order and the user's 'Start' message.",
+    "description": "AREA SELECT: drag across the world to create a visible yellow selection rectangle; the selected area is highlighted with a transparent yellow overlay; move/rotate/delete/duplicate/enhance/adjust everything inside it together, preserving relative spacing and rotations. NEXT per the user's approved order.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -185,20 +185,23 @@
       "runId": "42441522022",
       "status": "verified",
       "verifiedAt": "2026-11-08T03:10:52.717Z"
+    },
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "description": "Town Builder Stage 1: persistent cursor placement + rotation — pick an asset and it stays attached to the cursor with a green/red preview, stays selected after placing so another copy goes down immediately; R / Shift+R or the panel buttons rotate houses 90° so their doors face the path. Landed: commit 0b21aba4, deploy run 42446451401 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42446451401",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T04:34:26.069Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Town Builder Stage 1",
-      "commit": null,
-      "description": "Persistent cursor placement + rotation: when MOVE is selected and an asset is picked, it stays attached to the cursor with a translucent preview (green valid / red invalid), highlights the selected asset, left-click places it, keeps the asset selected for repeat placement; ESC/right-click cancels. Rotation 90°/45°/15°/free with keyboard shortcuts, so houses can face pathways.",
-      "status": "in_progress"
-    },
-    {
       "build": "Town Builder Stage 2 (AREA SELECT)",
       "commit": null,
-      "description": "Yellow drag rectangle to select an entire area; move/rotate/delete/duplicate/enhance/adjust everything inside it together, preserving relative spacing and rotations.",
-      "status": "planned"
+      "description": "Yellow drag rectangle to select an entire area; move/rotate/delete/duplicate/enhance/adjust everything inside it together, preserving relative spacing and rotations. Include clear controls for selecting, deselecting, and modifying individual objects within a group.",
+      "status": "in_progress"
     },
     {
       "build": "Town Builder Stage 3 (unlimited undo/redo)",
@@ -383,13 +386,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-07T21:00:01-07:00",
+  "lastUpdateTimestamp": "2026-11-07T22:55:44-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1035,
-    "commit": "452da72b",
-    "description": "Car lag fix: the world rebuild is now time-sliced across frames while moving (10ms/frame) and ~50% cheaper, so driving is smooth with no stutter at chunk boundaries. The world renders exactly as before (identical vertex counts).",
-    "runId": "42441522022",
-    "verifiedAt": "2026-11-08T03:10:52.717Z"
+    "build": 1036,
+    "commit": "0b21aba4",
+    "description": "Town Builder Stage 1: persistent cursor placement + rotation — pick an asset and it stays attached to the cursor with a green/red preview, stays selected after placing so another copy goes down immediately; R / Shift+R or the panel buttons rotate houses 90° so their doors face the path.",
+    "runId": "42446451401",
+    "verifiedAt": "2026-11-08T04:34:26.069Z"
   },
   "measuredBaselines": [
     {
@@ -613,6 +616,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "result": "Verified live: served version.json build 1036 @ 2026-11-08T04:34:26.069Z, run 42446451401 success. Asserts 255 checks pass (parent re-ran directly — ASSERT_DONE 255 checks passed). Sim vs pristine1035 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site, 0 FAILs. Phone proof (place twice without re-selecting, rotate a house so its door faces a path, ESC + right-click cancel; focused door probe: rot-1 cottage with its door tile immediately adjacent to a dirt path tile, first-person shot shows the brown door filling the frame with the Enter button showing). 0 page errors.",
+      "runId": "42446451401",
+      "verifiedAt": "2026-11-08T04:34:26.069Z"
+    },
     {
       "build": 1035,
       "commit": "452da72b",

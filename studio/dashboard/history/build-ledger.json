@@ -409,6 +409,29 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1035 @ 2026-11-08T03:10:52.717Z, run 42441522022 success. Asserts 51 checks pass (parent re-ran directly — first re-run FAILED the shore cost check at 87.9% of baseline, a load spike; second and third re-runs PASSED: town 49.1%, wild 51.9%, shore 54.3%, farWild 51.0% of the 1034 baseline; builder 83 steps at 1ms, max step 7.9ms, bit-identical). Sim vs pristine1034 MATCH (modulo bundle path). Phone proof (40s drive + 25s walk): drive max frame 883ms → 233ms, drive frames >500ms 14 → 0, drive frames >250ms 15 → 0, walk max frame 517ms → 200ms. 0 page errors.",
       "verificationTimestamp": "2026-11-08T03:10:52.717Z"
+    },
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "description": "Town Builder Stage 1: persistent cursor placement + rotation (90° steps, doors face pathways).",
+      "filesAffected": [
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/placements.ts",
+        "src/game/engine3d/templates.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Persistent cursor placement + rotation: when MOVE is selected and an asset is picked, it stays attached to the cursor with a green/red preview, stays selected after placing for repeat placement, ESC/right-click cancels; rotation 90° steps so houses can face pathways.",
+      "previousCheckpoint": {
+        "build": 1035,
+        "commit": "452da72b"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42446451401",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1036 @ 2026-11-08T04:34:26.069Z, run 42446451401 success. Asserts 255 checks pass (parent re-ran directly — ASSERT_DONE 255 checks passed). Sim vs pristine1035 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site, 0 FAILs. Phone proof (place twice without re-selecting, rotate a house so its door faces a path, ESC + right-click cancel; focused door probe: rot-1 cottage with its door tile immediately adjacent to a dirt path tile, first-person shot shows the brown door filling the frame with the Enter button showing). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T04:34:26.069Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",
