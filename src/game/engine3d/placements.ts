@@ -869,6 +869,21 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
 export type BuildHistory = { undo: UndoEntry[]; redo: UndoEntry[] };
 export function createBuildHistory(): BuildHistory { return { undo: [], redo: [] }; }
 export function recordBuildChange(h: BuildHistory, entry: UndoEntry): void { h.undo.push(entry); h.redo.length = 0; }
+
+/** BUILD 1039: the undo/redo keyboard shortcut decision, as a pure
+ *  function so it is asserted standalone (the view wires it into
+ *  the keydown handler, calling the same doUndo/doRedo the buttons
+ *  call, so keys and buttons can never drift apart). Ctrl/Cmd+Z =
+ *  undo, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z = redo. A plain Z/Y with no
+ *  modifier is never a shortcut — an unmodified key must never
+ *  rewrite the world. */
+export function undoRedoKeyForEvent(key: string, ctrl: boolean, meta: boolean, shift: boolean): 'undo' | 'redo' | null {
+  if (!(ctrl || meta)) return null;
+  const k = key.toLowerCase();
+  if (k === 'z') return shift ? 'redo' : 'undo';
+  if (k === 'y' && !shift) return 'redo';
+  return null;
+}
 export function undoBuildChange(w: IsoWorld, h: BuildHistory): string | null {
   const entry = h.undo.pop(); if (!entry) return null;
   const msg = applyUndo(w, entry); h.redo.push(entry); return msg;

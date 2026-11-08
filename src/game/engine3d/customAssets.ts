@@ -448,16 +448,22 @@ export function validateCustomPlacement(
 }
 
 /** Remove every placed copy of one asset (the 997 delete rule).
- *  Returns how many copies were removed. */
-export function removeCustomAssetPlacements(w: IsoWorld, assetId: string): number {
+ *  BUILD 1039: returns the removed copies with their list indices,
+ *  so deleting an upload is undoable — the caller stores them as one
+ *  `stroke` of `unplace` entries and one Undo restores all of them.
+ *  The library deletion itself is not undone: restored copies
+ *  reference the deleted asset and render nothing until it is
+ *  re-uploaded (the renderer already skips missing assets), but they
+ *  exist and block exactly as before. */
+export function removeCustomAssetPlacements(w: IsoWorld, assetId: string): Array<{ item: PlacedItem; index: number }> {
   const list = w.placements;
-  if (!list) return 0;
-  let n = 0;
+  if (!list) return [];
+  const removed: Array<{ item: PlacedItem; index: number }> = [];
   for (let i = list.length - 1; i >= 0; i--) {
     if (list[i].kind === 'custom' && list[i].assetId === assetId) {
+      removed.push({ item: list[i], index: i });
       list.splice(i, 1);
-      n++;
     }
   }
-  return n;
+  return removed;
 }
