@@ -76,6 +76,13 @@
       "result": "Verified live: served version.json build 1036 @ 2026-11-08T04:34:26.069Z, run 42446451401 success. Asserts 255 checks pass (parent re-ran directly — ASSERT_DONE 255 checks passed). Sim vs pristine1035 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site, 0 FAILs. Phone proof (place twice without re-selecting, rotate a house so its door faces a path, ESC + right-click cancel; focused door probe: rot-1 cottage with its door tile immediately adjacent to a dirt path tile, first-person shot shows the brown door filling the frame with the Enter button showing). 0 page errors.",
       "runId": "42446451401",
       "verifiedAt": "2026-11-08T04:34:26.069Z"
+    },
+    {
+      "build": 1037,
+      "commit": "67880190",
+      "result": "Verified live: served version.json build 1037 @ 2026-11-08T06:41:23.474Z, run 42455687148 success. Asserts 184 checks pass (parent re-ran directly — ASSERT_DONE 184 checks passed). Sim vs pristine1036 IDENTICAL (parent diffed sim1037.norm.log vs sim1036-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PASS — 33 findings, 0 page errors (yellow overlay visible 'Area 7x8 · 9 items'; move +5 east with rot preserved; rotate to rot 1; one Undo restored the whole group, Redo re-applied it; duplicate placed 9 new items; 115-item town delete required the two-tap confirmation and then cleared). ENHANCE and ADJUST are deferred follow-ups, stated in the player note.",
+      "runId": "42455687148",
+      "verifiedAt": "2026-11-08T06:41:23.474Z"
     }
   ],
   "schemaVersion": "1.0"
