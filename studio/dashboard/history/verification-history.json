@@ -1,40 +1,54 @@
 {
- "records": [
-  {
-   "build": 1026,
-   "commit": "5d002922",
-   "result": "Verified live: served version.json build 1026, run 42404496335 success, first try. Asserts 143 entry + 41 runner (parent re-ran, all pass). Sim identical to pristine1025. Phone proof (hitches reduced, latch persists, release+repress sprints 13/13). 0 page errors.",
-   "runId": "42404496335",
-   "verifiedAt": "2026-11-07T19:06:53.952Z"
-  },
-  {
-   "build": 1027,
-   "commit": "16b7eb9e",
-   "result": "Verified live: served version.json build 1027, run 42407766765 success, first try. Asserts 5,710 entry + 65 runner (parent re-ran entry: 5,710 pass). Sim identical to pristine1026. Phone proof (ocean tap blocked, shore tap walks, placed water, undo/redo, reload persistence). 0 page errors.",
-   "runId": "42407766765",
-   "verifiedAt": "2026-11-07T19:47:03.434Z"
-  },
-  {
-   "build": 1028,
-   "commit": "7266e49a",
-   "result": "Verified live: served version.json build 1028, run 42410771257 success, first try. Asserts 171 entry + 70 runner (parent re-ran entry: 171 pass). Sim identical to pristine1027. Phone proof (far wall renders + blocks, Remove takes only the tapped tile, removedWalls persistence, sprint icon). 0 page errors.",
-   "runId": "42410771257",
-   "verifiedAt": "2026-11-07T20:23:52.159Z"
-  },
-  {
-   "build": 1029,
-   "commit": "14491c9f",
-   "result": "Verified live: served version.json build 1029, run 42416626999 success, first try. Asserts 94 entry + 27 runner (parent re-ran entry: 94 pass). Sim identical to pristine1028. Phone proof (placed Inn/Blacksmith/General Store, saved HighStreet, reload identical, paste 3 of 3). 0 page errors.",
-   "runId": "42416626999",
-   "verifiedAt": "2026-11-07T21:37:14.339Z"
-  },
-  {
-   "build": 1030,
-   "commit": "9dc4cdf7",
-   "result": "Verified live: served version.json build 1030 @ 2026-11-08T00:08:20.684Z, run 42428294182 success, first try. Asserts 97 entry + 47 runner (agent's run ~15:04). Sim identical to pristine1029. Phone proof (hut detour one-tap arrival, 23 samples, 0 inside-hut; NPC detour one-tap arrival, 24 samples, min dist 2.37; wall-ring sealed tile -> 'Path blocked', player unmoved). 0 page errors.",
-   "runId": "42428294182",
-   "verifiedAt": "2026-11-08T00:08:20.684Z"
-  }
- ],
- "schemaVersion": "1.0"
+  "records": [
+    {
+      "build": 1026,
+      "commit": "5d002922",
+      "result": "Verified live: served version.json build 1026, run 42404496335 success, first try. Asserts 143 entry + 41 runner (parent re-ran, all pass). Sim identical to pristine1025. Phone proof (hitches reduced, latch persists, release+repress sprints 13/13). 0 page errors.",
+      "runId": "42404496335",
+      "verifiedAt": "2026-11-07T19:06:53.952Z"
+    },
+    {
+      "build": 1027,
+      "commit": "16b7eb9e",
+      "result": "Verified live: served version.json build 1027, run 42407766765 success, first try. Asserts 5,710 entry + 65 runner (parent re-ran entry: 5,710 pass). Sim identical to pristine1026. Phone proof (ocean tap blocked, shore tap walks, placed water, undo/redo, reload persistence). 0 page errors.",
+      "runId": "42407766765",
+      "verifiedAt": "2026-11-07T19:47:03.434Z"
+    },
+    {
+      "build": 1028,
+      "commit": "7266e49a",
+      "result": "Verified live: served version.json build 1028, run 42410771257 success, first try. Asserts 171 entry + 70 runner (parent re-ran entry: 171 pass). Sim identical to pristine1027. Phone proof (far wall renders + blocks, Remove takes only the tapped tile, removedWalls persistence, sprint icon). 0 page errors.",
+      "runId": "42410771257",
+      "verifiedAt": "2026-11-07T20:23:52.159Z"
+    },
+    {
+      "build": 1029,
+      "commit": "14491c9f",
+      "result": "Verified live: served version.json build 1029, run 42416626999 success, first try. Asserts 94 entry + 27 runner (parent re-ran entry: 94 pass). Sim identical to pristine1028. Phone proof (placed Inn/Blacksmith/General Store, saved HighStreet, reload identical, paste 3 of 3). 0 page errors.",
+      "runId": "42416626999",
+      "verifiedAt": "2026-11-07T21:37:14.339Z"
+    },
+    {
+      "build": 1030,
+      "commit": "9dc4cdf7",
+      "result": "Verified live: served version.json build 1030 @ 2026-11-08T00:08:20.684Z, run 42428294182 success, first try. Asserts 97 entry + 47 runner (agent's run ~15:04). Sim identical to pristine1029. Phone proof (hut detour one-tap arrival, 23 samples, 0 inside-hut; NPC detour one-tap arrival, 24 samples, min dist 2.37; wall-ring sealed tile -> 'Path blocked', player unmoved). 0 page errors.",
+      "runId": "42428294182",
+      "verifiedAt": "2026-11-08T00:08:20.684Z"
+    },
+    {
+      "build": 1031,
+      "commit": "336741da",
+      "result": "Verified live: served version.json build 1031 @ 2026-11-08T00:45:25.538Z, run 42431099076 success, first try. Asserts 26 checks pass (parent re-ran). Sim identical to pristine1030. Phone proof (baseline far94 showed NO water, after fix an organic oval matching the projected bbox exactly, walk-to-shore arrival (247.89,33)). 0 page errors.",
+      "runId": "42431099076",
+      "verifiedAt": "2026-11-08T00:45:25.538Z"
+    },
+    {
+      "build": 1032,
+      "commit": "7d1c8cf9",
+      "result": "Verified live: served version.json build 1032 @ 2026-11-08T01:02:39.379Z, run 42432401556 success, first try. Asserts 418 checks pass (parent re-ran). Sim identical to pristine1031. Phone proof (five wall pushes x 15 samples each, all inside; real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed). 0 page errors.",
+      "runId": "42432401556",
+      "verifiedAt": "2026-11-08T01:02:39.379Z"
+    }
+  ],
+  "schemaVersion": "1.0"
 }

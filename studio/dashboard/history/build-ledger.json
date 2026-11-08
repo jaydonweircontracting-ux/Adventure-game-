@@ -1,335 +1,345 @@
 {
- "builds": [
-  {
-   "build": 1016,
-   "commit": "3b349dd3",
-   "description": "Chickens wandering loosely around the town in the 3D world — peck, wander, scuttle aside; wild animals still keep out.",
-   "filesAffected": [
-    "src/game/engine3d/animals.ts",
-    "src/game/engine3d/townsfolk3d.ts"
-   ],
-   "objective": "Zelda-style chickens loose around town.",
-   "previousCheckpoint": {
-    "build": 1015,
-    "commit": "2d68340e"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; phone proof (chickens in town, cap 5, roam 64 from plaza, session-only). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1017,
-   "commit": "fe3c5896",
-   "description": "Clean 3D play screen — banner and diagnostic/help words into Options, compact status strip, Hide UI toggle.",
-   "filesAffected": [
-    "src/App.tsx",
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Clean up the 3D play screen UI.",
-   "previousCheckpoint": {
-    "build": 1016,
-    "commit": "3b349dd3"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; phone proof (compact HP/stamina/resources strip bottom-left, Hide UI toggle in Options, persisted). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1018,
-   "commit": "2d66086c",
-   "description": "Sprint button hold + tap-to-toggle, robust multi-touch hold, no-op slide pin fix.",
-   "filesAffected": [
-    "src/game/engine3d/sprint.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Sprint toggle (hold + tap).",
-   "previousCheckpoint": {
-    "build": 1017,
-    "commit": "fe3c5896"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; phone proof (sprint toggle works). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1019,
-   "commit": "b5af37ba",
-   "description": "Minecraft-style blocky characters — big square heads, goofy faces, hats on nearly everyone.",
-   "filesAffected": [
-    "src/game/engine3d/villagers.ts",
-    "src/game/engine3d/townsfolk3d.ts"
-   ],
-   "objective": "Minecraft-style blocky characters (player emerald + gold-band hat; children 0.7x).",
-   "previousCheckpoint": {
-    "build": 1018,
-    "commit": "2d66086c"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; phone proof (blocky characters, goofy faces, hats). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1020,
-   "commit": "181f7871",
-   "description": "Sprint shakiness fix — perpendicular wall-slide + exhaustion rearm gate.",
-   "filesAffected": [
-    "src/game/engine3d/playerStep.ts",
-    "src/game/engine3d/sprint.ts"
-   ],
-   "objective": "Fix sprint shakiness (slide stall + rearm).",
-   "previousCheckpoint": {
-    "build": 1019,
-    "commit": "b5af37ba"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; phone proof. 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1021,
-   "commit": "4fe8d127",
-   "description": "Tired-state shakiness fix — tap-to-move slide stall + press-while-tired rearm hole. (Re-trigger commit 00a3f115: deploy job failed, same content.)",
-   "filesAffected": [
-    "src/game/engine3d/playerStep.ts",
-    "src/game/engine3d/sprint.ts"
-   ],
-   "objective": "Fix tired-state sprint shakiness.",
-   "previousCheckpoint": {
-    "build": 1020,
-    "commit": "181f7871"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42345332514",
-   "status": "verified",
-   "testResults": "Verified live; phone proof. 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1022,
-   "commit": "11ac074e",
-   "description": "Path cobbles/slabs render whole-world — no more pop at the detail-window edge.",
-   "filesAffected": [
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Paths render as far as the landscape.",
-   "previousCheckpoint": {
-    "build": 1021,
-    "commit": "4fe8d127"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; verts 143,772 to 186,306 (+29.6%), FPS unchanged. 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1023,
-   "commit": "83ffcb0f",
-   "description": "Zoom out twice as far in 3D mode — orbit max 32 to 64 (first-person pitch flip rode along in BUILD 1022's commit).",
-   "filesAffected": [
-    "src/game/engine3d/firstPerson.ts"
-   ],
-   "objective": "Zoom out 2x + un-invert first-person up/down.",
-   "previousCheckpoint": {
-    "build": 1022,
-    "commit": "11ac074e"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; 64 is the largest clean doubling (at 96 the clip edge 596 < FOG_FAR 600). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1024,
-   "commit": "b40f7b1a",
-   "description": "Grass and little details render farther + infinite world past the old edge. (Re-trigger commit e49d3521: deploy job stuck, same content.)",
-   "filesAffected": [
-    "src/game/engine3d/wildTerrain.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Infinite world (grass ±28, flowers/pebbles/wild trees to ±64; world-edge wall gone).",
-   "previousCheckpoint": {
-    "build": 1023,
-    "commit": "83ffcb0f"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42401117148",
-   "status": "verified",
-   "testResults": "Verified live; walked east to x=214.85, north to y=216.43; tap-to-move to (200,100) arrives; save/reload at (221.73,150) exact. First deploy FAILED (run 42400300510: build success, deploy job hung 8 min then failed) — empty re-trigger landed (run 42401117148 success). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1025,
-   "commit": "88658d1e",
-   "description": "Rocks placeable + removable in Build mode.",
-   "filesAffected": [
-    "src/game/engine3d/templates.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Rock in the Build menu (Props, free) + removable.",
-   "previousCheckpoint": {
-    "build": 1024,
-    "commit": "b40f7b1a"
-   },
-   "qualityGateLevel": 3,
-   "runId": null,
-   "status": "verified",
-   "testResults": "Verified live; asserts 130/130 parent re-run. Found the inn/smith/store chunk-drop bug (fixed in 1029). 0 page errors.",
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1026,
-   "commit": "5d002922",
-   "description": "Sprint actually works — wider tap window, persistent latch, Release! label, half the rebuild stutter.",
-   "filesAffected": [
-    "src/game/engine3d/sprint.ts",
-    "src/game/engine3d/playerStep.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx"
-   ],
-   "objective": "Sprint fix: tap window 250ms/12px to 500ms/24px; latch clears only on exhaustion; rearm gate says 'Release!'; world-rebuild threshold 8 to 16.",
-   "previousCheckpoint": {
-    "build": 1025,
-    "commit": "88658d1e"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42404496335",
-   "status": "verified",
-   "testResults": "Verified live (served version.json 2026-11-07T19:06:53.952Z, run 42404496335 success, first try). Asserts 143 entry + 41 runner (parent re-ran, all pass). Sim identical to pristine1025. Phone proof (walk 12s hitches 2 to 0; sprint-hold 12s 2 to 1; latch after 3s idle; sprint-hold speed 1.47x walk). 0 page errors. Agent push failed twice (proxy reset); parent pushed.",
-   "verificationTimestamp": "2026-11-07T19:06:53.952Z"
-  },
-  {
-   "build": 1027,
-   "commit": "16b7eb9e",
-   "description": "Water — a basic ocean west of town, placeable in Build mode.",
-   "filesAffected": [
-    "src/game/engine3d/wildTerrain.ts",
-    "src/game/iso/isoWorld.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx",
-    "src/game/engine3d/placements.ts"
-   ],
-   "objective": "Ocean at the world's west edge (coast x 6-18, extends infinitely west; town ~45 tiles east) + the 5x5 pond unchanged; water blocks movement; Water in Build menu (Terrain, free, 1x1).",
-   "previousCheckpoint": {
-    "build": 1026,
-    "commit": "5d002922"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42407766765",
-   "status": "verified",
-   "testResults": "Verified live (served version.json 2026-11-07T19:47:03.434Z, run 42407766765 success, first try). Asserts 5,710 entry + 65 runner (parent re-ran entry: 5,710 pass). Sim identical to pristine1026. Phone proof (tap into ocean -> 'That destination is blocked', player unmoved; shore tap walks 1.99 tiles; 'Placed Water' at (79,74); undo/redo; reload persistence). 0 page errors. World buffer 237,222 verts.",
-   "verificationTimestamp": "2026-11-07T19:47:03.434Z"
-  },
-  {
-   "build": 1028,
-   "commit": "7266e49a",
-   "description": "Walls removable + in the Build menu; Sprint is a small icon next to Gold.",
-   "filesAffected": [
-    "src/game/engine3d/Engine3DWorldView.tsx",
-    "src/game/engine3d/placements.ts",
-    "src/game/iso/isoWorld.ts",
-    "src/game/engine3d/templates.ts",
-    "src/game/engine3d/grassTufts.ts",
-    "scripts/prepare-build-entry.cjs",
-    "src/App.tsx"
-   ],
-   "objective": "Wall in the Build menu (Props, free, 1x1, orientation auto-matches an adjacent wall run); Remove takes the wall TILE tapped; removedWalls set for persistence. Sprint as a small ⚡ icon at the bottom next to Gold.",
-   "previousCheckpoint": {
-    "build": 1027,
-    "commit": "16b7eb9e"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42410771257",
-   "status": "verified",
-   "testResults": "Verified live (served version.json 2026-11-07T20:23:52.159Z, run 42410771257 success, first try). Asserts 171 entry + 70 runner (parent re-ran entry: 171 pass). Sim identical to pristine1027. Phone proof (seeded far wall renders + blocks; Remove takes only the tapped tile; removedWalls=[\"30,100\"]; Undo restores, Redo removes, reload persistence; Props catalog = [Market Stall, Rock, Wall]; 'Placed Wall' by real tap, blocks; sprint icon tap latches, sprint 1.51 u/s vs walk 0.93 u/s = 1.62x; exhaust -> ⚡Tired, recovery while holding -> ⚡Release!, release + re-tap -> sprint resumes). 0 page errors. CORRECTION: a fresh 3D game has NO walls — the adapter filters the near-town boundary out; the wall on the user's phone is a far wall in his save. The fix covers every tile in world.walls either way.",
-   "verificationTimestamp": "2026-11-07T20:23:52.159Z"
-  },
-  {
-   "build": 1029,
-   "commit": "14491c9f",
-   "description": "Saved chunks keep the inn, blacksmith, and general store.",
-   "filesAffected": [
-    "src/game/engine3d/templates.ts",
-    "scripts/prepare-build-entry.cjs",
-    "src/App.tsx"
-   ],
-   "objective": "Chunk-drop fix: PALETTE_KINDS derives its variant tail from HOUSE_VARIANT_KINDS so the list cannot drift again; a saved chunk holding an inn/smith/store round-trips exactly.",
-   "previousCheckpoint": {
-    "build": 1028,
-    "commit": "7266e49a"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42416626999",
-   "status": "verified",
-   "testResults": "Verified live (served version.json 2026-11-07T21:37:14.339Z, run 42416626999 success, first try). Asserts 94 entry + 27 runner (parent re-ran entry: 94 pass). Sim identical to pristine1028. Phone proof (placed Inn/Blacksmith/General Store by real taps; saved 'HighStreet' (3 items); reload: library identical, stored JSON identical, all three still in the world in place; paste by real tap 'Pasted 3 of 3 from HighStreet', 6 commercial buildings total). 0 page errors.",
-   "verificationTimestamp": "2026-11-07T21:37:14.339Z"
-  },
-  {
-   "build": 1030,
-   "commit": "9dc4cdf7",
-   "description": "Tap-to-walk pathfinding (player A* + NPC pathing fixes).",
-   "filesAffected": [
-    "src/game/engine3d/playerPath.ts",
-    "src/game/engine3d/Engine3DWorldView.tsx",
-    "src/game/engine3d/townsfolk3d.ts",
-    "src/game/engine3d/animals.ts",
-    "src/game/engine3d/transients.ts",
-    "src/App.tsx",
-    "scripts/prepare-build-entry.cjs"
-   ],
-   "objective": "Tap-to-walk pathfinding: player taps plan a real A* path (playerPath.ts) instead of pushing straight at the tap; NPC tile A* validates the whole remaining path, sidesteps persistent blocks, detour flag breaks head-on livelock.",
-   "previousCheckpoint": {
-    "build": 1029,
-    "commit": "14491c9f"
-   },
-   "qualityGateLevel": 3,
-   "runId": "42428294182",
-   "status": "verified",
-   "testResults": "Verified live (served version.json 2026-11-08T00:08:20.684Z, run 42428294182 success, first try). Asserts 97 entry + 47 runner (agent's run ~15:04; parent re-run blocked by esbuild EPERM — agent's run stands). Sim identical to pristine1029. Phone proof (hut detour one-tap arrival, 23 samples, 0 inside-hut; NPC detour one-tap arrival, 24 samples, min dist 2.37; wall-ring sealed tile -> 'Path blocked', player unmoved; keyboard 'w' 1.42 tiles + Sprint icon present). 0 page errors.",
-   "verificationTimestamp": "2026-11-08T00:08:20.684Z"
-  },
-  {
-   "build": 1031,
-   "commit": null,
-   "description": "Blue-squares fix: wild lakes rendered as whole far cells at distance; subdivide to the lake's actual tiles.",
-   "filesAffected": [],
-   "objective": "Fix the blue squares that appear/disappear in the distance (wild lakes centre-sampled as whole far cells).",
-   "previousCheckpoint": {
-    "build": 1030,
-    "commit": null
-   },
-   "qualityGateLevel": null,
-   "runId": null,
-   "status": "planned",
-   "testResults": null,
-   "verificationTimestamp": null
-  },
-  {
-   "build": 1032,
-   "commit": null,
-   "description": "House interior invisible walls: add boundary collision so the player can only enter/exit with the Enter/Exit button.",
-   "filesAffected": [],
-   "objective": "Inside a house the player can walk out through the walls — add invisible walls so the player can only enter/exit with the Enter/Exit button.",
-   "previousCheckpoint": {
-    "build": 1031,
-    "commit": null
-   },
-   "qualityGateLevel": null,
-   "runId": null,
-   "status": "planned",
-   "testResults": null,
-   "verificationTimestamp": null
-  }
- ],
- "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",
- "schemaVersion": "1.0"
+  "builds": [
+    {
+      "build": 1016,
+      "commit": "3b349dd3",
+      "description": "Chickens wandering loosely around the town in the 3D world — peck, wander, scuttle aside; wild animals still keep out.",
+      "filesAffected": [
+        "src/game/engine3d/animals.ts",
+        "src/game/engine3d/townsfolk3d.ts"
+      ],
+      "objective": "Zelda-style chickens loose around town.",
+      "previousCheckpoint": {
+        "build": 1015,
+        "commit": "2d68340e"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; phone proof (chickens in town, cap 5, roam 64 from plaza, session-only). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1017,
+      "commit": "fe3c5896",
+      "description": "Clean 3D play screen — banner and diagnostic/help words into Options, compact status strip, Hide UI toggle.",
+      "filesAffected": [
+        "src/App.tsx",
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Clean up the 3D play screen UI.",
+      "previousCheckpoint": {
+        "build": 1016,
+        "commit": "3b349dd3"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; phone proof (compact HP/stamina/resources strip bottom-left, Hide UI toggle in Options, persisted). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1018,
+      "commit": "2d66086c",
+      "description": "Sprint button hold + tap-to-toggle, robust multi-touch hold, no-op slide pin fix.",
+      "filesAffected": [
+        "src/game/engine3d/sprint.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Sprint toggle (hold + tap).",
+      "previousCheckpoint": {
+        "build": 1017,
+        "commit": "fe3c5896"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; phone proof (sprint toggle works). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1019,
+      "commit": "b5af37ba",
+      "description": "Minecraft-style blocky characters — big square heads, goofy faces, hats on nearly everyone.",
+      "filesAffected": [
+        "src/game/engine3d/villagers.ts",
+        "src/game/engine3d/townsfolk3d.ts"
+      ],
+      "objective": "Minecraft-style blocky characters (player emerald + gold-band hat; children 0.7x).",
+      "previousCheckpoint": {
+        "build": 1018,
+        "commit": "2d66086c"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; phone proof (blocky characters, goofy faces, hats). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1020,
+      "commit": "181f7871",
+      "description": "Sprint shakiness fix — perpendicular wall-slide + exhaustion rearm gate.",
+      "filesAffected": [
+        "src/game/engine3d/playerStep.ts",
+        "src/game/engine3d/sprint.ts"
+      ],
+      "objective": "Fix sprint shakiness (slide stall + rearm).",
+      "previousCheckpoint": {
+        "build": 1019,
+        "commit": "b5af37ba"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; phone proof. 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1021,
+      "commit": "4fe8d127",
+      "description": "Tired-state shakiness fix — tap-to-move slide stall + press-while-tired rearm hole. (Re-trigger commit 00a3f115: deploy job failed, same content.)",
+      "filesAffected": [
+        "src/game/engine3d/playerStep.ts",
+        "src/game/engine3d/sprint.ts"
+      ],
+      "objective": "Fix tired-state sprint shakiness.",
+      "previousCheckpoint": {
+        "build": 1020,
+        "commit": "181f7871"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42345332514",
+      "status": "verified",
+      "testResults": "Verified live; phone proof. 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1022,
+      "commit": "11ac074e",
+      "description": "Path cobbles/slabs render whole-world — no more pop at the detail-window edge.",
+      "filesAffected": [
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Paths render as far as the landscape.",
+      "previousCheckpoint": {
+        "build": 1021,
+        "commit": "4fe8d127"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; verts 143,772 to 186,306 (+29.6%), FPS unchanged. 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1023,
+      "commit": "83ffcb0f",
+      "description": "Zoom out twice as far in 3D mode — orbit max 32 to 64 (first-person pitch flip rode along in BUILD 1022's commit).",
+      "filesAffected": [
+        "src/game/engine3d/firstPerson.ts"
+      ],
+      "objective": "Zoom out 2x + un-invert first-person up/down.",
+      "previousCheckpoint": {
+        "build": 1022,
+        "commit": "11ac074e"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; 64 is the largest clean doubling (at 96 the clip edge 596 < FOG_FAR 600). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1024,
+      "commit": "b40f7b1a",
+      "description": "Grass and little details render farther + infinite world past the old edge. (Re-trigger commit e49d3521: deploy job stuck, same content.)",
+      "filesAffected": [
+        "src/game/engine3d/wildTerrain.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Infinite world (grass ±28, flowers/pebbles/wild trees to ±64; world-edge wall gone).",
+      "previousCheckpoint": {
+        "build": 1023,
+        "commit": "83ffcb0f"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42401117148",
+      "status": "verified",
+      "testResults": "Verified live; walked east to x=214.85, north to y=216.43; tap-to-move to (200,100) arrives; save/reload at (221.73,150) exact. First deploy FAILED (run 42400300510: build success, deploy job hung 8 min then failed) — empty re-trigger landed (run 42401117148 success). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1025,
+      "commit": "88658d1e",
+      "description": "Rocks placeable + removable in Build mode.",
+      "filesAffected": [
+        "src/game/engine3d/templates.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Rock in the Build menu (Props, free) + removable.",
+      "previousCheckpoint": {
+        "build": 1024,
+        "commit": "b40f7b1a"
+      },
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "testResults": "Verified live; asserts 130/130 parent re-run. Found the inn/smith/store chunk-drop bug (fixed in 1029). 0 page errors.",
+      "verificationTimestamp": null
+    },
+    {
+      "build": 1026,
+      "commit": "5d002922",
+      "description": "Sprint actually works — wider tap window, persistent latch, Release! label, half the rebuild stutter.",
+      "filesAffected": [
+        "src/game/engine3d/sprint.ts",
+        "src/game/engine3d/playerStep.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx"
+      ],
+      "objective": "Sprint fix: tap window 250ms/12px to 500ms/24px; latch clears only on exhaustion; rearm gate says 'Release!'; world-rebuild threshold 8 to 16.",
+      "previousCheckpoint": {
+        "build": 1025,
+        "commit": "88658d1e"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42404496335",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-07T19:06:53.952Z, run 42404496335 success, first try). Asserts 143 entry + 41 runner (parent re-ran, all pass). Sim identical to pristine1025. Phone proof (walk 12s hitches 2 to 0; sprint-hold 12s 2 to 1; latch after 3s idle; sprint-hold speed 1.47x walk). 0 page errors. Agent push failed twice (proxy reset); parent pushed.",
+      "verificationTimestamp": "2026-11-07T19:06:53.952Z"
+    },
+    {
+      "build": 1027,
+      "commit": "16b7eb9e",
+      "description": "Water — a basic ocean west of town, placeable in Build mode.",
+      "filesAffected": [
+        "src/game/engine3d/wildTerrain.ts",
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/engine3d/placements.ts"
+      ],
+      "objective": "Ocean at the world's west edge (coast x 6-18, extends infinitely west; town ~45 tiles east) + the 5x5 pond unchanged; water blocks movement; Water in Build menu (Terrain, free, 1x1).",
+      "previousCheckpoint": {
+        "build": 1026,
+        "commit": "5d002922"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42407766765",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-07T19:47:03.434Z, run 42407766765 success, first try). Asserts 5,710 entry + 65 runner (parent re-ran entry: 5,710 pass). Sim identical to pristine1026. Phone proof (tap into ocean -> 'That destination is blocked', player unmoved; shore tap walks 1.99 tiles; 'Placed Water' at (79,74); undo/redo; reload persistence). 0 page errors. World buffer 237,222 verts.",
+      "verificationTimestamp": "2026-11-07T19:47:03.434Z"
+    },
+    {
+      "build": 1028,
+      "commit": "7266e49a",
+      "description": "Walls removable + in the Build menu; Sprint is a small icon next to Gold.",
+      "filesAffected": [
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/engine3d/placements.ts",
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/templates.ts",
+        "src/game/engine3d/grassTufts.ts",
+        "scripts/prepare-build-entry.cjs",
+        "src/App.tsx"
+      ],
+      "objective": "Wall in the Build menu (Props, free, 1x1, orientation auto-matches an adjacent wall run); Remove takes the wall TILE tapped; removedWalls set for persistence. Sprint as a small ⚡ icon at the bottom next to Gold.",
+      "previousCheckpoint": {
+        "build": 1027,
+        "commit": "16b7eb9e"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42410771257",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-07T20:23:52.159Z, run 42410771257 success, first try). Asserts 171 entry + 70 runner (parent re-ran entry: 171 pass). Sim identical to pristine1027. Phone proof (seeded far wall renders + blocks; Remove takes only the tapped tile; removedWalls=[\"30,100\"]; Undo restores, Redo removes, reload persistence; Props catalog = [Market Stall, Rock, Wall]; 'Placed Wall' by real tap, blocks; sprint icon tap latches, sprint 1.51 u/s vs walk 0.93 u/s = 1.62x; exhaust -> ⚡Tired, recovery while holding -> ⚡Release!, release + re-tap -> sprint resumes). 0 page errors. CORRECTION: a fresh 3D game has NO walls — the adapter filters the near-town boundary out; the wall on the user's phone is a far wall in his save. The fix covers every tile in world.walls either way.",
+      "verificationTimestamp": "2026-11-07T20:23:52.159Z"
+    },
+    {
+      "build": 1029,
+      "commit": "14491c9f",
+      "description": "Saved chunks keep the inn, blacksmith, and general store.",
+      "filesAffected": [
+        "src/game/engine3d/templates.ts",
+        "scripts/prepare-build-entry.cjs",
+        "src/App.tsx"
+      ],
+      "objective": "Chunk-drop fix: PALETTE_KINDS derives its variant tail from HOUSE_VARIANT_KINDS so the list cannot drift again; a saved chunk holding an inn/smith/store round-trips exactly.",
+      "previousCheckpoint": {
+        "build": 1028,
+        "commit": "7266e49a"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42416626999",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-07T21:37:14.339Z, run 42416626999 success, first try). Asserts 94 entry + 27 runner (parent re-ran entry: 94 pass). Sim identical to pristine1028. Phone proof (placed Inn/Blacksmith/General Store by real taps; saved 'HighStreet' (3 items); reload: library identical, stored JSON identical, all three still in the world in place; paste by real tap 'Pasted 3 of 3 from HighStreet', 6 commercial buildings total). 0 page errors.",
+      "verificationTimestamp": "2026-11-07T21:37:14.339Z"
+    },
+    {
+      "build": 1030,
+      "commit": "9dc4cdf7",
+      "description": "Tap-to-walk pathfinding (player A* + NPC pathing fixes).",
+      "filesAffected": [
+        "src/game/engine3d/playerPath.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/engine3d/townsfolk3d.ts",
+        "src/game/engine3d/animals.ts",
+        "src/game/engine3d/transients.ts",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Tap-to-walk pathfinding: player taps plan a real A* path (playerPath.ts) instead of pushing straight at the tap; NPC tile A* validates the whole remaining path, sidesteps persistent blocks, detour flag breaks head-on livelock.",
+      "previousCheckpoint": {
+        "build": 1029,
+        "commit": "14491c9f"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42428294182",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-08T00:08:20.684Z, run 42428294182 success, first try). Asserts 97 entry + 47 runner (agent's run ~15:04; parent re-run blocked by esbuild EPERM — agent's run stands). Sim identical to pristine1029. Phone proof (hut detour one-tap arrival, 23 samples, 0 inside-hut; NPC detour one-tap arrival, 24 samples, min dist 2.37; wall-ring sealed tile -> 'Path blocked', player unmoved; keyboard 'w' 1.42 tiles + Sprint icon present). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T00:08:20.684Z"
+    },
+    {
+      "build": 1031,
+      "commit": "336741da",
+      "description": "Distant wild lakes render as their real shape (far-cell whole-cell scan, lake's actual tiles).",
+      "filesAffected": [
+        "src/game/engine3d/wildTerrain.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Fix the blue squares that appear/disappear in the distance (wild lakes centre-sampled as whole far cells).",
+      "previousCheckpoint": {
+        "build": 1030,
+        "commit": "9dc4cdf7"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42431099076",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-08T00:45:25.538Z, run 42431099076 success, first try). Asserts 26 checks pass (parent re-ran directly). Sim identical to pristine1030. Phone proof (baseline far94 showed NO water, after fix an organic oval matching the projected bbox exactly, walk-to-shore arrival (247.89,33)). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T00:45:25.538Z"
+    },
+    {
+      "build": 1032,
+      "commit": "7d1c8cf9",
+      "description": "House interiors keep you inside (invisible walls; Exit only).",
+      "filesAffected": [
+        "src/game/engine3d/interiors.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Inside a house the player can walk out through the walls — add invisible walls so the player can only enter/exit with the Enter/Exit button.",
+      "previousCheckpoint": {
+        "build": 1031,
+        "commit": "336741da"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42432401556",
+      "status": "verified",
+      "testResults": "Verified live (served version.json 2026-11-08T01:02:39.379Z, run 42432401556 success, first try). Asserts 418 checks pass (parent re-ran directly). Sim identical to pristine1031. Phone proof (five wall pushes x 15 samples each, all inside; real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed). 0 page errors.",
+      "verificationTimestamp": "2026-11-08T01:02:39.379Z"
+    }
+  ],
+  "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",
+  "schemaVersion": "1.0"
 }

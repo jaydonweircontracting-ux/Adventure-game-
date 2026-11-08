@@ -73,8 +73,8 @@
 | R13 | §59 Muse self-evolution engine | PARTIALLY IMPLEMENTED | Three files exist (see D9); MEMORY CORE / watchdog / modes unverified |
 | Q0 | Ashfall Stage 1 audit | COMPLETE AND VERIFIED | ASHFALL-STAGE1.md (660 lines); headless + phone probe, 0 page errors |
 | Q1 | BUILD 1030 tap-to-walk pathfinding | COMPLETE AND VERIFIED | Commit 9dc4cdf7, deploy run 42428294182 success, served version.json 1030 @ 2026-11-08T00:08:20.684Z, phone probe PASS 0 page errors |
-| Q2 | BUILD 1031 blue squares (wild-lake far cells) | NOT IMPLEMENTED | Queued after 1030; cause confirmed by code |
-| Q3 | BUILD 1032 interior invisible walls | NOT IMPLEMENTED | Queued after 1031; missing-wall cause confirmed by code |
+| Q2 | BUILD 1031 blue squares (wild-lake far cells) | COMPLETE AND VERIFIED | Commit 336741da, deploy run 42431099076 success; served version.json 1031 @ 2026-11-08T00:45:25.538Z; 26 asserts pass; sim vs pristine1030 identical |
+| Q3 | BUILD 1032 interior invisible walls | COMPLETE AND VERIFIED | Commit 7d1c8cf9, deploy run 42432401556 success; served version.json 1032 @ 2026-11-08T01:02:39.379Z; 418 asserts pass; sim vs pristine1031 identical |
 | Q4 | Ashfall Stage 2 terrain | NOT IMPLEMENTED | Queued after 1032; HIGH risk; re-baseline required |
 | Q5 | Ashfall Stage 3 vegetation | NOT IMPLEMENTED | Queued after Stage 2 |
 | Q6 | Ashfall Stage 4 architecture | NOT IMPLEMENTED | Queued after Stage 3 |
@@ -548,21 +548,21 @@
 
 ## Q2 — BUILD 1031 blue squares in the distance (wild-lake far cells)
 - **(1) Intended purpose:** Distant wild lakes render as their actual tiles at every distance — no whole-cell blue quads popping in/out as the player walks.
-- **(2) Current implementation:** None. User report 2026-11-07 ~13:46 PST + 2 screenshots; cause confirmed by code (see G3): `wildLakeAt = groundNoise(x,y,32) > 0.90`, 1.76% water; far cells centre-sample, so a lake centre tile paints the whole 16/64-tile cell blue. This retires the 1024 accepted limit ("wild lakes stay centre-sampled at distance") — now a user-reported bug.
+- **(2) Current implementation:** LANDED + LIVE-VERIFIED 2026-11-07 ~16:47 PST. Commit `336741da` (4a070435..336741da, pushed first try, tree clean); deploy run 42431099076 success first try; served version.json build 1031 @ 2026-11-08T00:45:25.538Z with the 1031 note; served index `__AG_BUILD="1031"`. New pure helper `cellIsMixed()` in `wildTerrain.ts` — small cells (≤256 tiles: band 4×4, far 16×16) scan the WHOLE cell so a lake subdivides into its actual per-row runs; horizon cells (64×64) keep the clipped scan + analytic coast test. `quadCellMixed` in `Engine3DWorldView.tsx` calls it. The 1024 accepted limit ("wild lakes stay centre-sampled at distance") is RETIRED. Correction: lakes are LARGE (23 blobs in an 801×801 sample, biggest 987 tiles / 48-tile diameter), not "a few tiles across". Files: `wildTerrain.ts`, `Engine3DWorldView.tsx`, `App.tsx` (BUILD_NUMBER 1031 + note), `prepare-build-entry.cjs`.
 - **(3) Dependencies:** 1030 landing (same file, `Engine3DWorldView.tsx`).
-- **(4) What remains unfinished:** Subdivide wild-lake cells (cf. 1008 dirt subdivision); measure cost (64×64 scan = 4096 noise calls); phone proof at multiple distances.
+- **(4) What remains unfinished:** Nothing. Cost measured: 217,663 scan calls / 23.9ms at town (+7.7ms near town, +30.9ms deep wilderness, +1,207 run quads / +7,242 verts vs a 165–211ms rebuild and 237k-vert buffer).
 - **(5) Responsible files/modules:** `Engine3DWorldView.tsx`, `wildTerrain.ts`.
 - **(6) How it will be tested:** Walk toward a distant lake; screenshots at multiple distances; water stays in place, no pop, no whole-cell quads.
-- **(7) Completion:** Walk toward a distant lake; water stays in place, no pop, no whole-cell quads; near/far agree.
+- **(7) Completion:** VERIFIED. tsc clean; 26 standalone asserts pass (`~/workspace/verify1031/asserts1031.mts`, parent re-ran directly — old logic reproduced the pop exactly (0 water tiles at grid 150 → a whole 256-tile blue quad at grid 151), new logic renders exactly the 145 true lake tiles at all 41 grid alignments 140–180); sim vs pristine1030 IDENTICAL (76 lines, 0 FAIL, known 684 rig crash); phone probe (Playwright 390×844, vite dev server, 0 page errors): baseline far94 showed NO water, after fix an organic oval matching the projected bbox exactly, walk-to-shore arrival (247.89,33) — 1030 pathfinding intact. Screenshots in `~/workspace/verify1031/baseline/` vs `after/` (parent viewed).
 
 ## Q3 — BUILD 1032 interior invisible walls
 - **(1) Intended purpose:** Inside a house the player cannot walk out through the walls; enter/exit only via the Enter/Exit button.
-- **(2) Current implementation:** None. User order 2026-11-07 ~13:48 PST + 3 screenshots. Cause confirmed by code (see G5): `interiors.ts:interiorWalkable()` returns true for *every* tile inside the hut rect with no wall check, and `walkableAt()` (`Engine3DWorldView.tsx:1577–1579`) returns true for any in-rect tile; movement is continuous tile-centre walkability, so stepping outward across a wall edge lands on walkable outside grass — nothing clamps the player to the rect or gates exit to the door.
+- **(2) Current implementation:** LANDED + LIVE-VERIFIED 2026-11-07 ~17:03 PST. Commit `7d1c8cf9` (336741da..7d1c8cf9, pushed first try, tree clean apart from the parent's uncommitted studio/ edits, which the agent did not touch or commit); deploy run 42432401556 success first try; served version.json build 1032 @ 2026-11-08T01:02:39.379Z with the 1032 note; served index `__AG_BUILD="1032"`. New pure `interiorTileWalkable()` boundary rule in `interiors.ts` (returns null when not inside, so the outdoor fallthrough is preserved); `walkableAt` in `Engine3DWorldView.tsx` uses it as the whole answer while inside. All movement (keys/D-pad, interior tap-to-move, wall slides, perpendicular slides) funnels through `walkableAt`, so every route is sealed in one place. The 2.5D `IsoInteriorView` was already bounded (`solidAt` true outside the room) — no fix needed there. The reverse direction was already sealed outdoors (`isWalkableWorld` blocks hut tiles except the door tile). Audit note: two dead helpers bypass `walkableAt` via `walkableWithPlacements` — `tryMove` (line 2430, zero call sites) and the component-level `move` (line 2859, never passed anywhere) — dead today, so they can't move anyone; left in place (cleanup, not this fix) but they would reopen the hole if ever wired up. Files: `interiors.ts`, `Engine3DWorldView.tsx`, `App.tsx` (BUILD_NUMBER 1032 + note), `prepare-build-entry.cjs`.
 - **(3) Dependencies:** 1031 landing.
-- **(4) What remains unfinished:** Audit interior system (`interiors.ts`, `IsoInteriorView.tsx`, view interior mode, Enter/Exit buttons), add boundary collision; phone proof (walk into every wall, stay inside; Exit → correct exterior point; re-enter works).
+- **(4) What remains unfinished:** Nothing. (The two dead helpers above are a cleanup note, not a defect.)
 - **(5) Responsible files/modules:** `src/game/engine3d/interiors.ts`, `Engine3DWorldView.tsx` (interior mode).
 - **(6) How it will be tested:** Phone probe: enter, walk into every wall — stays inside; Exit → correct exterior point; re-enter works; tsc/asserts/sim gates.
-- **(7) Completion:** Phone proof as above + tsc/asserts/sim gates pass.
+- **(7) Completion:** VERIFIED. tsc clean; 418 standalone asserts pass (`~/workspace/verify1032/asserts1032.mts`, parent re-ran directly — 60 interior tiles walkable / 90 ring tiles blocked across 5 huts; old branch reproduced the escape (10s north push, 485 ticks outside), new branch blocks it (0 ticks outside in all 4 push directions); interior tap-to-move reaches the far corner; Exit + re-entry proven at the pure level; 1030 pathfinding and 1031 lake rendering preserved); sim vs pristine1031 IDENTICAL (76 lines, 0 FAIL, known 684 rig crash); phone probe (Playwright 390×844, vite dev server, 0 page errors): real Enter → inside on the door tile; five wall pushes × 15 samples each, all inside; real tap-to-move inside arrives at the far corner (dist 0.03); real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed (pushing north from outside pins on the door tile, never walks in); outdoor movement still fine (1.57 tiles). Screenshots in `~/workspace/verify1032/after/` (parent viewed: pinned-north shows the player inside with the Exit button + "Inside" text; exited shows the player on the doorstep with the Enter button + "Outside" text).
 
 ## Q4 — Ashfall Stage 2 terrain
 - **(1) Intended purpose:** Visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores (sand band + water edge), stone used or removed.
@@ -942,26 +942,24 @@
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 4 | D12, Q0, S26, T6 |
-| IMPLEMENTED BUT UNVERIFIED | 15 | G1, G3, G4, G5, G7, G9, G16, G20, D1, D9, Q1, S14, S21, S22, S25 |
-| PARTIALLY IMPLEMENTED | 21 | G2, G10, G15, G18, D2, D3, D4, D5, D10, D11, R1, R2, R4, R6, R8, R9, R13, T1, T2, T3, T4 |
-| DOCUMENTED ONLY | 9 | D6, D8, R3, R5, R7, R10, R11, R12, T5 |
-| NOT IMPLEMENTED | 34 | G8, G11, G12, G13, G14, G17, G19, D7, Q2, Q3, Q4, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
+| COMPLETE AND VERIFIED | 7 | D12, Q0, Q1, Q2, Q3, S26, T6 |
+| IMPLEMENTED BUT UNVERIFIED | 15 | G1, G3, G4, G5, G7, G9, G16, G20, D1, D7, D9, S14, S21, S22, S25 |
+| PARTIALLY IMPLEMENTED | 22 | G2, G10, G15, G18, D2, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R8, R9, R13, T1, T2, T3, T4 |
+| DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
+| NOT IMPLEMENTED | 31 | G8, G11, G12, G13, G14, G17, G19, Q4, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
 | BLOCKED | 5 | S1, S2, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** only 4 of 88 requirements are complete and verified. 34 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1029; the gap is depth (quests, economy, dungeons, skills, audio, minimap) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 15 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live, including the whole 1030 build.
+**Reading the counts:** only 7 of 88 requirements are complete and verified. 31 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1032; the gap is depth (quests, economy, dungeons, skills, audio, minimap) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 15 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale at the 1030 checkpoint — the sections were updated but the counts were not; corrected here at the 1031 checkpoint.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 
-1. **Land BUILD 1030 (Q1).** Code is done and code-verified; only the environment blocks it. Landing it unblocks the entire queue (1031 → 1032 → Stages 2–6) and proves the pipeline still works. Cost: one retry when git/Chromium recover.
-2. **BUILD 1031 blue squares (Q2).** A user-reported, code-confirmed bug with a known fix pattern (subdivide like 1008/1027). Small, scoped, high user-visible value.
-3. **BUILD 1032 interior invisible walls (Q3).** A user order with a code-confirmed cause. Small, scoped, high user-visible value.
-4. **Move `studio/` + `studio/dashboard/` into the repo and wire the dashboard to the JSON (D2, D9, R8).** One commit once git works. Kills the hard-coded dashboard and the single-copy memory-loss risk (MEMORY.md already truncated once).
-5. **Fix or formally accept the 684 sim crash (S2).** ~1,000 sim lines unverified on every build; the fix is likely small (5 missing asset metas). If the user won't prioritize it, record it as accepted so the sim comparison stops carrying a known blind spot.
-6. **3D minimap (G17).** A standing user request since 2026-10-12; the 2D minimap exists to port; high daily value for navigation.
-7. **Version the `ag-3d-*` save keys + migration (G16 gap).** Cheap insurance: one version field + a migration path, before any format change silently corrupts saves.
-8. **Ashfall Stage 2 terrain (Q4).** The structural bet of the §48 overhaul (heightfield + shores + stone). High value, high risk — harness-prototype the base-y agreement first, keep the tint+shores+stone fallback.
+1. **Ashfall Stage 2 terrain (Q4).** STARTING under §60 START mode when 1032 lands. The structural bet of the §48 overhaul (heightfield + shores + stone). High value, high risk — harness-prototype the base-y agreement first, keep the tint+shores+stone fallback. The Stage 2 agent must re-sync to the 1032 HEAD and re-baseline first (Stage 1 numbers are at 1029).
+2. **Ashfall Stage 3 vegetation (Q5).** Next after Stage 2. 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.
+3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B).** The `studio/` move is DONE (committed 4a070435, 87 files). Only the dashboard wiring remains: the artifact must read from `studio/dashboard/dashboard-data.json` instead of hard-coded data.
+4. **Fix or formally accept the 684 sim crash (S2).** ~1,000 sim lines unverified on every build; the fix is likely small (5 missing asset metas). If the user won't prioritize it, record it as accepted so the sim comparison stops carrying a known blind spot.
+5. **3D minimap (G17).** A standing user request since 2026-10-12; the 2D minimap exists to port; high daily value for navigation.
+6. **Version the `ag-3d-*` save keys + migration (G16 gap).** Cheap insurance: one version field + a migration path, before any format change silently corrupts saves.
 9. **Reconcile/retire the stale Oct-era autonomous engine + backfill or downgrade the 1016–1029 Level-4 gate claims (D3, D4, D5).** Ledger honesty: cheap (thinking + JSON edits), and it closes the one place where the dashboard currently asserts more than the evidence supports.
 10. **Adjudicate the directive overlaps (see below) and rule OBSOLETE/DUPLICATED where warranted.** Prevents building four competing autonomous engines, three dashboards, and three memory/genome systems. Pure Stage A follow-up work — no code.
 
