@@ -2,6 +2,17 @@
 // Pure module: no React, no WebGL. The 3D view owns the UI; this file
 // owns the rules so they can be asserted standalone.
 //
+// BUILD 1036 — placement rotation. A placed house/stall carries
+// `rot` (quarter-turns clockwise from the default: 0 = house door
+// faces south, stall runs east). The stored rect is the footprint
+// AFTER rotation, so the door face derives from rot + rect
+// (placedHutRects + doorForRect) and every consumer — rendering,
+// Enter/Exit, interiors, walkability, undo/redo, move, chunk capture
+// — reads the rotated door without knowing rot exists. 90° steps
+// only: the whole model is axis-aligned tile rects, so 45°/15°/free
+// rotation cannot exist for houses (a 45° house has no rect, no door
+// tile, no interior). 1x1 kinds ignore rot entirely.
+//
 // Placed items live in IsoWorld.placements (see isoWorld.ts). They are
 // deliberately NOT folded into world.huts/stalls/trees: the 3D adapter
 // rebuilds generated lots near town on every load and would delete
@@ -10,7 +21,7 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
-import { HOUSE_VARIANTS, type HouseVariant, type HouseVariantId } from './townLook';
+import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
@@ -48,12 +59,26 @@ export function kindOfVariant(variant: HouseVariantId): PaletteKind {
 export function housePlacementKind(item: PlacedItem): PaletteKind {
   return item.variant ? kindOfVariant(item.variant) : 'house';
 }
+/** BUILD 1036: placement rotation in quarter-turns clockwise from
+ *  the default (0 = house door faces south, stall runs east). */
+export type Rotation = 0 | 1 | 2 | 3;
+
+/** Rotate a door face by `rot` quarter-turns clockwise (viewed from
+ *  above, north up): north → east → south → west → north. */
+export function rotateFace(face: 'north' | 'south' | 'west' | 'east', rot: Rotation): 'north' | 'south' | 'west' | 'east' {
+  const order: Array<'north' | 'east' | 'south' | 'west'> = ['north', 'east', 'south', 'west'];
+  return order[(order.indexOf(face as 'north' | 'east' | 'south' | 'west') + rot) % 4];
+}
+
 /** Footprint (w x d in tiles) a house kind places: the variant's
- *  measured town footprint, or the legacy 3x3 for bare 'house'. */
-export function houseFootprint(kind: PaletteKind): { w: number; d: number } {
+ *  measured town footprint, or the legacy 3x3 for bare 'house'.
+ *  BUILD 1036: an odd rotation swaps w/d — the rect rotates with
+ *  the house, so a 4x3 cottage placed at 90° is a 3x4 rect whose
+ *  door faces west instead of south. */
+export function houseFootprint(kind: PaletteKind, rot: Rotation = 0): { w: number; d: number } {
   const v = variantOfKind(kind);
-  if (v) { const hv: HouseVariant = HOUSE_VARIANTS[v]; return { w: hv.w, d: hv.d }; }
-  return { w: 3, d: 3 };
+  const base = v ? { w: HOUSE_VARIANTS[v].w, d: HOUSE_VARIANTS[v].d } : { w: 3, d: 3 };
+  return rot % 2 === 1 ? { w: base.d, d: base.w } : base;
 }
 export type PlaceResult = { ok: true; item: PlacedItem } | { ok: false; reason: string };
 
@@ -85,12 +110,22 @@ export function removePlacementAt(w: IsoWorld, x: number, y: number): PlacedItem
   return taken ? taken.item : null;
 }
 
-/** Remove the placed item exactly equal to `item` (kind + rect), if
- *  present. BUILD 989: undo of a placement. Returns true when removed. */
+/** BUILD 1036: identity for placed items — kind + rect + rotation.
+ *  Two items can never share a rect (placement validation forbids
+ *  overlap), but undo/move must match the EXACT item: a rotated
+ *  house moved back must not match an unrotated item on the same
+ *  rect, and vice versa. */
+export function samePlacement(a: PlacedItem, b: PlacedItem): boolean {
+  return a.kind === b.kind && a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1 && (a.rot ?? 0) === (b.rot ?? 0);
+}
+
+/** Remove the placed item exactly equal to `item` (kind + rect),
+ *  if present. BUILD 989: undo of a placement. Returns true when
+ *  removed. */
 export function removeExactPlacement(w: IsoWorld, item: PlacedItem): boolean {
   const list = w.placements;
   if (!list) return false;
-  const idx = list.findIndex((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+  const idx = list.findIndex((p) => samePlacement(p, item));
   if (idx < 0) return false;
   list.splice(idx, 1);
   return true;
@@ -459,7 +494,7 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
     case 'unplace': {
       if (!w.placements) w.placements = [];
       const item = entry.item;
-      const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+      const exists = w.placements.some((p) => samePlacement(p, item));
       if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, item);
       return 'Restored ' + item.kind;
     }
@@ -867,6 +902,7 @@ export function validatePlacement(
   ty: number,
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
+  rot: Rotation = 0,
 ): PlaceResult {
   // BUILD 997: custom items never validate here — their footprint
   // comes from the uploaded mesh, not from a fixed kind shape, so
@@ -876,11 +912,17 @@ export function validatePlacement(
   if ((kind as string) === 'custom') return { ok: false, reason: 'use validateCustomPlacement' };
   const tiles: Array<{ x: number; y: number }> = [];
   if (isHouseKind(kind)) {
-    const fp = houseFootprint(kind);
+    // BUILD 1036: the footprint rotates with the house — an odd rot
+    // swaps w/d, so a 4x3 cottage at 90° validates as a 3x4 rect
+    // centred on the same tap tile.
+    const fp = houseFootprint(kind, rot);
     const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
     for (let dy = 0; dy < fp.d; dy++) for (let dx = 0; dx < fp.w; dx++) tiles.push({ x: x0 + dx, y: y0 + dy });
   } else if (kind === 'stall') {
-    tiles.push({ x: tx, y: ty }, { x: tx + 1, y: ty });
+    // BUILD 1036: a stall runs east (tap + east) by default; an odd
+    // rot runs it south (tap + south) instead.
+    if (rot % 2 === 1) tiles.push({ x: tx, y: ty }, { x: tx, y: ty + 1 });
+    else tiles.push({ x: tx, y: ty }, { x: tx + 1, y: ty });
   } else {
     tiles.push({ x: tx, y: ty });
   }
@@ -926,16 +968,22 @@ export function validatePlacement(
   // variant; bare 'house' stays the legacy variant-less item. The
   // rect is the validated footprint (centred on the tap), never
   // re-derived, so the shape guard in pasteChunk can trust it.
+  // BUILD 1036: the item carries rot (house/stall only, and only
+  // when non-zero — old saves have no rot and behave as rot 0).
+  // 1x1 kinds ignore rot entirely: rotating a tree is meaningless
+  // and storing it would be a lie.
   let item: PlacedItem;
   if (isHouseKind(kind)) {
-    const fp = houseFootprint(kind);
+    const fp = houseFootprint(kind, rot);
     const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
     const v = variantOfKind(kind);
     item = v
-      ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 }
-      : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 };
+      ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, ...(rot !== 0 ? { rot } : {}) }
+      : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, ...(rot !== 0 ? { rot } : {}) };
   } else if (kind === 'stall') {
-    item = { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty };
+    item = rot % 2 === 1
+      ? { kind, x0: tx, y0: ty, x1: tx, y1: ty + 1, rot }
+      : { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty };
   } else if (kind === 'wall') {
     // BUILD 1028: a placed wall is a 1x1 tile carrying its
     // orientation (auto-matched to an adjacent run, else horizontal).
@@ -968,7 +1016,7 @@ export function movePlacement(
   npcTiles: Array<{ x: number; y: number }>,
 ): { ok: true; item: PlacedItem; index: number } | { ok: false; reason: string } {
   const list = w.placements;
-  const index = list ? list.findIndex((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1) : -1;
+  const index = list ? list.findIndex((p) => samePlacement(p, item)) : -1;
   if (index < 0 || !list) return { ok: false, reason: 'item not found' };
   const [lifted] = list.splice(index, 1);
   // BUILD 997: custom items move by rect, not by kind shape — the
@@ -991,8 +1039,11 @@ export function movePlacement(
   // kind, or legacy 'house') so the footprint and the design travel
   // with it — validating a variant house as bare 'house' would shrink
   // it to 3x3 and drop the variant.
+  // BUILD 1036: a moved house keeps its rotation — the destination
+  // validates under the rotated footprint, so a 90° cottage stays
+  // a 3x4 with its door on the same face.
   const moveKind = item.kind === 'house' ? housePlacementKind(item) : item.kind;
-  const result = validatePlacement(w, moveKind, destTx, destTy, playerTile, npcTiles);
+  const result = validatePlacement(w, moveKind, destTx, destTy, playerTile, npcTiles, item.rot ?? 0);
   if (!result.ok) {
     list.splice(Math.min(index, list.length), 0, lifted);
     return { ok: false, reason: result.reason };
@@ -1064,6 +1115,24 @@ export function movedRecordForLayoutRect(w: IsoWorld, rect: HutRect): MovedHut |
  *  from themselves. */
 export function seedRectForHut(w: IsoWorld, hut: HutRect): HutRect {
   return movedRecordForHut(w, hut)?.from ?? hut;
+}
+
+/** The rect a placement of `kind` at tap (tx, ty) with rotation
+ *  `rot` would occupy — the same anchor math validatePlacement
+ *  uses (house = footprint centred on the tap, stall = west tile,
+ *  everything else = the tile). Used by the placement preview to
+ *  draw the would-be footprint even when validation fails (so the
+ *  red preview still shows where the asset would land). */
+export function placementRectFor(kind: PaletteKind, tx: number, ty: number, rot: Rotation = 0): { x0: number; y0: number; x1: number; y1: number } {
+  if (isHouseKind(kind)) {
+    const fp = houseFootprint(kind, rot);
+    const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
+    return { x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1 };
+  }
+  if (kind === 'stall') {
+    return rot % 2 === 1 ? { x0: tx, y0: ty, x1: tx, y1: ty + 1 } : { x0: tx, y0: ty, x1: tx + 1, y1: ty };
+  }
+  return { x0: tx, y0: ty, x1: tx, y1: ty };
 }
 
 /** Door face from a hut's stored door, mirroring interiors.hutDoor
@@ -1301,11 +1370,14 @@ export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], 
 // ---- Render lists (shapes match the generated arrays so the 3D view's
 // existing house/tree/stall loops can iterate the union unchanged). ----
 
-/** Placed houses as hut rects; door derived at render time (south edge centre). BUILD 1012: the variant travels on the rect so the house loop can render the picked design (absent = legacy seed-hash house). */
+/** Placed houses as hut rects; door derived at render time (south edge centre). BUILD 1012: the variant travels on the rect so the house loop can render the picked design (absent = legacy seed-hash house). BUILD 1036: the door rotates with the house — doorForRect on the rotated face, so a 90° cottage has its door on the west edge, a 180° one on the north edge. Rendering, Enter/Exit, interiors and walkability all read this door, so rotation flows through unchanged. */
 export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number; variant?: HouseVariantId }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'house')
-    .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: Math.round((p.x0 + p.x1) / 2), doorY: p.y1, ...(p.variant ? { variant: p.variant } : {}) }));
+    .map((p) => {
+      const door = doorForRect(p.x0, p.y0, p.x1, p.y1, rotateFace('south', p.rot ?? 0));
+      return { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: door.x, doorY: door.y, ...(p.variant ? { variant: p.variant } : {}) };
+    });
 }
 
 export function placedTreeTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {

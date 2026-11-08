@@ -32,7 +32,7 @@
 // are free: no cost gating, like every other Build-panel action.
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
-import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, HOUSE_VARIANT_KINDS, type PaletteKind } from './placements';
+import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, HOUSE_VARIANT_KINDS, type PaletteKind, type Rotation } from './placements';
 
 /** localStorage key for saved chunks. Versioned (v1); separate from
  *  the world save so a world reset never wipes the user's library. */
@@ -40,8 +40,12 @@ export const TEMPLATES_KEY = 'ag-3d-templates-v1';
 
 /** One placed item inside a chunk, rect relative to the chunk origin
  *  (the selection rect's min corner). rx0/ry0 is the item's min tile,
- *  rx1/ry1 its max tile, both >= 0 for a well-formed chunk. */
-export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: number; ry1: number };
+ *  rx1/ry1 its max tile, both >= 0 for a well-formed chunk.
+ *  BUILD 1036: rot rides along (house/stall only, absent = 0) so a
+ *  rotated house pastes with its door on the same face it was saved
+ *  with — paste validates with the rotation, and the shape guard
+ *  compares against the rotated rect. */
+export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: number; ry1: number; rot?: Rotation };
 
 /** A saved chunk: a name plus its captured items, in source list
  *  order (so a path-before-grass stack pastes in the same order it
@@ -68,14 +72,21 @@ function isInt(n: unknown): n is number {
 /** Validate one parsed chunk item; null when malformed. Bounds are
  *  lenient (a chunk's relative coords never exceed the 200-tile map,
  *  but a future map could be bigger) — only shape is enforced. */
-function validChunkItem(raw: unknown): ChunkItem | null {
+export function validChunkItem(raw: unknown): ChunkItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.kind !== 'string' || !(PALETTE_KINDS as string[]).includes(r.kind)) return null;
   if (!isInt(r.rx0) || !isInt(r.ry0) || !isInt(r.rx1) || !isInt(r.ry1)) return null;
   if ((r.rx0 as number) > (r.rx1 as number) || (r.ry0 as number) > (r.ry1 as number)) return null;
   if (Math.abs(r.rx0 as number) > 400 || Math.abs(r.ry0 as number) > 400 || Math.abs(r.rx1 as number) > 400 || Math.abs(r.ry1 as number) > 400) return null;
-  return { kind: r.kind as PaletteKind, rx0: r.rx0 as number, ry0: r.ry0 as number, rx1: r.rx1 as number, ry1: r.ry1 as number };
+  // BUILD 1036: rot is optional (absent = 0, the old chunks); when
+  // present it must be an integer quarter-turn 0–3.
+  let rot: Rotation | undefined;
+  if (r.rot !== undefined) {
+    if (!isInt(r.rot) || (r.rot as number) < 0 || (r.rot as number) > 3) return null;
+    rot = r.rot as Rotation;
+  }
+  return { kind: r.kind as PaletteKind, rx0: r.rx0 as number, ry0: r.ry0 as number, rx1: r.rx1 as number, ry1: r.ry1 as number, ...(rot !== undefined ? { rot } : {}) };
 }
 
 /** Load saved chunks. Malformed entries are dropped, never fatal:
@@ -142,7 +153,10 @@ export function uniquifyName(existing: string[], base: string): string {
  *  not a silent partial capture. BUILD 1012: a placed house is
  *  captured under its own kind (variant kind, or legacy 'house') —
  *  the kind IS the variant, so no separate variant field is needed
- *  and paste reconstructs the design through validatePlacement. */
+ *  and paste reconstructs the design through validatePlacement.
+ *  BUILD 1036: a rotated house/stall captures its rot, so paste
+ *  reproduces the door face (a 90° cottage pastes as a 3x4 with its
+ *  door west, not as a 4x3 with its door south). */
 export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: number; y1: number }): ChunkItem[] {
   const x0 = Math.min(rect.x0, rect.x1);
   const y0 = Math.min(rect.y0, rect.y1);
@@ -152,7 +166,7 @@ export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: nu
   for (const p of placementsOf(w)) {
     if (p.kind === 'custom') continue;
     if (p.x0 >= x0 && p.y0 >= y0 && p.x1 <= x1 && p.y1 <= y1) {
-      out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0 });
+      out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined && (p.kind === 'house' || p.kind === 'stall') ? { rot: p.rot } : {}) });
     }
   }
   return out;
@@ -192,7 +206,10 @@ export function pasteChunk(
     const nx1 = anchor.x + ci.rx1;
     const ny1 = anchor.y + ci.ry1;
     const tap = pasteTapTile(ci.kind, nx0, ny0, nx1, ny1);
-    const res = validatePlacement(w, ci.kind, tap.x, tap.y, playerTile, npcTiles);
+    // BUILD 1036: paste validates with the captured rotation, so a
+    // rotated house lands with its door on the saved face — and the
+    // shape guard below compares against the rotated rect.
+    const res = validatePlacement(w, ci.kind, tap.x, tap.y, playerTile, npcTiles, ci.rot ?? 0);
     if (!res.ok) {
       skipped.push({ item: ci, reason: res.reason });
       continue;

@@ -21,7 +21,8 @@ import {
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
-  type PaletteKind, type UndoEntry, type BuildHistory,
+  isHouseKind, rotateFace, placementRectFor,
+  type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
@@ -1374,6 +1375,33 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   saveSelectionRef.current=saveSelection;
   const [chunkName,setChunkName]=useState('');
   const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean;saveAreaMode:boolean;pasteName:string|null;customAssetId:string|null}>({palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null});
+  // BUILD 1036: placement rotation (quarter-turns clockwise) + the
+  // placement preview. Rotation is a placement setting: it persists
+  // across asset switches and cancels, and resets only when the
+  // panel closes (×). placementRotRef mirrors it for the pointer
+  // handlers (which close over refs, not state).
+  const [placementRot, setPlacementRot] = useState<Rotation>(0);
+  const placementRotRef = useRef<Rotation>(0);
+  const placePreviewRef = useRef<HTMLDivElement | null>(null);
+  const placePreviewLabelRef = useRef<HTMLSpanElement | null>(null);
+  // Last pointer position the placement preview was drawn for, so a
+  // rotation-button tap can redraw it without waiting for a move.
+  const placeHoverRef = useRef<{ x: number; y: number } | null>(null);
+  // The effect-local showPlacementPreview, mirrored here so the
+  // rotation buttons (panel JSX) can redraw the preview at the last
+  // hovered tile immediately after a rotation.
+  const placePreviewFnRef = useRef<((x: number, y: number) => void) | null>(null);
+  const setPlacementRotBoth = (r: Rotation) => { placementRotRef.current = r; setPlacementRot(r); };
+  // BUILD 1036: cancel placement — disarm the armed asset (and any
+  // paste), hide the preview. Move mode stays as it was, so ESC /
+  // right-click after "Move + pick an asset" returns to dragging
+  // items instead of dropping the whole tool.
+  const cancelPlacement = () => {
+    setPalette(null); setCustomSelection(null); setPasteName(null);
+    buildRef.current = { ...buildRef.current, palette: null, customAssetId: null, pasteName: null };
+    const el = placePreviewRef.current; if (el) el.style.display = 'none';
+    placeHoverRef.current = null;
+  };
   // BUILD 996: chunk library. Lazy-loaded from localStorage (key
   // ag-3d-templates-v1, separate from world saves); every change
   // persists via the effect below. templatesRef mirrors it for the
@@ -1418,7 +1446,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const historyRef=useRef<BuildHistory>(createBuildHistory());
   const [undoAvailable,setUndoAvailable]=useState(false);
   const [redoAvailable,setRedoAvailable]=useState(false);
-  const setWalk=(v:boolean)=>{walkRef.current=v;setWalkSuspended(v);};
+  const setWalk=(v:boolean)=>{walkRef.current=v;setWalkSuspended(v);if(v){const el=placePreviewRef.current;if(el)el.style.display='none';}};
   const syncHistory=()=>{setUndoAvailable(historyRef.current.undo.length>0);setRedoAvailable(historyRef.current.redo.length>0);};
   const pushHistory=(entry:UndoEntry)=>{recordBuildChange(historyRef.current,entry);syncHistory();};
   const doUndo=()=>{
@@ -2013,7 +2041,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     };
     const wheel=(e:WheelEvent)=>{e.preventDefault();applyZoom(e.deltaY*.012);};
     const keys=new Set<string>();
-    const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' ','shift'].includes(k)){e.preventDefault();keys.add(k);}};
+    const keydown=(e:KeyboardEvent)=>{
+      const k=e.key.toLowerCase();
+      // BUILD 1036: placement keys. Escape cancels the armed asset
+      // (and any paste); R rotates it 90° clockwise, Shift+R 90°
+      // counter-clockwise. Never while typing in an input (the
+      // chunk-name field) or inside a hut (placement is disabled
+      // there anyway). R only acts while a palette asset is armed —
+      // it never rotates a custom upload (mesh footprints) or a paste.
+      const ae=document.activeElement;
+      const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
+      if(!typing){
+        if(k==='escape'){if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){cancelPlacement();setMessage('Placement cancelled');}return;}
+        if(k==='r'&&buildRef.current.palette&&!insideHutRef.current){
+          e.preventDefault();
+          const next=(((placementRotRef.current+(e.shiftKey?3:1))%4) as Rotation);
+          setPlacementRotBoth(next);
+          const h=placeHoverRef.current;if(h)showPlacementPreview(h.x,h.y);
+          return;
+        }
+      }
+      if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' ','shift'].includes(k)){e.preventDefault();keys.add(k);}
+    };
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
     // BUILD 989 refinement: Remove targeting. (1) TAP TOLERANCE — taps
     // snap via findRemovableNear (1.5 tiles), so a fat-finger tap next
@@ -2177,6 +2226,53 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const label=savePreviewLabelRef.current;
       if(label)label.textContent='Save area '+(x1-x0+1)+'×'+(y1-y0+1);
     };
+    // BUILD 1036: placement preview — a translucent rectangle over
+    // the tiles the armed asset would occupy, following the cursor.
+    // Green when validatePlacement passes at the hovered tile (with
+    // the current rotation), red when it fails, with a label naming
+    // the asset and — for houses — the door face, so a rotated house
+    // shows where its door will land before it is placed. Same
+    // direct-DOM technique as the Remove/Move/Save previews (never
+    // React state per pointermove). The hover listener below drives
+    // it; taps place through the normal `up` path.
+    const hidePlacementPreview=()=>{const el=placePreviewRef.current;if(el)el.style.display='none';};
+    const showPlacementPreview=(clientX:number,clientY:number)=>{
+      const el=placePreviewRef.current;if(!el)return;
+      const build=buildRef.current;
+      if(!build.palette||build.removeMode||build.saveAreaMode||walkRef.current||insideHutRef.current){el.style.display='none';return;}
+      const destination=pickGround(clientX,clientY);
+      if(!destination){el.style.display='none';return;}
+      const tx=Math.round(destination.x),ty=Math.round(destination.y);
+      const world=stateRef.current.world;
+      const player=stateRef.current.position;
+      const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
+      const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
+      const rot=placementRotRef.current;
+      const res=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,rot);
+      // The rect the asset would occupy (the validated item when it
+      // fits, the would-be footprint when it does not — so the red
+      // preview still shows where the asset would land).
+      const rect=res.ok?{x0:res.item.x0,y0:res.item.y0,x1:res.item.x1,y1:res.item.y1}:placementRectFor(build.palette,tx,ty,rot);
+      const p0=projectTileCenter(rect.x0,rect.y0),p1=projectTileCenter(rect.x1,rect.y1);
+      if(!p0||!p1){el.style.display='none';return;}
+      const half=26;
+      el.style.display='block';
+      el.style.left=(Math.min(p0.cx,p1.cx)-half)+'px';
+      el.style.top=(Math.min(p0.cy,p1.cy)-half)+'px';
+      el.style.width=(Math.abs(p1.cx-p0.cx)+half*2)+'px';
+      el.style.height=(Math.abs(p1.cy-p0.cy)+half*2)+'px';
+      el.style.background=res.ok?'rgba(80,200,90,.28)':'rgba(220,60,50,.32)';
+      el.style.borderColor=res.ok?'#4fc85a':'#e04a3e';
+      const label=placePreviewLabelRef.current;
+      if(label){
+        const name=toolLabel(build.palette,false);
+        if(!res.ok)label.textContent='Cannot place: '+res.reason;
+        else if(isHouseKind(build.palette))label.textContent=name+' · door faces '+rotateFace('south',rot);
+        else label.textContent=name;
+      }
+      placeHoverRef.current={x:clientX,y:clientY};
+    };
+    placePreviewFnRef.current=showPlacementPreview;
     const finalizeSaveSelection=(clientX:number,clientY:number,drag:{start:{x:number;y:number}})=>{
       const destination=pickGround(clientX,clientY);
       if(!destination){setMessage('Drag on the ground to select an area');return;}
@@ -2208,7 +2304,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       needsWorldRebuild.current=true;
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
     const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}return;}
       if(moveDragging){
@@ -2338,7 +2434,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
               const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
-              const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles);
+              // BUILD 1036: place with the current rotation — the
+              // asset stays armed afterwards, so another tap places
+              // another copy without re-selecting the menu.
+              const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,placementRotRef.current);
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
               else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
             }
@@ -2378,7 +2477,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const sprintWinTouchEnd=(e:TouchEvent)=>{if(e.touches.length===0&&sprintPointerIdRef.current!==null){sprintPointerIdRef.current=null;sprintHeldRef.current=false;sprintDownRef.current=null;}};
     const sprintWinBlur=()=>{if(sprintPointerIdRef.current!==null){sprintPointerIdRef.current=null;sprintHeldRef.current=false;sprintDownRef.current=null;}};
     window.addEventListener('pointerup',sprintWinUp);window.addEventListener('pointercancel',sprintWinCancel);window.addEventListener('touchend',sprintWinTouchEnd);window.addEventListener('blur',sprintWinBlur);
-    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
+    // BUILD 1036: placement-preview hover — runs on every pointermove
+    // (mouse hover included, not just drags), so the ghost follows
+    // the cursor while an asset is armed. It never orbits or places;
+    // it only positions the preview div.
+    const hover=(e:PointerEvent)=>{if(buildRef.current.palette&&!buildRef.current.removeMode&&!buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current)showPlacementPreview(e.clientX,e.clientY);else hidePlacementPreview();};
+    // BUILD 1036: right-click cancels placement (same as Escape) —
+    // the browser menu is suppressed on the canvas so the gesture
+    // stays in the game.
+    const cancelOnContextMenu=(e:MouseEvent)=>{e.preventDefault();if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){cancelPlacement();setMessage('Placement cancelled');}};
+    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointermove',hover);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});canvas.addEventListener('contextmenu',cancelOnContextMenu);
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0]};
     const lookAt=(eye:number[],center:number[])=>{const norm=(v:number[])=>{const l=Math.hypot(...v)||1;return v.map(n=>n/l)};const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];const sub=(a:number[],b:number[])=>a.map((n,i)=>n-b[i]);const z=norm(sub(eye,center)),x=norm(cross([0,1,0],z)),y=cross(z,x);return [x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]),1]};
     const mul=(a:number[],b:number[])=>{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o};
@@ -2932,6 +3040,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getCustomAssets:()=>JSON.parse(JSON.stringify(customAssetsRef.current)),
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
+      // BUILD 1036 test hooks (probes only — no gameplay effect):
+      // the armed placement selection + rotation, and the same
+      // rotate the R key / rotation buttons perform.
+      getPlacement:()=>({palette:buildRef.current.palette,rot:placementRotRef.current,moveMode:buildRef.current.moveMode}),
+      rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
       getPlayer:()=>({...stateRef.current.position}),
       // BUILD 993 test hooks: day clock read/set + NPC teleport (probes
       // only — no gameplay effect). setClock persists like the live clock.
@@ -3279,7 +3392,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
@@ -3413,6 +3526,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     <div ref={savePreviewRef} data-testid="build-save-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px dashed #ffd94d',borderRadius:6,boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
       <span ref={savePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
     </div>
+    {/* BUILD 1036: placement preview — a translucent rectangle over
+        the tiles the armed asset would occupy, following the cursor.
+        Green when the placement is valid, red when it is not; the
+        label names the asset and, for houses, the door face.
+        Positioned by direct DOM writes from the hover listener
+        (never React state per pointermove); pointerEvents none so it
+        never eats a tap. */}
+    <div ref={placePreviewRef} data-testid="build-place-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px solid #4fc85a',borderRadius:6,background:'rgba(80,200,90,.28)',boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
+      <span ref={placePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#fff',fontSize:12,fontWeight:700}}></span>
+    </div>
     {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',touchAction:'pan-y',overscrollBehavior:'contain',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}
       // BUILD 1004: sideways swipe on the open panel minimizes it —
       // exactly the minimize button's state (setBuildOpen(false)
@@ -3430,9 +3553,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses and stalls rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. Tap Remove, then an item, path, house, tree, rock, or water to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','terrain','buildings','plants','props','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props',custom:'Custom'}[cat]}</button>)}
       </div>
@@ -3440,7 +3563,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         {CATALOG_SECTIONS.filter(sec=>catalogCategory==='all'||catalogCategory===sec.id).map(sec=><div key={sec.id}>
           <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>{sec.label}</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
-            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
+            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:next,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:null};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
               <span style={{display:'block',height:26,borderRadius:6,background:KIND_META[kind].swatch,marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
               {KIND_META[kind].label}
             </button>)}
@@ -3458,7 +3581,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — upload a .glb file below.</div>
             : <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
                 {customAssets.map(a=><div key={a.id} style={{display:'flex',flexDirection:'column',gap:6}}>
-                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
+                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:next};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
                     <span style={{display:'block',height:26,borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
                     {a.name}
                   </button>
@@ -3472,8 +3595,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           </div>
         </div>}
       </div>
+      {/* BUILD 1036: rotation controls — shown while a house or stall
+          is armed (the only kinds rotation changes: houses rotate
+          their door face, stalls rotate their 2x1 run; 1x1 kinds are
+          unaffected, so no controls are shown for them — no fake
+          controls). R rotates 90° clockwise, Shift+R 90°
+          counter-clockwise; the buttons do the same for touch. The
+          rotation persists across placements and asset switches. */}
+      {palette&&(isHouseKind(palette)||palette==='stall')&&<div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
+        <div style={{fontSize:12,fontWeight:700}}>Rotation: {placementRot*90}° · {isHouseKind(palette)?'door faces '+rotateFace('south',placementRot):'runs '+(placementRot%2===1?'south':'east')}</div>
+        <div style={{display:'flex',gap:8,marginTop:8}}>
+          <button type="button" data-testid="build-rotate-ccw" onClick={()=>{const next=(((placementRot+3)%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:14}}>⟲ 90°</button>
+          <button type="button" data-testid="build-rotate-cw" onClick={()=>{const next=(((placementRot+1)%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:14}}>90° ⟳</button>
+        </div>
+        <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>R = rotate 90° clockwise, Shift+R = 90° counter-clockwise. Rotate a house so its door faces the road or path. 90° steps only — the world is built from tile rectangles, so 45°/15°/free rotation cannot exist for houses.</div>
+      </div>}
       <button type="button" data-testid="build-remove-toggle" onClick={toggleRemove} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
-      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next,saveAreaMode:false,pasteName:null,customAssetId:next?null:buildRef.current.customAssetId};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);buildRef.current={...buildRef.current,moveMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       {/* BUILD 996: saved chunks (build templates). Save area arms the
           rectangle drag; the naming row appears after a selection
           finalizes (panel reopens if minimized, so the row is
@@ -3497,7 +3635,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         {templates.length===0
           ? <div style={{fontSize:12,opacity:.7,marginTop:10}}>No saved chunks yet.</div>
           : <div style={{marginTop:10}}>{templates.map(t=><div key={t.name} style={{display:'flex',gap:8,marginTop:6}}>
-              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next,customAssetId:next?null:buildRef.current.customAssetId};setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
+              <button type="button" data-testid="build-chunk-paste" onClick={()=>{const next=pasteName===t.name?null:t.name;setPasteName(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:buildRef.current.moveMode,saveAreaMode:next?false:saveAreaMode,pasteName:next,customAssetId:next?null:buildRef.current.customAssetId};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}setMessage(next?'Tap the ground to paste \''+t.name+'\' — its corner lands on the tapped tile. Tap the chunk again to stop.':'Stopped pasting');}} style={{flex:1,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:pasteName===t.name?'#526d42':'#22392d',color:'#fff',fontWeight:pasteName===t.name?700:500,fontSize:13,textAlign:'left'}}>{t.name} <span style={{opacity:.75}}>({t.items.length} item{t.items.length===1?'':'s'})</span></button>
               <button type="button" data-testid="build-chunk-delete" aria-label={'Delete '+t.name} onClick={()=>{setTemplates(prev=>prev.filter(x=>x.name!==t.name));if(pasteName===t.name){setPasteName(null);buildRef.current={...buildRef.current,pasteName:null};}setMessage('Deleted chunk \''+t.name+'\'');}} style={{padding:'10px 12px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:13}}>×</button>
             </div>)}</div>}
       </div>
