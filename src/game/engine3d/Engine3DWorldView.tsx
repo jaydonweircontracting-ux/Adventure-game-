@@ -44,7 +44,8 @@ import {
   toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, saveCustomAssets, parseGlbUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
+import { loadCustomAssets, saveCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
+import { parseZipUpload } from './zipImport';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
@@ -1627,6 +1628,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   customAssetsRef.current=customAssets;
   useEffect(()=>{saveCustomAssets(customAssets);},[customAssets]);
   const [customSelection,setCustomSelection]=useState<string|null>(null);
+  // BUILD 1043: Import Hub open state (the hub lives at the top of
+  // the Build panel; it is panel UI state like the catalog category).
+  const [importHubOpen,setImportHubOpen]=useState(false);
   // BUILD 989: Walk suspension. Suspension is a separate flag from the
   // tool itself: Walk pauses taps (they walk) while the preserved
   // selection stays stored in buildRef; tapping Walk again resumes it.
@@ -1734,26 +1738,84 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // the minimized handle reopen the panel; a full close (×) clears
   // the tools, so nothing reopens until Build is tapped again.
   const buildMinimized=!buildOpen&&!!(palette||customSelection||removeMode||moveMode||saveAreaMode||pasteName||areaSelectMode||areaSelection);
-  // BUILD 997: upload a .glb file picked in the panel. Every failure
-  // is a message, never a crash: bad magic, wrong version, external
-  // buffers, non-triangle geometry, oversize file or full library
-  // all reject before anything is stored. The input resets so the
-  // same file can be picked again after a rejection.
-  const handleCustomUpload=async(e:{target:{files:FileList|null;value:string}})=>{
-    const file=e.target.files&&e.target.files[0];
+  // BUILD 1043: arm a custom upload like any palette kind (shared by
+  // the Custom catalog tiles and the Import Hub's Place buttons, so
+  // the two lists can never drift apart).
+  const armCustomAsset=(id:string|null)=>{
+    setCustomSelection(id);setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);
+    buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:id,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};
+    if(!id){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}
+  };
+  // BUILD 1043: Import Hub — one handler for every file the hub
+  // accepts (.glb, .gltf, .obj, .zip, plus .bin companions and whole
+  // folders). Every failure is a message, never a crash: bad magic,
+  // wrong version, a missing .bin, non-triangle geometry, an oversize
+  // file, a damaged ZIP entry, or a full library all reject before
+  // anything is stored. A bad file never blocks the good ones picked
+  // with it. The input resets so the same file can be picked again
+  // after a rejection. (BUILD 997's single-.glb handler is replaced
+  // by this — the GLB path is unchanged, it just lives in the hub.)
+  const handleImportFiles=async(e:{target:{files:FileList|null;value:string}})=>{
+    const files=e.target.files?Array.from(e.target.files):[];
     e.target.value='';
-    if(!file)return;
-    if(file.size>MAX_FILE_BYTES){setMessage('Upload failed: file is over 1 MB');return;}
-    let buf:ArrayBuffer;
-    try{buf=await file.arrayBuffer();}catch{setMessage('Upload failed: could not read the file');return;}
-    const res=parseGlbUpload(buf,file.name);
-    if(!res.ok){setMessage('Upload failed: '+res.reason);return;}
+    if(files.length===0)return;
+    // .bin companions for any .gltf picked in the same batch.
+    const binFiles=new Map<string,ArrayBuffer>();
+    await Promise.all(files.filter(f=>/\.bin$/i.test(f.name)).map(async(f)=>{try{binFiles.set(f.name,await f.arrayBuffer());}catch{/* a bad .bin just means its .gltf fails with a clear message */}}));
     const existing=customAssetsRef.current;
-    const name=uniquifyAssetName(existing.map(a=>a.name),res.asset.name);
-    const next=[...existing,{...res.asset,name}];
-    if(JSON.stringify(next).length>MAX_LIBRARY_JSON){setMessage('Upload failed: custom library is full (2 MB cap)');return;}
-    setCustomAssets(next);
-    setMessage('Uploaded \''+name+'\' — pick it in Custom, then tap the ground to place it');
+    const taken=new Set(existing.map(a=>a.name));
+    const pending:CustomAsset[]=[];
+    const added:string[]=[];
+    const failed:string[]=[];
+    let skipped=0;let skippedNote='';
+    const accept=(res:{ok:true;asset:CustomAsset}|{ok:false;reason:string},label:string)=>{
+      if(!res.ok){failed.push(label+': '+res.reason);return;}
+      const name=uniquifyAssetName([...taken],res.asset.name);
+      taken.add(name);
+      pending.push({...res.asset,name});
+      added.push(name);
+    };
+    for(const file of files){
+      const lower=file.name.toLowerCase();
+      if(lower.endsWith('.bin'))continue; // companion only, handled above
+      if(lower.endsWith('.zip')){
+        let buf:ArrayBuffer;
+        try{buf=await file.arrayBuffer();}catch{failed.push(file.name+': could not read the file');continue;}
+        let zip;
+        try{zip=await parseZipUpload(buf);}catch(err){failed.push(file.name+': '+(err instanceof Error?err.message:'could not read the ZIP'));continue;}
+        for(const m of zip.models)accept(m.result,m.name);
+        if(zip.skipped.length>0){skipped+=zip.skipped.length;skippedNote=zip.skipped[0].reason;}
+        continue;
+      }
+      if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')){
+        if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 1 MB');continue;}
+        try{
+          if(lower.endsWith('.glb')){
+            accept(parseGlbUpload(await file.arrayBuffer(),file.name),file.name);
+          }else if(lower.endsWith('.gltf')){
+            accept(parseGltfUpload(await file.text(),file.name,binFiles),file.name);
+          }else{
+            accept(parseObjUpload(await file.text(),file.name),file.name);
+          }
+        }catch{failed.push(file.name+': could not read the file');}
+        continue;
+      }
+      failed.push(file.name+': not a supported file (.glb, .gltf, .obj, or .zip)');
+    }
+    if(pending.length>0){
+      const next=[...existing,...pending];
+      if(JSON.stringify(next).length>MAX_LIBRARY_JSON){setMessage('Upload failed: custom library is full (2 MB cap)');return;}
+      setCustomAssets(next);
+    }
+    if(added.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
+      setMessage('A .bin file on its own is not a model — select it together with its .gltf file');
+      return;
+    }
+    const bits:string[]=[];
+    if(added.length>0)bits.push('Imported '+added.map(n=>'\''+n+'\'').join(', ')+' — pick '+(added.length===1?'it':'one')+' in Custom, then tap the ground to place it');
+    if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
+    if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
+    if(bits.length>0)setMessage(bits.join(' — '));
   };
   const deleteCustomAsset=(asset:CustomAsset)=>{
     const world=stateRef.current.world;
@@ -2532,7 +2594,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const showPlacementPreview=(clientX:number,clientY:number)=>{
       const el=placePreviewRef.current;if(!el)return;
       const build=buildRef.current;
-      if(!build.palette||build.removeMode||build.saveAreaMode||walkRef.current||insideHutRef.current){el.style.display='none';return;}
+      // BUILD 1043: an armed custom upload (build.customAssetId) gets
+      // the same green/red preview as a palette kind — before this
+      // fix the guard below only accepted build.palette, so an import
+      // armed from the hub showed no preview at all and placed blind.
+      if((!build.palette&&!build.customAssetId)||build.removeMode||build.saveAreaMode||walkRef.current||insideHutRef.current){el.style.display='none';return;}
       const destination=pickGround(clientX,clientY);
       if(!destination){el.style.display='none';return;}
       const tx=Math.round(destination.x),ty=Math.round(destination.y);
@@ -2541,11 +2607,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
       const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
       const rot=placementRotRef.current;
-      const res=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,rot);
-      // The rect the asset would occupy (the validated item when it
-      // fits, the would-be footprint when it does not — so the red
-      // preview still shows where the asset would land).
-      const rect=res.ok?{x0:res.item.x0,y0:res.item.y0,x1:res.item.x1,y1:res.item.y1}:placementRectFor(build.palette,tx,ty,rot);
+      let ok:boolean;let rect:{x0:number;y0:number;x1:number;y1:number};let failReason='';let labelName='';
+      if(build.customAssetId){
+        const asset=customAssetsRef.current.find(a=>a.id===build.customAssetId);
+        if(!asset){el.style.display='none';return;}
+        const vres=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles);
+        labelName=asset.name;
+        if(vres.ok){ok=true;rect={x0:vres.item.x0,y0:vres.item.y0,x1:vres.item.x1,y1:vres.item.y1};}
+        else{ok=false;failReason=vres.reason;rect={x0:tx,y0:ty,x1:tx+asset.width-1,y1:ty+asset.height-1};}
+      }else{
+        const palette=build.palette;
+        if(!palette){el.style.display='none';return;}
+        const res=validatePlacement(world,palette,tx,ty,playerTile,npcTiles,rot);
+        ok=res.ok;
+        // The rect the asset would occupy (the validated item when it
+        // fits, the would-be footprint when it does not — so the red
+        // preview still shows where the asset would land).
+        rect=res.ok?{x0:res.item.x0,y0:res.item.y0,x1:res.item.x1,y1:res.item.y1}:placementRectFor(palette,tx,ty,rot);
+        if(!res.ok)failReason=res.reason;
+        labelName=toolLabel(palette,false);
+        if(res.ok&&isHouseKind(palette))labelName+=' · door faces '+rotateFace('south',rot);
+      }
       const p0=projectTileCenter(rect.x0,rect.y0),p1=projectTileCenter(rect.x1,rect.y1);
       if(!p0||!p1){el.style.display='none';return;}
       const half=26;
@@ -2554,15 +2636,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       el.style.top=(Math.min(p0.cy,p1.cy)-half)+'px';
       el.style.width=(Math.abs(p1.cx-p0.cx)+half*2)+'px';
       el.style.height=(Math.abs(p1.cy-p0.cy)+half*2)+'px';
-      el.style.background=res.ok?'rgba(80,200,90,.28)':'rgba(220,60,50,.32)';
-      el.style.borderColor=res.ok?'#4fc85a':'#e04a3e';
+      el.style.background=ok?'rgba(80,200,90,.28)':'rgba(220,60,50,.32)';
+      el.style.borderColor=ok?'#4fc85a':'#e04a3e';
       const label=placePreviewLabelRef.current;
-      if(label){
-        const name=toolLabel(build.palette,false);
-        if(!res.ok)label.textContent='Cannot place: '+res.reason;
-        else if(isHouseKind(build.palette))label.textContent=name+' · door faces '+rotateFace('south',rot);
-        else label.textContent=name;
-      }
+      if(label)label.textContent=!ok?'Cannot place: '+failReason:labelName;
       placeHoverRef.current={x:clientX,y:clientY};
     };
     placePreviewFnRef.current=showPlacementPreview;
@@ -2947,7 +3024,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // (mouse hover included, not just drags), so the ghost follows
     // the cursor while an asset is armed. It never orbits or places;
     // it only positions the preview div.
-    const hover=(e:PointerEvent)=>{if(buildRef.current.palette&&!buildRef.current.removeMode&&!buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current)showPlacementPreview(e.clientX,e.clientY);else hidePlacementPreview();};
+    const hover=(e:PointerEvent)=>{if((buildRef.current.palette||buildRef.current.customAssetId)&&!buildRef.current.removeMode&&!buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current)showPlacementPreview(e.clientX,e.clientY);else hidePlacementPreview();};
     // BUILD 1036: right-click cancels placement (same as Escape) —
     // the browser menu is suppressed on the canvas so the gesture
     // stays in the game.
@@ -4096,9 +4173,43 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setImportHubOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. In the Custom category you can upload your own .glb model — it renders as plain coloured triangles (textures and animation are ignored), places like any other item, and one Undo removes it. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers.</div>
+      {/* BUILD 1043: Import Hub — the Build panel's front door for
+          bringing in outside models. One button opens it; inside are
+          the file picker (several files at once), the folder picker
+          (desktop browsers that support it), the imported library
+          with Place buttons, and the honest limits in plain words.
+          The hub is a section at the top of the scrolling panel, not
+          a floating overlay, so it cannot cover the field on a phone. */}
+      <button type="button" data-testid="import-hub-open" onClick={()=>setImportHubOpen(!importHubOpen)} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:importHubOpen?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>📦 Import Hub {importHubOpen?'▾':'▸'}</button>
+      {importHubOpen&&<div data-testid="import-hub" style={{marginTop:10,padding:12,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
+        <div style={{fontSize:13,fontWeight:700}}>Import Hub — bring in your own models</div>
+        <div style={{fontSize:12,marginTop:6,lineHeight:1.5}}>Imports <b>.glb</b>, <b>.gltf</b> (pick its <b>.bin</b> file at the same time if it has one), <b>.obj</b>, or a <b>.zip</b> holding any of those. Pick several files at once. Models render as plain coloured triangles — 1 unit = 1 tile, footprint max 8×8, max 1 MB per file.</div>
+        <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Choose model files (several at once)</label>
+        <input type="file" multiple accept=".glb,.gltf,.obj,.zip,.bin" data-testid="import-hub-file-input" onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
+        <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
+        <input type="file" multiple data-testid="import-hub-folder-input" ref={(el)=>{if(el)el.setAttribute('webkitdirectory','');}} onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
+        <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Imported models ({customAssets.length})</div>
+        {customAssets.length===0
+          ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>Nothing imported yet — pick a file above.</div>
+          : <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:6}}>
+              {customAssets.map(a=><div key={a.id} style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{display:'block',width:22,height:22,flex:'0 0 22px',borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',border:'1px solid rgba(255,255,255,.25)'}}></span>
+                <span style={{flex:1,fontSize:12,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name} · {(a.format||'glb').toUpperCase()} · {a.width}×{a.height} · {Math.floor(a.indices.length/3)} triangles</span>
+                <button type="button" data-testid="import-hub-place" onClick={()=>armCustomAsset(a.id)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Place</button>
+                <button type="button" data-testid="import-hub-delete" aria-label={'Delete '+a.name} onClick={()=>deleteCustomAsset(a)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:12}}>Delete</button>
+              </div>)}
+            </div>}
+        <div data-testid="import-hub-limits" style={{fontSize:12,marginTop:12,lineHeight:1.5,borderTop:'1px solid #c4d1bd',paddingTop:10}}>
+          <div style={{fontWeight:700}}>What the hub cannot do (honest limits)</div>
+          <div style={{marginTop:4}}>• <b>Folders:</b> on iPhone Safari a folder cannot be opened directly — pick files above instead (several at once). The folder button works on a desktop browser where the browser supports it.</div>
+          <div style={{marginTop:4}}>• <b>Audio:</b> not imported — there is no audio playback in the game yet, so an audio file would have nowhere to play.</div>
+          <div style={{marginTop:4}}>• <b>Textures:</b> not rendered as textures — this renderer draws plain coloured triangles only, so a texture on a model is ignored and the model shows its colours flat.</div>
+          <div style={{marginTop:4}}>• <b>AI access:</b> ChatGPT cannot reach files on your phone or computer — uploading here through the file picker is how a model gets into the game.</div>
+        </div>
+      </div>}
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>
@@ -4121,20 +4232,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         {(catalogCategory==='all'||catalogCategory==='custom')&&<div>
           <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>Custom</div>
           {customAssets.length===0
-            ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — upload a .glb file below.</div>
+            ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — open the Import Hub above to bring in a model.</div>
             : <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
                 {customAssets.map(a=><div key={a.id} style={{display:'flex',flexDirection:'column',gap:6}}>
-                  <button type="button" data-testid="build-custom-asset" onClick={()=>{const next=customSelection===a.id?null:a.id;setCustomSelection(next);setPalette(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:next,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
+                  <button type="button" data-testid="build-custom-asset" onClick={()=>armCustomAsset(customSelection===a.id?null:a.id)} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:customSelection===a.id?700:500,fontSize:14}}>
                     <span style={{display:'block',height:26,borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
                     {a.name}
                   </button>
                   <button type="button" data-testid="build-custom-delete" aria-label={'Delete '+a.name} onClick={()=>deleteCustomAsset(a)} style={{padding:'8px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:12}}>Delete</button>
                 </div>)}
               </div>}
+          {/* BUILD 1043: uploads moved to the Import Hub (top of this
+              panel) — this section only lists what is already imported
+              and arms it for placement. */}
           <div style={{marginTop:8}}>
-            <label style={{fontSize:12,opacity:.85}}>Upload a .glb model (max 1 MB)</label>
-            <input type="file" accept=".glb" data-testid="build-custom-upload" onChange={handleCustomUpload} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
-            <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Renders as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures.</div>
+            <button type="button" data-testid="build-custom-open-hub" onClick={()=>setImportHubOpen(true)} style={{display:'block',width:'100%',padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>📦 Open the Import Hub to upload models</button>
+            <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Models render as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures.</div>
           </div>
         </div>}
       </div>
