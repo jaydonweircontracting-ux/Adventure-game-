@@ -791,6 +791,29 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1051 @ 2026-11-09T17:36:59.091Z, served index __AG_BUILD='1051', deploy run 42666118966 completed success (head_sha 6a10dece, parent confirmed via the Actions API). Asserts 1910 checks pass (parent re-ran directly — ASSERTS-1051 ALL PASS (1910 checks)). Sim vs pristine1050: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100224 vs 100223, the same artifact 1045/1046/1047/1050 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (market-square shot shows the 3-stall row — awnings/counters — + cobble; stall walk-around — player ended (103.4,106.0) north of the row, went around an end, never on a stall tile; district shots — craft: smith + cobble; farm: windmill tower; residential: houses + fenced garden; landmark far+near shots — tower with broken corner, stone ring with open centre, tent + firepit; tower walk-around). Frames: town walk steady max 267ms p50 183; wild walk steady max 317ms in the main run — one frame out of 107; re-ran the wild walk 3x: steady max 200/217/217ms, p50 117, 0 frames >300 — noise, not a regression.",
       "verificationTimestamp": "2026-11-09T17:36:59.091Z"
+    },
+    {
+      "build": 1052,
+      "commit": "acc4810c",
+      "description": "Ashfall Stage 6 — atmosphere: night reads as night + 120 stars, dawn/dusk grading, staggered evening lights, rain (every third day, 14:00-16:00); sun-follow shading NOT built (needs a buffer-format change); no fog or snow. The Ashfall program is now complete (Stages 3-6).",
+      "filesAffected": [
+        "src/game/engine3d/atmosphere.ts",
+        "src/game/engine3d/sky.ts",
+        "src/game/engine3d/houseFx.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Atmosphere for Ashfall Stage 6 — night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised. Fourth and LAST Ashfall stage in the approved program.",
+      "previousCheckpoint": {
+        "build": 1051,
+        "commit": "6a10dece"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42683144704",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1052 @ 2026-11-09T19:26:29.144Z, served index __AG_BUILD='1052', deploy run 42683144704 completed success (head_sha acc4810c, parent confirmed via the Actions API). Asserts 9953 checks pass (parent re-ran directly — ASSERTS-1052 ALL PASS (9953 checks)). Sim vs pristine1051: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100225 vs 100224, the same artifact 1045/1046/1047/1050/1051 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (noon luminance 0.429 vs midnight 0.136 — ratio 0.32; evening sequence 9->25->21->21->19->12 lit; rain day 4 true / day 2 false; town walk steady max 267ms p50 183, wild walk steady max 200ms p50 117 — 300ms gate; sky probe — first-person, open ground: night top-half mean 0.050, 353 star pixels with UI hidden — moon + scattered stars; dawn/dusk gradient photos confirm the warm horizons).",
+      "verificationTimestamp": "2026-11-09T19:26:29.144Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

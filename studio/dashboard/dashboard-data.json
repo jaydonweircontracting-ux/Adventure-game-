@@ -1,9 +1,9 @@
 {
   "activeBuild": {
-    "build": "Ashfall Stage 6",
+    "build": "Dashboard repair (§54)",
     "commit": null,
-    "description": "Atmosphere: night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised. NEXT per the queue.",
-    "status": "in_progress"
+    "description": "One bounded repo task: wire the dashboard artifact ('ashfall-development-dashboard') to read from studio/dashboard/dashboard-data.json instead of hard-coded data. A user-decision item — do not start without the user's word.",
+    "status": "planned"
   },
   "buildHistory": [
     {
@@ -329,15 +329,18 @@
       "runId": "42666118966",
       "status": "verified",
       "verifiedAt": "2026-11-09T17:36:59.091Z"
+    },
+    {
+      "build": 1052,
+      "commit": "acc4810c",
+      "description": "Ashfall Stage 6 — atmosphere: night reads as night — the 3D night factor caps at 0.82 (not 976's 0.55 — dayNight.ts untouched, 2.5D unaffected); mixed ground at midnight is 23-33% of noon (was ~50%, the 'overcast day' look); figures/car/corpses keep the old 0.55 cap for readability; the sky gradient + clear colour are clock functions now, not a fixed light-blue background. 120 deterministic stars (hash2 seeds), fade in as night deepens / out by dawn (alpha 0 noon, 1 midnight), emitted into the sky buffer's self-luminous segment; suppressed inside houses. Dawn/dusk grading — gradient horizon warms gold-pink at dawn ([0.94,0.63,0.44]) and deeper orange-red at dusk ([0.92,0.48,0.29]), with a uWarm world tint to match; smooth over game time (max colour step 0.0224/min, warm step 0.0259/min — no pops). Staggered evening lights — fourth off-bucket added to lightScheduleFor (dusk 19:00-20:00, 20%; early 21:30-22:30, 20%; mid 23:00-00:30, 35%; late 04:30-05:30, 25%); live shares: 20:00 21/29, 21:00 21/29, 22:00 19/29, 00:00 12/29, 03:00 6/29; 28 distinct on-times; lanterns and the hearth use the same function, so they inherit the stagger. Rain (stretch, built) — every third day (day % 3 == 1), 14:00-16:00, 120 crossed-quad streaks around the player; visual only. NOT in this build: sun-follow shading — the world buffer carries no normal attribute, so the fragment shader can't tell faces apart; a true sun-follow needs a buffer-format change; the uWarm tint is the honest substitute; no fog or snow, only rain. The Ashfall program is now complete (Stages 3-6: vegetation, architecture, settlements, atmosphere). Landed: commit acc4810c, deploy run 42683144704 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42683144704",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T19:26:29.144Z"
     }
   ],
   "buildQueue": [
-    {
-      "build": "Ashfall Stage 6",
-      "commit": null,
-      "description": "Atmosphere: night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised.",
-      "status": "in_progress"
-    },
     {
       "build": "Dashboard repair (§54)",
       "commit": null,
@@ -473,13 +476,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T11:47:56-07:00",
+  "lastUpdateTimestamp": "2026-11-09T13:48:21-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1051,
-    "commit": "6a10dece",
-    "description": "Ashfall Stage 5 — settlements: 3 market stalls at the plaza in one compact row at y=108 — blueprint stall (104,108)-(105,108) + generated west (102,108)-(103,108) + generated east (106,108)-(107,108). The verified 1049 cause is fixed properly: the blueprint stall prop (solid=false) now becomes a real stall with stall collision (adapter prop loop), rendered with the 1049 stallAt shape (counter + 2 posts + canvas awning); generated stalls come from marketStallSpots + a blocked-tile context (no road/garden/doorstep/hut/NPC-route/garden-tile); deterministic and reload-safe — near-town stalls are filtered out and re-derived on every load (no duplication, no row growth); Build-menu stall placement still works. Readable districts — market (plaza disc + 2), craft (inn/store/smith/mine rect + variant), farm (windmill rect + placed-farm halo), residential (6-tile house halo), wild — via districtAt + cobbleForTile; cobble paving on market/craft dirt/sand: 69 market + 25 craft slabs (deterministic hash, window-only ground detail like flowers/pebbles; the blocked-tile guard suppresses 1 slab under a tree/lamp); no house moved, no footprint/door/collision changed except stall collision. 3 fixed wild landmarks (stamped fresh every load, never removable, ride the heightfield, own shapes, block via isWalkableWorld): The Ruined Tower 2x2 @ (40,170)-(41,171) with a broken SE corner (renders short + rubble); The Standing Stones ring centre (150,48), 6 slabs, centre walkable; The Hunter's Camp tent (165,130)-(166,130) + firepit (165,131). All 69-92 tiles from the plaza; none blocks a road, path, NPC route, or house. No second settlement; no trading, vendor NPCs, or economy; inn/store/smith stay shells; landmarks are places to visit, not quests.",
-    "runId": "42666118966",
-    "verifiedAt": "2026-11-09T17:36:59.091Z"
+    "build": 1052,
+    "commit": "acc4810c",
+    "description": "Ashfall Stage 6 — atmosphere: night reads as night — the 3D night factor caps at 0.82 (not 976's 0.55 — dayNight.ts untouched, 2.5D unaffected); mixed ground at midnight is 23-33% of noon (was ~50%, the 'overcast day' look); figures/car/corpses keep the old 0.55 cap for readability; the sky gradient + clear colour are clock functions now, not a fixed light-blue background. 120 deterministic stars (hash2 seeds), fade in as night deepens / out by dawn (alpha 0 noon, 1 midnight), emitted into the sky buffer's self-luminous segment; suppressed inside houses. Dawn/dusk grading — gradient horizon warms gold-pink at dawn ([0.94,0.63,0.44]) and deeper orange-red at dusk ([0.92,0.48,0.29]), with a uWarm world tint to match; smooth over game time (max colour step 0.0224/min, warm step 0.0259/min — no pops). Staggered evening lights — fourth off-bucket added to lightScheduleFor (dusk 19:00-20:00, 20%; early 21:30-22:30, 20%; mid 23:00-00:30, 35%; late 04:30-05:30, 25%); live shares: 20:00 21/29, 21:00 21/29, 22:00 19/29, 00:00 12/29, 03:00 6/29; 28 distinct on-times; lanterns and the hearth use the same function, so they inherit the stagger. Rain (stretch, built) — every third day (day % 3 == 1), 14:00-16:00, 120 crossed-quad streaks around the player; visual only. NOT in this build: sun-follow shading — the world buffer carries no normal attribute, so the fragment shader can't tell faces apart; a true sun-follow needs a buffer-format change; the uWarm tint is the honest substitute; no fog or snow, only rain. The Ashfall program is now complete (Stages 3-6: vegetation, architecture, settlements, atmosphere).",
+    "runId": "42683144704",
+    "verifiedAt": "2026-11-09T19:26:29.144Z"
   },
   "measuredBaselines": [
     {
@@ -703,6 +706,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1052,
+      "commit": "acc4810c",
+      "result": "Verified live: served version.json build 1052 @ 2026-11-09T19:26:29.144Z, served index __AG_BUILD='1052', deploy run 42683144704 completed success (head_sha acc4810c, parent confirmed via the Actions API). Asserts 9953 checks pass (parent re-ran directly — ASSERTS-1052 ALL PASS (9953 checks)). Sim vs pristine1051: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100225 vs 100224, the same artifact 1045/1046/1047/1050/1051 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (noon luminance 0.429 vs midnight 0.136 — ratio 0.32; evening sequence 9->25->21->21->19->12 lit; rain day 4 true / day 2 false; town walk steady max 267ms p50 183, wild walk steady max 200ms p50 117 — 300ms gate; sky probe — first-person, open ground: night top-half mean 0.050, 353 star pixels with UI hidden — moon + scattered stars; dawn/dusk gradient photos confirm the warm horizons).",
+      "runId": "42683144704",
+      "verifiedAt": "2026-11-09T19:26:29.144Z"
+    },
     {
       "build": 1051,
       "commit": "6a10dece",
