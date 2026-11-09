@@ -2,7 +2,7 @@
 
 **Purpose:** A small GitHub push to wake the Muse development workflow and resume ASHFALL.
 
-**Last updated:** 2026-11-08 ~17:31 PST (parent). The previous version of this file said "resume at BUILD 1036" — that was stale (1036 landed + live-verified 2026-11-07 ~20:25 PST). Do not follow the old 1036 resume point.
+**Last updated:** 2026-11-08 ~19:51 PST (parent). The previous version of this file said "resume at BUILD 1042" — that was stale (1042 landed + live-verified 2026-11-08 ~15:54 PST). Do not follow the old 1042 resume point.
 
 ## Immediate instruction
 
@@ -10,8 +10,8 @@ Resume ASHFALL from `studio/CONTINUE_ASHFALL.md`. Do not restart or rebuild the 
 
 1. Read this file, `studio/CONTINUE_ASHFALL.md`, `studio/NEXT_TASK.md`, `studio/orchestrator/README.md`, and the applicable Muse operating instructions.
 2. Reconcile the documented checkpoint against the actual repository state and latest commit before changing anything.
-3. **Current checkpoint (verified): BUILD 1042 landed + live-verified** — Town Builder Stage 5: layout helpers (commit 8041e127, deploy run 42532242988 success, served version.json 1042 @ 2026-11-08T22:52:03.518Z). The queue since 1030: 1030 tap-to-walk pathfinding (9dc4cdf7), 1031 wild-lake rendering (336741da), 1032 interior boundary collision (7d1c8cf9), 1033 red sports car (7a9671d4), 1034 Stage 2 terrain (62354ebf), 1035 car lag fix (452da72b), 1036 Town Builder Stage 1 (0b21aba4), 1037 AREA SELECT (67880190), 1038 windmill (8963bc65), 1039 undo/redo (fa257044), 1040 Stage 4 asset library (58aa5ecd), 1041 farm land for the windmill (58529b47), 1042 Stage 5 layout helpers (8041e127) — all live-verified. The Town Builder is complete (Stages 1–5, builds 1036–1042). Do not re-do any of them.
-4. **The next task is the Import Hub.** An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder — build it in stages, one bounded, tested, documented checkpoint at a time. Then Ashfall Stages 3–6. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload. Do not build a desktop-style folder pipeline or claim AI local-file access.
+3. **Current checkpoint (verified): BUILD 1043 landed + live-verified** — Import Hub Stage 1: hub UI in the Build menu + .gltf/.obj import + ZIP of models (commit 4a82b393, deploy run 42542648558 success, served version.json 1043 @ 2026-11-09T00:54:49.777Z). The queue since 1030: 1030 tap-to-walk pathfinding (9dc4cdf7), 1031 wild-lake rendering (336741da), 1032 interior boundary collision (7d1c8cf9), 1033 red sports car (7a9671d4), 1034 Stage 2 terrain (62354ebf), 1035 car lag fix (452da72b), 1036 Town Builder Stage 1 (0b21aba4), 1037 AREA SELECT (67880190), 1038 windmill (8963bc65), 1039 undo/redo (fa257044), 1040 Stage 4 asset library (58aa5ecd), 1041 farm land for the windmill (58529b47), 1042 Stage 5 layout helpers (8041e127), 1043 Import Hub Stage 1 (4a82b393) — all live-verified. The Town Builder is complete (Stages 1–5, builds 1036–1042). Do not re-do any of them.
+4. **The next task is BUILD 1044: Import Hub Stage 2 — the IndexedDB asset store.** Move custom GLB assets from localStorage to IndexedDB (the spec in the "NEXT UPDATE" section below, renumbered from 1043 to 1044 — see the reconciliation note there). Then the remaining Import Hub stages (preview/library, packs/recovery, AI handoff, integration), then Ashfall Stages 3–6. One bounded, tested, documented checkpoint at a time. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload. Do not build a desktop-style folder pipeline or claim AI local-file access.
 5. Preserve existing working systems. Never delete legacy systems without the documented audit and approval gates. Never claim a feature is complete without evidence.
 6. Update the resume point, task queue, registry, dashboard data, and development memory after meaningful checkpoints — including this file, so its resume point never goes stale again.
 
@@ -54,7 +54,9 @@ Acceptance test: On iPhone Safari, select a valid small GLB, see a real preview,
 
 Start by auditing what exists and report the actual Import Hub baseline. Then implement the highest-value safe stage immediately; do not stop at a plan.
 
-## NEXT UPDATE — BUILD 1043: Fix the existing custom-asset import bottleneck
+## NEXT UPDATE — BUILD 1044: Fix the existing custom-asset import bottleneck
+
+**Reconciliation note (parent, 2026-11-08 ~19:51 PST):** this section was written as "BUILD 1043" before the hub stage 1 landed. BUILD 1043 is now live as the Import Hub Stage 1 (hub UI + .gltf/.obj + ZIP, commit 4a82b393) — do not re-do it, and do not strip the ZIP support. This IndexedDB spec is therefore **BUILD 1044 (Import Hub Stage 2)**, not 1043. The ZIP work in 1043 matches the 6-stage plan's Stage 1 ("add .obj/.mtl, .fbx, audio, and ZIP only where loader/dependency support is verified") — ZIP support was verified with a hand-written reader and no new dependency.
 
 The audit has identified an existing importer; do NOT build a second Import Hub from scratch.
 
@@ -77,4 +79,4 @@ The audit has identified an existing importer; do NOT build a second Import Hub 
 
 **Acceptance:** upload a valid GLB larger than the old 1 MB limit but within the new measured cap, add it, reload on the same device, and confirm it remains in the library and existing placed copies still render. Verify old localStorage uploads migrate without loss. If iPhone Safari IndexedDB storage/quota behavior differs, handle it explicitly.
 
-After BUILD 1043 is implemented and verified, update the registry/dashboard/resume/task queue and only then move to Stage 2 (preview/library UX and broader formats). Do not bundle ZIP, FBX, audio, or unsupported texture rendering into this checkpoint.
+After BUILD 1044 is implemented and verified, update the registry/dashboard/resume/task queue and only then move to Stage 3 (preview/library UX and broader formats). Do not bundle ZIP, FBX, audio, or unsupported texture rendering into this checkpoint.

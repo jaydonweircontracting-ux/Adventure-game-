@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub",
+    "build": "Import Hub Stage 2",
     "commit": null,
-    "description": "An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload. NEXT per the queue.",
+    "description": "IndexedDB asset store: replace binary/large-array persistence with an IndexedDB-backed asset store (versioned DB, stable asset IDs); migrate ag-3d-custom-assets-v1 once, safely and idempotently — never delete the legacy key until read-back validates; preserve the synchronous render path (in-memory cache, loading state, boot never fails if IndexedDB is unavailable); increase the file-size ceiling only to a measured, device-safe limit with library budgets and clear quota errors. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -248,14 +248,47 @@
       "runId": "42532242988",
       "status": "verified",
       "verifiedAt": "2026-11-08T22:52:03.518Z"
+    },
+    {
+      "build": 1043,
+      "commit": "4a82b393",
+      "description": "Import Hub Stage 1: a hub panel at the top of the Build panel that imports .glb (as before), .gltf (pick its .bin at the same time if it has one), .obj, or a ZIP holding any of those — several files at once, or a whole folder on a desktop browser where the browser supports it. Imported models show in the hub and the Custom category, place like any other item, and one Undo removes them. Honest limits: models render as plain coloured triangles (textures ignored); on iPhone Safari a folder cannot be opened directly; audio is not imported yet (no audio playback in the game); ChatGPT cannot reach files on the phone or computer — uploading here is how a model gets into the game. Landed: commit 4a82b393, deploy run 42542648558 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42542648558",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T00:54:49.777Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub",
+      "build": "Import Hub Stage 2 (IndexedDB asset store)",
       "commit": null,
-      "description": "An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload.",
+      "description": "Replace binary/large-array persistence with an IndexedDB-backed asset store (versioned DB, stable asset IDs); migrate ag-3d-custom-assets-v1 once, safely and idempotently — never delete the legacy key until read-back validates; preserve the synchronous render path (in-memory cache, loading state, boot never fails if IndexedDB is unavailable); increase the file-size ceiling only to a measured, device-safe limit with library budgets and clear quota errors.",
       "status": "in_progress"
+    },
+    {
+      "build": "Import Hub Stage 3 (preview/library)",
+      "commit": null,
+      "description": "Show import progress, preview thumbnails/3D model, name/category/tags, dimensions, source filename, explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop.",
+      "status": "planned"
+    },
+    {
+      "build": "Import Hub Stage 4 (packs/recovery)",
+      "commit": null,
+      "description": "ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation.",
+      "status": "planned"
+    },
+    {
+      "build": "Import Hub Stage 5 (AI/development handoff)",
+      "commit": null,
+      "description": "An explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically.",
+      "status": "planned"
+    },
+    {
+      "build": "Import Hub Stage 6 (integration)",
+      "commit": null,
+      "description": "Imported assets selectable in Build Mode and placeable using the existing move/rotate/scale/duplicate/undo/redo flows. Preserve selection and placement behavior; imported assets must not break built-in assets or saved town chunks.",
+      "status": "planned"
     },
     {
       "build": "Ashfall Stage 3",
@@ -416,13 +449,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T17:30:16-07:00",
+  "lastUpdateTimestamp": "2026-11-08T19:51:29-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1042,
-    "commit": "8041e127",
-    "description": "Town Builder Stage 5 layout helpers: 9 optional tools in the AREA SELECT menu — Doors face paths, Trees off paths, Lanterns along roads, Fence property (new fence kind), Align row/column, ENHANCE, Spread out/Pack together. Nothing moves unless the player taps a tool; one Undo undoes the whole helper. Scale/elevation/tree rotation/vegetation size are not here — no per-item size feature exists yet, stated plainly. The Town Builder is now complete (Stages 1-5, builds 1036-1042).",
-    "runId": "42532242988",
-    "verifiedAt": "2026-11-08T22:52:03.518Z"
+    "build": 1043,
+    "commit": "4a82b393",
+    "description": "Import Hub Stage 1: a hub panel at the top of the Build panel that imports .glb (as before), .gltf (pick its .bin at the same time if it has one), .obj, or a ZIP holding any of those — several files at once, or a whole folder on a desktop browser where the browser supports it. Imported models show in the hub and the Custom category, place like any other item, and one Undo removes them. Honest limits: models render as plain coloured triangles (textures ignored); on iPhone Safari a folder cannot be opened directly; audio is not imported yet (no audio playback in the game); ChatGPT cannot reach files on the phone or computer — uploading here is how a model gets into the game.",
+    "runId": "42542648558",
+    "verifiedAt": "2026-11-09T00:54:49.777Z"
   },
   "measuredBaselines": [
     {
@@ -646,6 +679,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1043,
+      "commit": "4a82b393",
+      "result": "Verified live: served version.json build 1043 @ 2026-11-09T00:54:49.777Z, run 42542648558 completed success (parent confirmed via the Actions API). Asserts 100 checks pass (parent re-ran directly — ASSERT_DONE 100 checks passed). Sim vs pristine1042 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site (parent diffed sim1043.norm.log vs sim1042-pristine.norm.log — the same 1-line bundle-offset pattern as the 1036 sim diff; 0 FAILs on both sides). Phone probe 19 findings, 0 page errors (hub opens with formats + limits; real .obj uploaded -> 'Red Roof' 2x2, 3 tris; real .zip uploaded -> 3 assets, .txt reported skipped; Custom category lists all three; green preview -> placed custom at (123,134)-(124,135); Undo removes it, Redo brings it back; a bad file is rejected with a message and the library stays at 3). Scope collision reconciled: ChatGPT's wake-up file defined BUILD 1043 as the IndexedDB migration — that becomes Import Hub Stage 2 (build 1044); the wake-up file was updated by the parent so the next agent doesn't re-do 1043 or strip the ZIP support.",
+      "runId": "42542648558",
+      "verifiedAt": "2026-11-09T00:54:49.777Z"
+    },
     {
       "build": 1042,
       "commit": "8041e127",

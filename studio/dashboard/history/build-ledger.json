@@ -578,6 +578,28 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1042 @ 2026-11-08T22:52:03.518Z, run 42532242988 completed success (parent confirmed via the Actions API after the agent hit a transient rate limit). Asserts 142 checks pass (parent re-ran directly — ASSERT_DONE 142 checks passed). Sim vs pristine1041 IDENTICAL (parent diffed sim1042.norm.log vs sim1041-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 28 findings, 0 page errors (cottage placed, path column west, area-select, Doors face paths rotated it to rot 1 (door west); Lanterns along roads put 1 lantern on the road edge; Fence property laid 15 fence tiles with the gate gap open at the west door; Align row lined two lanterns up at y=138, Spread moved them apart (x [129,132]->[128,133]), Pack moved them back; ENHANCE added +32 grass/bush plants with nothing moved; one Undo removed them (22 placements), Redo brought them back (54)). Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature.",
       "verificationTimestamp": "2026-11-08T22:52:03.518Z"
+    },
+    {
+      "build": 1043,
+      "commit": "4a82b393",
+      "description": "Import Hub Stage 1: hub UI in the Build menu + .gltf/.obj import + ZIP of models (no new dependency); GLB upload wired into the hub; honest limits in the hub; imported models get a green/red placement preview.",
+      "filesAffected": [
+        "src/game/engine3d/zipImport.ts",
+        "src/game/engine3d/customAssets.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "An Import Hub in the Build Menu for external 3D models, textures, asset packs, audio files, ZIP folders, and local folders, a local file import pipeline, and an AI asset-access layer. Stage 1: the hub UI + model import. User order 2026-11-07 ~17:41 PST (Import Hub prompt); first stage of a separate staged program after the Town Builder.",
+      "previousCheckpoint": {
+        "build": 1042,
+        "commit": "8041e127"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42542648558",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1043 @ 2026-11-09T00:54:49.777Z, run 42542648558 completed success (parent confirmed via the Actions API). Asserts 100 checks pass (parent re-ran directly — ASSERT_DONE 100 checks passed). Sim vs pristine1042 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site (parent diffed sim1043.norm.log vs sim1042-pristine.norm.log — the same 1-line bundle-offset pattern as the 1036 sim diff; 0 FAILs on both sides). Phone probe 19 findings, 0 page errors (hub opens with formats + limits; real .obj uploaded -> 'Red Roof' 2x2, 3 tris; real .zip uploaded -> 3 assets, .txt reported skipped; Custom category lists all three; green preview -> placed custom at (123,134)-(124,135); Undo removes it, Redo brings it back; a bad file is rejected with a message and the library stays at 3). Scope collision reconciled: ChatGPT's wake-up file defined BUILD 1043 as the IndexedDB migration — that becomes Import Hub Stage 2 (build 1044); the wake-up file was updated by the parent so the next agent doesn't re-do 1043 or strip the ZIP support.",
+      "verificationTimestamp": "2026-11-09T00:54:49.777Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",
