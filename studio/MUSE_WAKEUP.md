@@ -53,3 +53,28 @@ Do not assume the old resume docs are current: this wake file says BUILD 1042 is
 Acceptance test: On iPhone Safari, select a valid small GLB, see a real preview, add it to the library, place it in Build Mode, save/reload the town, and confirm the asset remains available. Also test an invalid file, a malformed GLB, a too-large file, storage quota failure, and a ZIP path-traversal attempt. At minimum, desktop browser tests should cover dependency-linked glTF textures and pack export/import.
 
 Start by auditing what exists and report the actual Import Hub baseline. Then implement the highest-value safe stage immediately; do not stop at a plan.
+
+## NEXT UPDATE — BUILD 1043: Fix the existing custom-asset import bottleneck
+
+The audit has identified an existing importer; do NOT build a second Import Hub from scratch.
+
+**Verified baseline from the current source:**
+- src/game/engine3d/customAssets.ts already parses self-contained glTF 2.0 binary .glb files directly in-browser.
+- The renderer converts models to static vertex-colour triangles. Textures, animation, and external .gltf/buffer references are not rendered/supported today. Do not advertise them.
+- Current upload cap is 1,000,000 bytes per file; the entire JSON library is capped at 2,000,000 bytes and stored in localStorage under ag-3d-custom-assets-v1.
+- The existing parser has useful safety checks (GLB magic/version/chunks, triangle count, 8x8 footprint, malformed accessors). Preserve and test them.
+- Engine3DWorldView.tsx already imports and uses loadCustomAssets, saveCustomAssets, and the GLB parser; PlacedItem.assetId ties custom placements to assets. Chunk templates currently exclude custom items. Preserve all current behavior.
+
+**Implement this one bounded update now: make asset storage reliable and remove the tiny localStorage bottleneck.**
+
+1. Replace binary/large-array persistence with an IndexedDB-backed asset store (versioned database + object store, stable asset IDs). Keep metadata/manifest compact and versioned. Do not store model vertex arrays in localStorage.
+2. Migrate existing ag-3d-custom-assets-v1 data once, safely and idempotently. Never delete the legacy key until the IndexedDB write is confirmed and read-back validates every migrated asset. If migration fails, keep legacy data usable and show a visible warning.
+3. Preserve the existing synchronous render path safely: load IndexedDB assets into an in-memory cache before enabling custom-asset placement/rendering, show a small loading state, and never make the world boot fail if IndexedDB is unavailable. Avoid stale async writes overwriting newer library changes.
+4. Increase the file-size ceiling only to a measured, device-safe limit after accounting for decoded vertex/index memory. Add total-library byte/triangle budgets and clear actionable quota/size errors. Do not blindly accept huge models. Keep the current triangle/footprint limits unless tests justify a safe adjustment.
+5. Make upload failure visible in the Build UI. No swallowed quota errors, fake success, or silent data loss. Keep the existing parser's validation and static vertex-colour limitations explicit.
+6. Add focused tests: legacy migration success; migration interrupted/failure retains old data; corrupt IndexedDB record ignored; quota failure; duplicate names/IDs; reload persistence; malformed GLB and over-limit file; rapid consecutive uploads/deletes do not race; existing custom placements still render after reload.
+7. Run typecheck, production build, targeted tests, and the relevant existing regression suite. Do not mark live-verified until the deployment and served build marker are confirmed.
+
+**Acceptance:** upload a valid GLB larger than the old 1 MB limit but within the new measured cap, add it, reload on the same device, and confirm it remains in the library and existing placed copies still render. Verify old localStorage uploads migrate without loss. If iPhone Safari IndexedDB storage/quota behavior differs, handle it explicitly.
+
+After BUILD 1043 is implemented and verified, update the registry/dashboard/resume/task queue and only then move to Stage 2 (preview/library UX and broader formats). Do not bundle ZIP, FBX, audio, or unsupported texture rendering into this checkpoint.
