@@ -101,6 +101,15 @@ export interface CustomAsset {
    *  which predate the field and load as 'glb'). Shown in the Import
    *  Hub so the player can tell what came from where. */
   format?: 'glb' | 'gltf' | 'obj';
+  /** BUILD 1045: library metadata. sourceFile is the file the model
+   *  came from (the name as picked, or the ZIP entry path); category
+   *  is one of ASSET_CATEGORIES in assetLibrary.ts (the player's own
+   *  choice, 'Unsorted' by default — never guessed from the name);
+   *  tags are the player's own words. All three are optional so
+   *  997–1044 uploads load with honest defaults. */
+  sourceFile?: string;
+  category?: string;
+  tags?: string[];
 }
 
 export type GlbUploadResult =
@@ -269,6 +278,12 @@ function finishAsset(
       height,
       avgColor: avg,
       format,
+      // BUILD 1045: the file this model came from, so the library
+      // row can say where it came from. Category/tags start as the
+      // player's defaults (Unsorted / none) — never guessed.
+      sourceFile: fileName,
+      category: 'Unsorted',
+      tags: [],
     },
   };
 }
@@ -569,6 +584,14 @@ export function validAsset(raw: unknown): CustomAsset | null {
   // BUILD 1043: format is optional — 997-era uploads predate it and
   // load as 'glb'; an unknown value is dropped, never fatal.
   const fmt = r.format === 'glb' || r.format === 'gltf' || r.format === 'obj' ? r.format : 'glb';
+  // BUILD 1045: library metadata is optional — pre-1045 uploads
+  // predate it. A bad value is dropped to the honest default, never
+  // fatal: unknown source file, 'Unsorted', no tags.
+  const sourceFile = typeof r.sourceFile === 'string' && r.sourceFile.length > 0 ? r.sourceFile.slice(0, 128) : undefined;
+  const category = typeof r.category === 'string' && r.category.length > 0 ? r.category.slice(0, 24) : 'Unsorted';
+  const tags = Array.isArray(r.tags)
+    ? (r.tags as unknown[]).filter((t): t is string => typeof t === 'string').map((t) => t.slice(0, 20)).slice(0, 5)
+    : [];
   return {
     id: r.id,
     name: r.name.slice(0, 40),
@@ -579,6 +602,9 @@ export function validAsset(raw: unknown): CustomAsset | null {
     height: h,
     avgColor: r.avgColor as [number, number, number],
     format: fmt,
+    sourceFile,
+    category,
+    tags,
   };
 }
 

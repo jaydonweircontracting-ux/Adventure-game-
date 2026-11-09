@@ -44,9 +44,39 @@ import {
   toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset } from './customAssets';
-import { createAssetStore, createIndexedDbAssetBackend, checkLibraryBudgets, writeAssetManifest, readAssetManifest, describeStoreError, type AssetStore } from './assetStore';
+import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset } from './customAssets';
+import { createAssetStore, createIndexedDbAssetBackend, writeAssetManifest, readAssetManifest, describeStoreError, type AssetStore } from './assetStore';
 import { parseZipUpload } from './zipImport';
+import {
+  ASSET_CATEGORIES, parseTags, assetRow,
+  renameAsset, setAssetCategory, setAssetTags, filterAssets, sortAssets,
+  importProgressPercent, importProgressLabel, planLibraryCommit, discardPending,
+  renderAssetPreview, canPreviewAsset,
+  type ImportProgress, type LibrarySort,
+} from './assetLibrary';
+
+// BUILD 1045: the preview canvas. A tiny module-level component (not
+// defined inside the view, so it never remounts on re-render): it
+// draws the pixel buffer renderAssetPreview returns — the model's own
+// triangles, rasterized in assetLibrary.ts — into a <canvas> with
+// putImageData. No second 3D renderer: the pixels come from the same
+// positions + colours the game draws. When the model cannot be
+// previewed it renders nothing and the caller says so in words.
+function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size: number; testid: string }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ctx = el.getContext('2d');
+    if (!ctx) return;
+    const preview = renderAssetPreview(asset, size);
+    ctx.clearRect(0, 0, size, size);
+    if (!preview) return;
+    const img = new ImageData(new Uint8ClampedArray(preview.pixels), size, size);
+    ctx.putImageData(img, 0, 0);
+  }, [asset, size]);
+  return <canvas ref={ref} width={size} height={size} data-testid={testid} style={{ display: 'block', width: size, height: size, borderRadius: 6, background: '#d8e2d4', border: '1px solid rgba(255,255,255,.25)' }} />;
+}
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
@@ -1701,6 +1731,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1043: Import Hub open state (the hub lives at the top of
   // the Build panel; it is panel UI state like the catalog category).
   const [importHubOpen,setImportHubOpen]=useState(false);
+  // BUILD 1045: Import Hub Stage 3 — preview + library. Parsed models
+  // wait in `pendingImports` until the player taps an explicit Add
+  // (they join the library then, and only then) or Cancel (they are
+  // dropped — nothing was ever written for them). `importProgress`
+  // is the real, live progress of a running import: files/bytes
+  // read out of the totals, advanced between awaited reads/parses.
+  // The library search/sort/filter state keeps a growing library
+  // usable: search matches name, tags, and source filename; the
+  // category and format filters narrow it; sort orders it.
+  const [pendingImports,setPendingImports]=useState<CustomAsset[]>([]);
+  const pendingImportsRef=useRef<CustomAsset[]>([]);
+  const setPending=(next:CustomAsset[])=>{pendingImportsRef.current=next;setPendingImports(next);};
+  const [importProgress,setImportProgress]=useState<ImportProgress|null>(null);
+  const importProgressRef=useRef<ImportProgress|null>(null);
+  const setProgress=(p:ImportProgress|null)=>{importProgressRef.current=p;setImportProgress(p);};
+  const [librarySearch,setLibrarySearch]=useState('');
+  const [librarySort,setLibrarySort]=useState<LibrarySort>('name');
+  const [libraryCategoryFilter,setLibraryCategoryFilter]=useState('all');
+  const [libraryFormatFilter,setLibraryFormatFilter]=useState('all');
+  // Rename-in-progress: which library row is being renamed + the draft.
+  const [renamingId,setRenamingId]=useState<string|null>(null);
+  const [renameDraft,setRenameDraft]=useState('');
   // BUILD 989: Walk suspension. Suspension is a separate flag from the
   // tool itself: Walk pauses taps (they walk) while the preserved
   // selection stays stored in buildRef; tapping Walk again resumes it.
@@ -1816,102 +1868,170 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:id,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};
     if(!id){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}
   };
-  // BUILD 1044: Import Hub — one handler for every file the hub
-  // accepts (.glb, .gltf, .obj, .zip, plus .bin companions and whole
-  // folders). Every failure is a message, never a crash: bad magic,
-  // wrong version, a missing .bin, non-triangle geometry, an oversize
-  // file, a damaged ZIP entry, a full library, or a failed store
-  // write all reject before anything is shown as added. A bad file
-  // never blocks the good ones picked with it. The input resets so
-  // the same file can be picked again after a rejection. (BUILD 997's
-  // single-.glb handler is replaced by this — the GLB path is
-  // unchanged, it just lives in the hub.) Persistence, stated
-  // plainly: files are parsed first, then committed in one serialised
-  // step — library budgets are checked against the live library,
-  // each asset is written to IndexedDB, and only the assets whose
-  // write succeeded join the in-memory library. A quota failure (or
-  // any store failure) names the asset and the reason in the message
-  // and adds nothing — no fake success, no silent loss. When
-  // IndexedDB is unavailable the upload is session-only and the hub
-  // warning already says so.
+  // BUILD 1045: Import Hub Stage 3 — staged import with real
+  // progress + a review step. Files are read and parsed one at a
+  // time, yielding to the event loop between files (setTimeout 0),
+  // so a multi-file import never blocks the render loop in one long
+  // synchronous run; the progress bar shows files and bytes read out
+  // of the totals — real numbers from the work itself, never a timer.
+  // Parsed models do NOT join the library here: they wait in
+  // pendingImports for an explicit Add (commitPendingAssets) or
+  // Cancel (discardPendingAsset). Every failure is a message, never
+  // a crash, and a bad file never blocks the good ones picked with it.
+  // (BUILD 997's single-.glb handler and 1044's direct commit are
+  // replaced by this — the GLB/ZIP parse paths are unchanged, they
+  // just end in review instead of the library.)
+  const yieldToLoop=()=>new Promise<void>((r)=>setTimeout(r,0));
   const handleImportFiles=async(e:{target:{files:FileList|null;value:string}})=>{
     const files=e.target.files?Array.from(e.target.files):[];
     e.target.value='';
     if(files.length===0)return;
+    const modelFiles=files.filter(f=>!/\.bin$/i.test(f.name));
+    const totalBytes=files.reduce((s,f)=>s+f.size,0);
+    let bytesDone=0;let filesDone=0;
+    const setP=(phase:'reading'|'parsing',current:string)=>setProgress({phase,filesDone,filesTotal:modelFiles.length,bytesDone,bytesTotal:totalBytes,current});
     // .bin companions for any .gltf picked in the same batch.
     const binFiles=new Map<string,ArrayBuffer>();
-    await Promise.all(files.filter(f=>/\.bin$/i.test(f.name)).map(async(f)=>{try{binFiles.set(f.name,await f.arrayBuffer());}catch{/* a bad .bin just means its .gltf fails with a clear message */}}));
-    const pending:CustomAsset[]=[];
+    for(const f of files.filter(f=>/\.bin$/i.test(f.name))){
+      setP('reading',f.name);
+      try{binFiles.set(f.name,await f.arrayBuffer());bytesDone+=f.size;}catch{/* a bad .bin just means its .gltf fails with a clear message */}
+      await yieldToLoop();
+    }
+    const parsed:CustomAsset[]=[];
     const failed:string[]=[];
     let skipped=0;let skippedNote='';
     const accept=(res:{ok:true;asset:CustomAsset}|{ok:false;reason:string},label:string)=>{
       if(!res.ok){failed.push(label+': '+res.reason);return;}
-      pending.push(res.asset);
+      parsed.push(res.asset);
     };
-    for(const file of files){
+    for(const file of modelFiles){
       const lower=file.name.toLowerCase();
-      if(lower.endsWith('.bin'))continue; // companion only, handled above
+      setP('reading',file.name);
       if(lower.endsWith('.zip')){
         let buf:ArrayBuffer;
-        try{buf=await file.arrayBuffer();}catch{failed.push(file.name+': could not read the file');continue;}
+        try{buf=await file.arrayBuffer();bytesDone+=file.size;}catch{failed.push(file.name+': could not read the file');filesDone++;await yieldToLoop();continue;}
+        setP('parsing',file.name);
         let zip;
-        try{zip=await parseZipUpload(buf);}catch(err){failed.push(file.name+': '+(err instanceof Error?err.message:'could not read the ZIP'));continue;}
+        try{zip=await parseZipUpload(buf);}catch(err){failed.push(file.name+': '+(err instanceof Error?err.message:'could not read the ZIP'));filesDone++;await yieldToLoop();continue;}
         for(const m of zip.models)accept(m.result,m.name);
         if(zip.skipped.length>0){skipped+=zip.skipped.length;skippedNote=zip.skipped[0].reason;}
+        filesDone++;await yieldToLoop();
         continue;
       }
       if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')){
-        if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 5 MB');continue;}
+        if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 5 MB');filesDone++;await yieldToLoop();continue;}
         try{
           if(lower.endsWith('.glb')){
-            accept(parseGlbUpload(await file.arrayBuffer(),file.name),file.name);
+            const buf=await file.arrayBuffer();bytesDone+=file.size;
+            setP('parsing',file.name);await yieldToLoop();
+            accept(parseGlbUpload(buf,file.name),file.name);
           }else if(lower.endsWith('.gltf')){
-            accept(parseGltfUpload(await file.text(),file.name,binFiles),file.name);
+            const text=await file.text();bytesDone+=file.size;
+            setP('parsing',file.name);await yieldToLoop();
+            accept(parseGltfUpload(text,file.name,binFiles),file.name);
           }else{
-            accept(parseObjUpload(await file.text(),file.name),file.name);
+            const text=await file.text();bytesDone+=file.size;
+            setP('parsing',file.name);await yieldToLoop();
+            accept(parseObjUpload(text,file.name),file.name);
           }
         }catch{failed.push(file.name+': could not read the file');}
+        filesDone++;await yieldToLoop();
         continue;
       }
       failed.push(file.name+': not a supported file (.glb, .gltf, .obj, or .zip)');
+      filesDone++;await yieldToLoop();
     }
-    if(pending.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
+    setProgress(null);
+    if(parsed.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
       setMessage('A .bin file on its own is not a model — select it together with its .gltf file');
       return;
     }
+    if(parsed.length>0)setPending([...pendingImportsRef.current,...parsed]);
+    const bits:string[]=[];
+    if(parsed.length>0)bits.push(parsed.length===1?'\''+parsed[0].name+'\' is ready to review below — check the preview, then tap Add to Asset Library or Cancel':parsed.length+' models are ready to review below — check each preview, then Add to Asset Library or Cancel');
+    if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
+    if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
+    if(bits.length>0)setMessage(bits.join(' — '));
+  };
+  // BUILD 1045: commit pending imports to the library — the explicit
+  // "Add to Asset Library" step. planLibraryCommit uniquifies names
+  // and checks the budgets first; then each asset is written to
+  // IndexedDB, and only the writes that succeeded join the in-memory
+  // library. A failed write names the asset and the reason and adds
+  // nothing — no fake success, no silent loss. Assets that failed to
+  // save stay pending, so the player can retry or cancel them. When
+  // IndexedDB is unavailable the add is session-only and the hub
+  // warning already says so.
+  const commitPendingAssets=async(toCommit:CustomAsset[])=>{
+    if(toCommit.length===0)return;
     await runLibraryOp(async()=>{
       const store=assetStoreRef.current;
       const live=customAssetsRef.current;
-      const taken=new Set(live.map(a=>a.name));
-      const toAdd:CustomAsset[]=[];
-      for(const raw of pending){
-        const name=uniquifyAssetName([...taken],raw.name);
-        taken.add(name);
-        toAdd.push({...raw,name});
-      }
+      const plan=planLibraryCommit(live,toCommit);
+      const failed:string[]=[...plan.failed];
       const persisted:CustomAsset[]=[];
-      const budget=checkLibraryBudgets(live,toAdd);
-      if(!budget.ok){
-        failed.push('Upload failed: '+budget.reason);
-      }else if(store){
-        for(const a of toAdd){
-          try{await store.put(a);persisted.push(a);}
-          catch(err){failed.push(a.name+': could not save ('+describeStoreError(err)+')');}
+      if(plan.toAdd.length>0){
+        if(store){
+          for(const a of plan.toAdd){
+            try{await store.put(a);persisted.push(a);}
+            catch(err){failed.push(a.name+': could not save ('+describeStoreError(err)+')');}
+          }
+        }else{
+          persisted.push(...plan.toAdd);
         }
-      }else{
-        // No store this session (IndexedDB unavailable): the upload
-        // is session-only. The hub warning says so; nothing is
-        // written to localStorage.
-        persisted.push(...toAdd);
       }
       if(persisted.length>0)setLibrary([...customAssetsRef.current,...persisted]);
-      const added=persisted.map(a=>a.name);
+      const committedIds=new Set(persisted.map(a=>a.id));
+      setPending(pendingImportsRef.current.filter(a=>!committedIds.has(a.id)));
       const bits:string[]=[];
-      if(added.length>0)bits.push('Imported '+added.map(n=>'\''+n+'\'').join(', ')+' — pick '+(added.length===1?'it':'one')+' in Custom, then tap the ground to place it');
+      if(persisted.length>0)bits.push('Added '+persisted.map(a=>'\''+a.name+'\'').join(', ')+' to the Asset Library — pick '+(persisted.length===1?'it':'one')+' in Custom, then tap the ground to place it');
       if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
-      if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
       if(bits.length>0)setMessage(bits.join(' — '));
     });
+  };
+  // BUILD 1045: Cancel a pending import. Nothing was ever written
+  // for it, so dropping it leaves the library exactly as it was.
+  const discardPendingAsset=(id:string)=>{
+    const a=pendingImportsRef.current.find(x=>x.id===id);
+    setPending(discardPending(pendingImportsRef.current,id));
+    if(a)setMessage('Discarded \''+a.name+'\' — it was not added to the library');
+  };
+  // BUILD 1045: edit a pending import's details before it is added
+  // (name, category, tags) — pending copies only, the library is
+  // untouched until Add.
+  const updatePendingAsset=(id:string,patch:Partial<CustomAsset>)=>{
+    setPending(pendingImportsRef.current.map(a=>a.id===id?{...a,...patch}:a));
+  };
+  // BUILD 1045: rename / re-categorise / re-tag a library asset. The
+  // updated asset is written to the store FIRST and only then
+  // replaces the old one in the library, so a failed write never
+  // shows a change that did not stick.
+  const updateLibraryAsset=async(updated:CustomAsset,msg:string)=>{
+    await runLibraryOp(async()=>{
+      const store=assetStoreRef.current;
+      if(store){
+        try{await store.put(updated);}
+        catch(err){setMessage('Could not save that change — '+describeStoreError(err)+'. The library is unchanged.');return;}
+      }
+      setLibrary(customAssetsRef.current.map(a=>a.id===updated.id?updated:a));
+      setMessage(msg);
+    });
+  };
+  const renameLibraryAsset=(asset:CustomAsset,newName:string)=>{
+    const trimmed=newName.trim();
+    if(trimmed.length===0){setMessage('Type a name first');return;}
+    const updated=renameAsset(asset,trimmed,customAssetsRef.current.map(a=>a.name));
+    setRenamingId(null);
+    if(updated.name===asset.name){setMessage('It is already called \''+asset.name+'\'');return;}
+    void updateLibraryAsset(updated,'Renamed to \''+updated.name+'\''+(updated.name!==trimmed?' (that name was taken)':''));
+  };
+  const setLibraryAssetCategory=(asset:CustomAsset,category:string)=>{
+    const updated=setAssetCategory(asset,category);
+    void updateLibraryAsset(updated,'\''+updated.name+'\' is now in '+updated.category);
+  };
+  const setLibraryAssetTags=(asset:CustomAsset,input:string)=>{
+    const updated=setAssetTags(asset,parseTags(input));
+    void updateLibraryAsset(updated,'Tags saved for \''+updated.name+'\''+((updated.tags??[]).length===0?' (no tags)':' — '+(updated.tags??[]).join(', ')));
   };
   const deleteCustomAsset=async(asset:CustomAsset)=>{
     // Persist the deletion FIRST: if the store cannot delete, the
@@ -3730,6 +3850,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // — whether the library finished loading, whether the store is
       // usable this session, and any visible warning (probes only).
       getAssetStoreStatus:()=>({loading:customAssetsLoadingRef.current,ready:assetStoreReadyRef.current,warning:customAssetsWarningRef.current}),
+      // BUILD 1045 test hooks (read-only): the imports waiting for
+      // an explicit Add/Cancel, and the live import progress (probes only).
+      getPendingImports:()=>JSON.parse(JSON.stringify(pendingImportsRef.current)),
+      getImportProgress:()=>importProgressRef.current?{...importProgressRef.current}:null,
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
       // BUILD 1036 test hooks (probes only — no gameplay effect):
@@ -4299,19 +4423,104 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         <input type="file" multiple accept=".glb,.gltf,.obj,.zip,.bin" data-testid="import-hub-file-input" onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
         <input type="file" multiple data-testid="import-hub-folder-input" ref={(el)=>{if(el)el.setAttribute('webkitdirectory','');}} onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
-        <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Imported models ({customAssetsLoading?'…':customAssets.length})</div>
+        {/* BUILD 1045: real import progress — the bar's width is the
+            bytes read out of the total (or files, when there are no
+            bytes), advanced between awaited reads/parses. It only
+            shows while an import is actually running. */}
+        {importProgress&&<div data-testid="import-progress" style={{marginTop:10,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #c4d1bd'}}>
+          <div style={{fontSize:12,lineHeight:1.4}}>{importProgressLabel(importProgress)}</div>
+          <div style={{height:10,borderRadius:5,background:'#0f1f18',marginTop:6,overflow:'hidden'}}><div data-testid="import-progress-bar" style={{width:importProgressPercent(importProgress)+'%',height:'100%',background:'#7fb069'}} /></div>
+        </div>}
+        {/* BUILD 1045: review step — every parsed model waits here
+            with a real preview drawn from its own geometry, its
+            details, and its name/category/tags editable BEFORE it
+            joins the library. Add commits it (persisted first, then
+            shown); Cancel drops it (nothing was ever written). */}
+        {pendingImports.length>0&&<div data-testid="import-pending" style={{marginTop:12}}>
+          <div style={{fontSize:13,fontWeight:700}}>Ready to review ({pendingImports.length}) — nothing joins the library until you tap Add</div>
+          {pendingImports.map(a=>{const row=assetRow(a);return <div key={a.id} data-testid="import-pending-card" style={{marginTop:8,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #ffd94d'}}>
+            <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+              {canPreviewAsset(a)
+                ? <AssetPreviewCanvas asset={a} size={120} testid="import-preview" />
+                : <div data-testid="import-preview-unavailable" style={{width:120,height:120,flex:'0 0 120px',borderRadius:6,background:'#3a2a2a',border:'1px solid rgba(255,255,255,.25)',fontSize:11,lineHeight:1.4,padding:8,boxSizing:'border-box'}}>This model has no triangles to preview — it cannot be shown or added as a visible model.</div>}
+              <div style={{flex:1,minWidth:0}}>
+                <label style={{display:'block',fontSize:11,opacity:.85}}>Name</label>
+                <input type="text" data-testid="import-pending-name" value={a.name} onChange={e=>updatePendingAsset(a.id,{name:e.target.value.slice(0,40)})} style={{display:'block',width:'100%',marginTop:2,padding:8,borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:13,boxSizing:'border-box'}} />
+                <label style={{display:'block',fontSize:11,opacity:.85,marginTop:6}}>Category</label>
+                <select data-testid="import-pending-category" value={a.category??'Unsorted'} onChange={e=>updatePendingAsset(a.id,{category:e.target.value})} style={{display:'block',width:'100%',marginTop:2,padding:8,borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:13,boxSizing:'border-box'}}>
+                  {ASSET_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <label style={{display:'block',fontSize:11,opacity:.85,marginTop:6}}>Tags (comma-separated)</label>
+                <input type="text" data-testid="import-pending-tags" defaultValue={(a.tags??[]).join(', ')} onBlur={e=>updatePendingAsset(a.id,{tags:parseTags(e.target.value)})} placeholder="e.g. red, roof" style={{display:'block',width:'100%',marginTop:2,padding:8,borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:13,boxSizing:'border-box'}} />
+              </div>
+            </div>
+            <div style={{fontSize:12,marginTop:8,lineHeight:1.5}}>{row.width}×{row.depth} tiles · {row.height} high · {row.triangles} triangles · {row.format.toUpperCase()} · from {row.sourceFile}</div>
+            <div style={{display:'flex',gap:8,marginTop:8}}>
+              <button type="button" data-testid="import-pending-add" onClick={()=>void commitPendingAssets([a])} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>Add to Asset Library</button>
+              <button type="button" data-testid="import-pending-cancel" onClick={()=>discardPendingAsset(a.id)} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#5a2e24',color:'#fff',fontWeight:700,fontSize:13}}>Cancel</button>
+            </div>
+          </div>;})}
+          {pendingImports.length>1&&<div style={{display:'flex',gap:8,marginTop:8}}>
+            <button type="button" data-testid="import-pending-add-all" onClick={()=>void commitPendingAssets([...pendingImportsRef.current])} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>Add all ({pendingImports.length})</button>
+            <button type="button" data-testid="import-pending-cancel-all" onClick={()=>{const n=pendingImportsRef.current.length;setPending([]);setMessage('Discarded '+n+' pending import'+(n===1?'':'s')+' — nothing joined the library');}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#5a2e24',color:'#fff',fontWeight:700,fontSize:13}}>Cancel all</button>
+          </div>}
+        </div>}
+        <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Asset Library ({customAssetsLoading?'…':customAssets.length})</div>
+        {/* BUILD 1045: the library is searchable and sortable — search
+            matches name, tags, and source filename; the filters narrow
+            by category and format; sort orders by name, format,
+            category, or triangle count. */}
+        <input type="text" data-testid="import-library-search" value={librarySearch} onChange={e=>setLibrarySearch(e.target.value)} placeholder="Search by name, tag, or file…" style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:13,boxSizing:'border-box'}} />
+        <div style={{display:'flex',gap:6,marginTop:6}}>
+          <select data-testid="import-library-category-filter" value={libraryCategoryFilter} onChange={e=>setLibraryCategoryFilter(e.target.value)} aria-label="Filter by category" style={{flex:1,padding:'8px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12}}>
+            <option value="all">All categories</option>
+            {ASSET_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+          <select data-testid="import-library-format-filter" value={libraryFormatFilter} onChange={e=>setLibraryFormatFilter(e.target.value)} aria-label="Filter by format" style={{flex:1,padding:'8px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12}}>
+            <option value="all">All formats</option>
+            <option value="glb">GLB</option>
+            <option value="gltf">glTF</option>
+            <option value="obj">OBJ</option>
+          </select>
+          <select data-testid="import-library-sort" value={librarySort} onChange={e=>setLibrarySort(e.target.value as LibrarySort)} aria-label="Sort library" style={{flex:1,padding:'8px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12}}>
+            <option value="name">Sort: name</option>
+            <option value="format">Sort: format</option>
+            <option value="category">Sort: category</option>
+            <option value="triangles">Sort: triangles</option>
+          </select>
+        </div>
         {customAssetsLoading
           ? <div data-testid="import-hub-loading" style={{fontSize:12,opacity:.7,marginTop:6}}>Loading your models{(()=>{const m=readAssetManifest();return m&&m.assets.length>0?' ('+m.assets.length+' saved)':'';})()}…</div>
           : customAssets.length===0
           ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>Nothing imported yet — pick a file above.</div>
-          : <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:6}}>
-              {customAssets.map(a=><div key={a.id} style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{display:'block',width:22,height:22,flex:'0 0 22px',borderRadius:6,background:'rgb('+Math.round(a.avgColor[0]*255)+','+Math.round(a.avgColor[1]*255)+','+Math.round(a.avgColor[2]*255)+')',border:'1px solid rgba(255,255,255,.25)'}}></span>
-                <span style={{flex:1,fontSize:12,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name} · {(a.format||'glb').toUpperCase()} · {a.width}×{a.height} · {Math.floor(a.indices.length/3)} triangles</span>
-                <button type="button" data-testid="import-hub-place" onClick={()=>armCustomAsset(a.id)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Place</button>
-                <button type="button" data-testid="import-hub-delete" aria-label={'Delete '+a.name} onClick={()=>deleteCustomAsset(a)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:12}}>Delete</button>
-              </div>)}
-            </div>}
+          : (()=>{const visible=sortAssets(filterAssets(customAssets,{query:librarySearch,category:libraryCategoryFilter,format:libraryFormatFilter}),librarySort);
+            if(visible.length===0)return <div data-testid="import-library-empty" style={{fontSize:12,opacity:.7,marginTop:6}}>No models match that search — clear the search or filters to see the whole library.</div>;
+            return <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:6}}>
+              {visible.map(a=>{const row=assetRow(a);return <div key={a.id} data-testid="import-library-row" style={{display:'flex',gap:8,alignItems:'flex-start',padding:8,borderRadius:9,background:'#172c23',border:'1px solid rgba(255,255,255,.12)'}}>
+                <AssetPreviewCanvas asset={a} size={44} testid="import-library-preview" />
+                <div style={{flex:1,minWidth:0}}>
+                  {renamingId===a.id
+                    ? <div style={{display:'flex',gap:6}}>
+                        <input type="text" data-testid="import-library-rename-input" value={renameDraft} onChange={e=>setRenameDraft(e.target.value.slice(0,40))} style={{flex:1,minWidth:0,padding:'7px 8px',borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
+                        <button type="button" data-testid="import-library-rename-save" onClick={()=>renameLibraryAsset(a,renameDraft)} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:12}}>Save</button>
+                        <button type="button" data-testid="import-library-rename-cancel" onClick={()=>setRenamingId(null)} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>✕</button>
+                      </div>
+                    : <div style={{fontSize:12,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.name}</div>}
+                  <div style={{fontSize:11,opacity:.85,lineHeight:1.5,marginTop:2}}>{row.category}{row.tags.length>0?' · '+row.tags.join(', '):''} · {row.width}×{row.depth} tiles · {row.height} high · {row.triangles} triangles · {row.format.toUpperCase()} · {row.sourceFile}</div>
+                  <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
+                    <select data-testid="import-library-category" value={row.category} onChange={e=>setLibraryAssetCategory(a,e.target.value)} aria-label={'Category for '+a.name} style={{padding:'6px',borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:11}}>
+                      {ASSET_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="text" data-testid="import-library-tags" defaultValue={row.tags.join(', ')} onBlur={e=>setLibraryAssetTags(a,e.target.value)} placeholder="tags, comma-separated" aria-label={'Tags for '+a.name} style={{flex:1,minWidth:90,padding:'6px 8px',borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:11,boxSizing:'border-box'}} />
+                  </div>
+                  <div style={{display:'flex',gap:6,marginTop:6}}>
+                    {renamingId!==a.id&&<button type="button" data-testid="import-library-rename" onClick={()=>{setRenamingId(a.id);setRenameDraft(a.name);}} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Rename</button>}
+                    <button type="button" data-testid="import-hub-place" onClick={()=>armCustomAsset(a.id)} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:customSelection===a.id?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Place</button>
+                    <button type="button" data-testid="import-hub-delete" aria-label={'Delete '+a.name} onClick={()=>deleteCustomAsset(a)} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#7a3b2e',color:'#fff',fontWeight:700,fontSize:12}}>Delete</button>
+                  </div>
+                </div>
+              </div>;})}
+            </div>;})()}
         <div data-testid="import-hub-limits" style={{fontSize:12,marginTop:12,lineHeight:1.5,borderTop:'1px solid #c4d1bd',paddingTop:10}}>
           <div style={{fontWeight:700}}>What the hub cannot do (honest limits)</div>
           <div style={{marginTop:4}}>• <b>Folders:</b> on iPhone Safari a folder cannot be opened directly — pick files above instead (several at once). The folder button works on a desktop browser where the browser supports it.</div>
@@ -4320,7 +4529,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           <div style={{marginTop:4}}>• <b>AI access:</b> ChatGPT cannot reach files on your phone or computer — uploading here through the file picker is how a model gets into the game.</div>
         </div>
       </div>}
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>
