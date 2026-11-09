@@ -18,3 +18,7 @@ Resume ASHFALL from `studio/CONTINUE_ASHFALL.md`. Do not restart or rebuild the 
 **Operating command:** BUILD. MEASURE. LEARN. EVOLVE. REPEAT.
 
 This file is a continuation signal, not permission to bypass credit limits, safeguards, testing, or repository protections.
+
+## Fresh wake signal — 2026-11-08 17:31 PST
+
+This commit is the explicit request to resume the existing Muse workflow now. Continue the Import Hub as the next bounded build (1043+), following `studio/CONTINUE_ASHFALL.md`, `studio/NEXT_TASK.md`, and `studio/orchestrator/README.md`. Reconcile repository state first; preserve all verified work through build 1042. Do not restart ASHFALL, repeat completed Town Builder stages, bypass credit limits, or claim work is complete without tests and live evidence.
