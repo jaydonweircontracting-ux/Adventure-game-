@@ -489,6 +489,15 @@ function applyPlannedMoves(
       // 1041 rule — validatePlacement builds a fresh item with no
       // stamp, so a group move/rotate must not re-plant it).
       if (p.oldItem.kind === 'farm' && p.oldItem.farmPlantedAt !== undefined) res.item.farmPlantedAt = p.oldItem.farmPlantedAt;
+      // BUILD 1050: a moved/rotated house keeps its design seed
+      // (the 1050 rule — validatePlacement stamps the destination
+      // origin, so a group move/rotate must not re-roll the roof it
+      // was built with). An old-save house with no seed keeps the
+      // origin it was built at (its position before this move).
+      if (p.oldItem.kind === 'house') {
+        res.item.seedX0 = p.oldItem.seedX0 ?? p.oldItem.x0;
+        res.item.seedY0 = p.oldItem.seedY0 ?? p.oldItem.y0;
+      }
       if (!w.placements) w.placements = [];
       w.placements.splice(Math.min(p.index, w.placements.length), 0, res.item);
       entries.push({ kind: 'move', oldItem: p.oldItem, newItem: res.item, index: p.index });

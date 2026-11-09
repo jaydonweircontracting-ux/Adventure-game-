@@ -39,7 +39,7 @@
  *  1..6 by interior area; pieces are chosen by a seeded hash over the hut
  *  rect + piece index, so layouts differ per house and are deterministic.
  */
-import { hash2, type Rgb } from './townLook';
+import { hash2, GROUND_FLOOR_H, DOOR_W, DOOR_H, type Rgb } from './townLook';
 import type { HutRect } from '../iso/isoWorld';
 
 export type DoorFace = 'north' | 'south' | 'west' | 'east';
@@ -218,8 +218,13 @@ export function interiorBoxes(hut: HutRect, seedHut: HutRect = hut): InteriorBox
   const out: InteriorBox[] = [];
   for (let i = 0; i < count; i++) {
     const tile = seeded[i];
-    const kind =
-      FURNITURE_KINDS[
+    // BUILD 1050: the first piece is ALWAYS a hearth, so every
+    // interior has one — the hearth is the room's light source (its
+    // fire glows at night on the house-light schedule, houseFx.ts),
+    // and a room with no hearth would have no glow at all. The other
+    // pieces keep their seeded kinds; only the first kind is forced.
+    const kind = i === 0 ? 'hearth'
+      : FURNITURE_KINDS[
         Math.floor(hash2(seedHut.x0 * 13.7 + i * 3.3, seedHut.y0 * 7.9 + i * 1.7) * FURNITURE_KINDS.length) %
           FURNITURE_KINDS.length
       ];
@@ -259,4 +264,128 @@ export function interiorBoxes(hut: HutRect, seedHut: HutRect = hut): InteriorBox
     }
   }
   return out;
+}
+
+// ---- BUILD 1050: interior ceiling, wall band, hearth glow ----
+
+/** Ceiling height above the interior floor: the ground-floor height
+ *  (2.1), so the ceiling sits at the top of the ground floor, under
+ *  the upper storeys. The first-person eye (1.33 above the floor)
+ *  stands 0.82 below it — the ceiling is in view when looking up,
+ *  and every furniture piece (tallest: shelf 1.1) clears it. */
+export const INTERIOR_CEILING_H = GROUND_FLOOR_H;
+
+/** One flat quad for the fx buffer: four corners + a colour.
+ *  Positions are absolute world units (baseY already added). */
+export interface InteriorQuad {
+  a: [number, number, number];
+  b: [number, number, number];
+  c: [number, number, number];
+  d: [number, number, number];
+  color: Rgb;
+}
+
+const CEILING_WOOD: Rgb = [0.45, 0.32, 0.2];
+const WALL_PLASTER: Rgb = [0.8, 0.72, 0.55];
+
+/**
+ * The interior ceiling: one timber quad spanning the hut footprint
+ * at floor + GROUND_FLOOR_H, so the sky is not visible from inside
+ * when looking up. The view renders it per frame (fx buffer) only
+ * in first-person inside — the orbit view keeps its cutaway, so the
+ * room stays visible from above (a ceiling in the static world
+ * buffer would hide the furniture from the orbit camera). The
+ * geometry proof is a point test: a point above the room's centre,
+ * below this y, is under the ceiling, not under the sky.
+ */
+export function interiorCeilingFor(hut: HutRect, baseY: number): InteriorQuad {
+  const y = baseY + INTERIOR_FLOOR_Y + INTERIOR_CEILING_H;
+  const x0 = hut.x0, x1 = hut.x1 + 1, z0 = hut.y0, z1 = hut.y1 + 1;
+  return {
+    a: [x0, y, z0], b: [x1, y, z0], c: [x1, y, z1], d: [x0, y, z1],
+    color: CEILING_WOOD,
+  };
+}
+
+/**
+ * The interior wall band: one plaster quad per side, floor to
+ * ceiling, at the rect's edge planes. The door face carries a
+ * doorway gap (the door's width, 0.87, up to its 1.78 height, with
+ * a lintel above) instead of a solid wall, so the door reads from
+ * inside and the room is not sealed shut — Exit is still the way
+ * out (the 1032 rule is unchanged: the walls are visual, the
+ * walkability is interiorTileWalkable). Like the ceiling, this
+ * renders per frame only in first-person inside.
+ */
+export function interiorWallBandFor(hut: HutRect, baseY: number): InteriorQuad[] {
+  const y0 = baseY + INTERIOR_FLOOR_Y;
+  const y1 = y0 + INTERIOR_CEILING_H;
+  const x0 = hut.x0, x1 = hut.x1 + 1, z0 = hut.y0, z1 = hut.y1 + 1;
+  const door = hutDoor(hut);
+  const out: InteriorQuad[] = [];
+  const quad = (a: [number, number, number], b: [number, number, number], c: [number, number, number], d: [number, number, number]): InteriorQuad =>
+    ({ a, b, c, d, color: WALL_PLASTER });
+  // North + south walls are full quads, unless they ARE the door
+  // face (then they get the doorway treatment below instead).
+  const fullWall = (face: DoorFace): void => {
+    if (face === 'north') out.push(quad([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]));
+    else if (face === 'south') out.push(quad([x1, y0, z1], [x0, y0, z1], [x0, y1, z1], [x1, y1, z1]));
+    else if (face === 'west') out.push(quad([x0, y0, z1], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1]));
+    else out.push(quad([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]));
+  };
+  // The door-face wall, with a doorway gap: two side segments and
+  // a lintel over the door. The door centre sits on the door tile
+  // (tile centre + 0.5 along the face); the gap is DOOR_W wide.
+  const doorWall = (face: DoorFace): void => {
+    const gap = DOOR_W;
+    const top = y0 + DOOR_H;
+    if (face === 'south' || face === 'north') {
+      const cx = door.x + 0.5;
+      const z = face === 'south' ? z1 : z0;
+      const a0 = x0, a1 = cx - gap / 2, a2 = cx + gap / 2, a3 = x1;
+      const q = (p0: number, p1: number, q0: number, q1: number): void => {
+        if (p1 <= p0 || q1 <= q0) return;
+        if (face === 'south') out.push(quad([p1, q0, z], [p0, q0, z], [p0, q1, z], [p1, q1, z]));
+        else out.push(quad([p0, q0, z], [p1, q0, z], [p1, q1, z], [p0, q1, z]));
+      };
+      q(a0, a1, y0, y1);
+      q(a2, a3, y0, y1);
+      q(a1, a2, top, y1);
+    } else {
+      const cz = door.y + 0.5;
+      const x = face === 'west' ? x0 : x1;
+      const a0 = z0, a1 = cz - gap / 2, a2 = cz + gap / 2, a3 = z1;
+      const q = (p0: number, p1: number, q0: number, q1: number): void => {
+        if (p1 <= p0 || q1 <= q0) return;
+        if (face === 'west') out.push(quad([x, q0, p1], [x, q0, p0], [x, q1, p0], [x, q1, p1]));
+        else out.push(quad([x, q0, p0], [x, q0, p1], [x, q1, p1], [x, q1, p0]));
+      };
+      q(a0, a1, y0, y1);
+      q(a2, a3, y0, y1);
+      q(a1, a2, top, y1);
+    }
+  };
+  const faces: DoorFace[] = ['north', 'south', 'west', 'east'];
+  for (const f of faces) {
+    if (f === door.face) doorWall(f);
+    else fullWall(f);
+  }
+  return out;
+}
+
+/**
+ * The hearth fire's centre, in absolute world units (baseY added),
+ * or null when the interior has no hearth. interiorBoxes guarantees
+ * a hearth as its first piece (1050), so this is null only for a
+ * degenerate hut with no furniture tiles at all. The fire box is
+ * the hearth piece's FIRE-coloured box (the second box the hearth
+ * kind emits); the glow box sits on it.
+ */
+export function interiorHearthFor(hut: HutRect, seedHut: HutRect, baseY: number): [number, number, number] | null {
+  for (const b of interiorBoxes(hut, seedHut)) {
+    if (b.kind !== 'hearth') continue;
+    if (b.color[0] !== FIRE[0] || b.color[1] !== FIRE[1] || b.color[2] !== FIRE[2]) continue;
+    return [b.x, b.y0 + b.h / 2 + baseY, b.z];
+  }
+  return null;
 }

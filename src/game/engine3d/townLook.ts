@@ -167,13 +167,20 @@ export const VIEW_HORIZON_BAND_Y = -0.08;
 export const VIEW_APRON_Y = -0.11;
 
 /** Steep roof rise as a fraction of the cross-axis span. rise/run = 0.9,
- *  i.e. a ~42 degree pitch, matching the reference's steep roofs. */
-export function roofRise(span: number): number {
-  return 0.45 * span;
+ *  i.e. a ~42 degree pitch, matching the reference's steep roofs.
+ *  BUILD 1050: the pitch is now a per-house value (roofPitch, the
+ *  rise fraction) — 0.25 shallow, 0.45 the old standard, 0.6 steep —
+ *  so the town's rooflines vary instead of all sharing one slope. */
+export function roofRise(span: number, pitch = 0.45): number {
+  return pitch * span;
 }
-export function roofPitchDeg(span: number): number {
-  return (Math.atan2(roofRise(span), span / 2) * 180) / Math.PI;
+export function roofPitchDeg(span: number, pitch = 0.45): number {
+  return (Math.atan2(roofRise(span, pitch), span / 2) * 180) / Math.PI;
 }
+/** BUILD 1050: a parapet roof is flat-topped with a raised edge
+ *  (PARAPET_H) instead of a pitched ridge — the flat-roof form for
+ *  shops. The chimney cap rides the parapet top, not a ridge. */
+export const PARAPET_H = 0.35;
 
 export type DoorFace = 'north' | 'south' | 'west' | 'east';
 
@@ -183,8 +190,20 @@ export interface HouseDesign {
   plaster: Rgb;
   timber: Rgb;
   roof: Rgb;
-  /** Ridge axis: along the longer horizontal side. */
+  /** Ridge axis: along the longer horizontal side. BUILD 1050: the
+   *  axis is no longer forced by the footprint — 40% of houses flip
+   *  it by seed (salt 8), so some roofs run north-south instead of
+   *  east-west and the town stops reading as one roofline. */
   roofAxis: 'x' | 'z';
+  /** BUILD 1050: roof form — 'pitched' is the old steep roof,
+   *  'parapet' is a flat top with a raised edge (the shop form).
+   *  roofPitch is the rise fraction of the pitched form: 0.25
+   *  shallow, 0.45 the old standard, 0.6 steep. Both are seeded
+   *  (salts 9-10), so a house keeps its roof across reloads and
+   *  moves (the 1006 seed rule), and a placed house keeps the roof
+   *  it was built with (the seed rides on the placement, 1050). */
+  roofForm: 'pitched' | 'parapet';
+  roofPitch: number;
   /** Ground floor on the door face is an open colonnade (posts + recess)
    *  instead of a stone wall, as in the reference's shop fronts. */
   openFront: boolean;
@@ -287,14 +306,27 @@ export function houseDesignFor(
   const w = Math.max(2, x1 - x0 + 1);
   const d = Math.max(2, y1 - y0 + 1);
   const pick = <T>(arr: readonly T[], v: number): T => arr[Math.floor(v * arr.length) % arr.length];
+  // BUILD 1050: roof variety, all seeded (salts 8-10, outside the
+  // light-schedule salts 31-33 and the design salts 1-7, so no
+  // correlation with chimneys, colours, or light times). Axis: the
+  // footprint's long side, flipped for 40% of houses. Pitch: 30%
+  // shallow (0.25), 45% standard (0.45), 25% steep (0.6). Form: a
+  // parapet for 15% of houses, and for 45% of open-front shops
+  // (the flat-roof shop form from the Stage 1 plan).
+  const openFront = h(6) < 0.25;
+  const axisBase: 'x' | 'z' = w >= d ? 'x' : 'z';
+  const hp = h(9);
+  const hf = h(10);
   return {
     stories: h(1) < 0.45 ? 3 : 2,
     stone: pick(STONE_GREYS, h(2)),
     plaster: pick(PLASTERS, h(3)),
     timber: pick(TIMBERS, h(4)),
     roof: pick(ROOFS, h(5)),
-    roofAxis: w >= d ? 'x' : 'z',
-    openFront: h(6) < 0.25,
+    roofAxis: h(8) < 0.4 ? (axisBase === 'x' ? 'z' : 'x') : axisBase,
+    roofForm: hf < 0.15 || (openFront && hf < 0.45) ? 'parapet' : 'pitched',
+    roofPitch: hp < 0.3 ? 0.25 : hp < 0.75 ? 0.45 : 0.6,
+    openFront,
     chimney: h(7) < 0.5,
     doorFace,
   };

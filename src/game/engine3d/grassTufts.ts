@@ -33,6 +33,7 @@ import { wildObstacleAt, surfaceElevation } from './wildTerrain';
 import { generatedBushAt } from './vegetation';
 import type { IsoWorld, Terrain } from '../iso/isoWorld';
 import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles, placedWallTiles } from './placements';
+import { gardenFencesFor, gardenPlantsFor } from './gardens';
 
 export type V3 = [number, number, number];
 
@@ -201,6 +202,11 @@ export function blockedTiles(world: IsoWorld): Set<string> {
   for (const c of placedCustomRects(world)) {
     for (let x = c.x0; x <= c.x1; x++) for (let y = c.y0; y <= c.y1; y++) blocked.add(key(x, y));
   }
+  // BUILD 1050: a generated garden's fence is solid geometry (no
+  // tuft pokes through the fence posts), and a planted tile owns its
+  // bush the same way a generated bush owns its tile (1049).
+  for (const f of gardenFencesFor(world)) blocked.add(key(f.x, f.y));
+  for (const p of gardenPlantsFor(world)) blocked.add(key(p.x, p.y));
   return blocked;
 }
 

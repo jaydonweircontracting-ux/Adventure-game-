@@ -48,13 +48,13 @@
 //   frames, panes, chimney, smoke — is skipped whole, like the world
 //   builder does. Smoke runs day AND night.
 
-import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
+import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, PARAPET_H, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
 import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
 import { LANTERN_GLOW, LANTERN_GLOW_BOX, lanternBoxCentre } from './lantern';
 import { wheatStalksFor, type FarmWheatInput } from './farm';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
-import { placedHutRects, movedRecordForHut } from './placements';
-import { sameHut } from './interiors';
+import { placedHutRects, seedRectForHut } from './placements';
+import { sameHut, type InteriorQuad } from './interiors';
 import { effTerrainFor, surfaceElevation } from './wildTerrain';
 import type { HutRect, IsoWorld } from '../iso/isoWorld';
 
@@ -189,12 +189,16 @@ export function panePlaneFor(face: DoorFace, cx: number, cz: number, w: number, 
  * The chimney cap position for a house, or null when it has no
  * chimney. Single-sourced with the house loop: the chimney box runs
  * ridgeY-.3 to ridgeY+.8 and the cap quad sits at ridgeY+.8.
+ * BUILD 1050: the "ridge" follows the roof form — a pitched roof's
+ * ridge (topY + roofRise with the house's own pitch), a parapet
+ * roof's raised edge (topY + PARAPET_H) — so the smoke starts at
+ * the cap the house actually has, not at a ridge it does not.
  */
 export function chimneyTopFor(cx: number, cz: number, w: number, d: number, design: HouseDesign, baseY = 0): Vec3 | null {
   if (!design.chimney) return null;
   const topY = baseY + GROUND_FLOOR_H + (design.stories - 1) * UPPER_FLOOR_H;
   const span = design.roofAxis === 'x' ? d : w;
-  const ridgeY = topY + roofRise(span);
+  const ridgeY = topY + (design.roofForm === 'parapet' ? PARAPET_H : roofRise(span, design.roofPitch));
   return [design.roofAxis === 'x' ? cx + w * 0.28 : cx, ridgeY + 0.8, design.roofAxis === 'x' ? cz : cz + d * 0.28];
 }
 
@@ -282,7 +286,7 @@ export function houseFxInputsFor(world: IsoWorld, enteredHut: HutRect | null): H
   // Sets are built once), then each hut's base y from the shared surface.
   const effTerrain = effTerrainFor(world);
   for (const hut of [...world.huts, ...placedHutRects(world)]) {
-    const seedHut = movedRecordForHut(world, hut)?.from ?? hut;
+    const seedHut = seedRectForHut(world, hut);
     const variant = (hut as { variant?: string }).variant;
     out.push({
       x0: hut.x0, y0: hut.y0, x1: hut.x1, y1: hut.y1,
@@ -311,6 +315,11 @@ export interface HouseFxDetail {
   variant?: HouseVariantId;
   /** BUILD 1038: the hut's heightfield base y — the blade hub rides it. */
   baseY: number;
+  /** BUILD 1050: the house's roof (axis/pitch/form), so the probe
+   *  hook can read what roof each house actually has. */
+  roofAxis: 'x' | 'z';
+  roofPitch: number;
+  roofForm: 'pitched' | 'parapet';
 }
 
 /** Resolve every input to its design-derived fx state at this minute.
@@ -339,6 +348,9 @@ export function resolveHouseFx(inputs: HouseFxInput[], minutes: number): HouseFx
       hut: { x0: inp.x0, y0: inp.y0, x1: inp.x1, y1: inp.y1 },
       variant: inp.variant,
       baseY: inp.baseY ?? 0,
+      roofAxis: design.roofAxis,
+      roofPitch: design.roofPitch,
+      roofForm: design.roofForm,
     });
   }
   return out;
@@ -417,7 +429,41 @@ export interface HouseFxCounts {
   wheatTiles: number;
   /** BUILD 1041: wheat stalk verts (in the night segment). */
   wheatVerts: number;
+  /** BUILD 1050: interior ceiling verts this frame (night segment). */
+  ceilingVerts: number;
+  /** BUILD 1050: interior wall-band verts this frame (night segment). */
+  wallVerts: number;
+  /** BUILD 1050: 1 when the entered hut's hearth glows this frame
+   *  (lit segment), else 0. */
+  hearthGlow: number;
+  /** BUILD 1050: hearth glow verts (in the lit segment). */
+  hearthVerts: number;
 }
+
+/** BUILD 1050: the entered hut's interior shell + hearth, for the
+ *  per-frame fx buffer. The ceiling and walls render only in
+ *  first-person inside (the view passes them only then) — the orbit
+ *  view keeps its cutaway so the room stays visible from above. The
+ *  hearth glow renders whenever the player is inside and the house
+ *  is lit at night on its schedule (houseLitAt), in either camera.
+ *  All positions are absolute world units (the view adds the
+ *  heightfield base y). */
+export interface InteriorFxInput {
+  /** Ceiling quad — null when the orbit cutaway is showing. */
+  ceiling: InteriorQuad | null;
+  /** Wall-band quads (the door face carries its doorway gap). */
+  walls: InteriorQuad[];
+  /** Hearth fire centre — null when the interior has no hearth. */
+  hearth: Vec3 | null;
+  /** True when the hearth glows (house lit at night). */
+  hearthLit: boolean;
+}
+/** Hearth glow colour: warm fire orange (hotter than the lanterns'
+ *  window yellow — a hearth is a fire, not a lamp). */
+export const HEARTH_GLOW: Vec3 = [1.0, 0.55, 0.18];
+/** Hearth glow box size, tiles — a touch larger than the fire box
+ *  (0.4 wide), so its faces sit proud and cannot z-fight the fire. */
+export const HEARTH_GLOW_BOX = 0.5;
 
 /** One axis-aligned glow box (12 tris, 36 verts), all faces the
  *  same colour — a lantern's night glow is self-luminous, so no
@@ -448,8 +494,13 @@ export interface LanternFxInput { tx: number; ty: number; baseY: number; }
  * BUILD 1041: wheat stalks ride the same call (a 6th argument) — they
  * are time-varying like the blades, so they cannot live in the static
  * world buffer. They emit in the night segment (they darken at night).
+ * BUILD 1050: the entered hut's interior shell + hearth ride the same
+ * call (a 7th argument, null when the player is outside) — the
+ * ceiling/walls emit in the night segment (ordinary surfaces that
+ * darken at night), the hearth glow in the lit segment (self-luminous
+ * fire, the lantern precedent).
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = []): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -501,6 +552,24 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     wheatVerts += cost;
     for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
   }
+  // BUILD 1050: the entered hut's interior shell — ceiling + wall
+  // band, in the night segment (ordinary surfaces: they darken at
+  // night like the room's floor and furniture). Only when the view
+  // passes them (first-person inside); the orbit cutaway passes
+  // null/empty, so the room stays visible from above.
+  let ceilingVerts = 0, wallVerts = 0;
+  if (interior) {
+    if (interior.ceiling && fits(6)) {
+      const c = interior.ceiling;
+      pushQuad(out, c.a, c.b, c.c, c.d, c.color);
+      ceilingVerts += 6;
+    }
+    for (const wq of interior.walls) {
+      if (!fits(6)) break;
+      pushQuad(out, wq.a, wq.b, wq.c, wq.d, wq.color);
+      wallVerts += 6;
+    }
+  }
   const nightVerts = (out.length - base) / 6;
   // Pass 2 — lit panes + lantern glows (drawn with uNight=0:
   // self-luminous). BUILD 1040: a lantern glows on the SAME
@@ -519,6 +588,18 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     litLanterns++;
     lanternGlowVerts += 36;
   }
+  // BUILD 1050: the entered hut's hearth glow — a warm fire box on
+  // the hearth, in the lit segment (self-luminous, the lantern
+  // precedent: it stays full orange against the night-darkened
+  // room). Only when the house is lit on its schedule (hearthLit)
+  // and the interior has a hearth; by day, or in an unlit house,
+  // the hearth is just its stone + fire boxes in the world buffer.
+  let hearthGlow = 0, hearthVerts = 0;
+  if (interior && interior.hearthLit && interior.hearth && fits(36)) {
+    pushGlowBox(out, interior.hearth[0], interior.hearth[1], interior.hearth[2], HEARTH_GLOW_BOX, HEARTH_GLOW);
+    hearthGlow = 1;
+    hearthVerts = 36;
+  }
   for (const r of details) {
     if (!r.lit) continue;
     for (const s of r.slots) {
@@ -526,5 +607,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
 }

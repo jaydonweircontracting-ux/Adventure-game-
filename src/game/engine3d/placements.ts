@@ -21,6 +21,7 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
+import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
@@ -908,6 +909,10 @@ function generatedBlock(w: IsoWorld, x: number, y: number): string | null {
   if (w.trees.some((t) => t.tx === x && t.ty === y)) return 'a tree';
   if (w.rocks.some((r) => r.tx === x && r.ty === y)) return 'a rock';
   if (w.crates.some((c) => c.tx === x && c.ty === y)) return 'a crate';
+  // BUILD 1050: a generated garden's fence is town geometry too —
+  // nothing the player places (including the 1042 Fence property
+  // helper's ring) may land on it.
+  if (isGardenFenceTile(w, x, y)) return 'a garden fence';
   return null;
 }
 
@@ -1128,14 +1133,18 @@ export function validatePlacement(
   // when non-zero — old saves have no rot and behave as rot 0).
   // 1x1 kinds ignore rot entirely: rotating a tree is meaningless
   // and storing it would be a lie.
+  // BUILD 1050: a placed house stamps its design seed (its own
+  // origin) at placement — the design hash reads this origin, so
+  // the house keeps the roof it was built with when a later move
+  // carries the seed along instead of re-stamping it.
   let item: PlacedItem;
   if (isHouseKind(kind)) {
     const fp = houseFootprint(kind, rot);
     const x0 = tx - Math.floor(fp.w / 2), y0 = ty - Math.floor(fp.d / 2);
     const v = variantOfKind(kind);
     item = v
-      ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, ...(rot !== 0 ? { rot } : {}) }
-      : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, ...(rot !== 0 ? { rot } : {}) };
+      ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, seedX0: x0, seedY0: y0, ...(rot !== 0 ? { rot } : {}) }
+      : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, seedX0: x0, seedY0: y0, ...(rot !== 0 ? { rot } : {}) };
   } else if (kind === 'stall') {
     item = rot % 2 === 1
       ? { kind, x0: tx, y0: ty, x1: tx, y1: ty + 1, rot }
@@ -1215,6 +1224,16 @@ export function movePlacement(
   // must not re-plant what is nearly wheat (validatePlacement builds
   // a fresh item with no stamp).
   if (item.kind === 'farm' && item.farmPlantedAt !== undefined) result.item.farmPlantedAt = item.farmPlantedAt;
+  // BUILD 1050: a moved house keeps its design seed — a move must
+  // not re-roll the roof it was built with (validatePlacement
+  // stamps the destination origin as the seed). An old-save house
+  // with no seed keeps the origin it was built at (its position
+  // before this move), which is the seed its current roof derives
+  // from — so the roof survives even the first move after this build.
+  if (item.kind === 'house') {
+    result.item.seedX0 = item.seedX0 ?? item.x0;
+    result.item.seedY0 = item.seedY0 ?? item.y0;
+  }
   const at = Math.min(index, list.length);
   list.splice(at, 0, result.item);
   return { ok: true, item: result.item, index: at };
@@ -1275,8 +1294,16 @@ export function movedRecordForLayoutRect(w: IsoWorld, rect: HutRect): MovedHut |
 
 /** Seed rect for a hut's look: a moved hut keeps its ORIGINAL rect's
  *  look (townLook/interior seeds derive from it); unmoved huts seed
- *  from themselves. */
+ *  from themselves. BUILD 1050: a placed hut rect carries its stamped
+ *  design seed (seedX0/seedY0 from the placement) — that wins over
+ *  both, so a placed house keeps the roof it was built with across
+ *  moves and rotations. The returned rect is only ever read for its
+ *  origin (x0/y0), never for its bounds. */
 export function seedRectForHut(w: IsoWorld, hut: HutRect): HutRect {
+  const placed = hut as { seedX0?: number; seedY0?: number };
+  if (placed.seedX0 !== undefined && placed.seedY0 !== undefined) {
+    return { x0: placed.seedX0, y0: placed.seedY0, x1: placed.seedX0, y1: placed.seedY0 };
+  }
   return movedRecordForHut(w, hut)?.from ?? hut;
 }
 
@@ -1562,6 +1589,10 @@ export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
  *  safe — the tile is walkable ground, period. */
 export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], x: number, y: number): boolean {
   if (isPlacedBridge(w, x, y)) return true;
+  // BUILD 1050: a generated garden's fence blocks like a placed
+  // fence — one shared check, so the player, the NPCs, and the
+  // pathfinder all walk around the same gardens.
+  if (isGardenFenceTile(w, x, y)) return false;
   if (!isWalkableWorld(w, crates, x, y)) return false;
   return !isPlacedBlocking(w, x, y);
 }
@@ -1569,13 +1600,13 @@ export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], 
 // ---- Render lists (shapes match the generated arrays so the 3D view's
 // existing house/tree/stall loops can iterate the union unchanged). ----
 
-/** Placed houses as hut rects; door derived at render time (south edge centre). BUILD 1012: the variant travels on the rect so the house loop can render the picked design (absent = legacy seed-hash house). BUILD 1036: the door rotates with the house — doorForRect on the rotated face, so a 90° cottage has its door on the west edge, a 180° one on the north edge. Rendering, Enter/Exit, interiors and walkability all read this door, so rotation flows through unchanged. */
-export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number; variant?: HouseVariantId }> {
+/** Placed houses as hut rects; door derived at render time (south edge centre). BUILD 1012: the variant travels on the rect so the house loop can render the picked design (absent = legacy seed-hash house). BUILD 1036: the door rotates with the house — doorForRect on the rotated face, so a 90° cottage has its door on the west edge, a 180° one on the north edge. Rendering, Enter/Exit, interiors and walkability all read this door, so rotation flows through unchanged. BUILD 1050: the stamped design seed travels on the rect too, so the design (and its roof) seed from where the house was built, not where it stands now. */
+export function placedHutRects(w: IsoWorld): Array<{ x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number; variant?: HouseVariantId; seedX0?: number; seedY0?: number }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'house')
     .map((p) => {
       const door = doorForRect(p.x0, p.y0, p.x1, p.y1, rotateFace('south', p.rot ?? 0));
-      return { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: door.x, doorY: door.y, ...(p.variant ? { variant: p.variant } : {}) };
+      return { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, doorX: door.x, doorY: door.y, ...(p.variant ? { variant: p.variant } : {}), ...(p.seedX0 !== undefined && p.seedY0 !== undefined ? { seedX0: p.seedX0, seedY0: p.seedY0 } : {}) };
     });
 }
 

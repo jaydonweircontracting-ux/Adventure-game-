@@ -6,7 +6,7 @@ import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, p
 import {
   houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, hash2,
-  DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
+  DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise, PARAPET_H,
   SUN_SHADE, shadeRgb, groundTintDelta,
   DOOR_W, DOOR_H, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
@@ -15,7 +15,7 @@ import {
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
-import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS } from './houseFx';
+import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
 import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, type FarmStage } from './farm';
@@ -28,11 +28,12 @@ import {
   placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
   placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts, placedFenceTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
-  movedRecordForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
+  seedRectForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange, undoRedoKeyForEvent,
   isHouseKind, rotateFace, placementRectFor, tileKeyInt,
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
+import { gardenFencesFor, gardenPlantsFor } from './gardens';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
 import { treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile, crateKindsForProps, propKindToCrateKind, type CratePropKind } from './vegetation';
@@ -108,7 +109,7 @@ function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size:
   }, [asset, size]);
   return <canvas ref={ref} width={size} height={size} data-testid={testid} style={{ display: 'block', width: size, height: size, borderRadius: 6, background: '#d8e2d4', border: '1px solid rgba(255,255,255,.25)' }} />;
 }
-import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
+import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorCeilingFor, interiorWallBandFor, interiorHearthFor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
@@ -1000,17 +1001,23 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // plus two rails on each side, timber brown, standing on the
   // heightfield. One tile reads as a fence segment; a run of tiles
   // reads as a fence line. Fences block movement, like walls.
+  // BUILD 1050: the same fence is the generated garden fence — one
+  // emitter (fenceAt) for both, so the two can never drift apart.
   const FENCE_TIMBER:Vec3=[.45,.32,.18];
-  for(const f of placedFenceTiles(world)) if(f.tx>=minX&&f.tx<=maxX&&f.ty>=minY&&f.ty<=maxY){
-    const fy=surfaceElevation(effTerrain,f.tx+.5,f.ty+.5);
-    for(const [px,pz] of [[.08,.08],[.92,.08],[.08,.92],[.92,.92]] as const) cube(f.tx+px,f.ty+pz,.09,.55,.09,FENCE_TIMBER,fy);
+  const fenceAt=(tx:number,ty:number)=>{
+    const fy=surfaceElevation(effTerrain,tx+.5,ty+.5);
+    for(const [px,pz] of [[.08,.08],[.92,.08],[.08,.92],[.92,.92]] as const) cube(tx+px,ty+pz,.09,.55,.09,FENCE_TIMBER,fy);
     for(const ry of [.22,.42]){
-      cube(f.tx+.5,f.ty+.06,.84,.07,.05,FENCE_TIMBER,fy+ry);
-      cube(f.tx+.5,f.ty+.94,.84,.07,.05,FENCE_TIMBER,fy+ry);
-      cube(f.tx+.06,f.ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
-      cube(f.tx+.94,f.ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
+      cube(tx+.5,ty+.06,.84,.07,.05,FENCE_TIMBER,fy+ry);
+      cube(tx+.5,ty+.94,.84,.07,.05,FENCE_TIMBER,fy+ry);
+      cube(tx+.06,ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
+      cube(tx+.94,ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
     }
-  }
+  };
+  for(const f of placedFenceTiles(world)) if(f.tx>=minX&&f.tx<=maxX&&f.ty>=minY&&f.ty<=maxY) fenceAt(f.tx,f.ty);
+  // BUILD 1050: generated garden fences (gardens.ts) — around the
+  // planted patches beside town houses, with a gate gap at the door.
+  for(const f of gardenFencesFor(world)) if(f.x>=minX&&f.x<=maxX&&f.y>=minY&&f.y<=maxY) fenceAt(f.x,f.y);
   // BUILD 1049: generated/authored stalls render as stalls (counter +
   // posts + awning — stallAt above), not the 986 pine trees. Stall
   // data + collision are untouched; only the mesh changes.
@@ -1115,7 +1122,10 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // rect is the moved record's `from`, so stories/stone/plaster/
     // timber/roof/windows and the furniture kind pattern travel with
     // the house. Unmoved and placed huts seed from themselves.
-    const seedHut=movedRecordForHut(world, hut)?.from ?? hut;
+    // BUILD 1050: seedRectForHut also honours a placed house's
+    // stamped design seed, so a placed house keeps the roof it was
+    // built with across moves and rotations.
+    const seedHut=seedRectForHut(world, hut);
     if(enteredHut && sameHut(hut, enteredHut)) {
       for(let fy=hut.y0;fy<=hut.y1;fy++) for(let fx=hut.x0;fx<=hut.x1;fx++) {
         const fc=interiorFloorColor(fx,fy);
@@ -1136,7 +1146,10 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       :houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY,seedHut.x0,seedHut.y0);
     const topY=hy+GROUND_FLOOR_H+(design.stories-1)*UPPER_FLOOR_H;
     const span=design.roofAxis==='x'?d:w;
-    const ridgeY=topY+roofRise(span);
+    // BUILD 1050: the ridge rides the house's own pitch (0.25
+    // shallow, 0.45 the old standard, 0.6 steep), not one slope for
+    // the whole town.
+    const ridgeY=topY+roofRise(span, design.roofPitch);
     const face=design.doorFace;
     const faceFixed=face==='south'?z+d/2:face==='north'?z-d/2:face==='west'?x-w/2:x+w/2;
     const faceOut=face==='south'||face==='east'?1:-1;
@@ -1287,7 +1300,18 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // sun-facing slope keeps the warm full tint, the shaded slope takes
     // its face shade (was: sun side full, shade side flat .85, with no
     // relation to which compass face it was).
-    if(design.roofAxis==='x'){
+    if(design.roofForm==='parapet'){
+      // BUILD 1050: flat-topped with a raised edge — a flat roof slab
+      // (roof colour, top shade) with a low plaster rim around its
+      // edge. No ridge beam, no gables; the chimney (below) rides the
+      // parapet top.
+      quad([x0,topY,z0],[x1,topY,z0],[x1,topY,z1],[x0,topY,z1],shadeRgb(design.roof, SUN_SHADE.top));
+      const pt=.12;
+      houseBox(x,z0+pt/2,w+2*e,PARAPET_H,pt,topY,design.plaster);
+      houseBox(x,z1-pt/2,w+2*e,PARAPET_H,pt,topY,design.plaster);
+      houseBox(x0+pt/2,z,pt,PARAPET_H,d+2*e,topY,design.plaster);
+      houseBox(x1-pt/2,z,pt,PARAPET_H,d+2*e,topY,design.plaster);
+    } else if(design.roofAxis==='x'){
       quad([x0,topY,z1],[x1,topY,z1],[x1,ridgeY,z],[x0,ridgeY,z],shadeRgb(design.roof, SUN_SHADE.south));
       quad([x0,topY,z0],[x0,ridgeY,z],[x1,ridgeY,z],[x1,topY,z0],warmTint(design.roof));
       tri([x-w/2,topY,z-d/2],[x-w/2,topY,z+d/2],[x-w/2,ridgeY,z],shadeRgb(design.plaster, SUN_SHADE.west));
@@ -1447,21 +1471,36 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     for (const t of placedRockTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
     for (const t of placedFarmTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
     for (const t of placedBridgeTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    // BUILD 1050: one emitter for the generated bush shape, shared
+    // by the hash scan below and the garden plants after it — a
+    // garden plant IS a generated bush, on a chosen tile instead of
+    // a hashed one, so the two can never drift apart.
+    const emitGenBush = (bx: number, by: number): void => {
+      const p = bushParamsForTile(bx, by);
+      const gy = surfaceElevation(effTerrain, bx + .5, by + .5);
+      const g1: Vec3 = [.13 + .03 * p.g1, .30 + .04 * p.g1, .14 + .02 * p.g1];
+      const g2: Vec3 = [.16 + .03 * p.g2, .34 + .03 * p.g2, .16 + .02 * p.g2];
+      const s = p.scale;
+      box(bx + .5 + p.ox1, by + .5 + p.oz1, .85 * s, .42 * s, .85 * s, gy, g1);
+      box(bx + .5 + p.ox2, by + .5 + p.oz2, .55 * s, .3 * s, .55 * s, gy + .25 * s, g2);
+    };
     for (let by = fY0; by <= fY1; by++) {
       for (let bx = fX0; bx <= fX1; bx++) {
         if (effTerrain(bx, by) !== 'grass') continue;
         if (bushBlocked.has(bx + ',' + by)) continue;
         if ((bx < 0 || by < 0 || bx >= world.w || by >= world.h) && wildObstacleAt(bx, by)) continue;
         if (!generatedBushAt(bx, by)) continue;
-        const p = bushParamsForTile(bx, by);
-        const gy = surfaceElevation(effTerrain, bx + .5, by + .5);
-        const g1: Vec3 = [.13 + .03 * p.g1, .30 + .04 * p.g1, .14 + .02 * p.g1];
-        const g2: Vec3 = [.16 + .03 * p.g2, .34 + .03 * p.g2, .16 + .02 * p.g2];
-        const s = p.scale;
-        box(bx + .5 + p.ox1, by + .5 + p.oz1, .85 * s, .42 * s, .85 * s, gy, g1);
-        box(bx + .5 + p.ox2, by + .5 + p.oz2, .55 * s, .3 * s, .55 * s, gy + .25 * s, g2);
+        emitGenBush(bx, by);
       }
       if ((by - fY0) % 16 === 15) yield;
+    }
+    // BUILD 1050: garden plants — the planted tiles inside the
+    // fenced patches (gardens.ts). Same bush, same emitter; the tile
+    // list is explicit, not hashed, and blockedTiles already keeps
+    // the hash scan and the tufts off these tiles.
+    for (const t of gardenPlantsFor(world)) {
+      if (t.x < fX0 || t.x > fX1 || t.y < fY0 || t.y > fY1) continue;
+      emitGenBush(t.x, t.y);
     }
   }
   // BUILD 1040: placed ore deposits — the same seeded rock cube as a
@@ -2764,7 +2803,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let worldVertCount=0;
     // BUILD 1014: last frame's house-fx emission stats, for the
     // getHouseFx test hook (probes only).
-    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0};
+    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     // BUILD 992: one zoom parameter for pinch + wheel, routed through
@@ -3994,8 +4033,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // changes the field with no world rebuild.
       const nowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
       const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs) as FarmStage}));
-      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs);
-      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts};
+      // BUILD 1050: the entered hut's interior shell + hearth — the
+      // ceiling and wall band render only in first-person inside (the
+      // orbit view keeps its cutaway so the room stays visible from
+      // above); the hearth glow renders whenever inside and the house
+      // is lit at night on its schedule (houseLitAt + the hut's seed
+      // schedule, the same times its windows light up).
+      const insideNow=insideHutRef.current;
+      let interiorFx: InteriorFxInput | null = null;
+      if (insideNow) {
+        const seedHutIn=seedRectForHut(world, insideNow);
+        const hyIn=surfaceElevation(effTerrainDraw,(insideNow.x0+insideNow.x1+1)/2,(insideNow.y0+insideNow.y1+1)/2);
+        interiorFx={
+          ceiling: firstPersonRef.current ? interiorCeilingFor(insideNow, hyIn) : null,
+          walls: firstPersonRef.current ? interiorWallBandFor(insideNow, hyIn) : [],
+          hearth: interiorHearthFor(insideNow, seedHutIn, hyIn),
+          hearthLit: houseLitAt(clockRef.current.minutes, lightScheduleFor(seedHutIn.x0, seedHutIn.y0)),
+        };
+      }
+      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx);
+      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
@@ -4341,7 +4398,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // probes see exactly the live state); smokeSample is the first
       // chimney's live puff centres (pure function of the drift clock,
       // for the smoke-movement proof).
-      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit,variant:d.variant??null,baseY:d.baseY})),lanterns:placedLanternTiles(world).map(t=>({tx:t.tx,ty:t.ty,lit:houseLitAt(clockRef.current.minutes,lightScheduleFor(t.tx,t.ty))})),smokeSample:sample};},
+      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit,variant:d.variant??null,baseY:d.baseY,roofAxis:d.roofAxis,roofPitch:d.roofPitch,roofForm:d.roofForm})),lanterns:placedLanternTiles(world).map(t=>({tx:t.tx,ty:t.ty,lit:houseLitAt(clockRef.current.minutes,lightScheduleFor(t.tx,t.ty))})),smokeSample:sample};},
       // BUILD 999: a teleport must also drop the NPC's cached A* path.
       // Paths store ABSOLUTE tiles planned from the old position; the
       // timer only replans when the DESTINATION changes, so a moved
@@ -5083,7 +5140,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           <div style={{marginTop:4}}>• <b>AI handoff:</b> ChatGPT and Muse cannot see the files in your browser on their own — download the handoff ZIP and upload it in your chat with them, and paste the summary. The game itself does not run an AI.</div>
         </div>
       </div>}
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable. New in this build: ZIP imports are checked for unsafe paths and ZIP-bomb expansion, a bad entry is skipped with a reason instead of stopping the whole import, and the hub reports exactly which models landed, which were skipped and why; a .gltf finds its .bin in a subfolder and a missing texture is reported, never claimed as applied; the whole library can be exported as a ZIP backup with a manifest; and a name that already exists asks first (Keep both / Replace / Skip) instead of overwriting silently. New in this build: the Import Hub can hand models to ChatGPT or Muse — tick models in the library (or a whole category, or the whole library), export a ZIP with the models, the manifest, and a copyable summary, or share it when the device supports sharing files from the browser. ChatGPT and Muse cannot see your browser's files on their own — you upload the ZIP in your chat — and the game itself does not run an AI.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable. New in this build: ZIP imports are checked for unsafe paths and ZIP-bomb expansion, a bad entry is skipped with a reason instead of stopping the whole import, and the hub reports exactly which models landed, which were skipped and why; a .gltf finds its .bin in a subfolder and a missing texture is reported, never claimed as applied; the whole library can be exported as a ZIP backup with a manifest; and a name that already exists asks first (Keep both / Replace / Skip) instead of overwriting silently. New in this build: the Import Hub can hand models to ChatGPT or Muse — tick models in the library (or a whole category, or the whole library), export a ZIP with the models, the manifest, and a copyable summary, or share it when the device supports sharing files from the browser. ChatGPT and Muse cannot see your browser's files on their own — you upload the ZIP in your chat — and the game itself does not run an AI. New in this build: the town's roofs vary now — some run north-south instead of east-west, some are shallow and some are steep, and some have a flat top with a raised edge instead of a pitched ridge; which roof a house has is fixed by the house, so the same house always has the same roof, and a house you place keeps its roof when you move it, rotate it, or undo and redo. Some town houses have a fenced garden beside them — a low wooden fence around a planted patch, with a gap at the gate so you can walk in — and the fences never block a door or a path. Step inside a house and there is a ceiling over you now instead of open sky, with walls and a doorway, and the hearth in every house glows warm at night when the house lights are on; the ceiling and walls only show in first-person view inside (zoom right in) — from the normal high view the room still shows open so you can see the furniture — and the gardens only grow beside town houses the game built, not beside houses you place (use Fence property in the area menu for those).</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>
