@@ -669,6 +669,28 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1046 @ 2026-11-09T07:27:35.291Z, run 42579328390 completed success (parent confirmed via the Actions API). Asserts 191 checks pass (parent re-ran directly — ASSERT_DONE 191 checks passed). Sim vs pristine1045 identical except the known 1-line bundle offset at the pre-existing 684 rig crash (parent diffed sim1046.norm.log vs sim1045-pristine.norm.log — file:bundle.mjs:100219 vs file:bundle.mjs:100218, both crash identically at line 76). Phone probe 21 findings, 0 page errors (hostile ZIP report exact — landed [red-box], skipped ../evil.obj unsafe-path + notes.txt, failed broken.obj; Keep both -> original + red-box 2, placed copy untouched; Replace -> old model + placed copy gone, new green model under the same name, library still 3; Skip -> library unchanged; export download parsed back in Node — 3 models, manifest lists 3, names correct; reload -> 3 assets + placed pyramid survive).",
       "verificationTimestamp": "2026-11-09T07:27:35.291Z"
+    },
+    {
+      "build": 1047,
+      "commit": "a5cfa961",
+      "description": "Import Hub Stage 5 — AI / development handoff: pick assets (checkboxes / whole category / whole library), export a handoff ZIP (models + manifest + summary), copyable handoff summary, Share with download fallback, honest AI limits in plain words.",
+      "filesAffected": [
+        "src/game/engine3d/assetHandoff.ts",
+        "src/game/engine3d/assetPack.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "AI / development handoff for the Import Hub — an explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically. Fifth stage of the Import Hub program.",
+      "previousCheckpoint": {
+        "build": 1046,
+        "commit": "5bea9115"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42591830479",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1047 @ 2026-11-09T09:15:39.077Z, run 42591830479 completed success (parent confirmed via the Actions API). Asserts 99 checks pass (parent re-ran directly — ASSERT_DONE 99 checks passed); 1046 regression re-run against the new tree: 191 checks pass. Sim vs pristine1046 identical except the expected 1-line bundle offset at the known pre-existing 684 rig crash (parent diffed sim1047.norm.log vs sim1046-pristine.norm.log — file:bundle.mjs:100220 vs file:bundle.mjs:100219; 0 FAILs on both sides, 76 lines each). Phone probe 17 findings, 0 page errors (two models in; tick only red-box -> live summary is exactly red-box — build 1047, manifest v1, 2x1 tiles, 12 triangles — never blue-pyramid; Copy summary used the real clipboard and the clipboard text equals the summary; Export checked downloaded a ZIP with exactly red-box + manifest — build 1047, 1 model — + summary, zero trace of blue-pyramid; Share... fell back to the download — lastSharePath: download — on this device with no Web Share file support; category export held both House models; whole-library export held 2; reload left the library unchanged).",
+      "verificationTimestamp": "2026-11-09T09:15:39.077Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub Stage 5",
+    "build": "Import Hub Stage 6",
     "commit": null,
-    "description": "AI/development handoff: an explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically. NEXT per the queue.",
+    "description": "Integration: imported assets selectable in Build Mode and placeable using the existing move/rotate/scale/duplicate/undo/redo flows. Preserve selection and placement behavior; imported assets must not break built-in assets or saved town chunks. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -284,20 +284,23 @@
       "runId": "42579328390",
       "status": "verified",
       "verifiedAt": "2026-11-09T07:27:35.291Z"
+    },
+    {
+      "build": 1047,
+      "commit": "a5cfa961",
+      "description": "Import Hub Stage 5 — AI / development handoff: tick models in the library (or a whole category, or the whole library) and export a ZIP with the models in their original formats, the pack manifest (stamped with the build number), and a short handoff-summary.txt you can copy and paste into your chat. On a device that supports sharing files from the browser, a Share button sends the ZIP straight to the share sheet; otherwise it downloads to this device (on iPhone, find it in Files) and you upload it in your chat. Honest limits, in plain words: ChatGPT and Muse cannot see the files in your browser on their own — nothing reaches them until you upload the ZIP yourself — and the game itself does not run an AI; the files are for an AI to read, name, categorise, or rework into a new pack. Landed: commit a5cfa961, deploy run 42591830479 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42591830479",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T09:15:39.077Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub Stage 5 (AI/development handoff)",
-      "commit": null,
-      "description": "An explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically.",
-      "status": "in_progress"
-    },
-    {
       "build": "Import Hub Stage 6 (integration)",
       "commit": null,
       "description": "Imported assets selectable in Build Mode and placeable using the existing move/rotate/scale/duplicate/undo/redo flows. Preserve selection and placement behavior; imported assets must not break built-in assets or saved town chunks.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Ashfall Stage 3",
@@ -458,13 +461,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T02:01:58-07:00",
+  "lastUpdateTimestamp": "2026-11-09T04:00:23-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1046,
-    "commit": "5bea9115",
-    "description": "Import Hub Stage 4 — packs / recovery: ZIP import is checked before anything imports — traversal paths (../, absolute, drive-letter, .. mid-path, NUL byte), ZIP-bomb expansion (>100x compressed size, checked on declared central-directory sizes before inflating), >50 MB total uncompressed expansion, >50 entries, ZIP >5 MB, single entry >5 MB, duplicate entry names, and bad CRCs are rejected or skipped with a reason, and a bad entry never aborts the whole import. A .gltf resolves its .bin and named textures relative to its own directory inside the ZIP (subfolders, ../ that stays inside the container); a URI that escapes the container, an absolute path, or a URL is never followed — a missing .bin still fails naming the file, a missing texture is reported, never silently dropped, never claimed as applied (textures are still never rendered). After an import the hub reports exactly which models landed, which entries were skipped and why, and which failed. 'Export library as a ZIP' downloads ashfall-asset-pack.zip — every model in its original format plus ashfall-asset-pack.json (name, format, category, tags, dimensions, triangles, source file); re-importing a pack restores names, categories, and tags from the manifest. If an import would use a name that already exists, the hub asks first — Keep both (renames the newcomer), Replace (removes the old model and its placed copies with one undo stroke, then adds the new one under the same name), or Skip — instead of overwriting silently.",
-    "runId": "42579328390",
-    "verifiedAt": "2026-11-09T07:27:35.291Z"
+    "build": 1047,
+    "commit": "a5cfa961",
+    "description": "Import Hub Stage 5 — AI / development handoff: tick models in the library (or a whole category, or the whole library) and export a ZIP with the models in their original formats, the pack manifest (stamped with the build number), and a short handoff-summary.txt you can copy and paste into your chat. On a device that supports sharing files from the browser, a Share button sends the ZIP straight to the share sheet; otherwise it downloads to this device (on iPhone, find it in Files) and you upload it in your chat. Honest limits, in plain words: ChatGPT and Muse cannot see the files in your browser on their own — nothing reaches them until you upload the ZIP yourself — and the game itself does not run an AI; the files are for an AI to read, name, categorise, or rework into a new pack.",
+    "runId": "42591830479",
+    "verifiedAt": "2026-11-09T09:15:39.077Z"
   },
   "measuredBaselines": [
     {
@@ -688,6 +691,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1047,
+      "commit": "a5cfa961",
+      "result": "Verified live: served version.json build 1047 @ 2026-11-09T09:15:39.077Z, run 42591830479 completed success (parent confirmed via the Actions API). Asserts 99 checks pass (parent re-ran directly — ASSERT_DONE 99 checks passed); 1046 regression re-run against the new tree: 191 checks pass. Sim vs pristine1046 identical except the expected 1-line bundle offset at the known pre-existing 684 rig crash (parent diffed sim1047.norm.log vs sim1046-pristine.norm.log — file:bundle.mjs:100220 vs file:bundle.mjs:100219; 0 FAILs on both sides, 76 lines each). Phone probe 17 findings, 0 page errors (two models in; tick only red-box -> live summary is exactly red-box — build 1047, manifest v1, 2x1 tiles, 12 triangles — never blue-pyramid; Copy summary used the real clipboard and the clipboard text equals the summary; Export checked downloaded a ZIP with exactly red-box + manifest — build 1047, 1 model — + summary, zero trace of blue-pyramid; Share... fell back to the download — lastSharePath: download — on this device with no Web Share file support; category export held both House models; whole-library export held 2; reload left the library unchanged).",
+      "runId": "42591830479",
+      "verifiedAt": "2026-11-09T09:15:39.077Z"
+    },
     {
       "build": 1046,
       "commit": "5bea9115",
