@@ -906,6 +906,11 @@ function generatedBlock(w: IsoWorld, x: number, y: number): string | null {
   if (w.walls.some((wl) => wl.x === x && wl.y === y)) return 'a wall';
   if (w.huts.some((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1)) return 'a building';
   if (w.stalls.some((s) => y === s.y0 && x >= s.x0 && x <= s.x1)) return 'a market stall';
+  // BUILD 1051: a fixed wild landmark is town geometry too — nothing
+  // the player places may land on the ruined tower, a standing stone,
+  // or the hunter's camp. Only the solid `blocks` tiles count (the
+  // stone circle's centre is open ground and stays placeable).
+  if ((w.landmarks ?? []).some((l) => l.blocks.some((b) => b.x === x && b.y === y))) return 'a wild landmark';
   if (w.trees.some((t) => t.tx === x && t.ty === y)) return 'a tree';
   if (w.rocks.some((r) => r.tx === x && r.ty === y)) return 'a rock';
   if (w.crates.some((c) => c.tx === x && c.ty === y)) return 'a crate';

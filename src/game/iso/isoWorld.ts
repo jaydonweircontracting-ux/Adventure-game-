@@ -92,12 +92,33 @@ export interface IsoWorld {
    *  decor now: drawn by their own shape (the view's crateAt), but
    *  they NEVER block (they are not in crates) and are NOT removable
    *  (there is no removed-decor set — the generated-stall rule:
-   *  a removed one would resurrect on reload). The stall prop stays
-   *  out of here on purpose: it is non-solid too, but making it a
-   *  stall would change collision, and the market is Stage 5's work.
+   *  a removed one would resurrect on reload). BUILD 1051: the stall
+   *  prop no longer stays out — it becomes a real stall (the
+   *  adapter's prop loop pushes it into world.stalls, with stall
+   *  collision), so the market is Stage 5's work DONE, not pending.
    *  Old saves load with none (the adapter re-derives it every load).
    *  The 2.5D iso demo never reads this field. */
   propDecor?: Array<{ tx: number; ty: number; kind: string }>;
+  /** BUILD 1051 — fixed wild landmarks (settlements.ts: the ruined
+   *  tower, the standing stones, the hunter's camp). Plain data
+   *  (strings/numbers only, so this base model stays free of
+   *  engine3d imports — the LandmarkKind union lives in
+   *  settlements.ts). The adapter stamps the fixed list on every
+   *  load (stampLandmarks replaces whatever the save carried, so a
+   *  landmark can never duplicate or drift). `blocks` are the solid
+   *  tiles; any tile inside the rect NOT in `blocks` stays walkable
+   *  (the stone circle's centre is open ground). `broken` (tower
+   *  only) is the collapsed corner tile, rendered short with rubble.
+   *  Landmarks are NOT removable (no removed-landmarks set — the
+   *  generated-stall rule) and NOT harvestable. Old saves load with
+   *  none (the adapter stamps them on the same load). The 2.5D iso
+   *  demo never reads this field. */
+  landmarks?: Array<{
+    kind: string; name: string;
+    x0: number; y0: number; x1: number; y1: number;
+    blocks: Array<{ x: number; y: number; part?: string }>;
+    broken?: { x: number; y: number };
+  }>;
   /** BUILD 1006: generated huts the user moved. `from` is the hut's
    *  ORIGINAL layout rect (with its original door — the adapter matches
    *  layout lots by this rect, and the look/interior seeds derive from
@@ -203,6 +224,9 @@ export function isWalkableWorld(w: IsoWorld, crates: TilePoint[], x: number, y: 
     if (!(x === (hut.doorX ?? hut.x1) && y === (hut.doorY ?? hut.y1))) return false;
   }
   for (const s of w.stalls) if (y === s.y0 && x >= s.x0 && x <= s.x1) return false;
+  // BUILD 1051: fixed wild landmarks block on their solid tiles
+  // (the stone circle's centre is open — only `blocks` counts).
+  for (const l of w.landmarks ?? []) for (const b of l.blocks) if (b.x === x && b.y === y) return false;
   for (const t of w.trees) if (t.tx === x && t.ty === y) return false;
   for (const r of w.rocks) if (r.tx === x && r.ty === y) return false;
   for (const c of crates) if (c.tx === x && c.ty === y) return false;

@@ -34,6 +34,7 @@ import {
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
 import { gardenFencesFor, gardenPlantsFor } from './gardens';
+import { marketStallSpots, stampLandmarks, type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
 import { treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile, crateKindsForProps, propKindToCrateKind, type CratePropKind } from './vegetation';
@@ -352,9 +353,16 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
       // to be skipped entirely — they rendered as nothing. They are
       // town decor now: drawn by their own shape, never blocking,
       // never removable (no removed-set — the generated-stall rule).
-      // The stall prop stays out: it is non-solid too, but making it
-      // a stall would change collision, and the market is Stage 5.
-      if (prop.kind !== 'stall') propDecor.push({ tx: x, ty: y, kind: prop.kind });
+      // BUILD 1051: the stall prop joins them no longer — it is
+      // non-solid too, but it is a STALL now, not decor: it goes
+      // into world.stalls with stall collision (the 1049 cause,
+      // fixed here as Stage 5's market work — the market square
+      // finally has a market in it).
+      if (prop.kind === 'stall') {
+        world.stalls.push({ x0: x, y0: y, x1: Math.min(world.w - 1, x + 1) });
+      } else {
+        propDecor.push({ tx: x, ty: y, kind: prop.kind });
+      }
       continue;
     }
     if (prop.kind === 'stall') {
@@ -370,6 +378,32 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
     if (!(k in kinds) && world.crates.some(c => terrainKey(c.tx, c.ty) === k)) kinds[k] = v;
   }
   world.crateKinds = kinds;
+
+  // BUILD 1051: the market. The blueprint stall above is one stall;
+  // the square needs a row. marketStallSpots (settlements.ts) scans
+  // the blueprint stall's row for verified-clear 2x1 spots — west
+  // first, then east, fixed order — and stamps up to two more, so
+  // the market is one compact row (the generator's BUILD 759
+  // intent), never a stall on a road, a garden, or a doorstep.
+  for (const s of marketStallSpots(world)) world.stalls.push({ x0: s.x0, y0: s.y0, x1: s.x1 });
+  // A tree, rock, or crate standing on a stall tile would clip
+  // through the counter (the insideBuilding pattern, one step later
+  // — the prop loop above only clears under huts). Verified a no-op
+  // on the current world (the design probe found the row clear),
+  // but it guards the row against a future layout change the way
+  // insideBuilding guards the huts.
+  const stallTiles = new Set(world.stalls.flatMap((s) => { const out: string[] = []; for (let x = s.x0; x <= s.x1; x++) out.push(terrainKey(x, s.y0)); return out; }));
+  world.trees = world.trees.filter((t) => !stallTiles.has(terrainKey(t.tx, t.ty)));
+  world.rocks = world.rocks.filter((r) => !stallTiles.has(terrainKey(r.tx, r.ty)));
+  world.crates = world.crates.filter((c) => !stallTiles.has(terrainKey(c.tx, c.ty)));
+
+  // BUILD 1051: fixed wild landmarks (settlements.ts) — the ruined
+  // tower SW, the standing stones NE, the hunter's camp E. Stamped
+  // fresh on every load (stampLandmarks replaces whatever the save
+  // carried), so they can never duplicate or drift. They block on
+  // their solid tiles (isWalkableWorld), are never removable, and
+  // ride the heightfield like everything else.
+  stampLandmarks(world);
 
   // Remove harvestables accidentally placed under the new building footprints.
   const insideBuilding = (x: number, y: number) => world.huts.some(h =>
@@ -991,6 +1025,57 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     box(cx,cz,.72,.6,.72,baseY,wood);
     box(cx,cz,.78,.08,.78,baseY+.6,woodDark);
   };
+  // BUILD 1051: fixed wild landmarks render as themselves, not as
+  // trees or crates (the 986 placeholder for everything the world
+  // didn't know). One emitter per kind, all from the existing box /
+  // triangle vocabulary, all standing on the heightfield. The tower
+  // is the distance marker (4.6 high, 2x2, grey stone against green
+  // trees); the stones and the camp read up close. A tower tile is
+  // a full-tile box, so the four tiles merge into one 2x2 tower
+  // (the shared faces are interior and invisible); the broken
+  // corner renders short with a rubble mound.
+  const landmarkAt=(tx:number,ty:number,kind:LandmarkKind,baseY=0,broken=false,part?:string)=>{
+    const cx=tx+.5, cz=ty+.5;
+    const stone:Vec3=[.5,.5,.48], stoneDark:Vec3=[.38,.38,.36];
+    const canvas:Vec3=[.78,.72,.58];
+    if(kind==='tower'){
+      if(broken){
+        box(cx,cz,1.0,3.0,1.0,baseY,stoneDark);
+        box(cx,cz,.9,.5,.9,baseY+3.0,stone);
+        return;
+      }
+      box(cx,cz,1.0,4.6,1.0,baseY,stone);
+      box(cx,cz,1.05,.15,1.05,baseY+4.6,stoneDark);
+      return;
+    }
+    if(kind==='stones'){
+      // A tall thin slab; the long axis alternates per tile, so the
+      // ring reads as rough megaliths, not a fence.
+      const ns=(tx+ty)%2===0;
+      const w=ns?0.5:0.28, d=ns?0.28:0.5;
+      const shade=0.9+((tx*7+ty*13)%5)*0.04;
+      box(cx,cz,w,2.8,d,baseY,[stone[0]*shade,stone[1]*shade,stone[2]*shade]);
+      box(cx,cz,w+0.08,.25,d+0.08,baseY+2.8,stoneDark);
+      return;
+    }
+    // camp
+    if(part==='firepit'){
+      // A low stone ring + a dark ember bed in the middle.
+      for(const [ox,oz] of [[-.28,0],[.28,0],[0,-.28],[0,.28]] as const)
+        box(cx+ox,cz+oz,.22,.18,.22,baseY,stoneDark);
+      quad([cx-.2,baseY+.06,cz-.2],[cx+.2,baseY+.06,cz-.2],[cx+.2,baseY+.06,cz+.2],[cx-.2,baseY+.06,cz+.2],[.25,.1,.05]);
+      return;
+    }
+    // tent: an A-frame prism — two sloped canvas quads, two triangle
+    // ends, a ridge pole. One prism per tile; two adjacent tiles
+    // read as one two-bay ridge tent.
+    const ridge=baseY+0.9, eave=baseY+0.08, hw=0.42;
+    quad([cx-.5,eave,cz-hw],[cx+.5,eave,cz-hw],[cx+.5,ridge,cz],[cx-.5,ridge,cz],shadeRgb(canvas,SUN_SHADE.north));
+    quad([cx+.5,eave,cz+hw],[cx-.5,eave,cz+hw],[cx-.5,ridge,cz],[cx+.5,ridge,cz],shadeRgb(canvas,SUN_SHADE.south));
+    tri([cx-.5,eave,cz-hw],[cx-.5,eave,cz+hw],[cx-.5,ridge,cz],shadeRgb(canvas,SUN_SHADE.west));
+    tri([cx+.5,eave,cz+hw],[cx+.5,eave,cz-hw],[cx+.5,ridge,cz],shadeRgb(canvas,SUN_SHADE.east));
+    box(cx,cz,1.02,.06,.06,ridge,[.23,.16,.1]);
+  };
   // Walls and stall counters use the editor-authored collision geometry.
   // BUILD 1028: placed walls render as the same 1x0.85x1 cube as a
   // generated wall tile (placedWallTiles carries the h, but the 3D
@@ -1026,6 +1111,12 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // BUILD 1007: stalls render at whole-world range (were window-culled).
   for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) stallAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  // BUILD 1051: fixed wild landmarks (settlements.ts) — the ruined
+  // tower, the standing stones, the hunter's camp. Whole-world range
+  // like the stalls (the tower is the distance marker), one
+  // landmarkAt per solid tile, on the heightfield. The stone
+  // circle's centre is open ground and renders nothing.
+  for(const lm of world.landmarks ?? []) for(const b of lm.blocks) landmarkAt(b.x,b.y,lm.kind as LandmarkKind,surfaceElevation(effTerrain,b.x+.5,b.y+.5),!!(lm.broken&&lm.broken.x===b.x&&lm.broken.y===b.y),b.part);
   yield;
   // BUILD 997: uploaded custom meshes — static vertex-colour
   // triangles in the world buffer (like placed stalls, not the
@@ -4500,6 +4591,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // (wall placement / wall removal + reload proofs). Read-only.
         walls: stateRef.current.world.walls.map(wl=>({x:wl.x,y:wl.y,h:wl.h})),
         removedWalls: stateRef.current.world.removedWalls??[],
+        // BUILD 1051: market stalls + wild landmarks + town decor
+        // for the browser harness (market / landmark / district
+        // proofs). Read-only — the stalls are the adapter's market
+        // row, the landmarks are the fixed wild list.
+        stalls: stateRef.current.world.stalls.map(s=>({x0:s.x0,y0:s.y0,x1:s.x1})),
+        landmarks: JSON.parse(JSON.stringify(stateRef.current.world.landmarks??[])),
+        propDecor: JSON.parse(JSON.stringify(stateRef.current.world.propDecor??[])),
         // BUILD 993: day clock + roster positions for schedule probes.
         clockMinutes: clockRef.current.minutes,
         clockDay: clockRef.current.day,

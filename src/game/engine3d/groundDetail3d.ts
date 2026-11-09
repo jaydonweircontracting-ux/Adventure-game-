@@ -16,6 +16,7 @@ import { hash2, type Rgb } from './townLook';
 import { blockedTiles } from './grassTufts';
 import { wildObstacleAt, surfaceElevation } from './wildTerrain';
 import { generatedBushAt } from './vegetation';
+import { cobbleForTile, COBBLE_COLOR } from './settlements';
 import type { IsoWorld, Terrain } from '../iso/isoWorld';
 
 export type V3 = [number, number, number];
@@ -100,9 +101,26 @@ function emitPebble(triV: TriV, p: Pebble, originX: number, originZ: number, bas
   triV(a, col, c, col, d, col);
 }
 
-/** Emit flowers + pebbles for the detail window. Returns the counts,
- *  so the probe can state them. Flowers need grass terrain; pebbles
- *  take grass or dirt. */
+function emitCobble(triV: TriV, originX: number, originZ: number, baseY = 0, shade = 1): void {
+  const h = 0.4;
+  const col: V3 = [COBBLE_COLOR[0] * shade, COBBLE_COLOR[1] * shade, COBBLE_COLOR[2] * shade];
+  const a: V3 = [originX - h, baseY + 0.012, originZ - h];
+  const b: V3 = [originX + h, baseY + 0.012, originZ - h];
+  const c: V3 = [originX + h, baseY + 0.012, originZ + h];
+  const d: V3 = [originX - h, baseY + 0.012, originZ + h];
+  triV(a, col, b, col, c, col);
+  triV(a, col, c, col, d, col);
+}
+
+/** Emit flowers + pebbles + district cobble paving for the detail window.
+ *  Returns the counts, so the probe can state them. Flowers need grass
+ *  terrain; pebbles take grass or dirt. Cobble (BUILD 1051) takes dirt
+ *  or sand in the market / craft districts — the Stage 5 district
+ *  paving, from the same ground-detail family as the flowers and
+ *  pebbles (window-only, deterministic per tile, zero collision, zero
+ *  save state). A cobble tile never also carries a pebble (both sit
+ *  at +0.012 — they would z-fight), and never sits under town decor
+ *  (the statue's plinth, the fountain's rim). */
 export function emitGroundDetail3d(
   triV: TriV,
   world: IsoWorld,
@@ -111,9 +129,13 @@ export function emitGroundDetail3d(
   maxX: number,
   minY: number,
   maxY: number,
-): { flowers: number; pebbles: number } {
+): { flowers: number; pebbles: number; cobbles: number } {
   const blocked = blockedTiles(world);
-  let flowers = 0, pebbles = 0;
+  // BUILD 1051: decor tiles (the statue, the fountain) are not in
+  // blockedTiles (they never block) — but a cobble slab under a
+  // plinth would clip through it, so cobble skips them explicitly.
+  const decor = new Set((world.propDecor ?? []).map((d) => d.tx + ',' + d.ty));
+  let flowers = 0, pebbles = 0, cobbles = 0;
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       if (blocked.has(x + ',' + y)) continue;
@@ -129,15 +151,25 @@ export function emitGroundDetail3d(
       const t = effTerrain(x, y);
       // BUILD 1034: flowers and pebbles sit on the heightfield.
       const baseY = surfaceElevation(effTerrain, x + 0.5, y + 0.5);
+      // BUILD 1051: district cobble paving — a flat grey slab on
+      // dirt/sand in the market / craft districts (settlements.ts).
+      // Shade jitter per tile (hash salt 73) so the paving reads as
+      // laid stones, not one flat sheet.
+      const cobble = !decor.has(x + ',' + y) && cobbleForTile(world, x, y);
+      if (cobble) {
+        const shade = 0.85 + hash2(x * 3.1 + 73, y * 7.7 + 73) * 0.3;
+        emitCobble(triV, x + 0.5, y + 0.5, baseY, shade);
+        cobbles++;
+      }
       if (t === 'grass') {
         const f = wildflowerForTile(x, y);
         if (f) { emitFlower(triV, f, x + 0.5, y + 0.5, baseY); flowers++; }
       }
-      if (t === 'grass' || t === 'dirt') {
+      if ((t === 'grass' || t === 'dirt') && !cobble) {
         const p = pebbleForTile(x, y);
         if (p) { emitPebble(triV, p, x + 0.5, y + 0.5, baseY); pebbles++; }
       }
     }
   }
-  return { flowers, pebbles };
+  return { flowers, pebbles, cobbles };
 }

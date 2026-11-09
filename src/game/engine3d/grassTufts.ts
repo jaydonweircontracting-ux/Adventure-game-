@@ -207,6 +207,11 @@ export function blockedTiles(world: IsoWorld): Set<string> {
   // bush the same way a generated bush owns its tile (1049).
   for (const f of gardenFencesFor(world)) blocked.add(key(f.x, f.y));
   for (const p of gardenPlantsFor(world)) blocked.add(key(p.x, p.y));
+  // BUILD 1051: fixed wild landmarks are solid geometry too — no
+  // tuft, flower, or pebble pokes through the tower, a standing
+  // stone, or the camp tent. Only the solid `blocks` tiles count
+  // (the stone circle's centre is open ground and keeps its tufts).
+  for (const l of world.landmarks ?? []) for (const b of l.blocks) blocked.add(key(b.x, b.y));
   return blocked;
 }
 
