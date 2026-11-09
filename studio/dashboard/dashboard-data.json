@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Ashfall Stage 3",
+    "build": "Ashfall Stage 4",
     "commit": null,
-    "description": "Vegetation: 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS. NEXT per the queue.",
+    "description": "Architecture: roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells). NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -302,20 +302,23 @@
       "runId": "42610828517",
       "status": "verified",
       "verifiedAt": "2026-11-09T11:41:25.243Z"
+    },
+    {
+      "build": 1049,
+      "commit": "0e3d7c0b",
+      "description": "Ashfall Stage 3 — vegetation: three tree shapes — tall pine (the old shape), broad leafy oak (3.6 high, widest 2.7), slim birch (4.7 high, pale trunk) — assigned deterministically by a hash of the tile (pine 45% / oak 33% / birch 22% over 200x200); the same tile always grows the same tree and reloads are identical. Generated wild + town trees both get the variety; the Build-menu tree places the deterministic shape for its tile (no shape picker yet). Generated bushes — density 0.015, town +-64 = 256, wild +-64 = 238 — non-blocking, walk-through, low green shrubs, clearly not small trees. All 118 town props now render as themselves instead of a pine tree: lamp 75, hedge 28, barrel 6, cart 2, well/windmill/gatehouse 1 each (4 kindless authored crates render as plain boxes). New stallAt (counter + 2 posts + canvas awning, 1.92 high) and crateAt (lamp 1.78, barrel 0.72, hedge 0.75, fountain 1.0, well 1.58, statue 1.75, gatehouse 2.68, cart 0.9, windmill 3.15, crate 0.68). The statue (102,102) and fountain (115,79) render as decor — they used to render as nothing, since the layout marks them non-solid. Verified cause of the 0-generated-stall drop: the blueprint's single stall prop has solid=false, so the adapter's !prop.solid guard skips it before the stall branch — not fixed here (it would change collision); that is Stage 5's market work. Grass density unchanged at 0.08, nothing cut. Verts: town 241,914->252,300 (+4.3%), wild 271,632->280,674 (+3.3%), all centres under the 300k budget. Landed: commit 0e3d7c0b, deploy re-trigger 00fa51ae (first deploy run 42627250839 failed at the deploy step, build succeeded), phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": "2026-11-09T15:03:43.022Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Ashfall Stage 3",
-      "commit": null,
-      "description": "Vegetation: 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.",
-      "status": "in_progress"
-    },
-    {
       "build": "Ashfall Stage 4",
       "commit": null,
       "description": "Architecture: roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells).",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Ashfall Stage 5",
@@ -464,13 +467,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T06:02:05-07:00",
+  "lastUpdateTimestamp": "2026-11-09T08:37:36-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1048,
-    "commit": "6430a5c3",
-    "description": "Import Hub Stage 6 — integration: imported models are now full citizens of Build mode. Rotation did not exist for customs at all — the renderer ignored rot, R / rotate buttons were gated to palette kinds, and movePlacement dropped rot on a moved custom. Now: rotateCustomXZ + customFootprint, the renderer rotates the mesh's local XZ, the ghost preview validates/draws at the armed rotation with a 'rotated 90 deg' label, R and the rotate buttons work for an armed custom, and Move keeps rot. Chunk capture/paste excluded customs — now chunks capture customs with assetId + rot; paste validates against the live library, and a missing model skips with the reason 'that model is no longer in your library' — never a silent drop. AREA SELECT skipped customs on duplicate and rotate — duplicateArea now routes customs through pasteChunk; planRotate advances a custom's rot. Already true and now proven (not rebuilt): arm/place with ghost preview, Move, Undo/Redo, Remove, save/reload, the 1039 delete rule. Scale — NOT built, said plainly: a render-only scale would lie about the collision rect; a true scale must change footprint, validation, ghost, move/rotate math, area-select, and chunk capture — not small and safe in the last stage. The Import Hub is now complete (Stages 1-6, builds 1043-1048).",
-    "runId": "42610828517",
-    "verifiedAt": "2026-11-09T11:41:25.243Z"
+    "build": 1049,
+    "commit": "0e3d7c0b",
+    "description": "Ashfall Stage 3 — vegetation: three tree shapes — tall pine (the old shape), broad leafy oak (3.6 high, widest 2.7), slim birch (4.7 high, pale trunk) — assigned deterministically by a hash of the tile (pine 45% / oak 33% / birch 22% over 200x200); the same tile always grows the same tree and reloads are identical. Generated wild + town trees both get the variety; the Build-menu tree places the deterministic shape for its tile (no shape picker yet). Generated bushes — density 0.015, town +-64 = 256, wild +-64 = 238 — non-blocking, walk-through, low green shrubs, clearly not small trees. All 118 town props now render as themselves instead of a pine tree: lamp 75, hedge 28, barrel 6, cart 2, well/windmill/gatehouse 1 each (4 kindless authored crates render as plain boxes). New stallAt (counter + 2 posts + canvas awning, 1.92 high) and crateAt (lamp 1.78, barrel 0.72, hedge 0.75, fountain 1.0, well 1.58, statue 1.75, gatehouse 2.68, cart 0.9, windmill 3.15, crate 0.68). The statue (102,102) and fountain (115,79) render as decor — they used to render as nothing, since the layout marks them non-solid. Verified cause of the 0-generated-stall drop: the blueprint's single stall prop has solid=false, so the adapter's !prop.solid guard skips it before the stall branch — not fixed here (it would change collision); that is Stage 5's market work. Grass density unchanged at 0.08, nothing cut. Verts: town 241,914->252,300 (+4.3%), wild 271,632->280,674 (+3.3%), all centres under the 300k budget.",
+    "runId": null,
+    "verifiedAt": "2026-11-09T15:03:43.022Z"
   },
   "measuredBaselines": [
     {
@@ -694,6 +697,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1049,
+      "commit": "0e3d7c0b",
+      "result": "Verified live: served version.json build 1049 @ 2026-11-09T15:03:43.022Z, served index __AG_BUILD='1049'. The first deploy run 42627250839 failed at the deploy step (build succeeded, deploy job ran 13:40:03Z, failed after ~11 min) — the parent re-triggered with an empty commit 00fa51ae (same content, idempotent) at ~07:01 PST; the re-trigger deploy landed. The re-trigger run ID could not be retrieved at checkpoint time — the public Actions API was rate-limited for the shared proxy IP (remaining 0, reset ~07:34 PST; the VM replacement also changed the egress IP from 104.29.194.191 to 104.29.194.34, also rate-limited). The served content markers are the live-confirmation standard and they confirm 1049 is live. Asserts 641 checks pass (parent re-ran directly — ASSERT_DONE 641 checks passed; parent re-run cost lines: town verts 252,300 p50 217.4ms vs pristine1048 196ms, wild 280,674 p50 220.0ms vs 211.7ms, shore 238,968 p50 155.0ms vs 153.1ms, farWild 279,534 p50 200.1ms vs 175.6ms — all inside the assert gates). Sim vs pristine1048 byte-identical (parent diffed sim1049.norm.log vs sim1048-pristine.norm.log — no diff output; known 684 crash only). Phone probe 0 page errors (three shapes side by side in town and wild; generated bush walked through live — closest approach 0.02 and 0.16 tiles on two runs; lamp, barrel, hedge, statue, fountain photographed as themselves; stall placed twice — 'Placed Market Stall'; tree placed from the Build menu). Frames: town walk max 200ms p50 167ms, wild walk max 217ms p50 183ms, 0 frames >250ms vs the 1035 baseline walk max 200ms — no slowdown.",
+      "runId": null,
+      "verifiedAt": "2026-11-09T15:03:43.022Z"
+    },
     {
       "build": 1048,
       "commit": "6430a5c3",
