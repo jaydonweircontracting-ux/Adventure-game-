@@ -35,8 +35,9 @@
 //   by name, format, category, or triangle count.
 //
 // What is NOT here: the parsers (customAssets.ts), the store
-// (assetStore.ts), the ZIP reader (zipImport.ts), FBX, audio,
-// textures, or packs — those are other stages.
+// (assetStore.ts), the ZIP reader/writer (zipImport.ts), the pack
+// assembly + manifest (assetPack.ts), FBX, audio, textures —
+// those are other stages (packs landed in BUILD 1046).
 
 import { uniquifyAssetName, type CustomAsset } from './customAssets';
 import { checkLibraryBudgets } from './assetStore';
@@ -237,25 +238,78 @@ export function importProgressLabel(p: ImportProgress): string {
 
 // ---- Add / Cancel (pure part) ----
 
+/** BUILD 1046: what the player chose for one name collision —
+ *  keep both (the new model is renamed, as before), replace (the
+ *  old asset and its placed copies go away, the new model takes
+ *  the name), or skip (the new model is dropped). */
+export type OverwriteChoice = 'keep' | 'replace' | 'skip';
+
+export interface NameCollision {
+  /** The pending asset that would collide. */
+  pending: CustomAsset;
+  /** The library asset it would collide with (same exact name). */
+  existing: CustomAsset;
+}
+
+/** BUILD 1046: every pending asset whose name already exists in
+ *  the library (exact match — the same notion uniquifyAssetName
+ *  uses, so a name it would rename is exactly a name that
+ *  collides). The view asks the player about these BEFORE
+ *  committing anything — a name is never silently overwritten. */
+export function findNameCollisions(library: CustomAsset[], pending: CustomAsset[]): NameCollision[] {
+  const byName = new Map(library.map((a) => [a.name, a]));
+  const out: NameCollision[] = [];
+  for (const p of pending) {
+    const existing = byName.get(p.name);
+    if (existing) out.push({ pending: p, existing });
+  }
+  return out;
+}
+
 /** Plan an Add: uniquify every pending name against the live
  *  library (and against each other, in order) and check the library
  *  budgets. Returns the assets ready to write plus any reason the
  *  commit cannot happen — the view writes only what is returned
- *  here, so a failed budget never half-commits a batch. */
+ *  here, so a failed budget never half-commits a batch.
+ *
+ *  BUILD 1046: `resolutions` carries the player's answer for each
+ *  colliding pending asset (keyed by pending id, from
+ *  findNameCollisions). 'keep' is the old behaviour (rename the
+ *  newcomer); 'replace' keeps the name and lists the old asset in
+ *  `replaced` for the view to delete (with its placed copies);
+ *  'skip' drops the newcomer. A collision with no resolution is
+ *  treated as 'keep' — never as a silent replace. The budget check
+ *  counts the library MINUS the replaced assets, since those go
+ *  away in the same commit. */
 export function planLibraryCommit(
   library: CustomAsset[],
   pending: CustomAsset[],
-): { toAdd: CustomAsset[]; failed: string[] } {
+  resolutions?: Map<string, OverwriteChoice>,
+): { toAdd: CustomAsset[]; replaced: CustomAsset[]; failed: string[] } {
   const taken = new Set(library.map((a) => a.name));
+  const byName = new Map(library.map((a) => [a.name, a]));
   const toAdd: CustomAsset[] = [];
+  const replaced: CustomAsset[] = [];
   for (const raw of pending) {
+    const existing = byName.get(raw.name);
+    const choice = resolutions?.get(raw.id);
+    if (existing && choice === 'skip') continue;
+    if (existing && choice === 'replace') {
+      replaced.push(existing);
+      taken.delete(raw.name);
+      toAdd.push({ ...raw });
+      taken.add(raw.name);
+      continue;
+    }
     const name = uniquifyAssetName([...taken], raw.name);
     taken.add(name);
     toAdd.push({ ...raw, name });
   }
-  const budget = checkLibraryBudgets(library, toAdd);
-  if (!budget.ok) return { toAdd: [], failed: ['Upload failed: ' + budget.reason] };
-  return { toAdd, failed: [] };
+  const replacedIds = new Set(replaced.map((a) => a.id));
+  const remaining = library.filter((a) => !replacedIds.has(a.id));
+  const budget = checkLibraryBudgets(remaining, toAdd);
+  if (!budget.ok) return { toAdd: [], replaced: [], failed: ['Upload failed: ' + budget.reason] };
+  return { toAdd, replaced, failed: [] };
 }
 
 /** Cancel: drop one pending asset. Pure list removal — nothing was

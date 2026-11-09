@@ -44,15 +44,16 @@ import {
   toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset } from './customAssets';
+import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset, type GlbUploadResult, type GltfDependency } from './customAssets';
 import { createAssetStore, createIndexedDbAssetBackend, writeAssetManifest, readAssetManifest, describeStoreError, type AssetStore } from './assetStore';
-import { parseZipUpload } from './zipImport';
+import { parseZipUpload, writeZipArchive } from './zipImport';
+import { buildAssetPack } from './assetPack';
 import {
   ASSET_CATEGORIES, parseTags, assetRow,
   renameAsset, setAssetCategory, setAssetTags, filterAssets, sortAssets,
   importProgressPercent, importProgressLabel, planLibraryCommit, discardPending,
-  renderAssetPreview, canPreviewAsset,
-  type ImportProgress, type LibrarySort,
+  findNameCollisions, renderAssetPreview, canPreviewAsset,
+  type ImportProgress, type LibrarySort, type OverwriteChoice,
 } from './assetLibrary';
 
 // BUILD 1045: the preview canvas. A tiny module-level component (not
@@ -62,6 +63,30 @@ import {
 // putImageData. No second 3D renderer: the pixels come from the same
 // positions + colours the game draws. When the model cannot be
 // previewed it renders nothing and the caller says so in words.
+// BUILD 1046: the last import's report — exactly which models
+// landed, which entries were skipped and why, which failed, and
+// notes (a missing texture, a pack manifest, a .bin found in a
+// subfolder). Shown in the hub until dismissed; the message bar
+// keeps only the one-line summary.
+export interface ImportReport {
+  source: string;
+  added: string[];
+  skipped: Array<{ name: string; reason: string }>;
+  failed: string[];
+  notes: string[];
+}
+
+// BUILD 1046: one overwrite-prompt row — a pending model whose
+// name already exists in the library, the asset it would collide
+// with, and how many placed copies that asset has (Replace
+// removes them). `choices` is the player's per-row answer so far;
+// a row with no answer defaults to Keep both.
+export interface OverwritePrompt {
+  pending: CustomAsset[];
+  collisions: Array<{ pendingId: string; pendingName: string; existingId: string; existingName: string; placedCount: number }>;
+  choices: Record<string, OverwriteChoice>;
+}
+
 function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size: number; testid: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -1743,6 +1768,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [pendingImports,setPendingImports]=useState<CustomAsset[]>([]);
   const pendingImportsRef=useRef<CustomAsset[]>([]);
   const setPending=(next:CustomAsset[])=>{pendingImportsRef.current=next;setPendingImports(next);};
+  // BUILD 1046: the last import's report (hub UI, not just a log),
+  // the dependencies the parsers reported for pending imports
+  // (keyed by pending asset id — a missing texture is a note, a
+  // .bin found in a subfolder is a note, neither blocks the Add),
+  // and the overwrite prompt (a name collision asks first — the
+  // commit waits until the player picks Keep both / Replace /
+  // Skip for every colliding row).
+  const [importReport,setImportReportState]=useState<ImportReport|null>(null);
+  const importReportRef=useRef<ImportReport|null>(null);
+  const setReport=(r:ImportReport|null)=>{importReportRef.current=r;setImportReportState(r);};
+  const pendingDepsRef=useRef(new Map<string, GltfDependency[]>());
+  const [overwritePrompt,setOverwritePromptState]=useState<OverwritePrompt|null>(null);
+  const overwritePromptRef=useRef<OverwritePrompt|null>(null);
+  const setOverwrite=(o:OverwritePrompt|null)=>{overwritePromptRef.current=o;setOverwritePromptState(o);};
   const [importProgress,setImportProgress]=useState<ImportProgress|null>(null);
   const importProgressRef=useRef<ImportProgress|null>(null);
   const setProgress=(p:ImportProgress|null)=>{importProgressRef.current=p;setImportProgress(p);};
@@ -1886,23 +1925,52 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const files=e.target.files?Array.from(e.target.files):[];
     e.target.value='';
     if(files.length===0)return;
-    const modelFiles=files.filter(f=>!/\.bin$/i.test(f.name));
+    setReport(null);
+    const modelFiles=files.filter(f=>!/\.bin$/i.test(f.name)&&!/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name));
     const totalBytes=files.reduce((s,f)=>s+f.size,0);
     let bytesDone=0;let filesDone=0;
     const setP=(phase:'reading'|'parsing',current:string)=>setProgress({phase,filesDone,filesTotal:modelFiles.length,bytesDone,bytesTotal:totalBytes,current});
-    // .bin companions for any .gltf picked in the same batch.
-    const binFiles=new Map<string,ArrayBuffer>();
-    for(const f of files.filter(f=>/\.bin$/i.test(f.name))){
+    // BUILD 1046: companion files for any .gltf/.glb picked in the
+    // same batch — its .bin, and any image it names. Keyed by file
+    // name and by folder-relative path (a folder pick keeps its
+    // subfolders), so a .gltf in `models/` finds `models/mesh.bin`.
+    // Images are companions only: they are never models, and never
+    // failures on their own — the parsers report whether a model
+    // actually referenced them.
+    const companionFiles=new Map<string,ArrayBuffer>();
+    const relPathOf=(f:File):string=>((f as File&{webkitRelativePath?:string}).webkitRelativePath||f.name);
+    const dirOf=(p:string):string=>p.includes('/')?p.slice(0,p.lastIndexOf('/')):'';
+    for(const f of files.filter(f=>/\.bin$/i.test(f.name)||/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))){
       setP('reading',f.name);
-      try{binFiles.set(f.name,await f.arrayBuffer());bytesDone+=f.size;}catch{/* a bad .bin just means its .gltf fails with a clear message */}
+      try{
+        const buf=await f.arrayBuffer();
+        companionFiles.set(f.name,buf);
+        const rel=relPathOf(f);
+        if(rel!==f.name)companionFiles.set(rel,buf);
+        bytesDone+=f.size;
+      }catch{/* a bad companion just means its .gltf fails with a clear message */}
       await yieldToLoop();
     }
     const parsed:CustomAsset[]=[];
     const failed:string[]=[];
-    let skipped=0;let skippedNote='';
-    const accept=(res:{ok:true;asset:CustomAsset}|{ok:false;reason:string},label:string)=>{
+    const skipped:ImportReport['skipped']=[];
+    const notes:string[]=[];
+    // BUILD 1046: a missing texture (or a .bin found in a
+    // subfolder) is a report note, not a silent drop — the model
+    // still imports, and the hub says plainly that the texture was
+    // not found and was not applied.
+    const noteDeps=(asset:CustomAsset,deps?:GltfDependency[])=>{
+      if(!deps)return;
+      for(const d of deps){
+        if(!d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was named but not found — the model still imported; textures are not rendered, so nothing was applied');
+        if(d.found&&d.kind==='buffer'&&d.resolvedPath&&d.resolvedPath.includes('/'))notes.push('\''+asset.name+'\': its data file "'+d.resolvedPath+'" was found in a subfolder');
+      }
+    };
+    const accept=(res:GlbUploadResult,label:string)=>{
       if(!res.ok){failed.push(label+': '+res.reason);return;}
       parsed.push(res.asset);
+      if(res.dependencies)pendingDepsRef.current.set(res.asset.id,res.dependencies);
+      noteDeps(res.asset,res.dependencies);
     };
     for(const file of modelFiles){
       const lower=file.name.toLowerCase();
@@ -1914,7 +1982,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         let zip;
         try{zip=await parseZipUpload(buf);}catch(err){failed.push(file.name+': '+(err instanceof Error?err.message:'could not read the ZIP'));filesDone++;await yieldToLoop();continue;}
         for(const m of zip.models)accept(m.result,m.name);
-        if(zip.skipped.length>0){skipped+=zip.skipped.length;skippedNote=zip.skipped[0].reason;}
+        for(const s of zip.skipped)skipped.push(s);
+        if(zip.packManifest)notes.push('This ZIP is an exported asset pack'+(zip.packManifest.exportedAt?' (exported '+zip.packManifest.exportedAt.slice(0,10)+')':'')+' listing '+zip.packManifest.assetCount+' model'+(zip.packManifest.assetCount===1?'':'s')+' — the models import normally, and a name that already exists will ask first');
         filesDone++;await yieldToLoop();
         continue;
       }
@@ -1924,11 +1993,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           if(lower.endsWith('.glb')){
             const buf=await file.arrayBuffer();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
-            accept(parseGlbUpload(buf,file.name),file.name);
+            accept(parseGlbUpload(buf,file.name,companionFiles,dirOf(relPathOf(file))),file.name);
           }else if(lower.endsWith('.gltf')){
             const text=await file.text();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
-            accept(parseGltfUpload(text,file.name,binFiles),file.name);
+            accept(parseGltfUpload(text,file.name,companionFiles,dirOf(relPathOf(file))),file.name);
           }else{
             const text=await file.text();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
@@ -1941,16 +2010,30 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       failed.push(file.name+': not a supported file (.glb, .gltf, .obj, or .zip)');
       filesDone++;await yieldToLoop();
     }
+    // BUILD 1046: an image file no model referenced is noted, not
+    // failed — it was only ever a possible texture, and textures
+    // are not rendered.
+    const referenced=new Set<string>();
+    pendingDepsRef.current.forEach((deps)=>{for(const d of deps)if(d.found&&d.resolvedPath)referenced.add(d.resolvedPath);});
+    for(const f of files.filter(f=>/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))){
+      const rel=relPathOf(f);
+      if(!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file — images are only used as glTF texture references, and textures are not rendered, so it was ignored');
+    }
     setProgress(null);
     if(parsed.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
       setMessage('A .bin file on its own is not a model — select it together with its .gltf file');
       return;
     }
     if(parsed.length>0)setPending([...pendingImportsRef.current,...parsed]);
+    // BUILD 1046: the hub report — exactly which models landed,
+    // which entries were skipped and why, which failed, and the
+    // notes above. The message bar keeps the one-line summary.
+    const report:ImportReport={source:files.length===1?files[0].name:files.length+' files',added:parsed.map(a=>a.name),skipped,failed,notes};
+    if(report.added.length>0||report.skipped.length>0||report.failed.length>0||report.notes.length>0)setReport(report);
     const bits:string[]=[];
     if(parsed.length>0)bits.push(parsed.length===1?'\''+parsed[0].name+'\' is ready to review below — check the preview, then tap Add to Asset Library or Cancel':parsed.length+' models are ready to review below — check each preview, then Add to Asset Library or Cancel');
     if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
-    if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
+    if(skipped.length>0)bits.push(skipped.length+' skipped ('+skipped[0].reason+')');
     if(bits.length>0)setMessage(bits.join(' — '));
   };
   // BUILD 1045: commit pending imports to the library — the explicit
@@ -1962,38 +2045,123 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // save stay pending, so the player can retry or cancel them. When
   // IndexedDB is unavailable the add is session-only and the hub
   // warning already says so.
-  const commitPendingAssets=async(toCommit:CustomAsset[])=>{
+  const commitPendingAssets=async(toCommit:CustomAsset[],resolutions?:Map<string,OverwriteChoice>)=>{
     if(toCommit.length===0)return;
+    // BUILD 1046: a name that already exists asks FIRST — the
+    // commit waits until the player answers Keep both / Replace /
+    // Skip for every colliding row. Nothing is overwritten silently,
+    // and nothing is committed while the question is open.
+    if(!resolutions){
+      const collisions=findNameCollisions(customAssetsRef.current,toCommit);
+      if(collisions.length>0){
+        const world=stateRef.current.world;
+        const placed=(world.placements??[]) as Array<{kind?:string;assetId?:string}>;
+        setOverwrite({
+          pending:toCommit,
+          collisions:collisions.map(c=>({pendingId:c.pending.id,pendingName:c.pending.name,existingId:c.existing.id,existingName:c.existing.name,placedCount:placed.filter(p=>p.kind==='custom'&&p.assetId===c.existing.id).length})),
+          choices:{},
+        });
+        return;
+      }
+    }
     await runLibraryOp(async()=>{
       const store=assetStoreRef.current;
       const live=customAssetsRef.current;
-      const plan=planLibraryCommit(live,toCommit);
+      const plan=planLibraryCommit(live,toCommit,resolutions);
       const failed:string[]=[...plan.failed];
       const persisted:CustomAsset[]=[];
-      if(plan.toAdd.length>0){
+      // BUILD 1046: Replace — the old asset goes away first (store
+      // delete, then its placed copies with one undo stroke, the
+      // same as deleting it by hand), and only then does the new
+      // model take the name. If the old asset cannot be removed,
+      // its replacement is NOT added — two assets must never share
+      // a name after this commit.
+      const blockedNames=new Set<string>();
+      for(const old of plan.replaced){
+        let removedOk=true;
         if(store){
-          for(const a of plan.toAdd){
+          try{await store.remove(old.id);}
+          catch(err){failed.push(old.name+': could not remove the old model ('+describeStoreError(err)+') — the new one was not added');removedOk=false;}
+        }
+        if(!removedOk){blockedNames.add(old.name);continue;}
+        const world=stateRef.current.world;
+        const removed=removeCustomAssetPlacements(world,old.id);
+        const n=removed.length;
+        setLibrary(customAssetsRef.current.filter(a=>a.id!==old.id));
+        if(customSelection===old.id){setCustomSelection(null);buildRef.current={...buildRef.current,customAssetId:null};}
+        if(n>0){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
+      }
+      const addable=plan.toAdd.filter(a=>!blockedNames.has(a.name));
+      if(addable.length>0){
+        if(store){
+          for(const a of addable){
             try{await store.put(a);persisted.push(a);}
             catch(err){failed.push(a.name+': could not save ('+describeStoreError(err)+')');}
           }
         }else{
-          persisted.push(...plan.toAdd);
+          persisted.push(...addable);
         }
       }
       if(persisted.length>0)setLibrary([...customAssetsRef.current,...persisted]);
       const committedIds=new Set(persisted.map(a=>a.id));
-      setPending(pendingImportsRef.current.filter(a=>!committedIds.has(a.id)));
+      // BUILD 1046: an asset the player chose to Skip leaves
+      // pending too — it was decided, not committed. An asset that
+      // FAILED (budget / save) stays pending, so it can be retried
+      // or cancelled by hand.
+      const skippedIds=new Set(toCommit.filter(a=>resolutions?.get(a.id)==='skip').map(a=>a.id));
+      setPending(pendingImportsRef.current.filter(a=>!committedIds.has(a.id)&&!skippedIds.has(a.id)));
+      for(const id of [...committedIds,...skippedIds])pendingDepsRef.current.delete(id);
       const bits:string[]=[];
       if(persisted.length>0)bits.push('Added '+persisted.map(a=>'\''+a.name+'\'').join(', ')+' to the Asset Library — pick '+(persisted.length===1?'it':'one')+' in Custom, then tap the ground to place it');
+      if(plan.replaced.length>0)bits.push('Replaced '+plan.replaced.filter(o=>!blockedNames.has(o.name)).map(o=>'\''+o.name+'\'').join(', ')+' — the old model and its placed copies were removed first');
+      if(skippedIds.size>0)bits.push('Skipped '+toCommit.filter(a=>skippedIds.has(a.id)).map(a=>'\''+a.name+'\'').join(', ')+' — nothing was added for '+(skippedIds.size===1?'it':'them'));
       if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
       if(bits.length>0)setMessage(bits.join(' — '));
     });
+  };
+  // BUILD 1046: the player answered the overwrite prompt — carry
+  // the per-row choices (an unanswered row defaults to Keep both,
+  // the choice that destroys nothing) into the commit.
+  const resolveOverwritePrompt=()=>{
+    const prompt=overwritePromptRef.current;
+    if(!prompt)return;
+    const resolutions=new Map<string,OverwriteChoice>();
+    for(const c of prompt.collisions)resolutions.set(c.pendingId,prompt.choices[c.pendingId]??'keep');
+    setOverwrite(null);
+    void commitPendingAssets(prompt.pending,resolutions);
+  };
+  // BUILD 1046: export / back up the whole library as a ZIP — the
+  // models in their original formats plus a manifest. A
+  // user-initiated download to this device (on iPhone, it lands in
+  // Files); nothing is uploaded anywhere. Re-importing the ZIP
+  // restores the models (new ids — placements are not in the pack,
+  // they live in the world save).
+  const exportAssetPack=()=>{
+    const assets=customAssetsRef.current;
+    if(assets.length===0){setMessage('Nothing to export — the Asset Library is empty');return;}
+    try{
+      const pack=buildAssetPack(assets);
+      const bytes=writeZipArchive(pack.entries);
+      const blob=new Blob([bytes as BlobPart],{type:'application/zip'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download='ashfall-asset-pack.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      setMessage('Exported '+assets.length+' model'+(assets.length===1?'':'s')+' as ashfall-asset-pack.zip — it downloads to this device (on iPhone, find it in Files). The pack has your models plus a manifest; re-import the ZIP to restore them.');
+    }catch(err){
+      setMessage('Could not export the pack ('+(err instanceof Error?err.message:'unknown error')+')');
+    }
   };
   // BUILD 1045: Cancel a pending import. Nothing was ever written
   // for it, so dropping it leaves the library exactly as it was.
   const discardPendingAsset=(id:string)=>{
     const a=pendingImportsRef.current.find(x=>x.id===id);
     setPending(discardPending(pendingImportsRef.current,id));
+    pendingDepsRef.current.delete(id);
     if(a)setMessage('Discarded \''+a.name+'\' — it was not added to the library');
   };
   // BUILD 1045: edit a pending import's details before it is added
@@ -3854,6 +4022,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // an explicit Add/Cancel, and the live import progress (probes only).
       getPendingImports:()=>JSON.parse(JSON.stringify(pendingImportsRef.current)),
       getImportProgress:()=>importProgressRef.current?{...importProgressRef.current}:null,
+      // BUILD 1046 test hooks (read-only): the last import's report
+      // (landed / skipped + why / failed / notes), the overwrite
+      // prompt when a name collides, and the dependencies the
+      // parsers reported for pending imports (probes only).
+      getImportReport:()=>importReportRef.current?JSON.parse(JSON.stringify(importReportRef.current)):null,
+      getOverwritePrompt:()=>overwritePromptRef.current?JSON.parse(JSON.stringify(overwritePromptRef.current)):null,
+      getPendingDependencies:()=>{const o:Record<string,GltfDependency[]>={};pendingDepsRef.current.forEach((v,k)=>{o[k]=JSON.parse(JSON.stringify(v));});return o;},
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
       // BUILD 1036 test hooks (probes only — no gameplay effect):
@@ -4418,7 +4593,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       {importHubOpen&&<div data-testid="import-hub" style={{marginTop:10,padding:12,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
         <div style={{fontSize:13,fontWeight:700}}>Import Hub — bring in your own models</div>
         {customAssetsWarning&&<div data-testid="import-hub-warning" style={{fontSize:12,marginTop:8,lineHeight:1.5,padding:8,borderRadius:8,background:'#5c3a17',border:'1px solid #d9a833'}}>⚠️ {customAssetsWarning}</div>}
-        <div style={{fontSize:12,marginTop:6,lineHeight:1.5}}>Imports <b>.glb</b>, <b>.gltf</b> (pick its <b>.bin</b> file at the same time if it has one), <b>.obj</b>, or a <b>.zip</b> holding any of those. Pick several files at once. Models render as plain coloured triangles — 1 unit = 1 tile, footprint max 8×8, max 5 MB per file, library up to 50 MB / 100,000 triangles total. Your models are stored on this device (IndexedDB) and survive reloads here — they are not synced to other devices or to GitHub.</div>
+        <div style={{fontSize:12,marginTop:6,lineHeight:1.5}}>Imports <b>.glb</b>, <b>.gltf</b> (pick its <b>.bin</b> file at the same time if it has one), <b>.obj</b>, or a <b>.zip</b> holding any of those. Pick several files at once. A ZIP is checked before anything imports: unsafe paths, ZIP-bomb expansion, and too many or too large files are rejected or skipped with a reason, and a bad entry never stops the rest. After an import the hub reports exactly which models landed, which were skipped and why. Models render as plain coloured triangles — 1 unit = 1 tile, footprint max 8×8, max 5 MB per file, library up to 50 MB / 100,000 triangles total. Your models are stored on this device (IndexedDB) and survive reloads here — they are not synced to other devices or to GitHub. A name that already exists asks first (Keep both / Replace / Skip) — nothing is overwritten silently.</div>
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Choose model files (several at once)</label>
         <input type="file" multiple accept=".glb,.gltf,.obj,.zip,.bin" data-testid="import-hub-file-input" onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
@@ -4430,6 +4605,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         {importProgress&&<div data-testid="import-progress" style={{marginTop:10,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #c4d1bd'}}>
           <div style={{fontSize:12,lineHeight:1.4}}>{importProgressLabel(importProgress)}</div>
           <div style={{height:10,borderRadius:5,background:'#0f1f18',marginTop:6,overflow:'hidden'}}><div data-testid="import-progress-bar" style={{width:importProgressPercent(importProgress)+'%',height:'100%',background:'#7fb069'}} /></div>
+        </div>}
+        {/* BUILD 1046: the last import's report — exactly which
+            models landed, which entries were skipped and why, which
+            failed, and notes (a missing texture, a pack manifest, a
+            .bin found in a subfolder). It stays until dismissed, so
+            a partial import is never a mystery. */}
+        {importReport&&<div data-testid="import-report" style={{marginTop:12,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #c4d1bd'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{flex:1,fontSize:13,fontWeight:700}}>Import report — {importReport.source}</div>
+            <button type="button" data-testid="import-report-dismiss" onClick={()=>setReport(null)} style={{padding:'6px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Dismiss</button>
+          </div>
+          {importReport.added.length>0&&<div data-testid="import-report-added" style={{fontSize:12,marginTop:6,lineHeight:1.5}}>✅ Landed ({importReport.added.length}): {importReport.added.join(', ')}</div>}
+          {importReport.skipped.length>0&&<div data-testid="import-report-skipped" style={{fontSize:12,marginTop:6,lineHeight:1.5}}>⏭️ Skipped ({importReport.skipped.length}):
+            {importReport.skipped.map((s,i)=><div key={i} style={{marginLeft:12}}>• {s.name} — {s.reason}</div>)}
+          </div>}
+          {importReport.failed.length>0&&<div data-testid="import-report-failed" style={{fontSize:12,marginTop:6,lineHeight:1.5}}>❌ Failed ({importReport.failed.length}):
+            {importReport.failed.map((f,i)=><div key={i} style={{marginLeft:12}}>• {f}</div>)}
+          </div>}
+          {importReport.notes.length>0&&<div data-testid="import-report-notes" style={{fontSize:12,marginTop:6,lineHeight:1.5}}>📝 Notes:
+            {importReport.notes.map((n,i)=><div key={i} style={{marginLeft:12}}>• {n}</div>)}
+          </div>}
+          {importReport.added.length===0&&importReport.skipped.length===0&&importReport.failed.length===0&&<div style={{fontSize:12,marginTop:6,opacity:.8}}>Nothing landed from this import.</div>}
         </div>}
         {/* BUILD 1045: review step — every parsed model waits here
             with a real preview drawn from its own geometry, its
@@ -4455,6 +4652,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               </div>
             </div>
             <div style={{fontSize:12,marginTop:8,lineHeight:1.5}}>{row.width}×{row.depth} tiles · {row.height} high · {row.triangles} triangles · {row.format.toUpperCase()} · from {row.sourceFile}</div>
+            {/* BUILD 1046: dependencies the parser reported — a
+                texture this model names but that was not in the
+                upload is said plainly here (it was not applied,
+                because textures are never rendered), and a data
+                file found in a subfolder is named too. */}
+            {(()=>{const deps=(pendingDepsRef.current.get(a.id)||[]).filter(d=>!d.found||(d.found&&d.kind==='buffer'&&d.resolvedPath&&d.resolvedPath.includes('/')));
+              if(deps.length===0)return null;
+              return <div data-testid="import-pending-deps" style={{fontSize:12,marginTop:6,lineHeight:1.5}}>
+                {deps.map((d,i)=><div key={i}>⚠️ {d.kind==='image'
+                  ? 'Texture "'+d.uri+'" was named but not found in the upload — the model still imports; textures are not rendered, so nothing was applied.'
+                  : 'Its data file "'+d.resolvedPath+'" was found in a subfolder.'}</div>)}
+              </div>;})()}
             <div style={{display:'flex',gap:8,marginTop:8}}>
               <button type="button" data-testid="import-pending-add" onClick={()=>void commitPendingAssets([a])} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>Add to Asset Library</button>
               <button type="button" data-testid="import-pending-cancel" onClick={()=>discardPendingAsset(a.id)} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#5a2e24',color:'#fff',fontWeight:700,fontSize:13}}>Cancel</button>
@@ -4462,8 +4671,31 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           </div>;})}
           {pendingImports.length>1&&<div style={{display:'flex',gap:8,marginTop:8}}>
             <button type="button" data-testid="import-pending-add-all" onClick={()=>void commitPendingAssets([...pendingImportsRef.current])} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>Add all ({pendingImports.length})</button>
-            <button type="button" data-testid="import-pending-cancel-all" onClick={()=>{const n=pendingImportsRef.current.length;setPending([]);setMessage('Discarded '+n+' pending import'+(n===1?'':'s')+' — nothing joined the library');}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#5a2e24',color:'#fff',fontWeight:700,fontSize:13}}>Cancel all</button>
+            <button type="button" data-testid="import-pending-cancel-all" onClick={()=>{const n=pendingImportsRef.current.length;setPending([]);pendingDepsRef.current.clear();setMessage('Discarded '+n+' pending import'+(n===1?'':'s')+' — nothing joined the library');}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#5a2e24',color:'#fff',fontWeight:700,fontSize:13}}>Cancel all</button>
           </div>}
+        </div>}
+        {/* BUILD 1046: overwrite confirmation — a pending model
+            whose name already exists in the library asks first.
+            Keep both renames the newcomer (the old behaviour);
+            Replace removes the old model AND its placed copies,
+            then adds the new one under the same name; Skip drops
+            the newcomer. Nothing is committed while this is open,
+            and an unanswered row defaults to Keep both. */}
+        {overwritePrompt&&<div data-testid="import-overwrite-prompt" style={{marginTop:12,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #ffd94d'}}>
+          <div style={{fontSize:13,fontWeight:700}}>A name already exists — what should happen?</div>
+          <div style={{fontSize:12,marginTop:4,lineHeight:1.5,opacity:.9}}>Nothing has been added or removed yet. Pick one for each model, then continue.</div>
+          {overwritePrompt.collisions.map(c=>{const choice=overwritePrompt.choices[c.pendingId]??'keep';return <div key={c.pendingId} data-testid="import-overwrite-row" style={{marginTop:8,padding:8,borderRadius:8,background:'#0f1f18',border:'1px solid rgba(255,255,255,.15)'}}>
+            <div style={{fontSize:12,lineHeight:1.5}}><b>'{c.pendingName}'</b> is already in the library.{choice==='replace'?' Replace removes \''+c.existingName+'\' and its '+c.placedCount+' placed cop'+(c.placedCount===1?'y':'ies')+', then adds the new model.':''}</div>
+            <div style={{display:'flex',gap:6,marginTop:6}}>
+              <button type="button" data-testid="import-overwrite-keep" onClick={()=>setOverwrite({...overwritePromptRef.current!,choices:{...overwritePromptRef.current!.choices,[c.pendingId]:'keep'}})} style={{flex:1,padding:'8px 4px',borderRadius:8,border:'1px solid #c4d1bd',background:choice==='keep'?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Keep both</button>
+              <button type="button" data-testid="import-overwrite-replace" onClick={()=>setOverwrite({...overwritePromptRef.current!,choices:{...overwritePromptRef.current!.choices,[c.pendingId]:'replace'}})} style={{flex:1,padding:'8px 4px',borderRadius:8,border:'1px solid #c4d1bd',background:choice==='replace'?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Replace</button>
+              <button type="button" data-testid="import-overwrite-skip" onClick={()=>setOverwrite({...overwritePromptRef.current!,choices:{...overwritePromptRef.current!.choices,[c.pendingId]:'skip'}})} style={{flex:1,padding:'8px 4px',borderRadius:8,border:'1px solid #c4d1bd',background:choice==='skip'?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Skip</button>
+            </div>
+          </div>;})}
+          <div style={{display:'flex',gap:8,marginTop:8}}>
+            <button type="button" data-testid="import-overwrite-continue" onClick={resolveOverwritePrompt} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>Continue with these choices</button>
+            <button type="button" data-testid="import-overwrite-cancel" onClick={()=>setOverwrite(null)} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>Not yet</button>
+          </div>
         </div>}
         <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Asset Library ({customAssetsLoading?'…':customAssets.length})</div>
         {/* BUILD 1045: the library is searchable and sortable — search
@@ -4521,15 +4753,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 </div>
               </div>;})}
             </div>;})()}
+        {/* BUILD 1046: export / backup — the whole library as one
+            ZIP (models in their original formats + a manifest),
+            downloaded to this device. Nothing is uploaded anywhere.
+            Re-importing the ZIP restores the models; placements are
+            not in the pack — they live in the world save. */}
+        <div style={{marginTop:12,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #c4d1bd'}}>
+          <div style={{fontSize:13,fontWeight:700}}>Back up your models</div>
+          <div style={{fontSize:12,marginTop:4,lineHeight:1.5}}>Export downloads one ZIP with every model in the library (in its original format) plus a manifest listing names, formats, categories, tags, and sizes. Re-import that ZIP to restore them.</div>
+          <button type="button" data-testid="import-hub-export" onClick={exportAssetPack} style={{display:'block',width:'100%',marginTop:8,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export library as a ZIP ({customAssetsLoading?'…':customAssets.length} model{customAssets.length===1?'':'s'})</button>
+        </div>
         <div data-testid="import-hub-limits" style={{fontSize:12,marginTop:12,lineHeight:1.5,borderTop:'1px solid #c4d1bd',paddingTop:10}}>
           <div style={{fontWeight:700}}>What the hub cannot do (honest limits)</div>
           <div style={{marginTop:4}}>• <b>Folders:</b> on iPhone Safari a folder cannot be opened directly — pick files above instead (several at once). The folder button works on a desktop browser where the browser supports it.</div>
           <div style={{marginTop:4}}>• <b>Audio:</b> not imported — there is no audio playback in the game yet, so an audio file would have nowhere to play.</div>
           <div style={{marginTop:4}}>• <b>Textures:</b> not rendered as textures — this renderer draws plain coloured triangles only, so a texture on a model is ignored and the model shows its colours flat.</div>
+          <div style={{marginTop:4}}>• <b>Packs:</b> an export backs up your models, not where you placed them — placements live in the world save, and re-importing a pack creates new copies of the models (a name that already exists will ask first).</div>
           <div style={{marginTop:4}}>• <b>AI access:</b> ChatGPT cannot reach files on your phone or computer — uploading here through the file picker is how a model gets into the game.</div>
         </div>
       </div>}
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable. New in this build: ZIP imports are checked for unsafe paths and ZIP-bomb expansion, a bad entry is skipped with a reason instead of stopping the whole import, and the hub reports exactly which models landed, which were skipped and why; a .gltf finds its .bin in a subfolder and a missing texture is reported, never claimed as applied; the whole library can be exported as a ZIP backup with a manifest; and a name that already exists asks first (Keep both / Replace / Skip) instead of overwriting silently.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>

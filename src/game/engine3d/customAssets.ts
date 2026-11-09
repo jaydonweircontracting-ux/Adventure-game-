@@ -113,8 +113,80 @@ export interface CustomAsset {
 }
 
 export type GlbUploadResult =
-  | { ok: true; asset: CustomAsset }
+  | { ok: true; asset: CustomAsset; dependencies?: GltfDependency[] }
   | { ok: false; reason: string };
+
+/** One external file a .gltf/.glb names. `found` says whether a
+ *  file with that name was actually present alongside the model
+ *  (in the same pick, or in the same ZIP); `resolvedPath` is the
+ *  container-relative path that matched, or null for an embedded
+ *  `data:` URI or a file that was not found. A missing texture is
+ *  a note, never a failure — the renderer draws vertex colours
+ *  only, so no texture is ever applied; a missing .bin still fails
+ *  the import, as before. */
+export interface GltfDependency {
+  uri: string;
+  kind: 'buffer' | 'image';
+  found: boolean;
+  resolvedPath: string | null;
+}
+
+/** Resolve one glTF URI against the files that came with the
+ *  model. `basePath` is the model's own directory inside its
+ *  container ('' for a flat pick); `files` is keyed by
+ *  container-relative path (ZIP entries) and/or plain file name
+ *  (a flat pick) — exact match first, then basename. A URI that
+ *  escapes the container (`../` past the root), an absolute path,
+ *  or a URL is never resolved to a file: it simply is not found. */
+export function resolveGltfUri(
+  uri: string,
+  basePath: string,
+  files?: Map<string, ArrayBuffer>,
+): { found: boolean; resolvedPath: string | null } {
+  if (!uri) return { found: false, resolvedPath: null };
+  if (uri.startsWith('data:')) return { found: true, resolvedPath: null };
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(uri) || uri.startsWith('/') || uri.startsWith('\\')) {
+    return { found: false, resolvedPath: null };
+  }
+  const parts: string[] = [];
+  for (const seg of (basePath ? basePath + '/' + uri : uri).split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') {
+      if (parts.length === 0) return { found: false, resolvedPath: null };
+      parts.pop();
+      continue;
+    }
+    parts.push(seg);
+  }
+  const resolved = parts.join('/');
+  if (!files) return { found: false, resolvedPath: null };
+  if (files.has(resolved)) return { found: true, resolvedPath: resolved };
+  const base = resolved.split('/').pop() || resolved;
+  if (files.has(base)) return { found: true, resolvedPath: base };
+  return { found: false, resolvedPath: null };
+}
+
+/** Every external file a glTF JSON names: its buffer (kind
+ *  'buffer') and every image it references (kind 'image'), each
+ *  resolved against the files that came with the model. */
+export function collectGltfDependencies(
+  json: GltfJson,
+  basePath: string,
+  files?: Map<string, ArrayBuffer>,
+): GltfDependency[] {
+  const out: GltfDependency[] = [];
+  for (const b of json.buffers || []) {
+    if (b.uri === undefined || b.uri === '' || b.uri.startsWith('data:')) continue;
+    const r = resolveGltfUri(b.uri, basePath, files);
+    out.push({ uri: b.uri, kind: 'buffer', found: r.found, resolvedPath: r.resolvedPath });
+  }
+  for (const img of json.images || []) {
+    if (!img.uri || img.uri.startsWith('data:')) continue;
+    const r = resolveGltfUri(img.uri, basePath, files);
+    out.push({ uri: img.uri, kind: 'image', found: r.found, resolvedPath: r.resolvedPath });
+  }
+  return out;
+}
 
 /** Model formats the Import Hub (BUILD 1043) accepts as single
  *  files. ZIP is handled separately (zipImport.ts) and may contain
@@ -142,6 +214,10 @@ type GltfJson = {
   accessors?: Array<{ bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean; sparse?: unknown }>;
   bufferViews?: Array<{ buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }>;
   buffers?: Array<{ byteLength: number; uri?: string }>;
+  /** BUILD 1046: image references. The renderer cannot show
+   *  textures, so these are only ever reported (found / missing),
+   *  never applied — see collectGltfDependencies. */
+  images?: Array<{ uri?: string }>;
 };
 
 function ascii4(view: DataView, off: number): string {
@@ -394,8 +470,11 @@ function decodeBase64DataUri(uri: string): Uint8Array | string {
 
 /** Parse a GLB file buffer into a render-ready CustomAsset. Never
  *  throws for bad input: every failure is a { ok: false, reason } so
- *  the panel can show it and the game keeps running. */
-export function parseGlbUpload(buf: ArrayBuffer, fileName: string): GlbUploadResult {
+ *  the panel can show it and the game keeps running. BUILD 1046:
+ *  `files` + `basePath` let a GLB that names external images report
+ *  whether those files came with it (same pick / same ZIP) — the
+ *  images are never applied, only reported on the ok result. */
+export function parseGlbUpload(buf: ArrayBuffer, fileName: string, files?: Map<string, ArrayBuffer>, basePath = ''): GlbUploadResult {
   try {
     if (buf.byteLength < 20) return { ok: false, reason: 'file too small to be a GLB' };
     const view = new DataView(buf);
@@ -426,7 +505,9 @@ export function parseGlbUpload(buf: ArrayBuffer, fileName: string): GlbUploadRes
     }
     // BUILD 1043: mesh extraction is shared with the .gltf importer
     // (buildAssetFromGltf above) so the two formats can never drift.
-    return buildAssetFromGltf(json, bin, fileName, 'glb');
+    const res = buildAssetFromGltf(json, bin, fileName, 'glb');
+    if (!res.ok) return res;
+    return { ...res, dependencies: collectGltfDependencies(json, basePath, files) };
   } catch (e) {
     return { ok: false, reason: 'could not parse this file (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
   }
@@ -438,14 +519,21 @@ export function parseGlbUpload(buf: ArrayBuffer, fileName: string): GlbUploadRes
  *  own; an external `.bin` file only works when it is selected
  *  TOGETHER with the .gltf (same file pick / same ZIP), passed in as
  *  `binFiles` keyed by file name (exact name first, then basename).
- *  A .gltf whose .bin was not included fails with a message naming
- *  the missing file — it never silently renders empty. Textures
- *  referenced by the JSON are ignored, like GLB (the renderer
- *  cannot show them). Never throws for bad input. */
+ *  BUILD 1046: `basePath` is the .gltf's own directory inside its
+ *  container, so a `.bin` in a subfolder (`models/mesh.bin`) or a
+ *  `../shared/mesh.bin` resolves relative to the .gltf, not the
+ *  container root; a URI that escapes the container is reported
+ *  missing, never followed. A .gltf whose .bin was not included
+ *  fails with a message naming the missing file — it never silently
+ *  renders empty. Textures referenced by the JSON are reported on
+ *  the ok result (found / missing) and ignored by the renderer,
+ *  like GLB — the renderer cannot show them. Never throws for bad
+ *  input. */
 export function parseGltfUpload(
   jsonText: string,
   fileName: string,
   binFiles?: Map<string, ArrayBuffer>,
+  basePath = '',
 ): GlbUploadResult {
   try {
     let json: GltfJson;
@@ -473,14 +561,16 @@ export function parseGltfUpload(
       if (!binFiles) {
         return { ok: false, reason: 'missing buffer file "' + uri + '" — select the .bin file together with the .gltf' };
       }
-      const base = uri.split('/').pop() || uri;
-      const found = binFiles.get(uri) ?? binFiles.get(base);
+      const resolved = resolveGltfUri(uri, basePath, binFiles);
+      const found = resolved.found && resolved.resolvedPath !== null ? binFiles.get(resolved.resolvedPath) : undefined;
       if (!found) {
         return { ok: false, reason: 'missing buffer file "' + uri + '" — select the .bin file together with the .gltf' };
       }
       bin = new Uint8Array(found);
     }
-    return buildAssetFromGltf(json, bin, fileName, 'gltf');
+    const res = buildAssetFromGltf(json, bin, fileName, 'gltf');
+    if (!res.ok) return res;
+    return { ...res, dependencies: collectGltfDependencies(json, basePath, binFiles) };
   } catch (e) {
     return { ok: false, reason: 'could not parse this file (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
   }
@@ -559,6 +649,122 @@ export function parseObjUpload(text: string, fileName: string): GlbUploadResult 
   } catch (e) {
     return { ok: false, reason: 'could not parse this file (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
   }
+}
+
+// ---- Encoders (BUILD 1046: export/backup). The inverse of the
+// parsers above: an asset's own positions + colours + indices,
+// written back out in its ORIGINAL format so a pack re-imports
+// exactly what was exported — a .glb comes back as a .glb, a .gltf
+// as a .gltf plus its .bin, an .obj as an .obj. No textures are
+// written (there were never any to keep: the renderer only ever
+// held vertex colours), and no original file bytes are kept — the
+// export is a re-encode of the geometry the game holds, which is
+// why it round-trips through the same parsers. ----
+
+/** The binary payload shared by the GLB and .gltf encoders:
+ *  positions (float32) + colours (float32) + indices (uint32),
+ *  laid out in that order. */
+function assetBinBytes(asset: CustomAsset): { bin: Uint8Array; posBytes: number; colBytes: number; idxBytes: number } {
+  const nv = asset.positions.length / 3;
+  const posBytes = nv * 12;
+  const colBytes = nv * 12;
+  const idxBytes = asset.indices.length * 4;
+  const bin = new Uint8Array(posBytes + colBytes + idxBytes);
+  const dv = new DataView(bin.buffer);
+  for (let i = 0; i < asset.positions.length; i++) dv.setFloat32(i * 4, asset.positions[i], true);
+  for (let i = 0; i < asset.colors.length; i++) dv.setFloat32(posBytes + i * 4, asset.colors[i], true);
+  for (let i = 0; i < asset.indices.length; i++) dv.setUint32(posBytes + colBytes + i * 4, asset.indices[i], true);
+  return { bin, posBytes, colBytes, idxBytes };
+}
+
+/** The glTF JSON shared by the GLB and .gltf encoders: one scene,
+ *  one node, one mesh, one triangle primitive with POSITION +
+ *  COLOR_0 + indices. `binUri` is undefined for GLB (self-contained)
+ *  and the `.bin` file name for .gltf. */
+function assetGltfJson(asset: CustomAsset, binUri?: string): Record<string, unknown> {
+  const nv = asset.positions.length / 3;
+  const { posBytes, colBytes, idxBytes } = assetBinBytes(asset);
+  const buffers: Array<Record<string, unknown>> = [{ byteLength: posBytes + colBytes + idxBytes }];
+  if (binUri !== undefined) buffers[0].uri = binUri;
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < asset.positions.length; i += 3) {
+    minX = Math.min(minX, asset.positions[i]); maxX = Math.max(maxX, asset.positions[i]);
+    minY = Math.min(minY, asset.positions[i + 1]); maxY = Math.max(maxY, asset.positions[i + 1]);
+    minZ = Math.min(minZ, asset.positions[i + 2]); maxZ = Math.max(maxZ, asset.positions[i + 2]);
+  }
+  return {
+    asset: { version: '2.0', generator: 'Ashfall Import Hub' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0, name: asset.name }],
+    meshes: [{ name: asset.name, primitives: [{ attributes: { POSITION: 0, COLOR_0: 1 }, indices: 2, mode: 4 }] }],
+    buffers,
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: posBytes },
+      { buffer: 0, byteOffset: posBytes, byteLength: colBytes },
+      { buffer: 0, byteOffset: posBytes + colBytes, byteLength: idxBytes },
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: nv, type: 'VEC3', min: [minX, minY, minZ], max: [maxX, maxY, maxZ] },
+      { bufferView: 1, componentType: 5126, count: nv, type: 'VEC3' },
+      { bufferView: 2, componentType: 5125, count: asset.indices.length, type: 'SCALAR' },
+    ],
+  };
+}
+
+function pad4(n: number): number {
+  return (4 - (n % 4)) % 4;
+}
+
+/** Encode an asset as a GLB file (JSON chunk + BIN chunk, both
+ *  4-byte padded). Parses back through parseGlbUpload. */
+export function encodeGlbAsset(asset: CustomAsset): Uint8Array {
+  const { bin } = assetBinBytes(asset);
+  const json = JSON.stringify(assetGltfJson(asset));
+  const jsonBytes = new TextEncoder().encode(json);
+  const jsonPad = pad4(jsonBytes.length);
+  const binPad = pad4(bin.length);
+  const total = 12 + 8 + jsonBytes.length + jsonPad + 8 + bin.length + binPad;
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546c67, true); // 'glTF'
+  dv.setUint32(4, 2, true);
+  dv.setUint32(8, total, true);
+  dv.setUint32(12, jsonBytes.length + jsonPad, true);
+  dv.setUint32(16, 0x4e4f534a, true); // 'JSON'
+  out.set(jsonBytes, 20);
+  for (let i = 0; i < jsonPad; i++) out[20 + jsonBytes.length + i] = 0x20; // space padding
+  const binOff = 20 + 8 + jsonBytes.length + jsonPad;
+  dv.setUint32(binOff - 8, bin.length + binPad, true);
+  dv.setUint32(binOff - 4, 0x004e4942, true); // 'BIN\0'
+  out.set(bin, binOff);
+  return out;
+}
+
+/** Encode an asset as a .gltf (JSON text) plus its separate .bin
+ *  payload. `binFileName` is the file name the JSON references. */
+export function encodeGltfAsset(asset: CustomAsset, binFileName: string): { json: string; bin: Uint8Array } {
+  const { bin } = assetBinBytes(asset);
+  return { json: JSON.stringify(assetGltfJson(asset, binFileName), null, 2), bin };
+}
+
+/** Encode an asset as a Wavefront .obj (text): `v x y z r g b`
+ *  lines plus `f` triangles, with an `o` name line. Colours are
+ *  written with full double precision, so the text round-trips
+ *  exactly through parseObjUpload. */
+export function encodeObjAsset(asset: CustomAsset): string {
+  const lines: string[] = ['o ' + asset.name.replace(/[\r\n]/g, ' ')];
+  const nv = asset.positions.length / 3;
+  for (let i = 0; i < nv; i++) {
+    lines.push(
+      'v ' + asset.positions[i * 3] + ' ' + asset.positions[i * 3 + 1] + ' ' + asset.positions[i * 3 + 2] +
+      ' ' + asset.colors[i * 3] + ' ' + asset.colors[i * 3 + 1] + ' ' + asset.colors[i * 3 + 2],
+    );
+  }
+  for (let i = 0; i < asset.indices.length; i += 3) {
+    lines.push('f ' + (asset.indices[i] + 1) + ' ' + (asset.indices[i + 1] + 1) + ' ' + (asset.indices[i + 2] + 1));
+  }
+  return lines.join('\n') + '\n';
 }
 
 // ---- Storage (same pattern as 996 templates: validated loads,

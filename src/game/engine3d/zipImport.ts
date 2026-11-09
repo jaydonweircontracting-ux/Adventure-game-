@@ -28,6 +28,39 @@ import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, type G
 export const MAX_ZIP_BYTES = 5_000_000;
 /** At most 50 entries per ZIP (a pack, not an archive dump). */
 export const MAX_ZIP_ENTRIES = 50;
+/** BUILD 1046: a single entry may expand to at most 100× its
+ *  compressed size. A real model compresses a few times at most;
+ *  a 10,000× entry is a ZIP bomb, not a model. Checked on the
+ *  central-directory sizes BEFORE inflating, so the expansion
+ *  never even gets allocated. */
+export const MAX_EXPANSION_RATIO = 100;
+/** BUILD 1046: the whole ZIP may expand to at most 50 MB in
+ *  total (the 1044 library cap) — 50 entries × 5 MB each would
+ *  otherwise be 250 MB of allocations from a 5 MB file. */
+export const MAX_TOTAL_UNCOMPRESSED_BYTES = 50_000_000;
+/** BUILD 1046: the manifest file an exported asset pack carries
+ *  (assetPack.ts). It is not a model; the reader reports it in the
+ *  result so the hub can say the ZIP is a pack, instead of
+ *  counting it as a skipped file. */
+export const PACK_MANIFEST_NAME = 'ashfall-asset-pack.json';
+
+/** BUILD 1046: why an entry path is unsafe, or null when it is
+ *  safe. Rejected: empty names, NUL bytes, absolute paths
+ *  (`/x`, `\x`), Windows drive letters (`C:\x`, `C:/x`), and any
+ *  `..` segment — a path that escapes the ZIP's own folder. The
+ *  reader never writes to disk, but an entry name still becomes a
+ *  file name in messages and in a re-exported pack, so a traversal
+ *  name is skipped with its reason instead of being trusted. */
+export function zipPathProblem(name: string): string | null {
+  if (name.length === 0) return 'empty file name';
+  if (name.includes('\0')) return 'unsafe path (contains a NUL byte)';
+  if (name.startsWith('/') || name.startsWith('\\')) return 'unsafe path (absolute path)';
+  if (/^[A-Za-z]:/.test(name)) return 'unsafe path (drive letter)';
+  for (const seg of name.split(/[\\/]/)) {
+    if (seg === '..') return 'unsafe path (escapes the folder with "..")';
+  }
+  return null;
+}
 
 export interface ZipModelResult {
   /** Entry path inside the ZIP. */
@@ -36,11 +69,24 @@ export interface ZipModelResult {
   result: GlbUploadResult;
 }
 
+export interface ZipPackManifest {
+  /** The manifest entry's path (always ashfall-asset-pack.json). */
+  name: string;
+  /** How many models the manifest lists. */
+  assetCount: number;
+  /** The manifest's exportedAt stamp, or '' when it has none. */
+  exportedAt: string;
+}
+
 export interface ZipImportResult {
   /** Every model entry found, parsed or failed, in ZIP order. */
   models: ZipModelResult[];
   /** Entries that were not models (or were over a cap): name + why. */
   skipped: Array<{ name: string; reason: string }>;
+  /** BUILD 1046: the pack manifest, when this ZIP is an exported
+   *  asset pack — so the hub can say so instead of treating the
+   *  manifest as a skipped file. */
+  packManifest?: ZipPackManifest | null;
 }
 
 const EOCD_SIG = 0x06054b50;
@@ -122,19 +168,59 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
     entries.push({ name, method, crc, compSize, size, localOff });
     p += 46 + nameLen + extraLen + commentLen;
   }
-  const result: ZipImportResult = { models: [], skipped: [] };
-  const binFiles = new Map<string, ArrayBuffer>();
+  const result: ZipImportResult = { models: [], skipped: [], packManifest: null };
+  // BUILD 1046: every extracted file, by its full entry path — a
+  // .gltf's .bin (or a texture it names) may sit in a subfolder,
+  // so the parsers resolve dependencies against the whole ZIP,
+  // relative to the .gltf's own directory.
+  const allFiles = new Map<string, ArrayBuffer>();
   // First pass: extract every entry's raw bytes (needed so a .bin
   // later in the ZIP still serves a .gltf earlier in it).
   const extracted = new Map<string, Uint8Array>();
-  for (const e of entries) {
+  // BUILD 1046: which central-directory entries actually
+  // extracted, by index — the second pass must only parse those.
+  // (Names alone cannot tell them apart: two entries may share a
+  // name, and the second one is skipped while the first imports.)
+  const extractedIdx = new Set<number>();
+  // BUILD 1046: the whole ZIP's declared uncompressed size, before
+  // any entry is inflated — a 5 MB ZIP must never expand into
+  // hundreds of megabytes of allocations.
+  let totalUncompressed = 0;
+  for (const e of entries) totalUncompressed += e.size;
+  if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+    throw new Error('ZIP would expand to over 50 MB (' + (totalUncompressed / 1_000_000).toFixed(1) + ' MB) — rejected');
+  }
+  for (let ei = 0; ei < entries.length; ei++) {
+    const e = entries[ei];
     const base = e.name.split('/').pop() || e.name;
     if (e.name.endsWith('/') || e.name.startsWith('__MACOSX/') || base.startsWith('.')) {
       result.skipped.push({ name: e.name, reason: 'not a file' });
       continue;
     }
+    // BUILD 1046: traversal / absolute / drive-letter paths are
+    // skipped with their reason — a bad entry never aborts the
+    // whole import, and the name is never trusted downstream.
+    const pathProblem = zipPathProblem(e.name);
+    if (pathProblem) {
+      result.skipped.push({ name: e.name, reason: pathProblem });
+      continue;
+    }
+    // BUILD 1046: two entries with the same path — the second one
+    // is skipped, so a later entry can never silently replace an
+    // earlier one.
+    if (extracted.has(e.name)) {
+      result.skipped.push({ name: e.name, reason: 'duplicate entry (an earlier entry has the same name)' });
+      continue;
+    }
     if (e.size > MAX_FILE_BYTES) {
       result.skipped.push({ name: e.name, reason: 'over 5 MB' });
+      continue;
+    }
+    // BUILD 1046: expansion ratio, on declared sizes before
+    // inflating — a tiny compressed entry claiming megabytes of
+    // output is a ZIP bomb, not a model.
+    if (e.size > MAX_EXPANSION_RATIO * Math.max(e.compSize, 1)) {
+      result.skipped.push({ name: e.name, reason: 'expands ' + Math.round(e.size / Math.max(e.compSize, 1)) + '× its compressed size — rejected as a possible ZIP bomb' });
       continue;
     }
     if (e.localOff + 30 > bytes.length || view.getUint32(e.localOff, true) !== LOCAL_SIG) {
@@ -170,28 +256,165 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
       continue;
     }
     extracted.set(e.name, raw);
-    if (/\.bin$/i.test(e.name)) {
-      binFiles.set(e.name, toArrayBuffer(raw));
-      binFiles.set(base, toArrayBuffer(raw));
-    }
+    extractedIdx.add(ei);
+    allFiles.set(e.name, toArrayBuffer(raw));
+    // Basename key too (first wins): a .gltf that names just
+    // `mesh.bin` still finds it when it sits in a subfolder, and a
+    // flat file pick is keyed by name alone. Exact paths always
+    // win — the resolver tries the full path first.
+    if (!allFiles.has(base)) allFiles.set(base, toArrayBuffer(raw));
   }
-  // Second pass: parse the models, in ZIP order.
-  for (const e of entries) {
+  // Second pass: parse the models, in ZIP order. Dependencies
+  // resolve against the whole ZIP, relative to each model's own
+  // directory (BUILD 1046) — a .gltf in `models/` finds its .bin
+  // in `models/` or `models/data/`, not just at the ZIP root.
+  // BUILD 1046: when the ZIP is an exported pack, the manifest
+  // (parsed below, wherever it sits in the ZIP) restores each
+  // model's display name, category, and tags — the pack file names
+  // are sanitized (spaces become dashes), so without the manifest
+  // a round-trip would silently rename every model.
+  let manifestRows: Array<{ file: string; name: string; category: string; tags: string[] }> | null = null;
+  for (let ei = 0; ei < entries.length; ei++) {
+    if (!extractedIdx.has(ei)) continue;
+    const e = entries[ei];
     const raw = extracted.get(e.name);
     if (!raw) continue;
     const lower = e.name.toLowerCase();
     const base = e.name.split('/').pop() || e.name;
+    const dir = e.name.includes('/') ? e.name.slice(0, e.name.lastIndexOf('/')) : '';
     if (lower.endsWith('.glb')) {
-      result.models.push({ name: e.name, result: parseGlbUpload(toArrayBuffer(raw), base) });
+      result.models.push({ name: e.name, result: parseGlbUpload(toArrayBuffer(raw), base, allFiles, dir) });
     } else if (lower.endsWith('.gltf')) {
       const text = new TextDecoder().decode(raw);
-      result.models.push({ name: e.name, result: parseGltfUpload(text, base, binFiles) });
+      result.models.push({ name: e.name, result: parseGltfUpload(text, base, allFiles, dir) });
     } else if (lower.endsWith('.obj')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseObjUpload(text, base) });
+    } else if (base === PACK_MANIFEST_NAME) {
+      // BUILD 1046: an exported pack's manifest — parsed for its
+      // model count so the hub can name the pack, and for its rows
+      // so the models get their real names back (see below); a
+      // damaged manifest never fails the models around it.
+      try {
+        const m = JSON.parse(new TextDecoder().decode(raw)) as { assets?: Array<Record<string, unknown>>; exportedAt?: unknown };
+        if (m && Array.isArray(m.assets)) {
+          result.packManifest = {
+            name: e.name,
+            assetCount: m.assets.length,
+            exportedAt: typeof m.exportedAt === 'string' ? m.exportedAt : '',
+          };
+          manifestRows = m.assets
+            .filter((a) => typeof a.file === 'string' && typeof a.name === 'string')
+            .map((a) => ({
+              file: a.file as string,
+              name: a.name as string,
+              category: typeof a.category === 'string' ? a.category : 'Unsorted',
+              tags: Array.isArray(a.tags) ? (a.tags as unknown[]).filter((t): t is string => typeof t === 'string') : [],
+            }));
+        }
+      } catch { /* the manifest is informational only */ }
     } else if (!lower.endsWith('.bin')) {
       result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, or .obj)' });
     }
   }
+  if (manifestRows) {
+    const byFile = new Map(manifestRows.map((r) => [r.file, r]));
+    for (const m of result.models) {
+      const row = byFile.get(m.name);
+      if (row && m.result.ok) {
+        m.result.asset.name = row.name;
+        m.result.asset.category = row.category;
+        m.result.asset.tags = row.tags;
+      }
+    }
+  }
   return result;
+}
+
+// ---- ZIP writing (BUILD 1046: export/backup). A hand-written
+// Stored (method 0, no compression) writer — the mirror of the
+// reader above, same CRC32, no new dependency. Only used for the
+// asset-pack export: the models are already small, and Stored
+// keeps the writer trivially correct. Throws on an unsafe or
+// duplicate entry name, so a bad pack name fails loudly at build
+// time instead of writing a ZIP that cannot be read back. ----
+
+export interface ZipArchiveEntry {
+  name: string;
+  data: Uint8Array;
+}
+
+export function writeZipArchive(entries: ZipArchiveEntry[]): Uint8Array {
+  const seen = new Set<string>();
+  for (const e of entries) {
+    const problem = zipPathProblem(e.name);
+    if (problem) throw new Error('cannot write "' + e.name + '" into a ZIP: ' + problem);
+    if (seen.has(e.name)) throw new Error('duplicate entry name in ZIP: "' + e.name + '"');
+    seen.add(e.name);
+  }
+  const now = new Date();
+  const dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((Math.floor(now.getSeconds() / 2)) & 0x1f);
+  const dosDate = (((now.getFullYear() - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0xf) << 5) | (now.getDate() & 0x1f);
+  const nameBytes = entries.map((e) => new TextEncoder().encode(e.name));
+  let total = 0;
+  for (let i = 0; i < entries.length; i++) total += 30 + nameBytes[i].length + entries[i].data.length;
+  for (let i = 0; i < entries.length; i++) total += 46 + nameBytes[i].length;
+  total += 22;
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  const offsets: number[] = [];
+  let p = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const nb = nameBytes[i];
+    offsets.push(p);
+    dv.setUint32(p, LOCAL_SIG, true);
+    dv.setUint16(p + 4, 20, true); // version needed
+    dv.setUint16(p + 6, 0x0800, true); // UTF-8 file names
+    dv.setUint16(p + 8, 0, true); // Stored
+    dv.setUint16(p + 10, dosTime, true);
+    dv.setUint16(p + 12, dosDate, true);
+    dv.setUint32(p + 14, crc32(e.data), true);
+    dv.setUint32(p + 18, e.data.length, true);
+    dv.setUint32(p + 22, e.data.length, true);
+    dv.setUint16(p + 26, nb.length, true);
+    dv.setUint16(p + 28, 0, true);
+    out.set(nb, p + 30);
+    out.set(e.data, p + 30 + nb.length);
+    p += 30 + nb.length + e.data.length;
+  }
+  const cdStart = p;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const nb = nameBytes[i];
+    dv.setUint32(p, CENTRAL_SIG, true);
+    dv.setUint16(p + 4, 20, true); // version made by
+    dv.setUint16(p + 6, 20, true); // version needed
+    dv.setUint16(p + 8, 0x0800, true); // UTF-8 file names
+    dv.setUint16(p + 10, 0, true); // Stored
+    dv.setUint16(p + 12, dosTime, true);
+    dv.setUint16(p + 14, dosDate, true);
+    dv.setUint32(p + 16, crc32(e.data), true);
+    dv.setUint32(p + 20, e.data.length, true);
+    dv.setUint32(p + 24, e.data.length, true);
+    dv.setUint16(p + 28, nb.length, true);
+    dv.setUint16(p + 30, 0, true);
+    dv.setUint16(p + 32, 0, true);
+    dv.setUint16(p + 34, 0, true);
+    dv.setUint16(p + 36, 0, true);
+    dv.setUint32(p + 38, 0, true);
+    dv.setUint32(p + 42, offsets[i], true);
+    out.set(nb, p + 46);
+    p += 46 + nb.length;
+  }
+  const cdSize = p - cdStart;
+  dv.setUint32(p, EOCD_SIG, true);
+  dv.setUint16(p + 4, 0, true);
+  dv.setUint16(p + 6, 0, true);
+  dv.setUint16(p + 8, entries.length, true);
+  dv.setUint16(p + 10, entries.length, true);
+  dv.setUint32(p + 12, cdSize, true);
+  dv.setUint32(p + 16, cdStart, true);
+  dv.setUint16(p + 20, 0, true);
+  return out;
 }
