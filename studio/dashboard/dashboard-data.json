@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub Stage 6",
+    "build": "Ashfall Stage 3",
     "commit": null,
-    "description": "Integration: imported assets selectable in Build Mode and placeable using the existing move/rotate/scale/duplicate/undo/redo flows. Preserve selection and placement behavior; imported assets must not break built-in assets or saved town chunks. NEXT per the queue.",
+    "description": "Vegetation: 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -293,20 +293,23 @@
       "runId": "42591830479",
       "status": "verified",
       "verifiedAt": "2026-11-09T09:15:39.077Z"
+    },
+    {
+      "build": 1048,
+      "commit": "6430a5c3",
+      "description": "Import Hub Stage 6 — integration: imported models are now full citizens of Build mode. Rotation did not exist for customs at all — the renderer ignored rot, R / rotate buttons were gated to palette kinds, and movePlacement dropped rot on a moved custom. Now: rotateCustomXZ + customFootprint, the renderer rotates the mesh's local XZ, the ghost preview validates/draws at the armed rotation with a 'rotated 90 deg' label, R and the rotate buttons work for an armed custom, and Move keeps rot. Chunk capture/paste excluded customs — now chunks capture customs with assetId + rot; paste validates against the live library, and a missing model skips with the reason 'that model is no longer in your library' — never a silent drop. AREA SELECT skipped customs on duplicate and rotate — duplicateArea now routes customs through pasteChunk; planRotate advances a custom's rot. Already true and now proven (not rebuilt): arm/place with ghost preview, Move, Undo/Redo, Remove, save/reload, the 1039 delete rule. Scale — NOT built, said plainly: a render-only scale would lie about the collision rect; a true scale must change footprint, validation, ghost, move/rotate math, area-select, and chunk capture — not small and safe in the last stage. The Import Hub is now complete (Stages 1-6, builds 1043-1048). Landed: commit 6430a5c3, deploy run 42610828517 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42610828517",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T11:41:25.243Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub Stage 6 (integration)",
-      "commit": null,
-      "description": "Imported assets selectable in Build Mode and placeable using the existing move/rotate/scale/duplicate/undo/redo flows. Preserve selection and placement behavior; imported assets must not break built-in assets or saved town chunks.",
-      "status": "in_progress"
-    },
-    {
       "build": "Ashfall Stage 3",
       "commit": null,
       "description": "Vegetation: 3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Ashfall Stage 4",
@@ -461,13 +464,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T04:00:23-07:00",
+  "lastUpdateTimestamp": "2026-11-09T06:02:05-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1047,
-    "commit": "a5cfa961",
-    "description": "Import Hub Stage 5 — AI / development handoff: tick models in the library (or a whole category, or the whole library) and export a ZIP with the models in their original formats, the pack manifest (stamped with the build number), and a short handoff-summary.txt you can copy and paste into your chat. On a device that supports sharing files from the browser, a Share button sends the ZIP straight to the share sheet; otherwise it downloads to this device (on iPhone, find it in Files) and you upload it in your chat. Honest limits, in plain words: ChatGPT and Muse cannot see the files in your browser on their own — nothing reaches them until you upload the ZIP yourself — and the game itself does not run an AI; the files are for an AI to read, name, categorise, or rework into a new pack.",
-    "runId": "42591830479",
-    "verifiedAt": "2026-11-09T09:15:39.077Z"
+    "build": 1048,
+    "commit": "6430a5c3",
+    "description": "Import Hub Stage 6 — integration: imported models are now full citizens of Build mode. Rotation did not exist for customs at all — the renderer ignored rot, R / rotate buttons were gated to palette kinds, and movePlacement dropped rot on a moved custom. Now: rotateCustomXZ + customFootprint, the renderer rotates the mesh's local XZ, the ghost preview validates/draws at the armed rotation with a 'rotated 90 deg' label, R and the rotate buttons work for an armed custom, and Move keeps rot. Chunk capture/paste excluded customs — now chunks capture customs with assetId + rot; paste validates against the live library, and a missing model skips with the reason 'that model is no longer in your library' — never a silent drop. AREA SELECT skipped customs on duplicate and rotate — duplicateArea now routes customs through pasteChunk; planRotate advances a custom's rot. Already true and now proven (not rebuilt): arm/place with ghost preview, Move, Undo/Redo, Remove, save/reload, the 1039 delete rule. Scale — NOT built, said plainly: a render-only scale would lie about the collision rect; a true scale must change footprint, validation, ghost, move/rotate math, area-select, and chunk capture — not small and safe in the last stage. The Import Hub is now complete (Stages 1-6, builds 1043-1048).",
+    "runId": "42610828517",
+    "verifiedAt": "2026-11-09T11:41:25.243Z"
   },
   "measuredBaselines": [
     {
@@ -691,6 +694,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1048,
+      "commit": "6430a5c3",
+      "result": "Verified live: served version.json build 1048 @ 2026-11-09T11:41:25.243Z, run 42610828517 completed success (parent confirmed via the Actions API). Asserts 137 checks pass (parent re-ran directly — ASSERT_DONE 137 checks passed). Sim vs pristine1047 byte-identical (parent diffed sim1048.norm.log vs sim1047-pristine.norm.log — no diff output; 76 lines, 0 FAIL, both stop at the same known 684 rig crash). Phone probe 33 findings, 0 page errors (real .obj uploaded -> armed from the Build panel Custom list -> placed copy 1 by real tap (87,98)-(88,98) -> rotate button -> placed copy 2 at rot 1, 1x2 -> Move tool dragged copy 1 [4,0] -> cottage placed next to it -> area drag selected custom+custom+house -> area move [3,0] together -> Undo -> Redo -> group rotate turned the custom rot 1, 1x2 -> Undo restored it -> saved chunk 'Chunk 1' (custom + a path tile the save rect caught) -> paste armed -> 'Pasted 2 of 2 from Chunk 1' at (140,130) -> Remove took the custom down -> one Undo restored it -> reload: library still has red-box, 3 placed customs survive). Deploy hiccup (agent flag, parent investigated): the deploy run for the studio checkpoint commit 7ab94eae shows completed failure (run 42605503276) — the build job succeeded but the deploy job failed at 'Deploy to GitHub Pages'. Same transient GitHub-side pattern as 1024; the 1048 deploy succeeded afterwards and the live site is at 1048, so the failure is moot — no recovery needed, no code involved (7ab94eae is studio/-only).",
+      "runId": "42610828517",
+      "verifiedAt": "2026-11-09T11:41:25.243Z"
+    },
     {
       "build": 1047,
       "commit": "a5cfa961",
