@@ -8,7 +8,7 @@ import {
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, hash2,
   DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
   SUN_SHADE, shadeRgb, groundTintDelta,
-  DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
+  DOOR_W, DOOR_H, FIRST_PERSON_EYE,
   FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
   VIEW_FAR_PLANE, VIEW_BAND_HALF, VIEW_BAND_CELL, VIEW_FAR_BAND_HALF, VIEW_FAR_BAND_CELL, VIEW_HORIZON_BAND_HALF, VIEW_HORIZON_BAND_CELL, VIEW_APRON_HALF,
   VIEW_BAND_Y, VIEW_FAR_BAND_Y, VIEW_HORIZON_BAND_Y, VIEW_APRON_Y,
@@ -33,9 +33,10 @@ import {
   isHouseKind, rotateFace, placementRectFor, tileKeyInt,
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
-import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
+import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
-import { wildTerrainAt, wildTreeAt, wildRockAt, isWildWalkable, cellIsMixed, effTerrainFor, surfaceElevation, renderTerrain, rayHitSurface } from './wildTerrain';
+import { treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile, crateKindsForProps, propKindToCrateKind, type CratePropKind } from './vegetation';
+import { wildTerrainAt, wildTreeAt, wildRockAt, wildObstacleAt, isWildWalkable, cellIsMixed, effTerrainFor, surfaceElevation, renderTerrain, rayHitSurface } from './wildTerrain';
 import { stampTownBuildings, stampExtraRocks } from './townAdditions3d';
 import { loadTemplates, saveTemplates, captureChunk, pasteChunk, uniquifyName, type ChunkTemplate } from './templates';
 import {
@@ -331,16 +332,43 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
 
   // Bring the layout generator's authored market/utility props into the
   // 3D collision grid. Stalls retain their counter collision; other solid
-  // props use the current 3D crate placeholder until dedicated prop meshes land.
+  // props become crates — and BUILD 1049 records WHAT each crate is
+  // (world.crateKinds, from the prop kind), so the renderer draws a
+  // lamp as a lamp and a barrel as a barrel instead of the 986 pine
+  // tree every prop used to render as. The map is re-derived on every
+  // load (the layout is deterministic), then merged with carried kinds
+  // for props the player moved (a moved prop keeps its shape — its
+  // tile is no longer a layout tile, so the derivation alone would
+  // lose it; the merge only keeps entries whose crate is still in
+  // the world, so a removed prop's kind drops out with it).
+  const propCrates: Array<{ x: number; y: number; kind: string }> = [];
+  const propDecor: Array<{ tx: number; ty: number; kind: string }> = [];
   for (const prop of layout.props) {
     const x = clamp(tile(prop.x)), y = clamp(tile(prop.y));
-    if (!prop.solid || world.huts.some(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1)) continue;
+    if (world.huts.some(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1)) continue;
+    if (!prop.solid) {
+      // BUILD 1049: non-solid props (the fountain, the statue) used
+      // to be skipped entirely — they rendered as nothing. They are
+      // town decor now: drawn by their own shape, never blocking,
+      // never removable (no removed-set — the generated-stall rule).
+      // The stall prop stays out: it is non-solid too, but making it
+      // a stall would change collision, and the market is Stage 5.
+      if (prop.kind !== 'stall') propDecor.push({ tx: x, ty: y, kind: prop.kind });
+      continue;
+    }
     if (prop.kind === 'stall') {
       world.stalls.push({ x0: x, y0: y, x1: Math.min(world.w - 1, x + 1) });
     } else if (!world.crates.some(c => c.tx === x && c.ty === y) && !removedCrateKeys.has(terrainKey(x, y))) {
       world.crates.push({ tx: x, ty: y });
+      propCrates.push({ x, y, kind: prop.kind });
     }
   }
+  world.propDecor = propDecor;
+  const kinds: Record<string, string> = crateKindsForProps(propCrates);
+  for (const [k, v] of Object.entries(source.crateKinds ?? {})) {
+    if (!(k in kinds) && world.crates.some(c => terrainKey(c.tx, c.ty) === k)) kinds[k] = v;
+  }
+  world.crateKinds = kinds;
 
   // Remove harvestables accidentally placed under the new building footprints.
   const insideBuilding = (x: number, y: number) => world.huts.some(h =>
@@ -856,13 +884,111 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],shadeRgb(color, SUN_SHADE.top));
   };
   // BUILD 986: the exact 983 tapered-tier tree (trunk + 3 shrinking
-  // foliage tiers), shared by real trees, converted crates and converted
-  // generated stalls — one renderer, never a second tree.
+  // foliage tiers) — one renderer, never a second tree.
   // BUILD 992 proportion pass: tiers from townLook (total 4.44 =
   // 3.00x character). Same tiles, same collision — only the mesh grows.
   // BUILD 1034: baseY lifts the tree onto the heightfield.
-  const treeAt=(tx:number,ty:number,baseY=0)=>{
-    for(const t of TREE_TIERS) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0+baseY,t.color);
+  // BUILD 1049: three shapes (vegetation.ts TREE_SHAPES — pine is the
+  // exact 983 tree, oak broad/short, birch slim/tall/pale-trunked).
+  // The shape is a pure function of the tile (treeShapeForTile), so
+  // the same tile always grows the same tree and a reload shows the
+  // same world. Generated trees, wild trees and player-placed trees
+  // all go through this one renderer.
+  const treeAt=(tx:number,ty:number,baseY=0,shape=treeShapeForTile(tx,ty))=>{
+    for(const t of TREE_SHAPES[shape]) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0+baseY,t.color);
+  };
+  // BUILD 1049: a generated/authored market stall renders as a stall,
+  // not a tree (the 986 placeholder). Counter + two back posts + a
+  // canvas awning slab — the same brown counter the player-placed
+  // stall keeps below, so the two agree. Max height ~1.9 (a tree is
+  // 3.6–4.7), so a stall can never be mistaken for one.
+  const stallAt=(x:number,y0:number,baseY=0)=>{
+    const cx=x+.5, cz=y0+.5;
+    box(cx,cz,1,.75,1,baseY,[.57,.31,.16]);
+    houseBox(cx-.42,cz-.42,.09,1.1,.09,baseY+.75,[.23,.16,.1]);
+    houseBox(cx+.42,cz-.42,.09,1.1,.09,baseY+.75,[.23,.16,.1]);
+    box(cx,cz-.42,1.05,.07,.7,baseY+1.85,[.85,.78,.6]);
+  };
+  // BUILD 1049: town props render as themselves, not as pine trees
+  // (the 986 placeholder — 118 crates in town: lamps, hedges,
+  // barrels, fountain, well, windmill, statue, gatehouse, carts, all
+  // trees). The kind comes from world.crateKinds (the adapter's
+  // derivation from the layout prop kinds); a tile with no entry is
+  // a plain wooden crate box. Every shape is a few vertex-colour
+  // boxes from the existing vocabulary — a lamp reuses the 1040
+  // placed-lantern shape (same post/glass/cap constants, so the two
+  // agree), a crate is a box with a lid rim, a barrel is a box with
+  // iron bands. Collision is untouched (the whole tile still blocks);
+  // only the mesh changes.
+  const crateAt=(tx:number,ty:number,baseY=0,kind: CratePropKind='crate')=>{
+    const cx=tx+.5, cz=ty+.5;
+    const wood:Vec3=[.55,.38,.2], woodDark:Vec3=[.48,.33,.17];
+    const stone:Vec3=[.5,.5,.48], stoneDark:Vec3=[.38,.38,.36];
+    const timber:Vec3=[.23,.16,.1];
+    if(kind==='lamp'){
+      houseBox(cx,cz,LANTERN_POST_W,LANTERN_POST_H,LANTERN_POST_W,baseY,LANTERN_TIMBER);
+      const gc=lanternBoxCentre(tx,ty,baseY);
+      cube(gc[0],gc[2],LANTERN_BOX,LANTERN_BOX,LANTERN_BOX,LANTERN_GLASS_DARK,gc[1]-LANTERN_BOX/2);
+      houseBox(cx,cz,LANTERN_CAP,.06,LANTERN_CAP,baseY+LANTERN_POST_H+LANTERN_BOX,LANTERN_TIMBER);
+      return;
+    }
+    if(kind==='barrel'){
+      box(cx,cz,.62,.72,.62,baseY,wood);
+      box(cx,cz,.66,.06,.66,baseY+.15,[.2,.2,.2]);
+      box(cx,cz,.66,.06,.66,baseY+.5,[.2,.2,.2]);
+      return;
+    }
+    if(kind==='hedge'){
+      box(cx,cz,.9,.5,.9,baseY,[.14,.32,.15]);
+      box(cx,cz,.7,.25,.7,baseY+.5,[.17,.36,.17]);
+      return;
+    }
+    if(kind==='fountain'){
+      box(cx,cz,.9,.5,.9,baseY,stone);
+      quad([cx-.42,baseY+.5,cz-.42],[cx+.42,baseY+.5,cz-.42],[cx+.42,baseY+.5,cz+.42],[cx-.42,baseY+.5,cz+.42],[.12,.36,.57]);
+      box(cx,cz,.2,.5,.2,baseY+.5,stoneDark);
+      return;
+    }
+    if(kind==='well'){
+      box(cx,cz,.8,.6,.8,baseY,stone);
+      quad([cx-.32,baseY+.6,cz-.32],[cx+.32,baseY+.6,cz-.32],[cx+.32,baseY+.6,cz+.32],[cx-.32,baseY+.6,cz+.32],[.08,.09,.1]);
+      houseBox(cx-.3,cz,.1,.9,.1,baseY+.6,timber);
+      houseBox(cx+.3,cz,.1,.9,.1,baseY+.6,timber);
+      box(cx,cz,.9,.08,.5,baseY+1.5,woodDark);
+      return;
+    }
+    if(kind==='statue'){
+      box(cx,cz,.6,.4,.6,baseY,stoneDark);
+      box(cx,cz,.35,1.1,.35,baseY+.4,[.75,.73,.68]);
+      box(cx,cz,.25,.25,.25,baseY+1.5,[.78,.76,.71]);
+      return;
+    }
+    if(kind==='gatehouse'){
+      houseBox(cx-.32,cz,.3,2.2,.3,baseY,stone);
+      houseBox(cx+.32,cz,.3,2.2,.3,baseY,stone);
+      box(cx,cz,1.0,.4,.4,baseY+2.2,stoneDark);
+      box(cx,cz,1.1,.08,.5,baseY+2.6,woodDark);
+      return;
+    }
+    if(kind==='cart'){
+      box(cx,cz,.9,.25,.6,baseY+.35,wood);
+      box(cx-.2,cz,.1,.5,.5,baseY,[.2,.2,.2]);
+      box(cx+.2,cz,.1,.5,.5,baseY,[.2,.2,.2]);
+      box(cx+.15,cz,.4,.3,.4,baseY+.6,woodDark);
+      return;
+    }
+    if(kind==='windmill'){
+      houseBox(cx,cz,.9,2.6,.9,baseY,stone);
+      const ce=.12, apex:[number,number,number]=[cx,baseY+2.6+.55,cz];
+      tri([cx-.45-ce,baseY+2.6,cz-.45-ce],[cx+.45+ce,baseY+2.6,cz-.45-ce],apex,shadeRgb([.42,.27,.17],SUN_SHADE.north));
+      tri([cx+.45+ce,baseY+2.6,cz-.45-ce],[cx+.45+ce,baseY+2.6,cz+.45+ce],apex,shadeRgb([.42,.27,.17],SUN_SHADE.east));
+      tri([cx+.45+ce,baseY+2.6,cz+.45+ce],[cx-.45-ce,baseY+2.6,cz+.45+ce],apex,shadeRgb([.42,.27,.17],SUN_SHADE.south));
+      tri([cx-.45-ce,baseY+2.6,cz+.45+ce],[cx-.45-ce,baseY+2.6,cz-.45-ce],apex,shadeRgb([.42,.27,.17],SUN_SHADE.west));
+      return;
+    }
+    // Default: a plain wooden crate — a box with a lid rim.
+    box(cx,cz,.72,.6,.72,baseY,wood);
+    box(cx,cz,.78,.08,.78,baseY+.6,woodDark);
   };
   // Walls and stall counters use the editor-authored collision geometry.
   // BUILD 1028: placed walls render as the same 1x0.85x1 cube as a
@@ -885,12 +1011,13 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       cube(f.tx+.94,f.ty+.5,.05,.07,.84,FENCE_TIMBER,fy+ry);
     }
   }
-  // BUILD 986: generated/authored stalls render as 983 trees, not brown
-  // counter cubes. Stall data + collision are untouched; only the mesh
-  // changes. User-PLACED stalls keep the brown counter cube below — a
+  // BUILD 1049: generated/authored stalls render as stalls (counter +
+  // posts + awning — stallAt above), not the 986 pine trees. Stall
+  // data + collision are untouched; only the mesh changes.
+  // User-PLACED stalls keep the brown counter cube below — a
   // deliberate Build-panel choice is never silently converted.
   // BUILD 1007: stalls render at whole-world range (were window-culled).
-  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) treeAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) stallAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   yield;
   // BUILD 997: uploaded custom meshes — static vertex-colour
@@ -1299,6 +1426,44 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     box(cx+.28,cz-.12,.45,.3,.45,by+.18,g1);
     box(cx+.05,cz+.05,.4,.3,.4,by+.35,g2);
   }
+  // BUILD 1049: GENERATED bushes — undergrowth in the wild and around
+  // town, from the same deterministic hash family as the flowers and
+  // pebbles (generatedBushAt, vegetation.ts). Non-blocking, walk-through
+  // decor like the 1040 placed bush: this loop renders only, and no
+  // walkability function consults it. Two overlapping low boxes (the
+  // placed bush's 4-box shape is kept exactly as 1040 shipped it —
+  // this is its cheaper generated cousin, 20 tris). Skipped on any
+  // occupied tile (blockedTiles + every placed kind), on non-grass,
+  // and under a wild tree/rock out of map — a bush never clips through
+  // solid geometry. Tufts/flowers/pebbles skip bush tiles too
+  // (grassTufts.ts / groundDetail3d.ts), so nothing pokes through a
+  // bush. Yields every 16 rows like the wild-tree loop above, so the
+  // 16k-tile scan cannot eat a whole time-sliced step.
+  {
+    const bushBlocked = blockedTiles(world);
+    for (const t of placedBushTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (const t of placedLanternTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (const t of placedOreTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (const t of placedRockTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (const t of placedFarmTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (const t of placedBridgeTiles(world)) bushBlocked.add(t.tx + ',' + t.ty);
+    for (let by = fY0; by <= fY1; by++) {
+      for (let bx = fX0; bx <= fX1; bx++) {
+        if (effTerrain(bx, by) !== 'grass') continue;
+        if (bushBlocked.has(bx + ',' + by)) continue;
+        if ((bx < 0 || by < 0 || bx >= world.w || by >= world.h) && wildObstacleAt(bx, by)) continue;
+        if (!generatedBushAt(bx, by)) continue;
+        const p = bushParamsForTile(bx, by);
+        const gy = surfaceElevation(effTerrain, bx + .5, by + .5);
+        const g1: Vec3 = [.13 + .03 * p.g1, .30 + .04 * p.g1, .14 + .02 * p.g1];
+        const g2: Vec3 = [.16 + .03 * p.g2, .34 + .03 * p.g2, .16 + .02 * p.g2];
+        const s = p.scale;
+        box(bx + .5 + p.ox1, by + .5 + p.oz1, .85 * s, .42 * s, .85 * s, gy, g1);
+        box(bx + .5 + p.ox2, by + .5 + p.oz2, .55 * s, .3 * s, .55 * s, gy + .25 * s, g2);
+      }
+      if ((by - fY0) % 16 === 15) yield;
+    }
+  }
   // BUILD 1040: placed ore deposits — the same seeded rock cube as a
   // generated rock (same tile seed, so an ore node on a tile looks
   // like the rock that would grow there), plus three small gold
@@ -1371,11 +1536,17 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     }
     if(x===fX1&&(y-fY0)%4===3)yield;
   }
-  // BUILD 986: generated/authored crates + layout prop placeholders render
-  // as 983 trees, not brown cubes. Data untouched — the wood interaction
-  // still finds and removes the crate entry (see the E-key handler).
+  // BUILD 1049: generated/authored crates + layout props render as
+  // themselves (crateAt above — crate, lamp, barrel, hedge, fountain,
+  // well, statue, gatehouse, cart, windmill), not the 986 pine trees.
+  // Data untouched — the wood interaction still finds and removes the
+  // crate entry (see the E-key handler).
   // BUILD 1034: crates stand on the heightfield.
-  for(let ci=0;ci<world.crates.length;ci++){const c=world.crates[ci];treeAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5));if(ci%16===15)yield;}
+  for(let ci=0;ci<world.crates.length;ci++){const c=world.crates[ci];crateAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5),(world.crateKinds?.[terrainKey(c.tx,c.ty)] as CratePropKind|undefined)??'crate');if(ci%16===15)yield;}
+  // BUILD 1049: non-solid town decor (fountain, statue) — the same
+  // crateAt shapes, but these never block (they are not in crates)
+  // and are never removable. A decor tile stays walkable.
+  for(const d of world.propDecor ?? []) crateAt(d.tx,d.ty,surfaceElevation(effTerrain,d.tx+.5,d.ty+.5),propKindToCrateKind(d.kind));
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.

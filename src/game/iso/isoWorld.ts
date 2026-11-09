@@ -60,6 +60,34 @@ export interface IsoWorld {
    *  the case where a layout prop shares the tile. Old saves load with
    *  none. */
   removedCrates?: string[];
+  /** BUILD 1049 — Ashfall Stage 3: what each world.crates entry really
+   *  is ("x,y" -> prop kind, see vegetation.ts CratePropKind). The
+   *  crate list itself only ever held {tx, ty}, which is why every
+   *  layout prop (lamp, barrel, hedge, fountain, well, statue,
+   *  gatehouse, cart, windmill) rendered as a pine tree. The 3D
+   *  adapter (applyMosslightTownLayout) derives this map from the
+   *  layout generator's prop kinds on every load, and merges in
+   *  carried kinds for props the player moved — a tile with no entry
+   *  renders as a plain wooden crate box. Old saves load with none
+   *  (every prop reads as a crate until the adapter re-derives it,
+   *  which it does on the same load). The 2.5D iso demo never reads
+   *  this field. Values are plain strings (not the CratePropKind
+   *  union) so this base data model stays free of engine3d imports. */
+  crateKinds?: Record<string, string>;
+  /** BUILD 1049 — non-solid layout props rendered as town decor
+   *  ("x,y" tiles + the layout prop kind, see vegetation.ts
+   *  CratePropKind). The layout marks the fountain and the statue
+   *  solid=false, so the adapter's prop loop used to skip them
+   *  entirely — they rendered as nothing, not even trees. They are
+   *  decor now: drawn by their own shape (the view's crateAt), but
+   *  they NEVER block (they are not in crates) and are NOT removable
+   *  (there is no removed-decor set — the generated-stall rule:
+   *  a removed one would resurrect on reload). The stall prop stays
+   *  out of here on purpose: it is non-solid too, but making it a
+   *  stall would change collision, and the market is Stage 5's work.
+   *  Old saves load with none (the adapter re-derives it every load).
+   *  The 2.5D iso demo never reads this field. */
+  propDecor?: Array<{ tx: number; ty: number; kind: string }>;
   /** BUILD 1006: generated huts the user moved. `from` is the hut's
    *  ORIGINAL layout rect (with its original door — the adapter matches
    *  layout lots by this rect, and the look/interior seeds derive from

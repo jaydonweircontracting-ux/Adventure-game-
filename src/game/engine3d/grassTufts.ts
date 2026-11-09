@@ -30,6 +30,7 @@
 
 import { GRASS_MESHES, type BakedGrassMesh } from './grassMeshes';
 import { wildObstacleAt, surfaceElevation } from './wildTerrain';
+import { generatedBushAt } from './vegetation';
 import type { IsoWorld, Terrain } from '../iso/isoWorld';
 import { placedCustomRects, placedHutRects, placedStallRects, placedTreeTiles, placedWallTiles } from './placements';
 
@@ -223,6 +224,10 @@ export function emitNaturalGrass(
       // check here: effTerrain returns 'water' for them, and tufts
       // only grow on grass.)
       if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
+      // BUILD 1049: a generated bush owns its tile — no tuft pokes
+      // through it (the bush loop in Engine3DWorldView renders the
+      // bush; this keeps the blades out of it).
+      if (generatedBushAt(x, y)) continue;
       const p = naturalTuftForTile(x, y);
       if (!p) continue;
       // BUILD 1034: the tuft grows from the heightfield at its tile.

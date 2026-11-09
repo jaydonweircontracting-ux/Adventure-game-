@@ -673,6 +673,8 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
           w.crates.splice(Math.min(entry.crateIndex, w.crates.length), 0, { tx: entry.fromX, ty: entry.fromY });
         }
         if (w.removedCrates) w.removedCrates = w.removedCrates.filter((k) => k !== fromKey);
+        // BUILD 1049: the kind travels back with the crate.
+        moveCrateKind(w, entry.toX, entry.toY, entry.fromX, entry.fromY);
       }
       return 'Moved tree back';
     }
@@ -840,6 +842,8 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
         }
         if (!w.removedCrates) w.removedCrates = [];
         if (!w.removedCrates.includes(fromKey)) w.removedCrates.push(fromKey);
+        // BUILD 1049: the kind travels forward with the crate.
+        moveCrateKind(w, entry.fromX, entry.fromY, entry.toX, entry.toY);
       }
       return 'Moved tree';
     }
@@ -1508,7 +1512,26 @@ export function moveGeneratedTree(
     if (!w.removedCrates) w.removedCrates = [];
     if (!w.removedCrates.includes(fromKey)) w.removedCrates.push(fromKey);
   }
+  // BUILD 1049: a moved prop crate carries its kind with it (a moved
+  // lamp stays a lamp — the kind map is keyed by tile, so the entry
+  // must travel, or the crate would fall back to a plain box).
+  if (crate) moveCrateKind(w, fromX, fromY, toX, toY);
   return { ok: true, same: false, entry };
+}
+
+/** BUILD 1049: move one prop crate's kind entry from one tile to
+ *  another (world.crateKinds is keyed by tile). No-op when the source
+ *  tile holds no kind. Called by moveGeneratedTree, by the moveGenTree
+ *  undo/redo branches, and by AREA SELECT's move — every path that
+ *  moves a crate. A kind entry is never invented here: a tile with no
+ *  entry stays kind-less and renders as a plain crate box. */
+export function moveCrateKind(w: IsoWorld, fromX: number, fromY: number, toX: number, toY: number): void {
+  if (!w.crateKinds) return;
+  const fromKey = terrainKey(fromX, fromY);
+  const kind = w.crateKinds[fromKey];
+  if (kind === undefined) return;
+  delete w.crateKinds[fromKey];
+  w.crateKinds[terrainKey(toX, toY)] = kind;
 }
 
 /** BUILD 1040: a bridge tile is walkable ground over water — the

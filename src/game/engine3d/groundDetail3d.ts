@@ -15,6 +15,7 @@
 import { hash2, type Rgb } from './townLook';
 import { blockedTiles } from './grassTufts';
 import { wildObstacleAt, surfaceElevation } from './wildTerrain';
+import { generatedBushAt } from './vegetation';
 import type { IsoWorld, Terrain } from '../iso/isoWorld';
 
 export type V3 = [number, number, number];
@@ -122,6 +123,9 @@ export function emitGroundDetail3d(
       // need no check here: effTerrain returns 'water' for them, and
       // flowers take grass, pebbles grass or dirt.)
       if ((x < 0 || y < 0 || x >= world.w || y >= world.h) && wildObstacleAt(x, y)) continue;
+      // BUILD 1049: a generated bush owns its tile — no flower or
+      // pebble sits under it (same rule as the grass tufts).
+      if (generatedBushAt(x, y)) continue;
       const t = effTerrain(x, y);
       // BUILD 1034: flowers and pebbles sit on the heightfield.
       const baseY = surfaceElevation(effTerrain, x + 0.5, y + 0.5);

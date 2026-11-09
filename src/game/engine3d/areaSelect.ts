@@ -61,7 +61,7 @@ import { hutAt, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedI
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 import {
   addPlacement, applyUndo, doorForRect, edgeConnectedTiles, hutFace, kindOfVariant,
-  newlyTrapped, placementsOf, rectEqual, removeGeneratedAt, removeGeneratedRockAt,
+  moveCrateKind, newlyTrapped, placementsOf, rectEqual, removeGeneratedAt, removeGeneratedRockAt,
   removeGeneratedTreeAt, removeGeneratedWallAt, rotateFace, samePlacement,
   validateBlockingRect, validatePlacement,
   type PaletteKind, type Rotation, type UndoEntry,
@@ -536,6 +536,10 @@ function applyPlannedMoves(
       }
       if (p.hasTree) w.trees.splice(Math.min(p.treeIndex, w.trees.length), 0, { tx: p.newX, ty: p.newY });
       if (p.hasCrate) w.crates.splice(Math.min(p.crateIndex, w.crates.length), 0, { tx: p.newX, ty: p.newY });
+      // BUILD 1049: a moved prop crate carries its kind with it (the
+      // undo of this entry goes through applyUndo's moveGenTree
+      // branch, which carries it back).
+      if (p.hasCrate) moveCrateKind(w, p.x, p.y, p.newX, p.newY);
       const fromKey = terrainKey(p.x, p.y);
       if (p.hasTree) {
         if (!w.removedTrees) w.removedTrees = [];
