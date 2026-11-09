@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Ashfall Stage 5",
+    "build": "Ashfall Stage 6",
     "commit": null,
-    "description": "Settlements: market stalls at the plaza, readable districts, 2-3 fixed wild landmarks; second settlement explicitly out of scope. NEXT per the queue.",
+    "description": "Atmosphere: night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -320,20 +320,23 @@
       "runId": "42659047927",
       "status": "verified",
       "verifiedAt": "2026-11-09T16:53:41.024Z"
+    },
+    {
+      "build": 1051,
+      "commit": "6a10dece",
+      "description": "Ashfall Stage 5 — settlements: 3 market stalls at the plaza in one compact row at y=108 — blueprint stall (104,108)-(105,108) + generated west (102,108)-(103,108) + generated east (106,108)-(107,108). The verified 1049 cause is fixed properly: the blueprint stall prop (solid=false) now becomes a real stall with stall collision (adapter prop loop), rendered with the 1049 stallAt shape (counter + 2 posts + canvas awning); generated stalls come from marketStallSpots + a blocked-tile context (no road/garden/doorstep/hut/NPC-route/garden-tile); deterministic and reload-safe — near-town stalls are filtered out and re-derived on every load (no duplication, no row growth); Build-menu stall placement still works. Readable districts — market (plaza disc + 2), craft (inn/store/smith/mine rect + variant), farm (windmill rect + placed-farm halo), residential (6-tile house halo), wild — via districtAt + cobbleForTile; cobble paving on market/craft dirt/sand: 69 market + 25 craft slabs (deterministic hash, window-only ground detail like flowers/pebbles; the blocked-tile guard suppresses 1 slab under a tree/lamp); no house moved, no footprint/door/collision changed except stall collision. 3 fixed wild landmarks (stamped fresh every load, never removable, ride the heightfield, own shapes, block via isWalkableWorld): The Ruined Tower 2x2 @ (40,170)-(41,171) with a broken SE corner (renders short + rubble); The Standing Stones ring centre (150,48), 6 slabs, centre walkable; The Hunter's Camp tent (165,130)-(166,130) + firepit (165,131). All 69-92 tiles from the plaza; none blocks a road, path, NPC route, or house. No second settlement; no trading, vendor NPCs, or economy; inn/store/smith stay shells; landmarks are places to visit, not quests. Landed: commit 6a10dece, deploy run 42666118966 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42666118966",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T17:36:59.091Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Ashfall Stage 5",
-      "commit": null,
-      "description": "Settlements: market stalls at the plaza, readable districts, 2-3 fixed wild landmarks; second settlement explicitly out of scope.",
-      "status": "in_progress"
-    },
-    {
       "build": "Ashfall Stage 6",
       "commit": null,
       "description": "Atmosphere: night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Dashboard repair (§54)",
@@ -470,13 +473,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T10:04:28-07:00",
+  "lastUpdateTimestamp": "2026-11-09T11:47:56-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1050,
-    "commit": "9edb9212",
-    "description": "Ashfall Stage 4 — architecture: roof variety (axis/pitch/parapet, assigned deterministically per house by seed hash — same house always has the same roof and a reload shows the same town; 29 town huts are axisX 19 / axisZ 10, pitches 0.25 shallow 9 / 0.45 standard 13 / 0.6 steep 7, pitched 23 / parapet 6; a placed house keeps the roof it was built with across save/reload, Move, rotate, AREA SELECT, and undo/redo — seed origin stamped at placement and carried by moves; no footprint, door face, or collision changed). 11 generated fenced gardens beside town houses (98 fence tiles, 31 plants), deterministic per house, with the gate gap on the door face — the player walks in through the gate and never steps on a fence tile; walkability diff vs pre-1050 is exactly the 98 fence tiles; all doors/exits reachable from the plaza; the 1042 Fence property helper is untouched and still works. Interior ceilings + hearth glow: every interior has a timber ceiling (floor+2.1, above the 1.33 eye) and a plaster wall band with a doorway gap — rendered in first-person inside only (orbit keeps its cutaway so the room stays visible from above); every interior has a hearth whose warm orange glow burns at night on the house-light schedule (on 17:30-19:30, off by day). Inn/store/smith stay shells — no mechanics.",
-    "runId": "42659047927",
-    "verifiedAt": "2026-11-09T16:53:41.024Z"
+    "build": 1051,
+    "commit": "6a10dece",
+    "description": "Ashfall Stage 5 — settlements: 3 market stalls at the plaza in one compact row at y=108 — blueprint stall (104,108)-(105,108) + generated west (102,108)-(103,108) + generated east (106,108)-(107,108). The verified 1049 cause is fixed properly: the blueprint stall prop (solid=false) now becomes a real stall with stall collision (adapter prop loop), rendered with the 1049 stallAt shape (counter + 2 posts + canvas awning); generated stalls come from marketStallSpots + a blocked-tile context (no road/garden/doorstep/hut/NPC-route/garden-tile); deterministic and reload-safe — near-town stalls are filtered out and re-derived on every load (no duplication, no row growth); Build-menu stall placement still works. Readable districts — market (plaza disc + 2), craft (inn/store/smith/mine rect + variant), farm (windmill rect + placed-farm halo), residential (6-tile house halo), wild — via districtAt + cobbleForTile; cobble paving on market/craft dirt/sand: 69 market + 25 craft slabs (deterministic hash, window-only ground detail like flowers/pebbles; the blocked-tile guard suppresses 1 slab under a tree/lamp); no house moved, no footprint/door/collision changed except stall collision. 3 fixed wild landmarks (stamped fresh every load, never removable, ride the heightfield, own shapes, block via isWalkableWorld): The Ruined Tower 2x2 @ (40,170)-(41,171) with a broken SE corner (renders short + rubble); The Standing Stones ring centre (150,48), 6 slabs, centre walkable; The Hunter's Camp tent (165,130)-(166,130) + firepit (165,131). All 69-92 tiles from the plaza; none blocks a road, path, NPC route, or house. No second settlement; no trading, vendor NPCs, or economy; inn/store/smith stay shells; landmarks are places to visit, not quests.",
+    "runId": "42666118966",
+    "verifiedAt": "2026-11-09T17:36:59.091Z"
   },
   "measuredBaselines": [
     {
@@ -700,6 +703,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1051,
+      "commit": "6a10dece",
+      "result": "Verified live: served version.json build 1051 @ 2026-11-09T17:36:59.091Z, served index __AG_BUILD='1051', deploy run 42666118966 completed success (head_sha 6a10dece, parent confirmed via the Actions API). Asserts 1910 checks pass (parent re-ran directly — ASSERTS-1051 ALL PASS (1910 checks)). Sim vs pristine1050: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100224 vs 100223, the same artifact 1045/1046/1047/1050 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (market-square shot shows the 3-stall row — awnings/counters — + cobble; stall walk-around — player ended (103.4,106.0) north of the row, went around an end, never on a stall tile; district shots — craft: smith + cobble; farm: windmill tower; residential: houses + fenced garden; landmark far+near shots — tower with broken corner, stone ring with open centre, tent + firepit; tower walk-around). Frames: town walk steady max 267ms p50 183; wild walk steady max 317ms in the main run — one frame out of 107; re-ran the wild walk 3x: steady max 200/217/217ms, p50 117, 0 frames >300 — noise, not a regression.",
+      "runId": "42666118966",
+      "verifiedAt": "2026-11-09T17:36:59.091Z"
+    },
     {
       "build": 1050,
       "commit": "9edb9212",
