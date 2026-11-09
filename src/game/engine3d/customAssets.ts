@@ -53,15 +53,47 @@
 //   most 5 MB, the whole library at most 50 MB decoded / 100,000
 //   triangles. Over-cap uploads are rejected with a message and
 //   never corrupt the store.
-// - Chunks (996) do NOT capture custom items in V1: pasteChunk
-//   validates through the built-in kinds only, so a custom item
-//   captured into a chunk would paste as a shape mismatch. Excluding
-//   them keeps the save preview count (which reads captureChunk)
-//   honest. Asset-aware paste is the follow-up, not a silent partial
-//   capture — same reasoning as 995's generated-move scope.
+// - Chunks (996) capture custom items since BUILD 1048: captureChunk
+//   records the asset id + rotation, and pasteChunk validates them
+//   through validateCustomPlacement against the live library — a
+//   pasted copy whose model is no longer in the library is skipped
+//   with a reason, never silently dropped and never pasted blind.
+// - Rotation (BUILD 1048): a custom placement carries `rot` (0–3
+//   quarter-turns clockwise, the 1036 convention). The renderer
+//   rotates the mesh's local XZ around its centre, and the footprint
+//   swaps w/h on odd rotations — the stored rect is the footprint
+//   AFTER rotation, exactly like a house. Square models rotate in
+//   place. There is still no per-item SCALE: the renderer has no
+//   scale to apply, and a render-only scale would lie about the
+//   collision rect (a model drawn bigger than the tiles it blocks,
+//   or smaller than them), so scale stays pending rather than faked.
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { validateBlockingRect } from './placements';
+import type { Rotation } from './placements';
+
+/** BUILD 1048: rotate one local mesh point (x, z) `rot` quarter-turns
+ *  clockwise, viewed from above (the 1036 convention — the same
+ *  direction rotateTile/rotateRect turn tiles, so a rotated mesh and
+ *  its rotated footprint always agree). The mesh local origin is its
+ *  XZ centre, so rotation is about the centre: east (1,0) goes to
+ *  south (0,1) on one step. Pure, so the renderer and the asserts
+ *  share it and can never drift apart. */
+export function rotateCustomXZ(x: number, z: number, rot: Rotation): { x: number; z: number } {
+  const n = ((rot % 4) + 4) % 4;
+  if (n === 0) return { x, z };
+  if (n === 1) return { x: -z, z: x };
+  if (n === 2) return { x: -x, z: -z };
+  return { x: z, z: -x };
+}
+
+/** BUILD 1048: the footprint a custom asset occupies at `rot`
+ *  quarter-turns — w/h swap on odd rotations (a 2×1 model rotated
+ *  90° occupies 1×2 tiles), exactly like a house footprint. The
+ *  stored rect is the footprint AFTER rotation. */
+export function customFootprint(asset: Pick<CustomAsset, 'width' | 'height'>, rot: Rotation): { w: number; h: number } {
+  return (rot % 2 === 1) ? { w: asset.height, h: asset.width } : { w: asset.width, h: asset.height };
+}
 
 /** localStorage key for uploaded custom assets. Versioned (v1);
  *  separate from world saves so a world reset never wipes uploads.
@@ -859,20 +891,26 @@ export function uniquifyAssetName(existing: string[], base: string): string {
 // kinds and custom items can never drift apart. ----
 
 /** Validate a custom placement whose min corner is the tap tile
- *  (tx, ty). The rect is width x height tiles from the asset's
- *  footprint. Returns the placed item (kind 'custom', carrying the
- *  assetId) on success. */
+ *  (tx, ty). The rect is the asset's footprint at `rot` (BUILD 1048:
+ *  w/h swap on odd rotations — the stored rect is the footprint
+ *  AFTER rotation, like a house). Returns the placed item (kind
+ *  'custom', carrying the assetId and `rot` when non-zero) on
+ *  success. The asset parameter is a Pick, not the whole CustomAsset:
+ *  pasteChunk (templates.ts) validates from the library lookup,
+ *  which carries only id + footprint. */
 export function validateCustomPlacement(
   w: IsoWorld,
-  asset: CustomAsset,
+  asset: Pick<CustomAsset, 'id' | 'width' | 'height'>,
   tx: number,
   ty: number,
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
+  rot: Rotation = 0,
 ): { ok: true; item: PlacedItem } | { ok: false; reason: string } {
-  const res = validateBlockingRect(w, tx, ty, tx + asset.width - 1, ty + asset.height - 1, playerTile, npcTiles);
+  const fp = customFootprint(asset, rot);
+  const res = validateBlockingRect(w, tx, ty, tx + fp.w - 1, ty + fp.h - 1, playerTile, npcTiles);
   if (!res.ok) return res;
-  return { ok: true, item: { kind: 'custom', assetId: asset.id, x0: tx, y0: ty, x1: tx + asset.width - 1, y1: ty + asset.height - 1 } };
+  return { ok: true, item: { kind: 'custom', assetId: asset.id, x0: tx, y0: ty, x1: tx + fp.w - 1, y1: ty + fp.h - 1, ...(rot !== 0 ? { rot } : {}) } };
 }
 
 /** Remove every placed copy of one asset (the 997 delete rule).

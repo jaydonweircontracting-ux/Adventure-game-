@@ -44,7 +44,7 @@ import {
   toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset, type GlbUploadResult, type GltfDependency } from './customAssets';
+import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, customFootprint, rotateCustomXZ, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset, type GlbUploadResult, type GltfDependency } from './customAssets';
 import { createAssetStore, createIndexedDbAssetBackend, writeAssetManifest, readAssetManifest, describeStoreError, type AssetStore } from './assetStore';
 import { parseZipUpload, writeZipArchive } from './zipImport';
 import { buildAssetPack } from './assetPack';
@@ -901,16 +901,22 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // whose asset is gone renders nothing (delete removes copies
   // first, so this is defensive only).
   // BUILD 1007: custom assets render at whole-world range (were window-culled).
+  // BUILD 1048: the mesh rotates by the placement's `rot` (the 1036
+  // convention — rotateCustomXZ turns local XZ clockwise, the same
+  // direction the stored rect turns, so the model stays inside its
+  // own footprint; a square model rotates in place).
   for(const p of (world.placements??[])) if(p.kind==='custom'){
     const asset=customAssets.find(a=>a.id===p.assetId);if(!asset)continue;
     const ccx=(p.x0+p.x1+1)/2,ccz=(p.y0+p.y1+1)/2;
     // BUILD 1034: the mesh sits on the heightfield at its centre.
     const baseY=surfaceElevation(effTerrain,ccx,ccz);
+    const prot=(p.rot??0) as 0|1|2|3;
     for(let i=0;i<asset.indices.length;i+=3){
       const a=asset.indices[i]*3,b=asset.indices[i+1]*3,c=asset.indices[i+2]*3;
-      triV([ccx+asset.positions[a],asset.positions[a+1]+baseY,ccz+asset.positions[a+2]],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
-        [ccx+asset.positions[b],asset.positions[b+1]+baseY,ccz+asset.positions[b+2]],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
-        [ccx+asset.positions[c],asset.positions[c+1]+baseY,ccz+asset.positions[c+2]],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
+      const ra=rotateCustomXZ(asset.positions[a],asset.positions[a+2],prot),rb=rotateCustomXZ(asset.positions[b],asset.positions[b+2],prot),rc=rotateCustomXZ(asset.positions[c],asset.positions[c+2],prot);
+      triV([ccx+ra.x,asset.positions[a+1]+baseY,ccz+ra.z],[asset.colors[a],asset.colors[a+1],asset.colors[a+2]],
+        [ccx+rb.x,asset.positions[b+1]+baseY,ccz+rb.z],[asset.colors[b],asset.colors[b+1],asset.colors[b+2]],
+        [ccx+rc.x,asset.positions[c+1]+baseY,ccz+rc.z],[asset.colors[c],asset.colors[c+1],asset.colors[c+2]]);
       // BUILD 1035: a big uploaded mesh is many triangles — yield
       // every 64 so one placement cannot exceed the step budget.
       if(i%192===189)yield;
@@ -2879,8 +2885,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // (and any paste); R rotates it 90° clockwise, Shift+R 90°
       // counter-clockwise. Never while typing in an input (the
       // chunk-name field) or inside a hut (placement is disabled
-      // there anyway). R only acts while a palette asset is armed —
-      // it never rotates a custom upload (mesh footprints) or a paste.
+      // there anyway). R only acts while a palette asset or a custom
+      // upload is armed (BUILD 1048: a custom mesh rotates too) — it
+      // never rotates a paste.
       const ae=document.activeElement;
       const typing=ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT');
       if(!typing){
@@ -2893,7 +2900,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const ur=undoRedoKeyForEvent(e.key,e.ctrlKey,e.metaKey,e.shiftKey);
         if(ur){e.preventDefault();if(ur==='undo')doUndo();else doRedo();return;}
         if(k==='escape'){if(buildRef.current.areaDuplicateArmed||buildRef.current.areaMoveArmed){setAreaMoveArmedBoth(false);setAreaDuplicateArmedBoth(false);setAreaDeleteArmed(false);setMessage('Area action cancelled — the selection is kept');}else if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){cancelPlacement();setMessage('Placement cancelled');}return;}
-        if(k==='r'&&buildRef.current.palette&&!insideHutRef.current){
+        // BUILD 1048: R rotates an armed custom upload too (its mesh
+        // turns with the rotation — see validateCustomPlacement).
+        if(k==='r'&&(buildRef.current.palette||buildRef.current.customAssetId)&&!insideHutRef.current){
           e.preventDefault();
           const next=(((placementRotRef.current+(e.shiftKey?3:1))%4) as Rotation);
           setPlacementRotBoth(next);
@@ -3096,10 +3105,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(build.customAssetId){
         const asset=customAssetsRef.current.find(a=>a.id===build.customAssetId);
         if(!asset){el.style.display='none';return;}
-        const vres=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles);
-        labelName=asset.name;
+        // BUILD 1048: the preview validates (and draws) at the armed
+        // rotation — a 2×1 model turned 90° previews as 1×2.
+        const vres=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles,rot);
+        labelName=asset.name+(rot!==0?' · rotated '+(rot*90)+'°':'');
         if(vres.ok){ok=true;rect={x0:vres.item.x0,y0:vres.item.y0,x1:vres.item.x1,y1:vres.item.y1};}
-        else{ok=false;failReason=vres.reason;rect={x0:tx,y0:ty,x1:tx+asset.width-1,y1:ty+asset.height-1};}
+        else{ok=false;failReason=vres.reason;const fp=customFootprint(asset,rot);rect={x0:tx,y0:ty,x1:tx+fp.w-1,y1:ty+fp.h-1};}
       }else{
         const palette=build.palette;
         if(!palette){el.style.display='none';return;}
@@ -3332,7 +3343,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             const world=stateRef.current.world;const sel=areaSelectionRef.current;
             const ax=Math.round(destination.x),ay=Math.round(destination.y);
             const {playerTile,npcTiles}=areaActorTiles();
-            const res=duplicateArea(world,sel,{x:ax,y:ay},playerTile,npcTiles);
+            const res=duplicateArea(world,sel,{x:ax,y:ay},playerTile,npcTiles,customAssetsRef.current);
             if(!res.entry){setMessage('Nothing landed here: '+res.skipped[0]?.reason);setAreaDuplicateArmedBoth(false);}
             else{
               // BUILD 1041: a duplicated farm tile is a FRESH planting
@@ -3412,7 +3423,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 const player=stateRef.current.position;
                 const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
                 const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
-                const res=pasteChunk(world,template,{x:tx,y:ty},playerTile,npcTiles);
+                const res=pasteChunk(world,template,{x:tx,y:ty},playerTile,npcTiles,customAssetsRef.current);
                 if(res.landed.length===0){setMessage('Nothing pasted from \''+template.name+'\': '+(res.skipped[0]?res.skipped[0].reason:'blocked'));}
                 // BUILD 1041: a pasted farm tile is a FRESH planting
                 // (chunks carry no growth state) — stamp it now, like
@@ -3444,14 +3455,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // BUILD 997: an armed upload places with its mesh
               // footprint (min corner on the tapped tile) under the
               // same blocking rules as houses — one undo entry, like
-              // any other placement.
+              // any other placement. BUILD 1048: at the armed
+              // rotation (a 2×1 model turned 90° lands as 1×2).
               const asset=customAssetsRef.current.find(a=>a.id===build.customAssetId);
               if(!asset){setMessage('That upload is gone');}
               else{
                 const player=stateRef.current.position;
                 const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
                 const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
-                const result=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles);
+                const result=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles,placementRotRef.current);
                 if(!result.ok){setMessage('Cannot place here: '+result.reason);}
                 else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+asset.name);}
               }
@@ -4133,8 +4145,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1036 test hooks (probes only — no gameplay effect):
       // the armed placement selection + rotation, and the same
       // rotate the R key / rotation buttons perform.
-      getPlacement:()=>({palette:buildRef.current.palette,rot:placementRotRef.current,moveMode:buildRef.current.moveMode}),
-      rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
+      getPlacement:()=>({palette:buildRef.current.palette,customAssetId:buildRef.current.customAssetId,rot:placementRotRef.current,moveMode:buildRef.current.moveMode}),
+      rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette&&!buildRef.current.customAssetId)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
       // BUILD 1037 test hooks (probes only — no gameplay effect): the
       // live area selection, the armed tool, and a direct way to set
       // a selection from a rectangle (the drag's end state).
@@ -4940,7 +4952,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               and arms it for placement. */}
           <div style={{marginTop:8}}>
             <button type="button" data-testid="build-custom-open-hub" onClick={()=>setImportHubOpen(true)} style={{display:'block',width:'100%',padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>📦 Open the Import Hub to upload models</button>
-            <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Models render as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures.</div>
+            <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Models render as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures. No scale control yet — a model places at its authored size, and there is no way to make it bigger or smaller.</div>
           </div>
         </div>}
       </div>
@@ -4948,16 +4960,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           is armed (the only kinds rotation changes: houses rotate
           their door face, stalls rotate their 2x1 run; 1x1 kinds are
           unaffected, so no controls are shown for them — no fake
-          controls). R rotates 90° clockwise, Shift+R 90°
-          counter-clockwise; the buttons do the same for touch. The
-          rotation persists across placements and asset switches. */}
-      {palette&&(isHouseKind(palette)||palette==='stall')&&<div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
-        <div style={{fontSize:12,fontWeight:700}}>Rotation: {placementRot*90}° · {isHouseKind(palette)?'door faces '+rotateFace('south',placementRot):'runs '+(placementRot%2===1?'south':'east')}</div>
+          controls). BUILD 1048: also shown while a custom upload is
+          armed — the model itself turns (its footprint swaps w/h on
+          odd turns), so R and the buttons rotate it like a house.
+          R rotates 90° clockwise, Shift+R 90° counter-clockwise;
+          the buttons do the same for touch. The rotation persists
+          across placements and asset switches. */}
+      {((palette&&(isHouseKind(palette)||palette==='stall'))||customSelection)&&<div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
+        <div style={{fontSize:12,fontWeight:700}}>Rotation: {placementRot*90}° · {customSelection?'model rotated '+(placementRot*90)+'°':(palette&&isHouseKind(palette))?'door faces '+rotateFace('south',placementRot):'runs '+(placementRot%2===1?'south':'east')}</div>
         <div style={{display:'flex',gap:8,marginTop:8}}>
           <button type="button" data-testid="build-rotate-ccw" onClick={()=>{const next=(((placementRot+3)%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:14}}>⟲ 90°</button>
           <button type="button" data-testid="build-rotate-cw" onClick={()=>{const next=(((placementRot+1)%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);}} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:14}}>90° ⟳</button>
         </div>
-        <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>R = rotate 90° clockwise, Shift+R = 90° counter-clockwise. Rotate a house so its door faces the road or path. 90° steps only — the world is built from tile rectangles, so 45°/15°/free rotation cannot exist for houses.</div>
+        <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>R = rotate 90° clockwise, Shift+R = 90° counter-clockwise. Rotate a house so its door faces the road or path, or a model so it faces the way you want. 90° steps only — the world is built from tile rectangles, so 45°/15°/free rotation cannot exist for houses or models.</div>
       </div>}
       <button type="button" data-testid="build-remove-toggle" onClick={toggleRemove} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
       <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}buildRef.current={...buildRef.current,moveMode:next,areaSelectMode:next?false:buildRef.current.areaSelectMode,areaMoveArmed:next?false:buildRef.current.areaMoveArmed,areaDuplicateArmed:next?false:buildRef.current.areaDuplicateArmed};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
@@ -4971,7 +4986,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           world changes). */}
       <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid #8c9b8d'}}>
         <div style={{fontSize:13,fontWeight:700}}>Saved chunks</div>
-        <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Turn Save area on, then drag a rectangle on the ground — or tap one tile — to select it. Name it and save it as a chunk. Tap a saved chunk, then tap the ground to stamp it there (its corner lands on the tapped tile); items that cannot fit are skipped and reported, never blocking the rest. One Undo removes a whole paste. Chunks save only what you placed — generated houses, paths, and trees are not captured, and custom uploads are not captured yet.</div>
+        <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Turn Save area on, then drag a rectangle on the ground — or tap one tile — to select it. Name it and save it as a chunk. Tap a saved chunk, then tap the ground to stamp it there (its corner lands on the tapped tile); items that cannot fit are skipped and reported, never blocking the rest. One Undo removes a whole paste. Chunks save only what you placed — generated houses, paths, and trees are not captured. Custom uploads are captured too, with the model they came from — pasting one needs that model still in your library, or that item is skipped and reported.</div>
         <button type="button" data-testid="build-save-area-toggle" onClick={()=>{const next=!saveAreaMode;setSaveAreaMode(next);if(next){setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}setSaveSelection(null);buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next?false:moveMode,saveAreaMode:next,pasteName:next?null:pasteName,customAssetId:next?null:buildRef.current.customAssetId,areaSelectMode:next?false:areaSelectMode,areaMoveArmed:next?false:areaMoveArmed,areaDuplicateArmed:next?false:areaDuplicateArmed};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:saveAreaMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Save area: {saveAreaMode?'On':'Off'}</button>
         {/* BUILD 1037: AREA SELECT — drag a yellow rectangle on the
             ground to select everything inside it (houses, trees,

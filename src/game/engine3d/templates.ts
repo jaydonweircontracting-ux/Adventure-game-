@@ -33,6 +33,7 @@
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, HOUSE_VARIANT_KINDS, type PaletteKind, type Rotation } from './placements';
+import { validateCustomPlacement, type CustomAsset } from './customAssets';
 
 /** localStorage key for saved chunks. Versioned (v1); separate from
  *  the world save so a world reset never wipes the user's library. */
@@ -47,8 +48,12 @@ export const TEMPLATES_KEY = 'ag-3d-templates-v1';
  *  compares against the rotated rect.
  *  BUILD 1041: a chunk carries no growth state — a captured farm
  *  tile pastes as a FRESH planting (the view stamps farmPlantedAt
- *  at paste time), never as the growth stage it was captured at. */
-export type ChunkItem = { kind: PaletteKind; rx0: number; ry0: number; rx1: number; ry1: number; rot?: Rotation };
+ *  at paste time), never as the growth stage it was captured at.
+ *  BUILD 1048: a captured custom item carries its assetId (+ rot,
+ *  like a house) — paste validates it through
+ *  validateCustomPlacement against the live library, and skips it
+ *  with a reason when the model is no longer in the library. */
+export type ChunkItem = { kind: PaletteKind | 'custom'; rx0: number; ry0: number; rx1: number; ry1: number; rot?: Rotation; assetId?: string };
 
 /** A saved chunk: a name plus its captured items, in source list
  *  order (so a path-before-grass stack pastes in the same order it
@@ -64,9 +69,11 @@ export type ChunkTemplate = { name: string; items: ChunkItem[] };
  *  never added here, so validChunkItem silently dropped them on load
  *  and a saved chunk holding one came back empty. Deriving the tail
  *  means a future variant cannot be forgotten the same way.
- *  'custom' is deliberately NOT here: captureChunk never emits it
- *  (BUILD 997), so it is not a gap. */
-const PALETTE_KINDS: PaletteKind[] = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', 'farm', 'fence', ...HOUSE_VARIANT_KINDS];
+ *  'custom' is here since BUILD 1048: captureChunk emits it (with
+ *  its assetId), so a saved chunk holding an imported model comes
+ *  back whole. Before 1048 it was deliberately NOT here (BUILD 997),
+ *  because paste validated through the built-in kinds only. */
+const PALETTE_KINDS: Array<PaletteKind | 'custom'> = ['path', 'house', 'tree', 'stall', 'grass', 'rock', 'water', 'wall', 'lantern', 'bush', 'ore', 'bridge', 'farm', 'fence', 'custom', ...HOUSE_VARIANT_KINDS];
 
 function isInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;
@@ -89,7 +96,16 @@ export function validChunkItem(raw: unknown): ChunkItem | null {
     if (!isInt(r.rot) || (r.rot as number) < 0 || (r.rot as number) > 3) return null;
     rot = r.rot as Rotation;
   }
-  return { kind: r.kind as PaletteKind, rx0: r.rx0 as number, ry0: r.ry0 as number, rx1: r.rx1 as number, ry1: r.ry1 as number, ...(rot !== undefined ? { rot } : {}) };
+  // BUILD 1048: a custom chunk item must name its model — a chunk
+  // item with kind 'custom' and no assetId is malformed (it could
+  // never paste, because paste looks the model up by id). Other
+  // kinds never carry one.
+  let assetId: string | undefined;
+  if (r.kind === 'custom') {
+    if (typeof r.assetId !== 'string' || (r.assetId as string).length === 0) return null;
+    assetId = r.assetId as string;
+  }
+  return { kind: r.kind as ChunkItem['kind'], rx0: r.rx0 as number, ry0: r.ry0 as number, rx1: r.rx1 as number, ry1: r.ry1 as number, ...(rot !== undefined ? { rot } : {}), ...(assetId !== undefined ? { assetId } : {}) };
 }
 
 /** Load saved chunks. Malformed entries are dropped, never fatal:
@@ -148,18 +164,17 @@ export function uniquifyName(existing: string[], base: string): string {
 /** Capture the placed items fully inside a selection rect, as chunk
  *  items relative to the rect's min corner. The rect is normalized
  *  (drag direction does not matter). Generated content is never
- *  captured — only w.placements is scanned. BUILD 997: custom-upload
- *  items are also NOT captured — paste validates through the
- *  built-in kinds only, so a captured custom item would paste as a
- *  shape mismatch; excluding it keeps the save preview count (which
- *  reads this function) honest. Asset-aware paste is the follow-up,
- *  not a silent partial capture. BUILD 1012: a placed house is
- *  captured under its own kind (variant kind, or legacy 'house') —
- *  the kind IS the variant, so no separate variant field is needed
- *  and paste reconstructs the design through validatePlacement.
- *  BUILD 1036: a rotated house/stall captures its rot, so paste
- *  reproduces the door face (a 90° cottage pastes as a 3x4 with its
- *  door west, not as a 4x3 with its door south). */
+ *  captured — only w.placements is scanned. BUILD 1048: custom-upload
+ *  items ARE captured now, with their assetId (+ rot, like a house) —
+ *  paste validates them against the live library, so a chunk holding
+ *  an imported model round-trips exactly as long as the model is
+ *  still in the library, and skips honestly when it is not. BUILD
+ *  1012: a placed house is captured under its own kind (variant kind,
+ *  or legacy 'house') — the kind IS the variant, so no separate
+ *  variant field is needed and paste reconstructs the design through
+ *  validatePlacement. BUILD 1036: a rotated house/stall captures its
+ *  rot, so paste reproduces the door face (a 90° cottage pastes as a
+ *  3x4 with its door west, not as a 4x3 with its door south). */
 export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: number; y1: number }): ChunkItem[] {
   const x0 = Math.min(rect.x0, rect.x1);
   const y0 = Math.min(rect.y0, rect.y1);
@@ -167,8 +182,15 @@ export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: nu
   const y1 = Math.max(rect.y0, rect.y1);
   const out: ChunkItem[] = [];
   for (const p of placementsOf(w)) {
-    if (p.kind === 'custom') continue;
     if (p.x0 >= x0 && p.y0 >= y0 && p.x1 <= x1 && p.y1 <= y1) {
+      if (p.kind === 'custom') {
+        // BUILD 1048: a custom item without an assetId cannot paste
+        // (paste looks the model up by id), so it is never captured
+        // — the save preview count stays honest.
+        if (!p.assetId) continue;
+        out.push({ kind: 'custom', rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined ? { rot: p.rot } : {}), assetId: p.assetId });
+        continue;
+      }
       out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined && (p.kind === 'house' || p.kind === 'stall') ? { rot: p.rot } : {}) });
     }
   }
@@ -192,14 +214,21 @@ function pasteTapTile(kind: PaletteKind, nx0: number, ny0: number, nx1: number, 
  *  world (including items this paste already landed) and skipped
  *  individually on failure — the paste never refuses wholesale.
  *  Landed items are appended to w.placements in template order.
- *  Returns exactly what landed (the undo entry's contents) and what
- *  was skipped with the placement rule's reason. */
+ *  BUILD 1048: a custom item is validated through
+ *  validateCustomPlacement against `customAssets` (the live library
+ *  — id + footprint is all paste needs); when the model is not in
+ *  the library it is skipped with a reason, never pasted blind and
+ *  never silently dropped. A caller that passes no library gets
+ *  that same skip for every custom item, honestly. Returns exactly
+ *  what landed (the undo entry's contents) and what was skipped
+ *  with the placement rule's reason. */
 export function pasteChunk(
   w: IsoWorld,
   template: ChunkTemplate,
   anchor: { x: number; y: number },
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
+  customAssets?: Array<Pick<CustomAsset, 'id' | 'width' | 'height'>>,
 ): { landed: PlacedItem[]; skipped: Array<{ item: ChunkItem; reason: string }> } {
   const landed: PlacedItem[] = [];
   const skipped: Array<{ item: ChunkItem; reason: string }> = [];
@@ -208,6 +237,25 @@ export function pasteChunk(
     const ny0 = anchor.y + ci.ry0;
     const nx1 = anchor.x + ci.rx1;
     const ny1 = anchor.y + ci.ry1;
+    if (ci.kind === 'custom') {
+      const asset = (customAssets ?? []).find((a) => a.id === ci.assetId);
+      if (!asset) {
+        skipped.push({ item: ci, reason: 'that model is no longer in your library' });
+        continue;
+      }
+      const res = validateCustomPlacement(w, asset, nx0, ny0, playerTile, npcTiles, ci.rot ?? 0);
+      if (!res.ok) {
+        skipped.push({ item: ci, reason: res.reason });
+        continue;
+      }
+      if (res.item.x0 !== nx0 || res.item.y0 !== ny0 || res.item.x1 !== nx1 || res.item.y1 !== ny1) {
+        skipped.push({ item: ci, reason: 'shape mismatch' });
+        continue;
+      }
+      addPlacement(w, res.item);
+      landed.push(res.item);
+      continue;
+    }
     const tap = pasteTapTile(ci.kind, nx0, ny0, nx1, ny1);
     // BUILD 1036: paste validates with the captured rotation, so a
     // rotated house lands with its door on the saved face — and the

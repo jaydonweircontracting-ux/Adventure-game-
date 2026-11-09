@@ -7,9 +7,9 @@
 //  - PLACED items whose WHOLE rect lies inside (the captureChunk
 //    rule — a house straddling the edge is left out, never clipped,
 //    because a clipped house is not a house). Custom uploads move
-//    by rect; they duplicate only as far as pasteChunk allows
-//    (paste validates through the built-in kinds, so a custom item
-//    is skipped on duplicate with a reason).
+//    by rect and rotate their `rot` (BUILD 1048); they duplicate
+//    through pasteChunk, which validates them against the live
+//    library (a copy whose model is gone is skipped with a reason).
 //  - GENERATED huts whose whole rect lies inside.
 //  - GENERATED trees/crates, rocks, walls, and dirt path tiles
 //    whose tile lies inside.
@@ -39,15 +39,17 @@
 //    entry, the Remove-drag undo shape.
 //  - DUPLICATE: convert the selection to chunk items and stamp it
 //    at an anchor via pasteChunk (per-item validation, individual
-//    skips, one `paste` entry). A generated hut duplicates as a
-//    placed house of the variant whose footprint matches (4x3
-//    cottage, 3x3 tall, 6x4 shop, 6x5 grand, 5x4 smith); 4x4 and
-//    5x5 huts have no variant and are skipped with a reason. The
-//    rect is always preserved exactly; the door face is preserved
-//    for south/north huts (rot 0/2 keep the footprint), but a
-//    west/east hut's door resets to south — the placed-house model
-//    ties the door to the rotation, and a 90° rotation would swap
-//    the footprint, so the rect wins over the door. A duplicated
+//    skips, one `paste` entry). A custom upload duplicates as itself
+//    (BUILD 1048 — assetId + rot ride into the chunk, and paste
+//    validates it against the live library). A generated hut
+//    duplicates as a placed house of the variant whose footprint
+//    matches (4x3 cottage, 3x3 tall, 6x4 shop, 6x5 grand, 5x4
+//    smith); 4x4 and 5x5 huts have no variant and are skipped with
+//    a reason. The rect is always preserved exactly; the door face
+//    is preserved for south/north huts (rot 0/2 keep the footprint),
+//    but a west/east hut's door resets to south — the placed-house
+//    model ties the door to the rotation, and a 90° rotation would
+//    swap the footprint, so the rect wins over the door. A duplicated
 //    generated house gets a fresh design from its variant (the
 //    generated hut's seed-hash look is not preserved).
 //
@@ -378,7 +380,10 @@ function planRotate(w: IsoWorld, sel: AreaSelection, steps: number): { plan: Pla
     if (index < 0) { stale.push({ label: selectionItemLabel({ type: 'placed', item }), reason: 'no longer here' }); continue; }
     const newRect = rotateRect(c.x, c.y, item, steps);
     const newRot = (((item.rot ?? 0) + steps) % 4) as Rotation;
-    const newItem: PlacedItem = { ...item, ...newRect, ...(isHousePaletteKind(item.kind) || item.kind === 'stall' ? { rot: newRot } : {}) };
+    // BUILD 1048: a custom upload rotates its mesh (rot advances
+    // with the group) as well as its rect — the renderer turns the
+    // triangles by rot, so the model turns with the selection.
+    const newItem: PlacedItem = { ...item, ...newRect, ...(isHousePaletteKind(item.kind) || item.kind === 'stall' || item.kind === 'custom' ? { rot: newRot } : {}) };
     if (item.kind === 'custom') plan.push({ kind: 'custom', oldItem: item, newItem, index });
     else plan.push({ kind: 'placed', oldItem: item, newItem, moveKind: item.kind === 'house' ? (item.variant ? kindOfVariant(item.variant) : 'house') : item.kind, tap: destTapFor(item.kind, newRect, newRot), index });
   }
@@ -707,23 +712,33 @@ export function hutDuplicateVariant(hut: HutRect): HouseVariantId | null {
  *  selection rect's min corner lands on the anchor), via pasteChunk
  *  (per-item validation, individual skips, one `paste` entry).
  *  Generated items become placed items at the destination; the
- *  originals stay put. Custom uploads and huts with no matching
- *  variant are skipped with a reason (reported, never silent).
- *  Skips carry a human-readable label, not a chunk item — a
- *  generated hut with no variant IS not a chunk item. */
+ *  originals stay put. BUILD 1048: custom uploads duplicate through
+ *  the same path (pasteChunk validates them against the live
+ *  library — `customAssets` — and skips a copy whose model is gone
+ *  with a reason). Huts with no matching variant are skipped with
+ *  a reason (reported, never silent). Skips carry a human-readable
+ *  label, not a chunk item — a generated hut with no variant IS not
+ *  a chunk item. */
 export function duplicateArea(
   w: IsoWorld,
   sel: AreaSelection,
   anchor: { x: number; y: number },
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
+  customAssets?: Array<{ id: string; width: number; height: number }>,
 ): { landed: PlacedItem[]; skipped: Array<{ label: string; reason: string }>; entry: UndoEntry | null } {
   const x0 = sel.rect.x0, y0 = sel.rect.y0;
   const items: ChunkItem[] = [];
   const skipped: Array<{ label: string; reason: string }> = [];
   for (const p of sel.placed) {
     if (p.kind === 'custom') {
-      skipped.push({ label: selectionItemLabel({ type: 'placed', item: p }), reason: 'custom uploads cannot be duplicated yet' });
+      // BUILD 1048: a custom copy carries its assetId (+ rot) into
+      // the chunk; pasteChunk validates it against the library.
+      if (!p.assetId) {
+        skipped.push({ label: selectionItemLabel({ type: 'placed', item: p }), reason: 'that model has no asset id' });
+        continue;
+      }
+      items.push({ kind: 'custom', rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined ? { rot: p.rot } : {}), assetId: p.assetId });
       continue;
     }
     const kind: PaletteKind = p.kind === 'house' ? (p.variant ? kindOfVariant(p.variant) : 'house') : p.kind;
@@ -747,7 +762,7 @@ export function duplicateArea(
   for (const rk of sel.rocks) items.push({ kind: 'rock', rx0: rk.x - x0, ry0: rk.y - y0, rx1: rk.x - x0, ry1: rk.y - y0 });
   for (const wl of sel.walls) items.push({ kind: 'wall', rx0: wl.x - x0, ry0: wl.y - y0, rx1: wl.x - x0, ry1: wl.y - y0 });
   for (const p of sel.paths) items.push({ kind: 'path', rx0: p.x - x0, ry0: p.y - y0, rx1: p.x - x0, ry1: p.y - y0 });
-  const res = pasteChunk(w, { name: 'Area copy', items }, anchor, playerTile, npcTiles);
+  const res = pasteChunk(w, { name: 'Area copy', items }, anchor, playerTile, npcTiles, customAssets);
   const pasteSkips = res.skipped.map((s) => ({ label: s.item.kind + ' at +' + s.item.rx0 + ',+' + s.item.ry0, reason: s.reason }));
   return { landed: res.landed, skipped: [...skipped, ...pasteSkips], entry: res.landed.length ? { kind: 'paste', items: res.landed } : null };
 }

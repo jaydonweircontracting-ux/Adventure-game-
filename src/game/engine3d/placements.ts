@@ -1182,7 +1182,10 @@ export function movePlacement(
       list.splice(Math.min(index, list.length), 0, lifted);
       return { ok: false, reason: res.reason };
     }
-    const customItem: PlacedItem = { kind: 'custom', assetId: item.assetId, x0: destTx, y0: destTy, x1: destTx + wTiles - 1, y1: destTy + hTiles - 1 };
+    // BUILD 1048: a moved custom keeps its rotation — dropping rot
+    //  would render the mesh unrotated inside its (already swapped)
+    //  rect, so the model would stick out of its own footprint.
+    const customItem: PlacedItem = { kind: 'custom', assetId: item.assetId, x0: destTx, y0: destTy, x1: destTx + wTiles - 1, y1: destTy + hTiles - 1, ...(item.rot !== undefined && item.rot !== 0 ? { rot: item.rot } : {}) };
     const at = Math.min(index, list.length);
     list.splice(at, 0, customItem);
     return { ok: true, item: customItem, index: at };
