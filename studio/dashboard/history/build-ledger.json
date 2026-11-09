@@ -623,6 +623,28 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1044 @ 2026-11-09T03:17:22.844Z, run 42555446176 completed success (parent confirmed via the Actions API). Asserts 114 checks pass (parent re-ran directly — ASSERT_DONE 114 checks passed). Sim vs pristine1043 byte-identical (parent diffed sim1044.norm.log vs sim1043-pristine.norm.log — no diff output; 76 lines each, 0 FAIL, same known 684 rig crash). Phone probe 23 findings, 0 page errors (seeded a real 2-asset legacy localStorage library: both migrated into IndexedDB, legacy key deleted after verified migration, manifest written (204 bytes, metadata only), ashfall-custom-assets v1 confirmed in indexedDB.databases(); hub states the new caps; migrated Legacy Blue placed at (123,134); a real 1.56 MB / 20,000-tri GLB uploaded (over the old 1 MB cap); two rapid uploads (.obj + .zip) both landed (6 assets, nothing lost); reload: 6 assets + placed copy survive; malformed GLB, 6 MB file ('file is over 5 MB'), and unsupported file all fail visibly with the library unchanged). A separate render probe placed a vertical RGB fin from the migrated library — it renders on the ground before AND after reload. Honest caveat: live quota exhaustion could not be forced in this harness (Storage.overrideQuotaForOrigin is a no-op in this Chromium) — the quota path is proven by the Node asserts (store rejects with QuotaExceededError, library unchanged) plus the view's shared persist-first-then-commit path, not by a live browser quota failure.",
       "verificationTimestamp": "2026-11-09T03:17:22.844Z"
+    },
+    {
+      "build": 1045,
+      "commit": "81d17b79",
+      "description": "Import Hub Stage 3 — preview + library: real preview drawn from the model's geometry, review step with explicit Add to Asset Library / Cancel, library rows with name/category/tags/dimensions/source/format, rename + category/tag, search/filter/sort, real import progress.",
+      "filesAffected": [
+        "src/game/engine3d/assetLibrary.ts",
+        "src/game/engine3d/customAssets.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Preview and library for the Import Hub — show import progress, preview thumbnails/3D model, name/category/tags, dimensions where available, source filename, and explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop. Third stage of the Import Hub program.",
+      "previousCheckpoint": {
+        "build": 1044,
+        "commit": "a93a1d69"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42566273686",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1045 @ 2026-11-09T05:37:23.783Z (a later timestamp than the agent's 05:17:35.635Z read — a fresh deploy regenerated version.json with the same build 1045, same content, idempotent — like the 1036 wake-up case), run 42566273686 completed success (parent confirmed via the Actions API). Asserts 94 checks pass (parent re-ran directly — ASSERT_DONE 94 checks passed). Sim vs pristine1044 byte-identical (parent diffed sim1045.norm.log vs sim1044-pristine.norm.log — no diff output; 0 FAILs on both sides, both stop at the same known 684 rig crash). Phone probe 20 findings, 0 page errors (real red .obj uploaded -> waits in review (1 pending, 0 in library), preview canvas drew 5,852 pixels, all red; review card shows 2x1 tiles, 3 high, red-barn.obj, OBJ, 12 triangles; renamed/categorised/tagged in review, Add kept the edits (Red Barn, House, red/roof); search 'barn' and tag 'roof' narrow to 1 row, 'zzz' shows the empty message; second model added, sort by name orders blue-pyramid before Red Barn; library rename to Crimson Barn stuck; green triangle uploaded and Cancelled — library stayed at 2; Crimson Barn placed in the world (custom placement 123-124x134); reload -> 2 assets with edits intact, placed copy survives).",
+      "verificationTimestamp": "2026-11-09T05:37:23.783Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

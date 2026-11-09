@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub Stage 3",
+    "build": "Import Hub Stage 4",
     "commit": null,
-    "description": "Preview/library: show import progress, preview thumbnails/3D model, name/category/tags, dimensions where available, source filename, and explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop. NEXT per the queue.",
+    "description": "Packs/recovery: ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -266,20 +266,23 @@
       "runId": "42555446176",
       "status": "verified",
       "verifiedAt": "2026-11-09T03:17:22.844Z"
+    },
+    {
+      "build": 1045,
+      "commit": "81d17b79",
+      "description": "Import Hub Stage 3 — preview + library: the hub now shows each model before it joins the library — a real preview drawn from the model's own geometry (software rasterizer, isometric, painter's depth sort, flat mean-vertex-colour fill), with footprint, height, triangles, source file, and format, plus editable name/category/tags. Nothing joins the library until the player taps Add to Asset Library; Cancel drops it (nothing was ever written). Library rows show a 44px preview + name/category/tags/dimensions/source/format, with Rename, per-row category select and tags input, Place, Delete. Search matches name/tag/source filename; filter by category/format; sort by name/format/category/triangles. Import progress is real files/bytes read (staged import, yields to the event loop between files). A model with no triangles says 'cannot preview' instead of showing a fake picture. Landed: commit 81d17b79, deploy run 42566273686 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42566273686",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T05:37:23.783Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub Stage 3 (preview/library)",
-      "commit": null,
-      "description": "Show import progress, preview thumbnails/3D model, name/category/tags, dimensions where available, source filename, and explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop.",
-      "status": "in_progress"
-    },
-    {
       "build": "Import Hub Stage 4 (packs/recovery)",
       "commit": null,
       "description": "ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Import Hub Stage 5 (AI/development handoff)",
@@ -452,13 +455,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T22:01:07-07:00",
+  "lastUpdateTimestamp": "2026-11-09T00:01:52-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1044,
-    "commit": "a93a1d69",
-    "description": "Import Hub Stage 2 — IndexedDB asset store: imported models now live in a proper on-device store (IndexedDB database ashfall-custom-assets v1, compact versioned manifest in localStorage, metadata only). Per-file cap 1 MB -> 5 MB; library up to 50 MB decoded / 100,000 triangles. Existing uploads migrate automatically once (read-back validated before the legacy key is deleted; a failed move keeps the old copy and the hub says so). Library loads from IndexedDB before placement/rendering with a loading state; the world still boots if IndexedDB is unavailable. Upload failures (including running out of device storage) show a clear message naming the file and the reason.",
-    "runId": "42555446176",
-    "verifiedAt": "2026-11-09T03:17:22.844Z"
+    "build": 1045,
+    "commit": "81d17b79",
+    "description": "Import Hub Stage 3 — preview + library: the hub now shows each model before it joins the library — a real preview drawn from the model's own geometry (software rasterizer, isometric, painter's depth sort, flat mean-vertex-colour fill), with footprint, height, triangles, source file, and format, plus editable name/category/tags. Nothing joins the library until the player taps Add to Asset Library; Cancel drops it (nothing was ever written). Library rows show a 44px preview + name/category/tags/dimensions/source/format, with Rename, per-row category select and tags input, Place, Delete. Search matches name/tag/source filename; filter by category/format; sort by name/format/category/triangles. Import progress is real files/bytes read (staged import, yields to the event loop between files). A model with no triangles says 'cannot preview' instead of showing a fake picture.",
+    "runId": "42566273686",
+    "verifiedAt": "2026-11-09T05:37:23.783Z"
   },
   "measuredBaselines": [
     {
@@ -682,6 +685,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1045,
+      "commit": "81d17b79",
+      "result": "Verified live: served version.json build 1045 @ 2026-11-09T05:37:23.783Z (a later timestamp than the agent's 05:17:35.635Z read — a fresh deploy regenerated version.json with the same build 1045, same content, idempotent — like the 1036 wake-up case), run 42566273686 completed success (parent confirmed via the Actions API). Asserts 94 checks pass (parent re-ran directly — ASSERT_DONE 94 checks passed). Sim vs pristine1044 byte-identical (parent diffed sim1045.norm.log vs sim1044-pristine.norm.log — no diff output; 0 FAILs on both sides, both stop at the same known 684 rig crash). Phone probe 20 findings, 0 page errors (real red .obj uploaded -> waits in review (1 pending, 0 in library), preview canvas drew 5,852 pixels, all red; review card shows 2x1 tiles, 3 high, red-barn.obj, OBJ, 12 triangles; renamed/categorised/tagged in review, Add kept the edits (Red Barn, House, red/roof); search 'barn' and tag 'roof' narrow to 1 row, 'zzz' shows the empty message; second model added, sort by name orders blue-pyramid before Red Barn; library rename to Crimson Barn stuck; green triangle uploaded and Cancelled — library stayed at 2; Crimson Barn placed in the world (custom placement 123-124x134); reload -> 2 assets with edits intact, placed copy survives).",
+      "runId": "42566273686",
+      "verifiedAt": "2026-11-09T05:37:23.783Z"
+    },
     {
       "build": 1044,
       "commit": "a93a1d69",
