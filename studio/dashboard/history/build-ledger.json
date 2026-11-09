@@ -600,6 +600,29 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1043 @ 2026-11-09T00:54:49.777Z, run 42542648558 completed success (parent confirmed via the Actions API). Asserts 100 checks pass (parent re-ran directly — ASSERT_DONE 100 checks passed). Sim vs pristine1042 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site (parent diffed sim1043.norm.log vs sim1042-pristine.norm.log — the same 1-line bundle-offset pattern as the 1036 sim diff; 0 FAILs on both sides). Phone probe 19 findings, 0 page errors (hub opens with formats + limits; real .obj uploaded -> 'Red Roof' 2x2, 3 tris; real .zip uploaded -> 3 assets, .txt reported skipped; Custom category lists all three; green preview -> placed custom at (123,134)-(124,135); Undo removes it, Redo brings it back; a bad file is rejected with a message and the library stays at 3). Scope collision reconciled: ChatGPT's wake-up file defined BUILD 1043 as the IndexedDB migration — that becomes Import Hub Stage 2 (build 1044); the wake-up file was updated by the parent so the next agent doesn't re-do 1043 or strip the ZIP support.",
       "verificationTimestamp": "2026-11-09T00:54:49.777Z"
+    },
+    {
+      "build": 1044,
+      "commit": "a93a1d69",
+      "description": "Import Hub Stage 2 — IndexedDB asset store: versioned DB (ashfall-custom-assets v1), compact versioned manifest, one-time idempotent legacy migration, 5 MB per file / 50 MB library, loading state, boot never fails if IndexedDB is unavailable, visible quota errors.",
+      "filesAffected": [
+        "src/game/engine3d/assetStore.ts",
+        "src/game/engine3d/customAssets.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/engine3d/zipImport.ts",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Fix the existing custom-asset import bottleneck — move custom GLB assets from localStorage to IndexedDB so bigger models can be imported and they survive reloads, instead of repeatedly hitting the old 1 MB per-file / 2 MB library caps. ChatGPT's wake-up-file 'BUILD 1043' spec, renumbered to 1044 after the 1043 naming collision was reconciled.",
+      "previousCheckpoint": {
+        "build": 1043,
+        "commit": "4a82b393"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42555446176",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1044 @ 2026-11-09T03:17:22.844Z, run 42555446176 completed success (parent confirmed via the Actions API). Asserts 114 checks pass (parent re-ran directly — ASSERT_DONE 114 checks passed). Sim vs pristine1043 byte-identical (parent diffed sim1044.norm.log vs sim1043-pristine.norm.log — no diff output; 76 lines each, 0 FAIL, same known 684 rig crash). Phone probe 23 findings, 0 page errors (seeded a real 2-asset legacy localStorage library: both migrated into IndexedDB, legacy key deleted after verified migration, manifest written (204 bytes, metadata only), ashfall-custom-assets v1 confirmed in indexedDB.databases(); hub states the new caps; migrated Legacy Blue placed at (123,134); a real 1.56 MB / 20,000-tri GLB uploaded (over the old 1 MB cap); two rapid uploads (.obj + .zip) both landed (6 assets, nothing lost); reload: 6 assets + placed copy survive; malformed GLB, 6 MB file ('file is over 5 MB'), and unsupported file all fail visibly with the library unchanged). A separate render probe placed a vertical RGB fin from the migrated library — it renders on the ground before AND after reload. Honest caveat: live quota exhaustion could not be forced in this harness (Storage.overrideQuotaForOrigin is a no-op in this Chromium) — the quota path is proven by the Node asserts (store rejects with QuotaExceededError, library unchanged) plus the view's shared persist-first-then-commit path, not by a live browser quota failure.",
+      "verificationTimestamp": "2026-11-09T03:17:22.844Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub Stage 2",
+    "build": "Import Hub Stage 3",
     "commit": null,
-    "description": "IndexedDB asset store: replace binary/large-array persistence with an IndexedDB-backed asset store (versioned DB, stable asset IDs); migrate ag-3d-custom-assets-v1 once, safely and idempotently — never delete the legacy key until read-back validates; preserve the synchronous render path (in-memory cache, loading state, boot never fails if IndexedDB is unavailable); increase the file-size ceiling only to a measured, device-safe limit with library budgets and clear quota errors. NEXT per the queue.",
+    "description": "Preview/library: show import progress, preview thumbnails/3D model, name/category/tags, dimensions where available, source filename, and explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -257,20 +257,23 @@
       "runId": "42542648558",
       "status": "verified",
       "verifiedAt": "2026-11-09T00:54:49.777Z"
+    },
+    {
+      "build": 1044,
+      "commit": "a93a1d69",
+      "description": "Import Hub Stage 2 — IndexedDB asset store: imported models now live in a proper on-device store (IndexedDB database ashfall-custom-assets v1, compact versioned manifest in localStorage, metadata only). Per-file cap 1 MB -> 5 MB; library up to 50 MB decoded / 100,000 triangles. Existing uploads migrate automatically once (read-back validated before the legacy key is deleted; a failed move keeps the old copy and the hub says so). Library loads from IndexedDB before placement/rendering with a loading state; the world still boots if IndexedDB is unavailable. Upload failures (including running out of device storage) show a clear message naming the file and the reason. Landed: commit a93a1d69, deploy run 42555446176 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42555446176",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T03:17:22.844Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub Stage 2 (IndexedDB asset store)",
-      "commit": null,
-      "description": "Replace binary/large-array persistence with an IndexedDB-backed asset store (versioned DB, stable asset IDs); migrate ag-3d-custom-assets-v1 once, safely and idempotently — never delete the legacy key until read-back validates; preserve the synchronous render path (in-memory cache, loading state, boot never fails if IndexedDB is unavailable); increase the file-size ceiling only to a measured, device-safe limit with library budgets and clear quota errors.",
-      "status": "in_progress"
-    },
-    {
       "build": "Import Hub Stage 3 (preview/library)",
       "commit": null,
-      "description": "Show import progress, preview thumbnails/3D model, name/category/tags, dimensions, source filename, explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop.",
-      "status": "planned"
+      "description": "Show import progress, preview thumbnails/3D model, name/category/tags, dimensions where available, source filename, and explicit Add to Asset Library / Cancel. Keep imported assets organized and searchable. Avoid blocking the game render loop.",
+      "status": "in_progress"
     },
     {
       "build": "Import Hub Stage 4 (packs/recovery)",
@@ -449,13 +452,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T19:51:29-07:00",
+  "lastUpdateTimestamp": "2026-11-08T22:01:07-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1043,
-    "commit": "4a82b393",
-    "description": "Import Hub Stage 1: a hub panel at the top of the Build panel that imports .glb (as before), .gltf (pick its .bin at the same time if it has one), .obj, or a ZIP holding any of those — several files at once, or a whole folder on a desktop browser where the browser supports it. Imported models show in the hub and the Custom category, place like any other item, and one Undo removes them. Honest limits: models render as plain coloured triangles (textures ignored); on iPhone Safari a folder cannot be opened directly; audio is not imported yet (no audio playback in the game); ChatGPT cannot reach files on the phone or computer — uploading here is how a model gets into the game.",
-    "runId": "42542648558",
-    "verifiedAt": "2026-11-09T00:54:49.777Z"
+    "build": 1044,
+    "commit": "a93a1d69",
+    "description": "Import Hub Stage 2 — IndexedDB asset store: imported models now live in a proper on-device store (IndexedDB database ashfall-custom-assets v1, compact versioned manifest in localStorage, metadata only). Per-file cap 1 MB -> 5 MB; library up to 50 MB decoded / 100,000 triangles. Existing uploads migrate automatically once (read-back validated before the legacy key is deleted; a failed move keeps the old copy and the hub says so). Library loads from IndexedDB before placement/rendering with a loading state; the world still boots if IndexedDB is unavailable. Upload failures (including running out of device storage) show a clear message naming the file and the reason.",
+    "runId": "42555446176",
+    "verifiedAt": "2026-11-09T03:17:22.844Z"
   },
   "measuredBaselines": [
     {
@@ -679,6 +682,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1044,
+      "commit": "a93a1d69",
+      "result": "Verified live: served version.json build 1044 @ 2026-11-09T03:17:22.844Z, run 42555446176 completed success (parent confirmed via the Actions API). Asserts 114 checks pass (parent re-ran directly — ASSERT_DONE 114 checks passed). Sim vs pristine1043 byte-identical (parent diffed sim1044.norm.log vs sim1043-pristine.norm.log — no diff output; 76 lines each, 0 FAIL, same known 684 rig crash). Phone probe 23 findings, 0 page errors (seeded a real 2-asset legacy localStorage library: both migrated into IndexedDB, legacy key deleted after verified migration, manifest written (204 bytes, metadata only), ashfall-custom-assets v1 confirmed in indexedDB.databases(); hub states the new caps; migrated Legacy Blue placed at (123,134); a real 1.56 MB / 20,000-tri GLB uploaded (over the old 1 MB cap); two rapid uploads (.obj + .zip) both landed (6 assets, nothing lost); reload: 6 assets + placed copy survive; malformed GLB, 6 MB file ('file is over 5 MB'), and unsupported file all fail visibly with the library unchanged). A separate render probe placed a vertical RGB fin from the migrated library — it renders on the ground before AND after reload. Honest caveat: live quota exhaustion could not be forced in this harness (Storage.overrideQuotaForOrigin is a no-op in this Chromium) — the quota path is proven by the Node asserts (store rejects with QuotaExceededError, library unchanged) plus the view's shared persist-first-then-commit path, not by a live browser quota failure.",
+      "runId": "42555446176",
+      "verifiedAt": "2026-11-09T03:17:22.844Z"
+    },
     {
       "build": 1043,
       "commit": "4a82b393",
