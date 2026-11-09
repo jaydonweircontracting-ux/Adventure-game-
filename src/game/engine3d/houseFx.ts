@@ -103,15 +103,21 @@ export const FX_MAX_VERTS = 32768;
 export const LIGHT_ON_MIN = 1050;
 /** Light-on times spread this far past 17:30 (to 19:30). */
 export const LIGHT_ON_SPREAD = 120;
-/** Early lights-out: 21:30-22:30, 25% of houses. */
+/** Dusk lights-out: 19:00-20:00, 20% of houses. BUILD 1052: the
+ *  Stage 6 stagger — a share of houses goes dark in the early
+ *  evening, so the town is never 100% lit for two hours. */
+export const LIGHT_OFF_DUSK_MIN = 1140;
+export const LIGHT_OFF_DUSK_SPREAD = 60;
+export const LIGHT_OFF_DUSK_SHARE = 0.20;
+/** Early lights-out: 21:30-22:30, 20% of houses. */
 export const LIGHT_OFF_EARLY_MIN = 1290;
 export const LIGHT_OFF_EARLY_SPREAD = 60;
-export const LIGHT_OFF_EARLY_SHARE = 0.25;
-/** Mid lights-out: 23:00-00:30 (wraps midnight), 40% of houses. */
+export const LIGHT_OFF_EARLY_SHARE = 0.40;
+/** Mid lights-out: 23:00-00:30 (wraps midnight), 35% of houses. */
 export const LIGHT_OFF_MID_MIN = 1380;
 export const LIGHT_OFF_MID_SPREAD = 90;
-export const LIGHT_OFF_MID_SHARE = 0.65;
-/** All-night houses: lights out 04:30-05:30, 35% of houses. */
+export const LIGHT_OFF_MID_SHARE = 0.75;
+/** All-night houses: lights out 04:30-05:30, 25% of houses. */
 export const LIGHT_OFF_LATE_MIN = 270;
 export const LIGHT_OFF_LATE_SPREAD = 60;
 
@@ -122,17 +128,25 @@ export interface LightSchedule { onMin: number; offMin: number; }
  * same seed the design hash uses, so the times are stable across
  * rebuilds, moves (1006 keeps the original seed), and reloads, and
  * nothing is persisted. onMin in [17:30, 19:30); offMin in one of
- * three buckets: 21:30-22:30 (25%), 23:00-00:30 (40%), 04:30-05:30
- * (35% — lit all night). Salts 31-33 are outside houseDesignFor's
- * range (1-7, 10-17), so schedules do not correlate with chimneys
- * or colours.
+ * four buckets: 19:00-20:00 (20%), 21:30-22:30 (20%), 23:00-00:30
+ * (35%), 04:30-05:30 (25% — lit all night). Salts 31-34 are outside
+ * houseDesignFor's range (1-7, 10-17), so schedules do not correlate
+ * with chimneys or colours. BUILD 1052: the dusk bucket is new — the
+ * Stage 1 audit measured 29/29 houses lit 19:30-21:30 and Stage 6
+ * requires the lit share at 20:00 to be <100% and >50% (it is ~80%:
+ * the dusk fifth has gone dark, nobody else has). The 1014 asserts
+ * that pinned "all lit at 21:00" are SUPERSEDED by design (at 21:00
+ * the dusk bucket is dark too — the share is ~80%, still >50%).
+ * Lanterns (1040) and the 1050 hearth use this same function, so
+ * they inherit the stagger — nothing fights it.
  */
 export function lightScheduleFor(seedX0: number, seedY0: number): LightSchedule {
   const h = (salt: number): number => hash2(seedX0 * 3.1 + salt, seedY0 * 7.7 + salt * 1.3);
   const onMin = LIGHT_ON_MIN + Math.floor(h(31) * LIGHT_ON_SPREAD);
   const bucket = h(32);
   let offMin: number;
-  if (bucket < LIGHT_OFF_EARLY_SHARE) offMin = LIGHT_OFF_EARLY_MIN + Math.floor(h(33) * LIGHT_OFF_EARLY_SPREAD);
+  if (bucket < LIGHT_OFF_DUSK_SHARE) offMin = LIGHT_OFF_DUSK_MIN + Math.floor(h(34) * LIGHT_OFF_DUSK_SPREAD);
+  else if (bucket < LIGHT_OFF_EARLY_SHARE) offMin = LIGHT_OFF_EARLY_MIN + Math.floor(h(33) * LIGHT_OFF_EARLY_SPREAD);
   else if (bucket < LIGHT_OFF_MID_SHARE) offMin = (LIGHT_OFF_MID_MIN + Math.floor(h(33) * LIGHT_OFF_MID_SPREAD)) % 1440;
   else offMin = LIGHT_OFF_LATE_MIN + Math.floor(h(33) * LIGHT_OFF_LATE_SPREAD);
   return { onMin, offMin };

@@ -49,6 +49,7 @@
 //   interiors are a separate view and stay lit.
 
 import { darknessAlphaForMinutes } from '../dayNight';
+import { STARS, STAR_COUNT, STAR_VERTS_PER_STAR, STAR_COLOR, starAlphaForMinutes } from './atmosphere';
 
 export type Vec3 = [number, number, number];
 
@@ -148,13 +149,15 @@ export const SKY_CLOUD_COUNT = CLOUDS.length;
 
 /**
  * Maximum sky-object vertices in one frame: all cloud slabs (12 tris each)
- * + sun fan + moon fan. The view allocates the sky buffer once at this
- * size and re-uploads with bufferSubData (never bufferData per frame —
- * a per-frame reallocation stalls SwiftShader's software pipeline).
+ * + sun fan + moon fan + stars (one quad each). The view allocates the sky
+ * buffer once at this size and re-uploads with bufferSubData (never
+ * bufferData per frame — a per-frame reallocation stalls SwiftShader's
+ * software pipeline).
  */
 export const SKY_MAX_VERTS =
   CLOUDS.reduce((a, c) => a + c.slabs.length, 0) * 12 * 3 +
-  2 * SKY_DISC_SEGMENTS * 3;
+  2 * SKY_DISC_SEGMENTS * 3 +
+  STAR_COUNT * STAR_VERTS_PER_STAR;
 
 /** Wrap a value into [-CLOUD_WRAP_HALF, +CLOUD_WRAP_HALF). */
 export function wrapCloudOffset(v: number): number {
@@ -197,12 +200,12 @@ function pushSlab(out: number[], cx: number, y: number, cz: number, w: number, d
   pushTri(out, [x1, y, z0], [x1, y1, z1], [x1, y1, z0], CLOUD_SIDE);
 }
 
-function pushDisc(out: number[], eye: Vec3, dir: Vec3, radius: number, col: Vec3): void {
-  const c: Vec3 = [eye[0] + dir[0] * SKY_BODY_DIST, eye[1] + dir[1] * SKY_BODY_DIST, eye[2] + dir[2] * SKY_BODY_DIST];
-  // Billboard basis: the fan plane is perpendicular to the view direction.
-  // right = normalize(cross(up, fwd)) = (fwd.z, 0, -fwd.x); up = cross(right, fwd).
-  // (CULL_FACE is disabled in the view, so fan winding is irrelevant.)
-  const fwd = dir;
+/**
+ * Billboard basis for a sky body facing `fwd`: right = normalize(cross
+ * (up, fwd)) = (fwd.z, 0, -fwd.x); up = cross(right, fwd). (CULL_FACE
+ * is disabled in the view, so fan/quad winding is irrelevant.)
+ */
+function billboardBasis(fwd: Vec3): { right: Vec3; up: Vec3 } {
   const right: Vec3 = [fwd[2], 0, -fwd[0]];
   const rl = Math.hypot(right[0], right[1], right[2]) || 1;
   right[0] /= rl; right[1] /= rl; right[2] /= rl;
@@ -211,6 +214,13 @@ function pushDisc(out: number[], eye: Vec3, dir: Vec3, radius: number, col: Vec3
     right[2] * fwd[0] - right[0] * fwd[2],
     right[0] * fwd[1] - right[1] * fwd[0],
   ];
+  return { right, up };
+}
+
+function pushDisc(out: number[], eye: Vec3, dir: Vec3, radius: number, col: Vec3): void {
+  const c: Vec3 = [eye[0] + dir[0] * SKY_BODY_DIST, eye[1] + dir[1] * SKY_BODY_DIST, eye[2] + dir[2] * SKY_BODY_DIST];
+  // Billboard basis: the fan plane is perpendicular to the view direction.
+  const { right, up } = billboardBasis(dir);
   const pts: Vec3[] = [];
   for (let i = 0; i < SKY_DISC_SEGMENTS; i++) {
     const a = (i / SKY_DISC_SEGMENTS) * Math.PI * 2;
@@ -226,19 +236,22 @@ function pushDisc(out: number[], eye: Vec3, dir: Vec3, radius: number, col: Vec3
   }
 }
 
-export interface SkyEmitCounts { cloudVerts: number; totalVerts: number }
+export interface SkyEmitCounts { cloudVerts: number; totalVerts: number; starVerts: number; }
 
 /**
  * Emit the 3D sky objects for one frame. `eye` is the camera eye position
  * (orbit eye or first-person eye); px/pz is the player tile centre.
  * Returns vertex counts so the caller can draw clouds (night factor) and
- * sun/moon (uNight=0) in two calls. While inside a house, emits nothing.
+ * sun/moon/stars (uNight=0) in two calls. While inside a house, emits
+ * nothing. BUILD 1052: stars ride the uNight=0 segment (self-luminous,
+ * the sun/moon precedent) and are emitted only while starAlpha is
+ * above ~0, so daylight has no dark specks.
  */
 export function emitSkyObjects(
   out: number[], eye: Vec3, px: number, pz: number,
   minutes: number, driftSec: number, insideHut: boolean,
 ): SkyEmitCounts {
-  if (insideHut) return { cloudVerts: 0, totalVerts: 0 };
+  if (insideHut) return { cloudVerts: 0, totalVerts: 0, starVerts: 0 };
   const start = out.length;
   for (const cl of CLOUDS) {
     const cx = px + cloudCentreX(cl.bx, driftSec);
@@ -250,5 +263,25 @@ export function emitSkyObjects(
   if (sun) pushDisc(out, eye, sun, SUN_RADIUS, SUN_COLOR);
   const moon = moonDirForMinutes(minutes);
   if (moon) pushDisc(out, eye, moon, MOON_RADIUS, MOON_COLOR);
-  return { cloudVerts, totalVerts: (out.length - start) / 6 };
+  // BUILD 1052: stars — small billboard quads on the celestial sphere,
+  // camera-centred like the sun/moon. Colour scales with starAlpha, so
+  // they fade in as night deepens and out by dawn; below the threshold
+  // nothing is emitted at all.
+  const starStart = out.length;
+  const alpha = starAlphaForMinutes(minutes);
+  if (alpha > 0.03) {
+    for (const st of STARS) {
+      const { right, up } = billboardBasis(st.dir);
+      const c: Vec3 = [eye[0] + st.dir[0] * SKY_BODY_DIST, eye[1] + st.dir[1] * SKY_BODY_DIST, eye[2] + st.dir[2] * SKY_BODY_DIST];
+      const h = st.size / 2;
+      const col: Vec3 = [STAR_COLOR[0] * st.bright * alpha, STAR_COLOR[1] * st.bright * alpha, STAR_COLOR[2] * st.bright * alpha];
+      const p00: Vec3 = [c[0] - right[0] * h - up[0] * h, c[1] - right[1] * h - up[1] * h, c[2] - right[2] * h - up[2] * h];
+      const p10: Vec3 = [c[0] + right[0] * h - up[0] * h, c[1] + right[1] * h - up[1] * h, c[2] + right[2] * h - up[2] * h];
+      const p11: Vec3 = [c[0] + right[0] * h + up[0] * h, c[1] + right[1] * h + up[1] * h, c[2] + right[2] * h + up[2] * h];
+      const p01: Vec3 = [c[0] - right[0] * h + up[0] * h, c[1] - right[1] * h + up[1] * h, c[2] - right[2] * h + up[2] * h];
+      pushTri(out, p00, p10, p11, col);
+      pushTri(out, p00, p11, p01, col);
+    }
+  }
+  return { cloudVerts, totalVerts: (out.length - start) / 6, starVerts: (out.length - starStart) / 6 };
 }

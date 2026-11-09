@@ -15,6 +15,7 @@ import {
 } from './townLook';
 import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, nightFactorForMinutes, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
+import { nightFactor3dForMinutes, skyGradientForMinutes, starAlphaForMinutes, STAR_COUNT, FIGURE_NIGHT_CAP, rainForMinutes, emitRainStreaks, RAIN_STREAKS, RAIN_VERTS_PER_STREAK } from './atmosphere';
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
@@ -2852,13 +2853,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // (mix(v, navy, uNight) IS the 976 composite scene*(1-a)+navy*a).
     // One uniform, set per frame from the 3D clock — no rebuilds, no
     // blending, no veil quad. Sun/moon draw with uNight=0 (self-luminous).
-    const fs=gl.createShader(gl.FRAGMENT_SHADER)!;gl.shaderSource(fs,`precision mediump float;varying vec3 v;uniform float uNight;void main(){gl_FragColor=vec4(mix(v,vec3(${NIGHT_NAVY[0].toFixed(3)},${NIGHT_NAVY[1].toFixed(3)},${NIGHT_NAVY[2].toFixed(3)}),uNight),1.0);}`);gl.compileShader(fs);
+    // BUILD 1052: uNight is now the DEEPER 3D factor (cap 0.82, not
+    // 976's 0.55 — see atmosphere.ts; the 976 curve is untouched for
+    // the 2.5D game), and uWarm warms every fragment toward golden
+    // hour at dawn/dusk (v * (1.0,0.72,0.45), strength 0.45 * warm).
+    // Both are set to 0 for the self-luminous segments, the uNight=0
+    // precedent — lit windows, sun/moon/stars, and the sky gradient
+    // (whose colours are already computed per-frame) keep true colours.
+    const fs=gl.createShader(gl.FRAGMENT_SHADER)!;gl.shaderSource(fs,`precision mediump float;varying vec3 v;uniform float uNight;uniform float uWarm;void main(){vec3 w=mix(v,v*vec3(1.0,0.72,0.45),uWarm*0.45);gl_FragColor=vec4(mix(w,vec3(${NIGHT_NAVY[0].toFixed(3)},${NIGHT_NAVY[1].toFixed(3)},${NIGHT_NAVY[2].toFixed(3)}),uNight),1.0);}`);gl.compileShader(fs);
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){setMessage('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));return;}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){setMessage('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));return;}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
     const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!,carBuffer=gl.createBuffer()!;
-    const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight');
-    if(pLoc<0||cLoc<0||!mLoc||!uNightLoc){setMessage('3D renderer missing required shader attributes');return;}
+    const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight'),uWarmLoc=gl.getUniformLocation(program,'uWarm');
+    if(pLoc<0||cLoc<0||!mLoc||!uNightLoc||!uWarmLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(SKY_HORIZON[0],SKY_HORIZON[1],SKY_HORIZON[2],1);
     // BUILD 983 sky gradient: a static clip-space quad (horizon colour at
@@ -2881,12 +2889,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // driving), so it must NOT go in the static world buffer.
     gl.bindBuffer(gl.ARRAY_BUFFER,carBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,CAR_MAX_VERTS*24,gl.DYNAMIC_DRAW);
+    // BUILD 1052: the rain buffer — allocated ONCE at RAIN_STREAKS *
+    // RAIN_VERTS_PER_STREAK and re-uploaded per frame with bufferSubData
+    // only while raining (the 1011 sky-buffer pattern). Rain has its own
+    // buffer, not the fx buffer, so a rain frame can never overflow the
+    // fx allocation.
+    const RAIN_MAX_VERTS=RAIN_STREAKS*RAIN_VERTS_PER_STREAK;
+    const rainBuffer=gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER,rainBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,RAIN_MAX_VERTS*24,gl.DYNAMIC_DRAW);
     const skyBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
+    // BUILD 1052: the gradient is DYNAMIC now, not static — the sky
+    // colours are a function of the clock (night + dawn/dusk grading),
+    // so the 6 verts are re-uploaded per frame with bufferSubData
+    // (the 1011 pattern; 6 verts is nothing). Initial content is the
+    // day gradient; the loop overwrites it before the first draw.
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
       -1,-1,1,...SKY_HORIZON, 1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP,
       -1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP, -1,1,1,...SKY_TOP,
-    ]),gl.STATIC_DRAW);
+    ]),gl.DYNAMIC_DRAW);
     // BUILD 988: hoisted sky identity matrix (was allocated fresh every
     // frame) + cached world vertex count (was a per-frame
     // getBufferParameter GL query).
@@ -4016,19 +4038,32 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           st.count=rebuildCountRef.current;st.lastBuildFrames=buildFramesRef.current;st.lastBuildMs=buildMsRef.current;
         }
       }
-      gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-      // BUILD 1011: night factor for this frame — 976's curve on the 3D
-      // clock, as one shader uniform (see sky.ts). Set before the sky
-      // pass so the gradient darkens too; sun/moon are drawn with
-      // uNight=0 below (self-luminous). Cloud drift accumulates here.
-      const nightFactor=nightFactorForMinutes(clockRef.current.minutes);
+      // BUILD 1052: night factor + sky gradient for this frame — the
+      // DEEPER 3D factor (cap 0.82, atmosphere.ts; 976's 0.55 curve is
+      // untouched for the 2.5D game) and the clock-graded sky colours.
+      // The clear colour follows the horizon, so any pixel the
+      // gradient quad does not cover still matches the sky.
+      const nightFactor=nightFactor3dForMinutes(clockRef.current.minutes);
+      const skyGrad=skyGradientForMinutes(clockRef.current.minutes);
       skyDriftRef.current+=dt;
-      gl.uniform1f(uNightLoc,nightFactor);
+      gl.clearColor(skyGrad.horizon[0],skyGrad.horizon[1],skyGrad.horizon[2],1);
+      gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.uniform1f(uNightLoc,nightFactor);gl.uniform1f(uWarmLoc,skyGrad.warm);
       // Sky gradient pass (identity matrix, depth off), then the world.
+      // The gradient's colours are already the final sky colours, so
+      // it draws with uNight=0 AND uWarm=0 (the self-luminous
+      // precedent) — the shader must not veil or warm them twice.
       gl.disable(gl.DEPTH_TEST);
-      gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+      gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
+      gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array([
+        -1,-1,1,...skyGrad.horizon, 1,-1,1,...skyGrad.horizon, 1,1,1,...skyGrad.top,
+        -1,-1,1,...skyGrad.horizon, 1,1,1,...skyGrad.top, -1,1,1,...skyGrad.top,
+      ]));
+      gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       gl.uniformMatrix4fv(mLoc,false,IDENTITY_MAT);
+      gl.uniform1f(uNightLoc,0);gl.uniform1f(uWarmLoc,0);
       gl.drawArrays(gl.TRIANGLES,0,6);
+      gl.uniform1f(uNightLoc,nightFactor);gl.uniform1f(uWarmLoc,skyGrad.warm);
       gl.enable(gl.DEPTH_TEST);
       // Orbit around the player's tile center, not its top-left grid corner.
       // Keeping the camera target and orbit origin aligned prevents the player
@@ -4091,16 +4126,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // moves and cannot carry moving sky objects). Camera-centred on the
       // player so walking never leaves them behind; depth-tested, so the
       // ground occludes them below the horizon. Clouds draw with the
-      // night factor, sun/moon with uNight=0 (self-luminous). Suppressed
-      // entirely while inside a house (990: emitSkyObjects returns empty
-      // when insideHut is set).
+      // night factor, sun/moon/stars with uNight=0 AND uWarm=0
+      // (self-luminous). Suppressed entirely while inside a house (990:
+      // emitSkyObjects returns empty when insideHut is set).
       const skyEye:Vec3=firstPersonRef.current?[targetX,playerBaseY+FIRST_PERSON_EYE,targetZ]:[ex,ey,ez];
       const skyArr:number[]=[];
       const skyCounts=emitSkyObjects(skyArr,skyEye,player.x+.5,player.y+.5,clockRef.current.minutes,skyDriftRef.current,!!insideHutRef.current);
       if(skyCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,skyObjBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(skyArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(skyCounts.cloudVerts>0)gl.drawArrays(gl.TRIANGLES,0,skyCounts.cloudVerts);
-        if(skyCounts.totalVerts>skyCounts.cloudVerts){gl.uniform1f(uNightLoc,0);gl.drawArrays(gl.TRIANGLES,skyCounts.cloudVerts,skyCounts.totalVerts-skyCounts.cloudVerts);gl.uniform1f(uNightLoc,nightFactor);}
+        if(skyCounts.totalVerts>skyCounts.cloudVerts){gl.uniform1f(uNightLoc,0);gl.uniform1f(uWarmLoc,0);gl.drawArrays(gl.TRIANGLES,skyCounts.cloudVerts,skyCounts.totalVerts-skyCounts.cloudVerts);gl.uniform1f(uNightLoc,nightFactor);gl.uniform1f(uWarmLoc,skyGrad.warm);}
       }
       // BUILD 1014: chimney smoke + window panes — a small per-frame
       // buffer (a few thousand verts; the world buffer rebuilds only
@@ -4147,8 +4182,22 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
-        if(fxCounts.totalVerts>fxCounts.nightVerts){gl.uniform1f(uNightLoc,0);gl.drawArrays(gl.TRIANGLES,fxCounts.nightVerts,fxCounts.totalVerts-fxCounts.nightVerts);gl.uniform1f(uNightLoc,nightFactor);}
+        if(fxCounts.totalVerts>fxCounts.nightVerts){gl.uniform1f(uNightLoc,0);gl.uniform1f(uWarmLoc,0);gl.drawArrays(gl.TRIANGLES,fxCounts.nightVerts,fxCounts.totalVerts-fxCounts.nightVerts);gl.uniform1f(uNightLoc,nightFactor);gl.uniform1f(uWarmLoc,skyGrad.warm);}
       }
+      // BUILD 1052: rain (stretch) — drawn with the night factor, only
+      // while raining (deterministic afternoons, atmosphere.ts). Then
+      // the figure cap: actors, the car, and corpses draw with uNight
+      // capped at the old 0.55 so people stay readable at night while
+      // the world itself goes dark (the 976 rationale, per segment).
+      if(rainForMinutes(clockRef.current.day,clockRef.current.minutes)){
+        const rainArr:number[]=[];
+        const rainVerts=emitRainStreaks(rainArr,player.x+.5,player.y+.5,playerBaseY,skyDriftRef.current);
+        if(rainVerts>0){
+          gl.bindBuffer(gl.ARRAY_BUFFER,rainBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(rainArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+          gl.drawArrays(gl.TRIANGLES,0,rainVerts);
+        }
+      }
+      gl.uniform1f(uNightLoc,Math.min(nightFactor,FIGURE_NIGHT_CAP));
       // BUILD 998: interpolated NPC motion + per-figure GPU slots (see
       // npcMotion.ts). Logical tiles come from the 900ms timer; figures
       // glide toward them at the demo speed, phase follows distance
@@ -4480,7 +4529,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
       // BUILD 1011 test hooks: sky state read + cloud-drift set (probes
       // only — no gameplay effect).
-      getSky:()=>({minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,inside:!!insideHutRef.current}),
+      getSky:()=>{const m=clockRef.current.minutes;const g=skyGradientForMinutes(m);return {minutes:m,night:nightFactor3dForMinutes(m),night976:nightFactorForMinutes(m),drift:skyDriftRef.current,inside:!!insideHutRef.current,stars:{alpha:starAlphaForMinutes(m),count:STAR_COUNT},gradient:{top:[...g.top],horizon:[...g.horizon],warm:g.warm},rain:rainForMinutes(clockRef.current.day,m)};},
       setSkyDrift:(s:number)=>{skyDriftRef.current=Math.max(0,Math.floor(s));},
       // BUILD 1014 test hooks: house-fx state read (probes only — no
       // gameplay effect). houses/chimneys/litHouses are the last
@@ -4489,7 +4538,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // probes see exactly the live state); smokeSample is the first
       // chimney's live puff centres (pure function of the drift clock,
       // for the smoke-movement proof).
-      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactorForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit,variant:d.variant??null,baseY:d.baseY,roofAxis:d.roofAxis,roofPitch:d.roofPitch,roofForm:d.roofForm})),lanterns:placedLanternTiles(world).map(t=>({tx:t.tx,ty:t.ty,lit:houseLitAt(clockRef.current.minutes,lightScheduleFor(t.tx,t.ty))})),smokeSample:sample};},
+      getHouseFx:()=>{const details=resolveHouseFx(houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes);const c=details.find(d=>d.top);const sample=c&&c.top?{top:[...c.top],puffs:smokePuffsFor(c.top,c.seedX0,c.seedY0,skyDriftRef.current)}:null;return {minutes:clockRef.current.minutes,night:nightFactor3dForMinutes(clockRef.current.minutes),drift:skyDriftRef.current,...lastFxStats,houses:details.map(d=>({x0:d.hut.x0,y0:d.hut.y0,x1:d.hut.x1,y1:d.hut.y1,doorFace:d.doorFace,stories:d.stories,chimney:!!d.top,onMin:d.schedule.onMin,offMin:d.schedule.offMin,lit:d.lit,variant:d.variant??null,baseY:d.baseY,roofAxis:d.roofAxis,roofPitch:d.roofPitch,roofForm:d.roofForm})),lanterns:placedLanternTiles(world).map(t=>({tx:t.tx,ty:t.ty,lit:houseLitAt(clockRef.current.minutes,lightScheduleFor(t.tx,t.ty))})),smokeSample:sample};},
       // BUILD 999: a teleport must also drop the NPC's cached A* path.
       // Paths store ABSOLUTE tiles planned from the old position; the
       // timer only replans when the DESTINATION changes, so a moved
@@ -4843,7 +4892,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteBuffer(rainBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
