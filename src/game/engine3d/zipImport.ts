@@ -16,10 +16,11 @@
 // - CRC32 is verified per entry; a mismatch fails that entry only.
 //
 // Caps (same spirit as the 997 library caps): the ZIP itself at most
-// 5 MB, at most 50 entries, each extracted file at most 1 MB. A bad
-// entry never fails the whole ZIP — it is reported and the rest
-// still import. A structurally broken ZIP (no central directory)
-// throws, and the caller shows that as one message.
+// 5 MB, at most 50 entries, each extracted file at most 5 MB (the
+// BUILD 1044 per-file cap). A bad entry never fails the whole ZIP —
+// it is reported and the rest still import. A structurally broken
+// ZIP (no central directory) throws, and the caller shows that as
+// one message.
 
 import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, type GlbUploadResult } from './customAssets';
 
@@ -133,7 +134,7 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
       continue;
     }
     if (e.size > MAX_FILE_BYTES) {
-      result.skipped.push({ name: e.name, reason: 'over 1 MB' });
+      result.skipped.push({ name: e.name, reason: 'over 5 MB' });
       continue;
     }
     if (e.localOff + 30 > bytes.length || view.getUint32(e.localOff, true) !== LOCAL_SIG) {

@@ -35,17 +35,24 @@
 //   exactly). Uploading itself is NOT a world change and NOT an
 //   undo entry. Custom items are DECORATIVE blocks: no doors, no
 //   interiors, no Enter prompt (they are not houses).
-// - Persistence: assets live in localStorage under CUSTOM_ASSETS_KEY,
-//   separate from world saves; placements reference assets by id
-//   (PlacedItem.assetId). Old worlds load with no custom assets,
-//   never corrupted. DELETE RULE (one rule): deleting an asset
-//   removes every placed copy of it at once, immediately, and is
-//   NOT undoable (same as deleting a 996 template). A placement
-//   whose asset is gone renders nothing (defensive only — delete
-//   removes copies first, so orphans should not occur).
-// - Caps (localStorage reality, ~5 MB total): one file at most 1 MB,
-//   the whole library's JSON at most 2 MB. Over-cap uploads are
-//   rejected with a message and never corrupt the store.
+// - Persistence: assets live in IndexedDB (assetStore.ts, BUILD
+//   1044) under a versioned database + object store, keyed by stable
+//   asset id; placements reference assets by id (PlacedItem.assetId).
+//   The old localStorage key (CUSTOM_ASSETS_KEY) is read-only after
+//   1044 — it is the one-time migration source and the session
+//   fallback when IndexedDB is unavailable. No vertex array is ever
+//   written to localStorage again: the only localStorage write is the
+//   compact versioned manifest (id, name, format, triangles, bytes).
+//   Old worlds load with no custom assets, never corrupted. DELETE
+//   RULE (one rule): deleting an asset removes every placed copy of
+//   it at once, immediately, and is NOT undoable (same as deleting a
+//   996 template). A placement whose asset is gone renders nothing
+//   (defensive only — delete removes copies first, so orphans should
+//   not occur).
+// - Caps (IndexedDB reality, measured in assetStore.ts): one file at
+//   most 5 MB, the whole library at most 50 MB decoded / 100,000
+//   triangles. Over-cap uploads are rejected with a message and
+//   never corrupt the store.
 // - Chunks (996) do NOT capture custom items in V1: pasteChunk
 //   validates through the built-in kinds only, so a custom item
 //   captured into a chunk would paste as a shape mismatch. Excluding
@@ -57,13 +64,16 @@ import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { validateBlockingRect } from './placements';
 
 /** localStorage key for uploaded custom assets. Versioned (v1);
- *  separate from world saves so a world reset never wipes uploads. */
+ *  separate from world saves so a world reset never wipes uploads.
+ *  BUILD 1044: READ-ONLY after the IndexedDB migration — the
+ *  migration source and the session fallback when IndexedDB is
+ *  unavailable. Nothing writes this key any more. */
 export const CUSTOM_ASSETS_KEY = 'ag-3d-custom-assets-v1';
 
-/** One uploaded file, at most 1 MB of GLB. */
-export const MAX_FILE_BYTES = 1_000_000;
-/** The whole custom library's JSON, at most 2 MB. */
-export const MAX_LIBRARY_JSON = 2_000_000;
+/** One uploaded file, at most 5 MB (BUILD 1044: was 1 MB under
+ *  localStorage). Measured in assetStore.ts: a max-size asset
+ *  (20,000 tris) decodes to ~5 MB, so the triangle cap binds first. */
+export const MAX_FILE_BYTES = 5_000_000;
 /** One mesh, at most 20,000 triangles (renderer + storage sanity). */
 export const MAX_TRIANGLES = 20_000;
 /** One mesh's footprint, at most 8x8 tiles. */
@@ -543,7 +553,7 @@ function isFiniteNum(n: unknown): n is number {
   return typeof n === 'number' && Number.isFinite(n);
 }
 
-function validAsset(raw: unknown): CustomAsset | null {
+export function validAsset(raw: unknown): CustomAsset | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.id !== 'string' || typeof r.name !== 'string') return null;
@@ -572,9 +582,11 @@ function validAsset(raw: unknown): CustomAsset | null {
   };
 }
 
-/** Load uploaded assets. Malformed entries are dropped, never fatal:
- *  a corrupt asset store degrades to an empty library, never a
- *  broken Build panel. */
+/** Load uploaded assets from the LEGACY localStorage key. BUILD
+ *  1044: read-only — the one-time IndexedDB migration source, and
+ *  the session fallback when IndexedDB cannot be opened. Malformed
+ *  entries are dropped, never fatal: a corrupt asset store degrades
+ *  to an empty library, never a broken Build panel. */
 export function loadCustomAssets(): CustomAsset[] {
   try {
     const raw = localStorage.getItem(CUSTOM_ASSETS_KEY);
@@ -592,15 +604,11 @@ export function loadCustomAssets(): CustomAsset[] {
   }
 }
 
-/** Persist the asset library. Failures are swallowed (quota, private
- *  mode): the in-memory library still works for the session. */
-export function saveCustomAssets(assets: CustomAsset[]): void {
-  try {
-    localStorage.setItem(CUSTOM_ASSETS_KEY, JSON.stringify(assets));
-  } catch {
-    /* ignore */
-  }
-}
+// BUILD 1044: there is no saveCustomAssets any more. Vertex arrays
+// are never written to localStorage — the IndexedDB store in
+// assetStore.ts owns persistence, and the view persists each upload
+// and delete through it (persist first, then update state, so a
+// failed write is never shown as a success).
 
 /** A name that does not collide with any existing asset name.
  *  Blank input becomes 'Custom N'; a taken name gains ' 2', ' 3',

@@ -44,7 +44,8 @@ import {
   toggleSelectionMember, excludeItem, selectionItems, selectionItemLabel,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, saveCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, MAX_LIBRARY_JSON, type CustomAsset } from './customAssets';
+import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, uniquifyAssetName, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset } from './customAssets';
+import { createAssetStore, createIndexedDbAssetBackend, checkLibraryBudgets, writeAssetManifest, readAssetManifest, describeStoreError, type AssetStore } from './assetStore';
 import { parseZipUpload } from './zipImport';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
@@ -1613,20 +1614,89 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const templatesRef=useRef<ChunkTemplate[]>(templates);
   templatesRef.current=templates;
   useEffect(()=>{saveTemplates(templates);},[templates]);
-  // BUILD 997: custom GLB uploads. Same pattern as templates: lazy
-  // load from localStorage (key ag-3d-custom-assets-v1, separate from
-  // world saves), every change persists via the effect below, and
-  // customAssetsRef mirrors it for the render-loop closures (which
-  // capture refs, not state). customSelection is the armed upload
-  // (asset id, or null); it mirrors into buildRef.customAssetId like
-  // every other tool. Uploading is library state, never a world
-  // change or undo entry; placing an upload is a normal `place`
-  // entry, and deleting an upload removes its placed copies at once
-  // (also not undoable — same as deleting a chunk).
-  const [customAssets,setCustomAssets]=useState<CustomAsset[]>(()=>loadCustomAssets());
+  // BUILD 1044: custom uploads live in IndexedDB (assetStore.ts),
+  // not localStorage. The library starts EMPTY and fills from the
+  // store before placement/rendering is enabled: the init effect
+  // below migrates the legacy localStorage library once (and only
+  // deletes the legacy key after read-back validation), then loads
+  // the store into this state. customAssetsRef mirrors it for the
+  // render-loop closures (which capture refs, not state).
+  // customAssetsLoading is the small loading state the hub and the
+  // Custom category show while the store is opening; customAssetsWarning
+  // is a visible warning when migration partially failed or IndexedDB
+  // is unavailable (in which case the legacy library is loaded for
+  // the session and new uploads will not survive a reload — the world
+  // still boots, and nothing is silently lost). assetStoreRef is the
+  // serialised store; assetStoreReadyRef says IndexedDB is usable
+  // this session. Uploading is library state, never a world change
+  // or undo entry; placing an upload is a normal `place` entry, and
+  // deleting an upload removes its placed copies at once (also not
+  // undoable — same as deleting a chunk).
+  const [customAssets,setCustomAssets]=useState<CustomAsset[]>([]);
+  const [customAssetsLoading,setCustomAssetsLoading]=useState(true);
+  const [customAssetsWarning,setCustomAssetsWarning]=useState<string|null>(null);
+  // Refs mirror the two states for the __ag3dTest hook below (its
+  // effect runs once, so a state closure there would go stale).
+  const customAssetsLoadingRef=useRef(true);
+  const customAssetsWarningRef=useRef<string|null>(null);
+  const setAssetsLoading=(v:boolean)=>{customAssetsLoadingRef.current=v;setCustomAssetsLoading(v);};
+  const setAssetsWarning=(w:string|null)=>{customAssetsWarningRef.current=w;setCustomAssetsWarning(w);};
   const customAssetsRef=useRef<CustomAsset[]>(customAssets);
   customAssetsRef.current=customAssets;
-  useEffect(()=>{saveCustomAssets(customAssets);},[customAssets]);
+  const assetStoreRef=useRef<AssetStore|null>(null);
+  const assetStoreReadyRef=useRef(false);
+  const setLibrary=(next:CustomAsset[])=>{setCustomAssets(next);customAssetsRef.current=next;writeAssetManifest(next);};
+  // Serial queue for library commits: two rapid uploads (or an
+  // upload and a delete) never interleave their read-modify-write of
+  // the in-memory library, so no asset is ever lost between them.
+  const libraryQueueRef=useRef<Promise<void>>(Promise.resolve());
+  const runLibraryOp=<T,>(op:()=>Promise<T>):Promise<T>=>{
+    const p=libraryQueueRef.current.then(op);
+    libraryQueueRef.current=p.then(()=>undefined,()=>undefined);
+    return p;
+  };
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        const store=createAssetStore(createIndexedDbAssetBackend());
+        assetStoreRef.current=store;
+        const legacy=loadCustomAssets();
+        const mig=await store.migrate(legacy);
+        let assets=await store.loadAll();
+        if(!cancelled&&mig.failed.length>0){
+          // Migration partially failed: the legacy key is KEPT (the
+          // caller only deletes it on a clean verified migration),
+          // and the assets that failed to move stay usable from the
+          // legacy library for this session.
+          const failedIds=new Set(mig.failed.map(f=>f.id));
+          const kept=legacy.filter(l=>failedIds.has(l.id));
+          const have=new Set(assets.map(a=>a.id));
+          assets=[...assets,...kept.filter(k=>!have.has(k.id))];
+          setAssetsWarning('Some old uploads could not be moved to the new model store ('+mig.failed.length+' failed: '+mig.failed.slice(0,2).map(f=>f.reason).join('; ')+') — they are still saved in the old storage and still work here. Try deleting one and re-uploading it.');
+        }else if(!cancelled&&mig.verified&&legacy.length>0){
+          try{localStorage.removeItem(CUSTOM_ASSETS_KEY);}catch{/* the key staying is harmless — the next boot re-runs the idempotent migration */}
+        }
+        if(cancelled)return;
+        assetStoreReadyRef.current=true;
+        setLibrary(assets);
+      }catch(err){
+        if(cancelled)return;
+        // IndexedDB unavailable (private mode, blocked, old browser):
+        // the world still boots. The legacy library loads for this
+        // session; new uploads will not survive a reload, and the hub
+        // says so plainly.
+        assetStoreReadyRef.current=false;
+        setAssetsWarning('This browser cannot open the new model store ('+describeStoreError(err)+') — your old uploads are still here for this session, but new uploads will not survive a reload.');
+        const legacy=loadCustomAssets();
+        setCustomAssets(legacy);customAssetsRef.current=legacy;
+      }finally{
+        if(!cancelled)setAssetsLoading(false);
+      }
+    })();
+    return ()=>{cancelled=true;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   const [customSelection,setCustomSelection]=useState<string|null>(null);
   // BUILD 1043: Import Hub open state (the hub lives at the top of
   // the Build panel; it is panel UI state like the catalog category).
@@ -1746,15 +1816,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     buildRef.current={palette:null,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:id,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};
     if(!id){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}
   };
-  // BUILD 1043: Import Hub — one handler for every file the hub
+  // BUILD 1044: Import Hub — one handler for every file the hub
   // accepts (.glb, .gltf, .obj, .zip, plus .bin companions and whole
   // folders). Every failure is a message, never a crash: bad magic,
   // wrong version, a missing .bin, non-triangle geometry, an oversize
-  // file, a damaged ZIP entry, or a full library all reject before
-  // anything is stored. A bad file never blocks the good ones picked
-  // with it. The input resets so the same file can be picked again
-  // after a rejection. (BUILD 997's single-.glb handler is replaced
-  // by this — the GLB path is unchanged, it just lives in the hub.)
+  // file, a damaged ZIP entry, a full library, or a failed store
+  // write all reject before anything is shown as added. A bad file
+  // never blocks the good ones picked with it. The input resets so
+  // the same file can be picked again after a rejection. (BUILD 997's
+  // single-.glb handler is replaced by this — the GLB path is
+  // unchanged, it just lives in the hub.) Persistence, stated
+  // plainly: files are parsed first, then committed in one serialised
+  // step — library budgets are checked against the live library,
+  // each asset is written to IndexedDB, and only the assets whose
+  // write succeeded join the in-memory library. A quota failure (or
+  // any store failure) names the asset and the reason in the message
+  // and adds nothing — no fake success, no silent loss. When
+  // IndexedDB is unavailable the upload is session-only and the hub
+  // warning already says so.
   const handleImportFiles=async(e:{target:{files:FileList|null;value:string}})=>{
     const files=e.target.files?Array.from(e.target.files):[];
     e.target.value='';
@@ -1762,18 +1841,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // .bin companions for any .gltf picked in the same batch.
     const binFiles=new Map<string,ArrayBuffer>();
     await Promise.all(files.filter(f=>/\.bin$/i.test(f.name)).map(async(f)=>{try{binFiles.set(f.name,await f.arrayBuffer());}catch{/* a bad .bin just means its .gltf fails with a clear message */}}));
-    const existing=customAssetsRef.current;
-    const taken=new Set(existing.map(a=>a.name));
     const pending:CustomAsset[]=[];
-    const added:string[]=[];
     const failed:string[]=[];
     let skipped=0;let skippedNote='';
     const accept=(res:{ok:true;asset:CustomAsset}|{ok:false;reason:string},label:string)=>{
       if(!res.ok){failed.push(label+': '+res.reason);return;}
-      const name=uniquifyAssetName([...taken],res.asset.name);
-      taken.add(name);
-      pending.push({...res.asset,name});
-      added.push(name);
+      pending.push(res.asset);
     };
     for(const file of files){
       const lower=file.name.toLowerCase();
@@ -1788,7 +1861,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         continue;
       }
       if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')){
-        if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 1 MB');continue;}
+        if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 5 MB');continue;}
         try{
           if(lower.endsWith('.glb')){
             accept(parseGlbUpload(await file.arrayBuffer(),file.name),file.name);
@@ -1802,26 +1875,57 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
       failed.push(file.name+': not a supported file (.glb, .gltf, .obj, or .zip)');
     }
-    if(pending.length>0){
-      const next=[...existing,...pending];
-      if(JSON.stringify(next).length>MAX_LIBRARY_JSON){setMessage('Upload failed: custom library is full (2 MB cap)');return;}
-      setCustomAssets(next);
-    }
-    if(added.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
+    if(pending.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
       setMessage('A .bin file on its own is not a model — select it together with its .gltf file');
       return;
     }
-    const bits:string[]=[];
-    if(added.length>0)bits.push('Imported '+added.map(n=>'\''+n+'\'').join(', ')+' — pick '+(added.length===1?'it':'one')+' in Custom, then tap the ground to place it');
-    if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
-    if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
-    if(bits.length>0)setMessage(bits.join(' — '));
+    await runLibraryOp(async()=>{
+      const store=assetStoreRef.current;
+      const live=customAssetsRef.current;
+      const taken=new Set(live.map(a=>a.name));
+      const toAdd:CustomAsset[]=[];
+      for(const raw of pending){
+        const name=uniquifyAssetName([...taken],raw.name);
+        taken.add(name);
+        toAdd.push({...raw,name});
+      }
+      const persisted:CustomAsset[]=[];
+      const budget=checkLibraryBudgets(live,toAdd);
+      if(!budget.ok){
+        failed.push('Upload failed: '+budget.reason);
+      }else if(store){
+        for(const a of toAdd){
+          try{await store.put(a);persisted.push(a);}
+          catch(err){failed.push(a.name+': could not save ('+describeStoreError(err)+')');}
+        }
+      }else{
+        // No store this session (IndexedDB unavailable): the upload
+        // is session-only. The hub warning says so; nothing is
+        // written to localStorage.
+        persisted.push(...toAdd);
+      }
+      if(persisted.length>0)setLibrary([...customAssetsRef.current,...persisted]);
+      const added=persisted.map(a=>a.name);
+      const bits:string[]=[];
+      if(added.length>0)bits.push('Imported '+added.map(n=>'\''+n+'\'').join(', ')+' — pick '+(added.length===1?'it':'one')+' in Custom, then tap the ground to place it');
+      if(failed.length>0)bits.push(failed.length+' failed: '+failed.slice(0,2).join('; ')+(failed.length>2?' (+'+(failed.length-2)+' more)':''));
+      if(skipped>0)bits.push(skipped+' skipped ('+skippedNote+')');
+      if(bits.length>0)setMessage(bits.join(' — '));
+    });
   };
-  const deleteCustomAsset=(asset:CustomAsset)=>{
+  const deleteCustomAsset=async(asset:CustomAsset)=>{
+    // Persist the deletion FIRST: if the store cannot delete, the
+    // asset stays in the library and the player is told why — the
+    // world is never changed for a deletion that did not stick.
+    const store=assetStoreRef.current;
+    if(store){
+      try{await store.remove(asset.id);}
+      catch(err){setMessage('Could not delete \''+asset.name+'\' — '+describeStoreError(err)+'. Your upload is still in the library.');return;}
+    }
     const world=stateRef.current.world;
     const removed=removeCustomAssetPlacements(world,asset.id);
     const n=removed.length;
-    setCustomAssets(prev=>prev.filter(a=>a.id!==asset.id));
+    setLibrary(customAssetsRef.current.filter(a=>a.id!==asset.id));
     if(customSelection===asset.id){setCustomSelection(null);buildRef.current={...buildRef.current,customAssetId:null};}
     if(n>0){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
     setMessage('Deleted upload \''+asset.name+'\''+(n>0?' (removed '+n+' placed cop'+(n===1?'y':'ies')+')':''));
@@ -3622,6 +3726,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getTemplates:()=>JSON.parse(JSON.stringify(templatesRef.current)),
       // BUILD 997 test hook (read-only): uploaded custom assets.
       getCustomAssets:()=>JSON.parse(JSON.stringify(customAssetsRef.current)),
+      // BUILD 1044 test hooks (read-only): the IndexedDB store state
+      // — whether the library finished loading, whether the store is
+      // usable this session, and any visible warning (probes only).
+      getAssetStoreStatus:()=>({loading:customAssetsLoadingRef.current,ready:assetStoreReadyRef.current,warning:customAssetsWarningRef.current}),
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
       // BUILD 1036 test hooks (probes only — no gameplay effect):
@@ -4185,13 +4293,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <button type="button" data-testid="import-hub-open" onClick={()=>setImportHubOpen(!importHubOpen)} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:importHubOpen?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>📦 Import Hub {importHubOpen?'▾':'▸'}</button>
       {importHubOpen&&<div data-testid="import-hub" style={{marginTop:10,padding:12,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
         <div style={{fontSize:13,fontWeight:700}}>Import Hub — bring in your own models</div>
-        <div style={{fontSize:12,marginTop:6,lineHeight:1.5}}>Imports <b>.glb</b>, <b>.gltf</b> (pick its <b>.bin</b> file at the same time if it has one), <b>.obj</b>, or a <b>.zip</b> holding any of those. Pick several files at once. Models render as plain coloured triangles — 1 unit = 1 tile, footprint max 8×8, max 1 MB per file.</div>
+        {customAssetsWarning&&<div data-testid="import-hub-warning" style={{fontSize:12,marginTop:8,lineHeight:1.5,padding:8,borderRadius:8,background:'#5c3a17',border:'1px solid #d9a833'}}>⚠️ {customAssetsWarning}</div>}
+        <div style={{fontSize:12,marginTop:6,lineHeight:1.5}}>Imports <b>.glb</b>, <b>.gltf</b> (pick its <b>.bin</b> file at the same time if it has one), <b>.obj</b>, or a <b>.zip</b> holding any of those. Pick several files at once. Models render as plain coloured triangles — 1 unit = 1 tile, footprint max 8×8, max 5 MB per file, library up to 50 MB / 100,000 triangles total. Your models are stored on this device (IndexedDB) and survive reloads here — they are not synced to other devices or to GitHub.</div>
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Choose model files (several at once)</label>
         <input type="file" multiple accept=".glb,.gltf,.obj,.zip,.bin" data-testid="import-hub-file-input" onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
         <input type="file" multiple data-testid="import-hub-folder-input" ref={(el)=>{if(el)el.setAttribute('webkitdirectory','');}} onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
-        <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Imported models ({customAssets.length})</div>
-        {customAssets.length===0
+        <div style={{fontSize:13,fontWeight:700,marginTop:12}}>Imported models ({customAssetsLoading?'…':customAssets.length})</div>
+        {customAssetsLoading
+          ? <div data-testid="import-hub-loading" style={{fontSize:12,opacity:.7,marginTop:6}}>Loading your models{(()=>{const m=readAssetManifest();return m&&m.assets.length>0?' ('+m.assets.length+' saved)':'';})()}…</div>
+          : customAssets.length===0
           ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>Nothing imported yet — pick a file above.</div>
           : <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:6}}>
               {customAssets.map(a=><div key={a.id} style={{display:'flex',alignItems:'center',gap:6}}>
@@ -4231,7 +4342,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             at once and is not undoable. */}
         {(catalogCategory==='all'||catalogCategory==='custom')&&<div>
           <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>Custom</div>
-          {customAssets.length===0
+          {customAssetsLoading
+            ? <div data-testid="build-custom-loading" style={{fontSize:12,opacity:.7,marginTop:6}}>Loading your models…</div>
+            : customAssets.length===0
             ? <div style={{fontSize:12,opacity:.7,marginTop:6}}>No custom uploads yet — open the Import Hub above to bring in a model.</div>
             : <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
                 {customAssets.map(a=><div key={a.id} style={{display:'flex',flexDirection:'column',gap:6}}>
