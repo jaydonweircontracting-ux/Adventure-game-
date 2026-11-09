@@ -49,6 +49,11 @@ import { createAssetStore, createIndexedDbAssetBackend, writeAssetManifest, read
 import { parseZipUpload, writeZipArchive } from './zipImport';
 import { buildAssetPack } from './assetPack';
 import {
+  buildHandoffPack, buildHandoffSummary, selectHandoffAssets, decideSharePath, decideCopyPath,
+  HANDOFF_ZIP_NAME, HANDOFF_HOWTO, HANDOFF_LIMIT,
+  type HandoffScope,
+} from './assetHandoff';
+import {
   ASSET_CATEGORIES, parseTags, assetRow,
   renameAsset, setAssetCategory, setAssetTags, filterAssets, sortAssets,
   importProgressPercent, importProgressLabel, planLibraryCommit, discardPending,
@@ -1792,6 +1797,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // Rename-in-progress: which library row is being renamed + the draft.
   const [renamingId,setRenamingId]=useState<string|null>(null);
   const [renameDraft,setRenameDraft]=useState('');
+  // BUILD 1047: AI / development handoff — which library rows are
+  // ticked for the handoff (individual checkboxes; the whole
+  // category / whole library are scopes, not stored state), and what
+  // the last handoff copy / share / export did (probes only — the
+  // player sees the same facts in the message line).
+  const [handoffChecked,setHandoffChecked]=useState<string[]>([]);
+  const handoffCheckedRef=useRef<string[]>([]);
+  const setHandoffCheckedBoth=(ids:string[])=>{handoffCheckedRef.current=ids;setHandoffChecked(ids);};
+  const handoffCopyRef=useRef<'clipboard'|'select-text'|null>(null);
+  const handoffShareRef=useRef<'share'|'download'|'cancelled'|null>(null);
+  const handoffExportRef=useRef(0);
+  const handoffSummaryRef=useRef<HTMLTextAreaElement|null>(null);
   // BUILD 989: Walk suspension. Suspension is a separate flag from the
   // tool itself: Walk pauses taps (they walk) while the preserved
   // selection stays stored in buildRef; tapping Walk again resumes it.
@@ -2155,6 +2172,82 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     }catch(err){
       setMessage('Could not export the pack ('+(err instanceof Error?err.message:'unknown error')+')');
     }
+  };
+  // BUILD 1047: the build number stamped on a handoff (manifest +
+  // summary). It must match BUILD_NUMBER in App.tsx and __AG_BUILD
+  // in scripts/prepare-build-entry.cjs — the asserts check all three
+  // agree, so a handoff never claims the wrong build.
+  const HANDOFF_BUILD = '1047';
+  // BUILD 1047: AI / development handoff. The player picks WHICH
+  // assets to hand off — individual checkboxes, a whole category, or
+  // the whole library — and the export is a ZIP with exactly those
+  // models (original formats) + the manifest + handoff-summary.txt,
+  // downloaded to this device. There is no direct handoff: the game
+  // is a static page with no backend and no connected runtime, so
+  // the player uploads the ZIP in their ChatGPT or Muse chat — and
+  // the hub says so in plain words. Share… tries the device's file
+  // share sheet first (navigator.canShare with a real File) and
+  // falls back to the download when the device cannot share files,
+  // saying which path ran.
+  const downloadZipBytes=(bytes:Uint8Array,fileName:string)=>{
+    const blob=new Blob([bytes as BlobPart],{type:'application/zip'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  };
+  const handoffAssetsFor=(scope:HandoffScope)=>selectHandoffAssets(customAssetsRef.current,scope);
+  const handoffSummaryFor=(scope:HandoffScope)=>buildHandoffSummary(handoffAssetsFor(scope),HANDOFF_BUILD);
+  const exportHandoff=(scope:HandoffScope)=>{
+    const assets=handoffAssetsFor(scope);
+    if(assets.length===0){setMessage('Nothing to hand off — tick a model in the library first, or pick a category that has models.');return;}
+    try{
+      const pack=buildHandoffPack(assets,HANDOFF_BUILD);
+      downloadZipBytes(writeZipArchive(pack.entries),HANDOFF_ZIP_NAME);
+      handoffExportRef.current=assets.length;
+      handoffShareRef.current='download';
+      setMessage('Exported a handoff ZIP with '+assets.length+' model'+(assets.length===1?'':'s')+' — it downloads to this device (on iPhone, find it in Files). Upload the ZIP in your ChatGPT or Muse chat and paste the summary below; neither of them can see your browser files on their own.');
+    }catch(err){
+      setMessage('Could not export the handoff ('+(err instanceof Error?err.message:'unknown error')+')');
+    }
+  };
+  const shareHandoff=async()=>{
+    const assets=handoffAssetsFor({kind:'ids',ids:handoffCheckedRef.current});
+    if(assets.length===0){setMessage('Nothing checked — tick a model in the library first.');return;}
+    const pack=buildHandoffPack(assets,HANDOFF_BUILD);
+    const bytes=writeZipArchive(pack.entries);
+    const file=new File([bytes as BlobPart],HANDOFF_ZIP_NAME,{type:'application/zip'});
+    const canShareFiles=typeof navigator.canShare==='function'&&navigator.canShare({files:[file]});
+    if(decideSharePath(canShareFiles)==='share'){
+      try{
+        await navigator.share({files:[file],title:'Ashfall asset handoff',text:'Models exported from Ashfall — see handoff-summary.txt inside the ZIP.'});
+        handoffShareRef.current='share';handoffExportRef.current=assets.length;
+        setMessage('Shared the handoff ZIP ('+assets.length+' model'+(assets.length===1?'':'s')+') — pick ChatGPT, Muse, or Files in the share sheet, and paste the summary below so the AI knows what it is looking at.');
+        return;
+      }catch(err){
+        if((err as Error)?.name==='AbortError'){handoffShareRef.current='cancelled';setMessage('Share cancelled — nothing was sent.');return;}
+        // Any other share failure falls through to the download below.
+      }
+    }
+    handoffShareRef.current='download';handoffExportRef.current=assets.length;
+    downloadZipBytes(bytes,HANDOFF_ZIP_NAME);
+    setMessage('This device cannot share files from the browser, so the handoff ZIP ('+assets.length+' model'+(assets.length===1?'':'s')+') downloaded instead — find it in Files, then upload it in your ChatGPT or Muse chat.');
+  };
+  const copyHandoffSummary=async()=>{
+    if(handoffCheckedRef.current.length===0){setMessage('Nothing checked — tick a model in the library first, then copy its summary.');return;}
+    const text=handoffSummaryFor({kind:'ids',ids:handoffCheckedRef.current});
+    const hasClipboard=!!(navigator.clipboard&&navigator.clipboard.writeText);
+    if(decideCopyPath(hasClipboard)==='clipboard'){
+      try{await navigator.clipboard.writeText(text);handoffCopyRef.current='clipboard';setMessage('Copied the handoff summary — paste it into your ChatGPT or Muse chat, along with the ZIP.');return;}catch{/* fall through to select-the-text */}
+    }
+    const el=handoffSummaryRef.current;
+    if(el){el.focus();el.select();}
+    handoffCopyRef.current='select-text';
+    setMessage('The summary text is selected — copy it (long-press → Copy, or Ctrl+C) and paste it into your ChatGPT or Muse chat.');
   };
   // BUILD 1045: Cancel a pending import. Nothing was ever written
   // for it, so dropping it leaves the library exactly as it was.
@@ -4028,6 +4121,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // parsers reported for pending imports (probes only).
       getImportReport:()=>importReportRef.current?JSON.parse(JSON.stringify(importReportRef.current)):null,
       getOverwritePrompt:()=>overwritePromptRef.current?JSON.parse(JSON.stringify(overwritePromptRef.current)):null,
+      // BUILD 1047 test hooks (read-only): the handoff selection, the
+      // live summary for it, and what the last handoff copy / share /
+      // export did (probes only — the player sees the same facts in
+      // the message line).
+      getHandoffStatus:()=>({checked:[...handoffCheckedRef.current],lastCopyPath:handoffCopyRef.current,lastSharePath:handoffShareRef.current,lastExportCount:handoffExportRef.current}),
+      getHandoffSummary:()=>handoffSummaryFor({kind:'ids',ids:handoffCheckedRef.current}),
       getPendingDependencies:()=>{const o:Record<string,GltfDependency[]>={};pendingDepsRef.current.forEach((v,k)=>{o[k]=JSON.parse(JSON.stringify(v));});return o;},
       getSaveSelection:()=>saveSelectionRef.current?{...saveSelectionRef.current}:null,
       getPasteName:()=>buildRef.current.pasteName,
@@ -4729,6 +4828,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             if(visible.length===0)return <div data-testid="import-library-empty" style={{fontSize:12,opacity:.7,marginTop:6}}>No models match that search — clear the search or filters to see the whole library.</div>;
             return <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:6}}>
               {visible.map(a=>{const row=assetRow(a);return <div key={a.id} data-testid="import-library-row" style={{display:'flex',gap:8,alignItems:'flex-start',padding:8,borderRadius:9,background:'#172c23',border:'1px solid rgba(255,255,255,.12)'}}>
+                {/* BUILD 1047: tick a row to include it in the AI
+                    handoff (export / share / copy summary below). */}
+                <input type="checkbox" data-testid="import-library-handoff-check" checked={handoffChecked.includes(a.id)} onChange={()=>{const ids=handoffCheckedRef.current.includes(a.id)?handoffCheckedRef.current.filter(id=>id!==a.id):[...handoffCheckedRef.current,a.id];setHandoffCheckedBoth(ids);}} aria-label={'Include '+a.name+' in the handoff'} style={{marginTop:14,flex:'0 0 auto',width:18,height:18,accentColor:'#7fb069'}} />
                 <AssetPreviewCanvas asset={a} size={44} testid="import-library-preview" />
                 <div style={{flex:1,minWidth:0}}>
                   {renamingId===a.id
@@ -4763,6 +4865,31 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           <div style={{fontSize:12,marginTop:4,lineHeight:1.5}}>Export downloads one ZIP with every model in the library (in its original format) plus a manifest listing names, formats, categories, tags, and sizes. Re-import that ZIP to restore them.</div>
           <button type="button" data-testid="import-hub-export" onClick={exportAssetPack} style={{display:'block',width:'100%',marginTop:8,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export library as a ZIP ({customAssetsLoading?'…':customAssets.length} model{customAssets.length===1?'':'s'})</button>
         </div>
+        {/* BUILD 1047: hand off models to ChatGPT or Muse — pick which
+            models (checkboxes on the rows above, a whole category, or
+            the whole library), export a ZIP with the models + the
+            manifest + a copyable summary, or share it when the device
+            supports sharing files from the browser. The game uploads
+            nothing anywhere; the AI cannot see browser files until
+            the player uploads the ZIP in their chat. */}
+        <div data-testid="import-handoff" style={{marginTop:12,padding:10,borderRadius:9,background:'#172c23',border:'1px solid #c4d1bd'}}>
+          <div style={{fontSize:13,fontWeight:700}}>Hand off models to ChatGPT or Muse</div>
+          <div style={{fontSize:12,marginTop:4,lineHeight:1.5}}>{HANDOFF_HOWTO}</div>
+          <div style={{fontSize:12,marginTop:4,lineHeight:1.5}}>{HANDOFF_LIMIT}</div>
+          <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+            <button type="button" data-testid="import-handoff-export-checked" onClick={()=>exportHandoff({kind:'ids',ids:handoffCheckedRef.current})} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export checked ({handoffChecked.length})</button>
+            {libraryCategoryFilter!=='all'&&<button type="button" data-testid="import-handoff-export-category" onClick={()=>exportHandoff({kind:'category',category:libraryCategoryFilter})} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export {libraryCategoryFilter} ({customAssets.filter(a=>(a.category??'Unsorted')===libraryCategoryFilter).length})</button>}
+            <button type="button" data-testid="import-handoff-export-all" onClick={()=>exportHandoff({kind:'all'})} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export whole library ({customAssetsLoading?'…':customAssets.length})</button>
+            <button type="button" data-testid="import-handoff-share" onClick={()=>void shareHandoff()} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>📤 Share checked…</button>
+          </div>
+          <div style={{display:'flex',gap:6,marginTop:6}}>
+            <button type="button" data-testid="import-handoff-check-all" onClick={()=>setHandoffCheckedBoth(customAssetsRef.current.map(a=>a.id))} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Check all</button>
+            <button type="button" data-testid="import-handoff-clear" onClick={()=>setHandoffCheckedBoth([])} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Clear</button>
+          </div>
+          <label style={{display:'block',fontSize:12,opacity:.85,marginTop:8}}>Handoff summary — what is in the checked models (copy it into your chat)</label>
+          <textarea ref={handoffSummaryRef} data-testid="import-handoff-summary" readOnly value={handoffChecked.length===0?'Tick a model in the library to see its handoff summary here.':handoffSummaryFor({kind:'ids',ids:handoffChecked})} rows={8} style={{display:'block',width:'100%',marginTop:4,padding:8,borderRadius:8,border:'1px solid #c4d1bd',background:'#0f1f18',color:'#fff',fontSize:11,lineHeight:1.5,boxSizing:'border-box',resize:'vertical'}} />
+          <button type="button" data-testid="import-handoff-copy" onClick={()=>void copyHandoffSummary()} style={{display:'block',width:'100%',marginTop:6,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>📋 Copy summary</button>
+        </div>
         <div data-testid="import-hub-limits" style={{fontSize:12,marginTop:12,lineHeight:1.5,borderTop:'1px solid #c4d1bd',paddingTop:10}}>
           <div style={{fontWeight:700}}>What the hub cannot do (honest limits)</div>
           <div style={{marginTop:4}}>• <b>Folders:</b> on iPhone Safari a folder cannot be opened directly — pick files above instead (several at once). The folder button works on a desktop browser where the browser supports it.</div>
@@ -4770,9 +4897,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           <div style={{marginTop:4}}>• <b>Textures:</b> not rendered as textures — this renderer draws plain coloured triangles only, so a texture on a model is ignored and the model shows its colours flat.</div>
           <div style={{marginTop:4}}>• <b>Packs:</b> an export backs up your models, not where you placed them — placements live in the world save, and re-importing a pack creates new copies of the models (a name that already exists will ask first).</div>
           <div style={{marginTop:4}}>• <b>AI access:</b> ChatGPT cannot reach files on your phone or computer — uploading here through the file picker is how a model gets into the game.</div>
+          <div style={{marginTop:4}}>• <b>AI handoff:</b> ChatGPT and Muse cannot see the files in your browser on their own — download the handoff ZIP and upload it in your chat with them, and paste the summary. The game itself does not run an AI.</div>
         </div>
       </div>}
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable. New in this build: ZIP imports are checked for unsafe paths and ZIP-bomb expansion, a bad entry is skipped with a reason instead of stopping the whole import, and the hub reports exactly which models landed, which were skipped and why; a .gltf finds its .bin in a subfolder and a missing texture is reported, never claimed as applied; the whole library can be exported as a ZIP backup with a manifest; and a name that already exists asks first (Keep both / Replace / Skip) instead of overwriting silently.</div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog — it stays selected and follows your cursor as a green (valid) or red (invalid) preview until you place it, and stays selected after placing so you can place another copy right away; ESC or right-click cancels. Tap Move first and the asset still attaches to your cursor; after cancelling you are back to dragging items. Houses, stalls, the windmill, and the mine rotate: R = 90° clockwise, Shift+R = 90° counter-clockwise, or the rotation buttons — rotate a house so its door faces the road or path. New in this build: Farm Land (Nature) is tilled soil you place tile by tile — it grows green shoots after an in-game hour and golden wheat after three in-game hours, and regrows on its own after harvest; stand next to ready wheat and press E to harvest 2 wheat (the Wheat counter is next to Wood, Stone, and Gold), and farmer villagers walk to ready wheat and harvest it too. Lanterns (Decorations) glow at night like the house lights; Bushes (Nature) are walk-through decor, like grass; the Mine (Buildings) is a stone structure you can enter, like a house; Ore Deposits (Infrastructure) are placeable rock nodes — there is no mining system yet, so they are decoration for now; the Wooden Bridge (Roads) goes over the ocean or the pond and you can walk across it. Tap Remove, then an item, path, house, tree, rock, water, lantern, bush, ore deposit, bridge, or farm land to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo. Undo (CTRL+Z) and Redo (CTRL+Y, or CTRL+Shift+Z) work from the keyboard too, for every change — placement, deletion, movement, rotation, and area actions — with no limit on how far back you can go; deleting an upload is undoable as well (one Undo brings its placed copies back). Save area lets you drag a rectangle, name it, and keep it as a chunk; tap a saved chunk, then tap the ground to stamp it elsewhere, and one Undo removes the whole paste. The Import Hub (button at the top of this panel) is where you bring in your own models — .glb, .gltf (with its .bin file if it has one), .obj, or a ZIP of models. They render as plain coloured triangles (textures and animation are ignored), you pick one in the Custom category to place it like any other item, and one Undo removes it. Audio is not imported yet — there is no audio playback in the game — and on iPhone Safari folders cannot be opened directly, so pick files (several at once) instead. AREA SELECT has Layout helpers now (in the yellow area menu): Doors face paths turns each selected house so its door faces the nearest road or path, Trees off paths moves trees standing on a path to the nearest clear tile beside it, Lanterns along roads puts lanterns on the road's edge every few tiles, Fence property puts a low wooden fence around each selected house with a gap at the door, Align row / Align column line the selected items up, ENHANCE fills empty ground with grass, bushes, and the odd tree without moving or removing anything, and Spread out / Pack together move the selected items one tile apart or together — each helper is optional (nothing happens until you tap it) and one Undo undoes the whole thing. Fence is also in the Build menu under Decorations, like the wall. Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature — so those are not in the helpers. New in this build: the Import Hub shows a real preview of each model before it joins the library, with its size, height, source file, and format — tap Add to Asset Library to keep it or Cancel to discard it — and the library can be searched by name, tag, or file, and sorted by name, format, category, or size, with each asset's name, category, and tags editable. New in this build: ZIP imports are checked for unsafe paths and ZIP-bomb expansion, a bad entry is skipped with a reason instead of stopping the whole import, and the hub reports exactly which models landed, which were skipped and why; a .gltf finds its .bin in a subfolder and a missing texture is reported, never claimed as applied; the whole library can be exported as a ZIP backup with a manifest; and a name that already exists asks first (Keep both / Replace / Skip) instead of overwriting silently. New in this build: the Import Hub can hand models to ChatGPT or Muse — tick models in the library (or a whole category, or the whole library), export a ZIP with the models, the manifest, and a copyable summary, or share it when the device supports sharing files from the browser. ChatGPT and Muse cannot see your browser's files on their own — you upload the ZIP in your chat — and the game itself does not run an AI.</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
         {(['all','buildings','houses','shops','decorations','roads','nature','infrastructure','custom'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',buildings:'Buildings',houses:'Houses',shops:'Shops',decorations:'Decorations',roads:'Roads',nature:'Nature',infrastructure:'Infrastructure',custom:'Custom'}[cat]}</button>)}
       </div>

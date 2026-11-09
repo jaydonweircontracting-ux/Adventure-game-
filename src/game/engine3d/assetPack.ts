@@ -20,6 +20,12 @@
 //
 // What is NOT here: the download itself (view), the ZIP bytes
 // (zipImport.ts), textures (never held), placements.
+//
+// BUILD 1047: the handoff (assetHandoff.ts) builds on this —
+// planPackFiles is shared so the handoff summary names exactly the
+// files this pack writes, and buildAssetPack takes an optional build
+// number the handoff stamps on the manifest. The plain backup path
+// passes no build and its output is unchanged.
 
 import { encodeGlbAsset, encodeGltfAsset, encodeObjAsset, type CustomAsset } from './customAssets';
 import { PACK_MANIFEST_NAME, type ZipArchiveEntry } from './zipImport';
@@ -45,8 +51,36 @@ export interface AssetPackEntry {
 
 export interface AssetPackManifest {
   version: 1;
+  /** The game build that exported the pack (e.g. '1047'), when the
+   *  exporter stamped one — BUILD 1047's handoff does. Older packs
+   *  have no build field. */
+  build?: string;
   exportedAt: string;
   assets: AssetPackEntry[];
+}
+
+/** The manifest version, as a runtime constant for the handoff
+ *  summary (which names it) — it must stay in step with the
+ *  `version: 1` type above. */
+export const ASSET_PACK_MANIFEST_VERSION = 1;
+
+/** One model file inside a pack: the asset, its sanitized stem,
+ *  and the file name it takes in the ZIP. Shared by buildAssetPack
+ *  and the handoff summary (assetHandoff.ts), so the summary can
+ *  never name a different file than the ZIP actually holds. */
+export interface PlannedPackFile {
+  asset: CustomAsset;
+  stem: string;
+  file: string;
+}
+
+export function planPackFiles(assets: CustomAsset[]): PlannedPackFile[] {
+  const taken = new Set<string>();
+  return assets.map((a) => {
+    const format = a.format ?? 'glb';
+    const stem = packFileStem(a, taken);
+    return { asset: a, stem, file: format === 'gltf' ? stem + '.gltf' : format === 'obj' ? stem + '.obj' : stem + '.glb' };
+  });
 }
 
 /** The file name an asset takes inside a pack. Sanitized to
@@ -72,13 +106,11 @@ export function packFileStem(asset: CustomAsset, taken: Set<string>): string {
  *  itself. Empty library → an empty model list and a manifest
  *  that says so; the view refuses to export that (nothing to
  *  back up). */
-export function buildAssetPack(assets: CustomAsset[]): { entries: ZipArchiveEntry[]; manifest: AssetPackManifest } {
-  const taken = new Set<string>();
+export function buildAssetPack(assets: CustomAsset[], build?: string): { entries: ZipArchiveEntry[]; manifest: AssetPackManifest } {
   const entries: ZipArchiveEntry[] = [];
   const manifestAssets: AssetPackEntry[] = [];
-  for (const a of assets) {
+  for (const { asset: a, stem, file } of planPackFiles(assets)) {
     const format = a.format ?? 'glb';
-    const stem = packFileStem(a, taken);
     const triangles = Math.floor(a.indices.length / 3);
     if (format === 'gltf') {
       const binName = stem + '.bin';
@@ -87,23 +119,23 @@ export function buildAssetPack(assets: CustomAsset[]): { entries: ZipArchiveEntr
       entries.push({ name: binName, data: encoded.bin });
       manifestAssets.push({
         id: a.id, name: a.name, format, category: a.category ?? 'Unsorted', tags: [...(a.tags ?? [])],
-        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file: stem + '.gltf',
+        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file,
       });
     } else if (format === 'obj') {
       entries.push({ name: stem + '.obj', data: new TextEncoder().encode(encodeObjAsset(a)) });
       manifestAssets.push({
         id: a.id, name: a.name, format, category: a.category ?? 'Unsorted', tags: [...(a.tags ?? [])],
-        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file: stem + '.obj',
+        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file,
       });
     } else {
       entries.push({ name: stem + '.glb', data: encodeGlbAsset(a) });
       manifestAssets.push({
         id: a.id, name: a.name, format, category: a.category ?? 'Unsorted', tags: [...(a.tags ?? [])],
-        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file: stem + '.glb',
+        width: a.width, height: a.height, triangles, sourceFile: a.sourceFile ?? '', file,
       });
     }
   }
-  const manifest: AssetPackManifest = { version: 1, exportedAt: new Date().toISOString(), assets: manifestAssets };
+  const manifest: AssetPackManifest = { version: ASSET_PACK_MANIFEST_VERSION, ...(build ? { build } : {}), exportedAt: new Date().toISOString(), assets: manifestAssets };
   entries.push({ name: PACK_MANIFEST_NAME, data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
   return { entries, manifest };
 }
@@ -135,7 +167,8 @@ export function parsePackManifest(raw: unknown): AssetPackManifest | null {
     });
   }
   return {
-    version: 1,
+    version: ASSET_PACK_MANIFEST_VERSION,
+    ...(typeof m.build === 'string' ? { build: m.build } : {}),
     exportedAt: typeof m.exportedAt === 'string' ? m.exportedAt : '',
     assets,
   };
