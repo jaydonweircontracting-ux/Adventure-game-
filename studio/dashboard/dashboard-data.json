@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Ashfall Stage 4",
+    "build": "Ashfall Stage 5",
     "commit": null,
-    "description": "Architecture: roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells). NEXT per the queue.",
+    "description": "Settlements: market stalls at the plaza, readable districts, 2-3 fixed wild landmarks; second settlement explicitly out of scope. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -311,20 +311,23 @@
       "runId": null,
       "status": "verified",
       "verifiedAt": "2026-11-09T15:03:43.022Z"
+    },
+    {
+      "build": 1050,
+      "commit": "9edb9212",
+      "description": "Ashfall Stage 4 — architecture: roof variety (axis/pitch/parapet, assigned deterministically per house by seed hash — same house always has the same roof and a reload shows the same town; 29 town huts are axisX 19 / axisZ 10, pitches 0.25 shallow 9 / 0.45 standard 13 / 0.6 steep 7, pitched 23 / parapet 6; a placed house keeps the roof it was built with across save/reload, Move, rotate, AREA SELECT, and undo/redo — seed origin stamped at placement and carried by moves; no footprint, door face, or collision changed). 11 generated fenced gardens beside town houses (98 fence tiles, 31 plants), deterministic per house, with the gate gap on the door face — the player walks in through the gate and never steps on a fence tile; walkability diff vs pre-1050 is exactly the 98 fence tiles; all doors/exits reachable from the plaza; the 1042 Fence property helper is untouched and still works. Interior ceilings + hearth glow: every interior has a timber ceiling (floor+2.1, above the 1.33 eye) and a plaster wall band with a doorway gap — rendered in first-person inside only (orbit keeps its cutaway so the room stays visible from above); every interior has a hearth whose warm orange glow burns at night on the house-light schedule (on 17:30-19:30, off by day). Inn/store/smith stay shells — no mechanics. Landed: commit 9edb9212, deploy run 42659047927 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42659047927",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T16:53:41.024Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Ashfall Stage 4",
-      "commit": null,
-      "description": "Architecture: roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells).",
-      "status": "in_progress"
-    },
-    {
       "build": "Ashfall Stage 5",
       "commit": null,
       "description": "Settlements: market stalls at the plaza, readable districts, 2-3 fixed wild landmarks; second settlement explicitly out of scope.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Ashfall Stage 6",
@@ -467,13 +470,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T08:37:36-07:00",
+  "lastUpdateTimestamp": "2026-11-09T10:04:28-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1049,
-    "commit": "0e3d7c0b",
-    "description": "Ashfall Stage 3 — vegetation: three tree shapes — tall pine (the old shape), broad leafy oak (3.6 high, widest 2.7), slim birch (4.7 high, pale trunk) — assigned deterministically by a hash of the tile (pine 45% / oak 33% / birch 22% over 200x200); the same tile always grows the same tree and reloads are identical. Generated wild + town trees both get the variety; the Build-menu tree places the deterministic shape for its tile (no shape picker yet). Generated bushes — density 0.015, town +-64 = 256, wild +-64 = 238 — non-blocking, walk-through, low green shrubs, clearly not small trees. All 118 town props now render as themselves instead of a pine tree: lamp 75, hedge 28, barrel 6, cart 2, well/windmill/gatehouse 1 each (4 kindless authored crates render as plain boxes). New stallAt (counter + 2 posts + canvas awning, 1.92 high) and crateAt (lamp 1.78, barrel 0.72, hedge 0.75, fountain 1.0, well 1.58, statue 1.75, gatehouse 2.68, cart 0.9, windmill 3.15, crate 0.68). The statue (102,102) and fountain (115,79) render as decor — they used to render as nothing, since the layout marks them non-solid. Verified cause of the 0-generated-stall drop: the blueprint's single stall prop has solid=false, so the adapter's !prop.solid guard skips it before the stall branch — not fixed here (it would change collision); that is Stage 5's market work. Grass density unchanged at 0.08, nothing cut. Verts: town 241,914->252,300 (+4.3%), wild 271,632->280,674 (+3.3%), all centres under the 300k budget.",
-    "runId": null,
-    "verifiedAt": "2026-11-09T15:03:43.022Z"
+    "build": 1050,
+    "commit": "9edb9212",
+    "description": "Ashfall Stage 4 — architecture: roof variety (axis/pitch/parapet, assigned deterministically per house by seed hash — same house always has the same roof and a reload shows the same town; 29 town huts are axisX 19 / axisZ 10, pitches 0.25 shallow 9 / 0.45 standard 13 / 0.6 steep 7, pitched 23 / parapet 6; a placed house keeps the roof it was built with across save/reload, Move, rotate, AREA SELECT, and undo/redo — seed origin stamped at placement and carried by moves; no footprint, door face, or collision changed). 11 generated fenced gardens beside town houses (98 fence tiles, 31 plants), deterministic per house, with the gate gap on the door face — the player walks in through the gate and never steps on a fence tile; walkability diff vs pre-1050 is exactly the 98 fence tiles; all doors/exits reachable from the plaza; the 1042 Fence property helper is untouched and still works. Interior ceilings + hearth glow: every interior has a timber ceiling (floor+2.1, above the 1.33 eye) and a plaster wall band with a doorway gap — rendered in first-person inside only (orbit keeps its cutaway so the room stays visible from above); every interior has a hearth whose warm orange glow burns at night on the house-light schedule (on 17:30-19:30, off by day). Inn/store/smith stay shells — no mechanics.",
+    "runId": "42659047927",
+    "verifiedAt": "2026-11-09T16:53:41.024Z"
   },
   "measuredBaselines": [
     {
@@ -697,6 +700,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1050,
+      "commit": "9edb9212",
+      "result": "Verified live: served version.json build 1050 @ 2026-11-09T16:53:41.024Z, served index __AG_BUILD='1050', deploy run 42659047927 completed success (head_sha 9edb9212, parent confirmed via the Actions API). Asserts 2453 checks pass (parent re-ran directly — ASSERTS-1050 ALL PASS (2453 checks); parent re-run cost lines: town verts 262,524 p50 222.1ms vs 1049 p50 227.7ms, wild 282,012, shore 239,616, farWild 279,894 — all under the 300k budget). Sim vs pristine1049: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the only diff is the stack-trace line number in the crash (bundle.mjs:100223:17 vs :17), the same 1-line bundle-offset artifact as 1045/1046/1047 when code is added. Phone probe 0 page errors (live roof distribution matches the asserts; parapet/steep/shallow roof shots; garden walk-in closest approach 0.13 tiles with no fence tile stepped on; interior day ceilingVerts 6 / wallVerts 36 / hearthGlow 0, night hearthGlow 1 / hearthVerts 36; Exit lands exactly on (79,89); placed Cottage at (145,116) roof x/0.45/pitched survives a real reload unchanged; town walk max 200ms p50 117ms, wild walk max 233ms p50 133ms). Frame-time regression found by the probe and FIXED in this build: the first full probe run showed town walk max frame 600-700ms (steady-state) vs pristine 1049's 200ms — live CDP profiling named worldGardenKey at 59.5% of all CPU (the garden memo's validation hash re-scanned the 1,328-key terrain record on every call, 135.9 us per memo-hit call); the final fix removes the terrain record from the key and hashes the removed-* change-log arrays instead (contract documented in gardens.ts, pinned by a new assert); memo-hit cost is now 8.8 us/call; a 3-run A/B against pristine 1049 showed frame times statistically indistinguishable afterwards.",
+      "runId": "42659047927",
+      "verifiedAt": "2026-11-09T16:53:41.024Z"
+    },
     {
       "build": 1049,
       "commit": "0e3d7c0b",
