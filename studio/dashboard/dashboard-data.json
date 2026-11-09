@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Import Hub Stage 4",
+    "build": "Import Hub Stage 5",
     "commit": null,
-    "description": "Packs/recovery: ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation. NEXT per the queue.",
+    "description": "AI/development handoff: an explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -275,20 +275,23 @@
       "runId": "42566273686",
       "status": "verified",
       "verifiedAt": "2026-11-09T05:37:23.783Z"
+    },
+    {
+      "build": 1046,
+      "commit": "5bea9115",
+      "description": "Import Hub Stage 4 — packs / recovery: ZIP import is checked before anything imports — traversal paths (../, absolute, drive-letter, .. mid-path, NUL byte), ZIP-bomb expansion (>100x compressed size, checked on declared central-directory sizes before inflating), >50 MB total uncompressed expansion, >50 entries, ZIP >5 MB, single entry >5 MB, duplicate entry names, and bad CRCs are rejected or skipped with a reason, and a bad entry never aborts the whole import. A .gltf resolves its .bin and named textures relative to its own directory inside the ZIP (subfolders, ../ that stays inside the container); a URI that escapes the container, an absolute path, or a URL is never followed — a missing .bin still fails naming the file, a missing texture is reported, never silently dropped, never claimed as applied (textures are still never rendered). After an import the hub reports exactly which models landed, which entries were skipped and why, and which failed. 'Export library as a ZIP' downloads ashfall-asset-pack.zip — every model in its original format plus ashfall-asset-pack.json (name, format, category, tags, dimensions, triangles, source file); re-importing a pack restores names, categories, and tags from the manifest. If an import would use a name that already exists, the hub asks first — Keep both (renames the newcomer), Replace (removes the old model and its placed copies with one undo stroke, then adds the new one under the same name), or Skip — instead of overwriting silently. Landed: commit 5bea9115, deploy run 42579328390 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42579328390",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T07:27:35.291Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Import Hub Stage 4 (packs/recovery)",
-      "commit": null,
-      "description": "ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation.",
-      "status": "in_progress"
-    },
-    {
       "build": "Import Hub Stage 5 (AI/development handoff)",
       "commit": null,
       "description": "An explicit export/share workflow for selected assets or packs, including a compact manifest and files the user can upload/share into ChatGPT or Muse. If a connected runtime genuinely supports direct file handoff, use it; otherwise be honest and provide the upload/export route. Never claim ChatGPT or Muse can see browser-local files automatically.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Import Hub Stage 6 (integration)",
@@ -455,13 +458,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T00:01:52-07:00",
+  "lastUpdateTimestamp": "2026-11-09T02:01:58-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1045,
-    "commit": "81d17b79",
-    "description": "Import Hub Stage 3 — preview + library: the hub now shows each model before it joins the library — a real preview drawn from the model's own geometry (software rasterizer, isometric, painter's depth sort, flat mean-vertex-colour fill), with footprint, height, triangles, source file, and format, plus editable name/category/tags. Nothing joins the library until the player taps Add to Asset Library; Cancel drops it (nothing was ever written). Library rows show a 44px preview + name/category/tags/dimensions/source/format, with Rename, per-row category select and tags input, Place, Delete. Search matches name/tag/source filename; filter by category/format; sort by name/format/category/triangles. Import progress is real files/bytes read (staged import, yields to the event loop between files). A model with no triangles says 'cannot preview' instead of showing a fake picture.",
-    "runId": "42566273686",
-    "verifiedAt": "2026-11-09T05:37:23.783Z"
+    "build": 1046,
+    "commit": "5bea9115",
+    "description": "Import Hub Stage 4 — packs / recovery: ZIP import is checked before anything imports — traversal paths (../, absolute, drive-letter, .. mid-path, NUL byte), ZIP-bomb expansion (>100x compressed size, checked on declared central-directory sizes before inflating), >50 MB total uncompressed expansion, >50 entries, ZIP >5 MB, single entry >5 MB, duplicate entry names, and bad CRCs are rejected or skipped with a reason, and a bad entry never aborts the whole import. A .gltf resolves its .bin and named textures relative to its own directory inside the ZIP (subfolders, ../ that stays inside the container); a URI that escapes the container, an absolute path, or a URL is never followed — a missing .bin still fails naming the file, a missing texture is reported, never silently dropped, never claimed as applied (textures are still never rendered). After an import the hub reports exactly which models landed, which entries were skipped and why, and which failed. 'Export library as a ZIP' downloads ashfall-asset-pack.zip — every model in its original format plus ashfall-asset-pack.json (name, format, category, tags, dimensions, triangles, source file); re-importing a pack restores names, categories, and tags from the manifest. If an import would use a name that already exists, the hub asks first — Keep both (renames the newcomer), Replace (removes the old model and its placed copies with one undo stroke, then adds the new one under the same name), or Skip — instead of overwriting silently.",
+    "runId": "42579328390",
+    "verifiedAt": "2026-11-09T07:27:35.291Z"
   },
   "measuredBaselines": [
     {
@@ -685,6 +688,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1046,
+      "commit": "5bea9115",
+      "result": "Verified live: served version.json build 1046 @ 2026-11-09T07:27:35.291Z, run 42579328390 completed success (parent confirmed via the Actions API). Asserts 191 checks pass (parent re-ran directly — ASSERT_DONE 191 checks passed). Sim vs pristine1045 identical except the known 1-line bundle offset at the pre-existing 684 rig crash (parent diffed sim1046.norm.log vs sim1045-pristine.norm.log — file:bundle.mjs:100219 vs file:bundle.mjs:100218, both crash identically at line 76). Phone probe 21 findings, 0 page errors (hostile ZIP report exact — landed [red-box], skipped ../evil.obj unsafe-path + notes.txt, failed broken.obj; Keep both -> original + red-box 2, placed copy untouched; Replace -> old model + placed copy gone, new green model under the same name, library still 3; Skip -> library unchanged; export download parsed back in Node — 3 models, manifest lists 3, names correct; reload -> 3 assets + placed pyramid survive).",
+      "runId": "42579328390",
+      "verifiedAt": "2026-11-09T07:27:35.291Z"
+    },
     {
       "build": 1045,
       "commit": "81d17b79",

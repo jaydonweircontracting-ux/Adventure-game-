@@ -645,6 +645,30 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1045 @ 2026-11-09T05:37:23.783Z (a later timestamp than the agent's 05:17:35.635Z read — a fresh deploy regenerated version.json with the same build 1045, same content, idempotent — like the 1036 wake-up case), run 42566273686 completed success (parent confirmed via the Actions API). Asserts 94 checks pass (parent re-ran directly — ASSERT_DONE 94 checks passed). Sim vs pristine1044 byte-identical (parent diffed sim1045.norm.log vs sim1044-pristine.norm.log — no diff output; 0 FAILs on both sides, both stop at the same known 684 rig crash). Phone probe 20 findings, 0 page errors (real red .obj uploaded -> waits in review (1 pending, 0 in library), preview canvas drew 5,852 pixels, all red; review card shows 2x1 tiles, 3 high, red-barn.obj, OBJ, 12 triangles; renamed/categorised/tagged in review, Add kept the edits (Red Barn, House, red/roof); search 'barn' and tag 'roof' narrow to 1 row, 'zzz' shows the empty message; second model added, sort by name orders blue-pyramid before Red Barn; library rename to Crimson Barn stuck; green triangle uploaded and Cancelled — library stayed at 2; Crimson Barn placed in the world (custom placement 123-124x134); reload -> 2 assets with edits intact, placed copy survives).",
       "verificationTimestamp": "2026-11-09T05:37:23.783Z"
+    },
+    {
+      "build": 1046,
+      "commit": "5bea9115",
+      "description": "Import Hub Stage 4 — packs / recovery: ZIP safety (traversal, ZIP-bomb expansion, counts/sizes), relative glTF dependency resolution, exact partial-import report, export/backup of the pack + manifest, overwrite confirmation (Keep both / Replace / Skip).",
+      "filesAffected": [
+        "src/game/engine3d/zipImport.ts",
+        "src/game/engine3d/customAssets.ts",
+        "src/game/engine3d/assetLibrary.ts",
+        "src/game/engine3d/assetPack.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Packs and recovery for the Import Hub — ZIP import with safe path handling (reject traversal paths, unexpected expansion, excessive file counts/sizes); resolve relative glTF texture dependencies; report partial imports clearly; allow export/backup of the user's imported asset pack and manifest. Do not overwrite existing assets without confirmation. Fourth stage of the Import Hub program.",
+      "previousCheckpoint": {
+        "build": 1045,
+        "commit": "81d17b79"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42579328390",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1046 @ 2026-11-09T07:27:35.291Z, run 42579328390 completed success (parent confirmed via the Actions API). Asserts 191 checks pass (parent re-ran directly — ASSERT_DONE 191 checks passed). Sim vs pristine1045 identical except the known 1-line bundle offset at the pre-existing 684 rig crash (parent diffed sim1046.norm.log vs sim1045-pristine.norm.log — file:bundle.mjs:100219 vs file:bundle.mjs:100218, both crash identically at line 76). Phone probe 21 findings, 0 page errors (hostile ZIP report exact — landed [red-box], skipped ../evil.obj unsafe-path + notes.txt, failed broken.obj; Keep both -> original + red-box 2, placed copy untouched; Replace -> old model + placed copy gone, new green model under the same name, library still 3; Skip -> library unchanged; export download parsed back in Node — 3 models, manifest lists 3, names correct; reload -> 3 assets + placed pyramid survive).",
+      "verificationTimestamp": "2026-11-09T07:27:35.291Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",
