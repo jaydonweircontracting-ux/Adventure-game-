@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Town Builder Stage 5",
+    "build": "Import Hub",
     "commit": null,
-    "description": "Layout helpers: doors facing pathways, trees off paths, lanterns along roads, fences around properties, alignment helpers. Optional tools, not automatic changes. ENHANCE and ADJUST from the AREA SELECT order also live here as follow-ups. NEXT per the queue.",
+    "description": "An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload. NEXT per the queue.",
     "status": "in_progress"
   },
   "buildHistory": [
@@ -239,20 +239,23 @@
       "runId": "42520672033",
       "status": "verified",
       "verifiedAt": "2026-11-08T20:34:11.972Z"
+    },
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "description": "Town Builder Stage 5 layout helpers: 9 optional tools in the AREA SELECT menu — Doors face paths, Trees off paths, Lanterns along roads, Fence property (new fence kind), Align row/column, ENHANCE, Spread out/Pack together. Nothing moves unless the player taps a tool; one Undo undoes the whole helper. Scale/elevation/tree rotation/vegetation size are not here — no per-item size feature exists yet, stated plainly. The Town Builder is now complete (Stages 1-5, builds 1036-1042). Landed: commit 8041e127, deploy run 42532242988 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42532242988",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T22:52:03.518Z"
     }
   ],
   "buildQueue": [
     {
-      "build": "Town Builder Stage 5 (layout helpers)",
-      "commit": null,
-      "description": "Doors facing pathways, trees off paths, lanterns along roads, fences around properties, alignment helpers. Optional tools, not automatic changes. ENHANCE and ADJUST from the AREA SELECT order also live here as follow-ups.",
-      "status": "in_progress"
-    },
-    {
       "build": "Import Hub",
       "commit": null,
       "description": "An Import Hub in the Build Menu for external 3D models/textures/asset packs/audio/ZIP/folders, a local file import pipeline, an AI asset-access layer. A separate staged program after the Town Builder. Honest limits: no direct local-folder access on iPhone Safari; ChatGPT cannot access local files without an upload.",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "build": "Ashfall Stage 3",
@@ -413,13 +416,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-08T15:19:45-07:00",
+  "lastUpdateTimestamp": "2026-11-08T17:30:16-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1041,
-    "commit": "58529b47",
-    "description": "Farm land for the windmill: placeable tilled soil (Nature) that grows green shoots after 1 in-game hour and tall golden wheat after 3 in-game hours; stand next to ready wheat and press E to harvest 2 wheat (Wheat counter next to Wood/Stone/Gold); farmer villagers walk to ready wheat and harvest it too; after harvest it regrows on its own, so you never re-plant.",
-    "runId": "42520672033",
-    "verifiedAt": "2026-11-08T20:34:11.972Z"
+    "build": 1042,
+    "commit": "8041e127",
+    "description": "Town Builder Stage 5 layout helpers: 9 optional tools in the AREA SELECT menu — Doors face paths, Trees off paths, Lanterns along roads, Fence property (new fence kind), Align row/column, ENHANCE, Spread out/Pack together. Nothing moves unless the player taps a tool; one Undo undoes the whole helper. Scale/elevation/tree rotation/vegetation size are not here — no per-item size feature exists yet, stated plainly. The Town Builder is now complete (Stages 1-5, builds 1036-1042).",
+    "runId": "42532242988",
+    "verifiedAt": "2026-11-08T22:52:03.518Z"
   },
   "measuredBaselines": [
     {
@@ -643,6 +646,13 @@
     }
   ],
   "verificationHistory": [
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "result": "Verified live: served version.json build 1042 @ 2026-11-08T22:52:03.518Z, run 42532242988 completed success (parent confirmed via the Actions API after the agent hit a transient rate limit). Asserts 142 checks pass (parent re-ran directly — ASSERT_DONE 142 checks passed). Sim vs pristine1041 IDENTICAL (parent diffed sim1042.norm.log vs sim1041-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 28 findings, 0 page errors (cottage placed, path column west, area-select, Doors face paths rotated it to rot 1 (door west); Lanterns along roads put 1 lantern on the road edge; Fence property laid 15 fence tiles with the gate gap open at the west door; Align row lined two lanterns up at y=138, Spread moved them apart (x [129,132]->[128,133]), Pack moved them back; ENHANCE added +32 grass/bush plants with nothing moved; one Undo removed them (22 placements), Redo brought them back (54)). Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature.",
+      "runId": "42532242988",
+      "verifiedAt": "2026-11-08T22:52:03.518Z"
+    },
     {
       "build": 1041,
       "commit": "58529b47",

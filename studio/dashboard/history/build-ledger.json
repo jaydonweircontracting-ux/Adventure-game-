@@ -553,6 +553,31 @@
       "status": "verified",
       "testResults": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
       "verificationTimestamp": "2026-11-08T20:34:11.972Z"
+    },
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "description": "Town Builder Stage 5 layout helpers: 9 optional tools (doors face paths, trees off paths, lanterns along roads, fence property, align row/column, ENHANCE, spread/pack); new fence kind; one Undo per helper. The Town Builder is now complete (Stages 1-5, builds 1036-1042).",
+      "filesAffected": [
+        "src/game/engine3d/layoutHelpers.ts",
+        "src/game/engine3d/Engine3DWorldView.tsx",
+        "src/game/iso/isoWorld.ts",
+        "src/game/engine3d/placements.ts",
+        "src/game/engine3d/templates.ts",
+        "src/game/engine3d/areaSelect.ts",
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "objective": "Layout Improvement Tools to help the player organize their town — doors facing pathways, trees off paths, lanterns along roads, fences around properties, align and organize selected assets — as OPTIONAL tools (not automatic changes), plus the ENHANCE and ADJUST follow-ups from the AREA SELECT order. User order 2026-11-07 ~17:41 PST (Town Builder prompt §6).",
+      "previousCheckpoint": {
+        "build": 1041,
+        "commit": "58529b47"
+      },
+      "qualityGateLevel": 3,
+      "runId": "42532242988",
+      "status": "verified",
+      "testResults": "Verified live: served version.json build 1042 @ 2026-11-08T22:52:03.518Z, run 42532242988 completed success (parent confirmed via the Actions API after the agent hit a transient rate limit). Asserts 142 checks pass (parent re-ran directly — ASSERT_DONE 142 checks passed). Sim vs pristine1041 IDENTICAL (parent diffed sim1042.norm.log vs sim1041-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 28 findings, 0 page errors (cottage placed, path column west, area-select, Doors face paths rotated it to rot 1 (door west); Lanterns along roads put 1 lantern on the road edge; Fence property laid 15 fence tiles with the gate gap open at the west door; Align row lined two lanterns up at y=138, Spread moved them apart (x [129,132]->[128,133]), Pack moved them back; ENHANCE added +32 grass/bush plants with nothing moved; one Undo removed them (22 placements), Redo brought them back (54)). Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature.",
+      "verificationTimestamp": "2026-11-08T22:52:03.518Z"
     }
   ],
   "ledgerNote": "Builds 944–1015 are recorded in the dated logs (~/memory/2026-10-21.md for 944–989, ~/memory/2026-11-01.md for 990–997, ~/memory/2026-11-02.md for 998–1006, ~/memory/2026-11-03.md for 1007–1009, ~/memory/2026-11-04.md for 1010, ~/memory/2026-11-05.md for 1011–1013, ~/memory/2026-11-06.md for 1014–1021) and will be backfilled into this ledger. Commit hashes above are verified against git log (read-only). Never fabricate a commit hash; null means no commit exists yet. CORRECTION 2026-11-07: qualityGateLevel downgraded from 4 to 3 for builds 1016-1029 (Level 4 POLISHED was not formally gated with per-build evidence; Level 3 VERIFIED is what the evidence supports). verificationTimestamp set to null for 1016-1025 (exact timestamps not recorded; only dates known).",

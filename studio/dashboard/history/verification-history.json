@@ -111,6 +111,13 @@
       "result": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
       "runId": "42520672033",
       "verifiedAt": "2026-11-08T20:34:11.972Z"
+    },
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "result": "Verified live: served version.json build 1042 @ 2026-11-08T22:52:03.518Z, run 42532242988 completed success (parent confirmed via the Actions API after the agent hit a transient rate limit). Asserts 142 checks pass (parent re-ran directly — ASSERT_DONE 142 checks passed). Sim vs pristine1041 IDENTICAL (parent diffed sim1042.norm.log vs sim1041-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 28 findings, 0 page errors (cottage placed, path column west, area-select, Doors face paths rotated it to rot 1 (door west); Lanterns along roads put 1 lantern on the road edge; Fence property laid 15 fence tiles with the gate gap open at the west door; Align row lined two lanterns up at y=138, Spread moved them apart (x [129,132]->[128,133]), Pack moved them back; ENHANCE added +32 grass/bush plants with nothing moved; one Undo removed them (22 placements), Redo brought them back (54)). Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature.",
+      "runId": "42532242988",
+      "verifiedAt": "2026-11-08T22:52:03.518Z"
     }
   ],
   "schemaVersion": "1.0"
