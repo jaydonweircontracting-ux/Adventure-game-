@@ -1,0 +1,891 @@
+{
+  "activeBuild": {
+    "build": "Dashboard repair (§54)",
+    "commit": null,
+    "description": "Stage B complete (2026-11-12): the dashboard artifact ('ashfall-development-dashboard', v2) fetches studio/dashboard/dashboard-data.json live from GitHub on every load and renders from it; if the fetch fails it falls back to an embedded snapshot labeled 'Cached snapshot' with its date. Verified by the builder's jsdom harness (~90 assertions per mode, live + fallback, all passed) and parent-confirmed (artifact v2 live; data URL HTTP 200, 70,872 bytes, lastVerified 1052/acc4810c). No next item is ordered — the queue is empty until the user orders the next work.",
+    "status": "verified"
+  },
+  "buildHistory": [
+    {
+      "build": 1016,
+      "commit": "3b349dd3",
+      "description": "Chickens wandering loosely around the town in the 3D world — peck, wander, scuttle aside; wild animals still keep out.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1017,
+      "commit": "fe3c5896",
+      "description": "Clean 3D play screen — banner and diagnostic/help words into Options, compact status strip, Hide UI toggle.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1018,
+      "commit": "2d66086c",
+      "description": "Sprint button hold + tap-to-toggle, robust multi-touch hold, no-op slide pin fix.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1019,
+      "commit": "b5af37ba",
+      "description": "Minecraft-style blocky characters — big square heads, goofy faces, hats on nearly everyone.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1020,
+      "commit": "181f7871",
+      "description": "Sprint shakiness fix — perpendicular wall-slide + exhaustion rearm gate.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1021,
+      "commit": "4fe8d127",
+      "description": "Tired-state shakiness fix — tap-to-move slide stall + press-while-tired rearm hole. (Re-trigger commit 00a3f115: deploy job failed, same content.)",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1022,
+      "commit": "11ac074e",
+      "description": "Path cobbles/slabs render whole-world — no more pop at the detail-window edge.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1023,
+      "commit": "83ffcb0f",
+      "description": "Zoom out twice as far in 3D mode — orbit max 32 to 64 (first-person pitch flip rode along in BUILD 1022's commit).",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1024,
+      "commit": "b40f7b1a",
+      "description": "Grass and little details render farther + infinite world past the old edge. (Re-trigger commit e49d3521: deploy job stuck, same content.)",
+      "qualityGateLevel": 3,
+      "runId": "42401117148",
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1025,
+      "commit": "88658d1e",
+      "description": "Rocks placeable + removable in Build mode.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": null
+    },
+    {
+      "build": 1026,
+      "commit": "5d002922",
+      "description": "Sprint actually works — wider tap window, persistent latch, Release! label, half the rebuild stutter.",
+      "qualityGateLevel": 3,
+      "runId": "42404496335",
+      "status": "verified",
+      "verifiedAt": "2026-11-07T19:06:53.952Z"
+    },
+    {
+      "build": 1027,
+      "commit": "16b7eb9e",
+      "description": "Water — a basic ocean west of town, placeable in Build mode.",
+      "qualityGateLevel": 3,
+      "runId": "42407766765",
+      "status": "verified",
+      "verifiedAt": "2026-11-07T19:47:03.434Z"
+    },
+    {
+      "build": 1028,
+      "commit": "7266e49a",
+      "description": "Walls removable + in the Build menu; Sprint is a small icon next to Gold.",
+      "qualityGateLevel": 3,
+      "runId": "42410771257",
+      "status": "verified",
+      "verifiedAt": "2026-11-07T20:23:52.159Z"
+    },
+    {
+      "build": 1029,
+      "commit": "14491c9f",
+      "description": "Saved chunks keep the inn, blacksmith, and general store.",
+      "qualityGateLevel": 3,
+      "runId": "42416626999",
+      "status": "verified",
+      "verifiedAt": "2026-11-07T21:37:14.339Z"
+    },
+    {
+      "build": 1030,
+      "commit": "9dc4cdf7",
+      "description": "Tap-to-walk pathfinding (player A* + NPC pathing fixes). Landed: commit 9dc4cdf7, deploy run 42428294182 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42428294182",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T00:08:20.684Z"
+    },
+    {
+      "build": 1031,
+      "commit": "336741da",
+      "description": "Distant wild lakes render as their real shape: far cells now scan the whole cell so a lake subdivides into its actual tiles instead of painting the whole cell blue; the lake stays put as the player walks. Landed: commit 336741da, deploy run 42431099076 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42431099076",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T00:45:25.538Z"
+    },
+    {
+      "build": 1032,
+      "commit": "7d1c8cf9",
+      "description": "House interiors keep you inside: the walls are solid now — you can only leave through the Exit button (or the E key), which puts you back on the doorstep, and you can walk straight back in again. Landed: commit 7d1c8cf9, deploy run 42432401556 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42432401556",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T01:02:39.379Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "description": "Red sports car: tap the Car button and it appears next to you, Enter Car (or E) to get in, drives at 10x walking speed, Exit Car (or E) to step out — the car stays parked. Session-only (not saved). Landed: commit 7a9671d4, deploy run 42434904636 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42434904636",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T01:36:34.895Z"
+    },
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "description": "Ashfall Stage 2 terrain: rolling hills (visual-only heightfield), stronger ground tint, shores (sand band + foam edge), stone revived on high ground. Heightfield SHIPPED (not the fallback). Walkability unchanged. Landed: commit 62354ebf, deploy run 42438231684 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42438231684",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T02:23:10.474Z"
+    },
+    {
+      "build": 1035,
+      "commit": "452da72b",
+      "description": "Car lag fix: the world rebuild is now time-sliced across frames while moving (10ms/frame) and ~50% cheaper, so driving is smooth with no stutter at chunk boundaries. The world renders exactly as before (identical vertex counts). Landed: commit 452da72b, deploy run 42441522022 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42441522022",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T03:10:52.717Z"
+    },
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "description": "Town Builder Stage 1: persistent cursor placement + rotation — pick an asset and it stays attached to the cursor with a green/red preview, stays selected after placing so another copy goes down immediately; R / Shift+R or the panel buttons rotate houses 90° so their doors face the path. Landed: commit 0b21aba4, deploy run 42446451401 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42446451401",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T04:34:26.069Z"
+    },
+    {
+      "build": 1037,
+      "commit": "67880190",
+      "description": "Town Builder Stage 2 AREA SELECT: drag a yellow rectangle to select a whole area (houses, trees, roads, rocks, walls, decorations, whole town sections); then Move/Rotate/Delete/Duplicate the group together, preserving spacing and rotations, each action one Undo step. Landed: commit 67880190, deploy run 42455687148 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42455687148",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T06:41:23.474Z"
+    },
+    {
+      "build": 1038,
+      "commit": "8963bc65",
+      "description": "Windmill (pulled forward from Town Builder Stage 4): a placeable windmill in the Build menu (Buildings) — a 3x3 stone tower with a pyramid cap and four big sails on the front that turn slowly in the wind; enterable through its door; rotates with R / the panel buttons so the sails face the way you want. Landed: commit 8963bc65, deploy run 42463440575 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42463440575",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T08:34:33.394Z"
+    },
+    {
+      "build": 1039,
+      "commit": "fa257044",
+      "description": "Town Builder Stage 3 unlimited undo/redo: CTRL+Z undoes and CTRL+Y (or CTRL+Shift+Z) redoes, and the Undo/Redo buttons do the same — for every Build-mode change (placing, deleting, moving, rotating, pasting a chunk, whole AREA SELECT moves/rotations/deletions/duplications, each as one step), with no limit on how far back you can go. Landed: commit fa257044, deploy run 42470997314 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42470997314",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T10:22:21.688Z"
+    },
+    {
+      "build": 1040,
+      "commit": "58aa5ecd",
+      "description": "Town Builder Stage 4 asset library: the Build menu is now organized into categories (Buildings / Houses / Shops / Decorations / Roads / Nature / Infrastructure). New: Lanterns (glow at night), Bushes (walk-through), the Mine (enterable), Ore Deposits, and the Wooden Bridge (place it over the ocean or the pond and walk straight across the water). Landed: commit 58aa5ecd, deploy run 42480115688 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42480115688",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T12:26:01.132Z"
+    },
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "description": "Farm land for the windmill: placeable tilled soil (Nature) that grows green shoots after 1 in-game hour and tall golden wheat after 3 in-game hours; stand next to ready wheat and press E to harvest 2 wheat (Wheat counter next to Wood/Stone/Gold); farmer villagers walk to ready wheat and harvest it too; after harvest it regrows on its own, so you never re-plant. Landed: commit 58529b47, deploy run 42520672033 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42520672033",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T20:34:11.972Z"
+    },
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "description": "Town Builder Stage 5 layout helpers: 9 optional tools in the AREA SELECT menu — Doors face paths, Trees off paths, Lanterns along roads, Fence property (new fence kind), Align row/column, ENHANCE, Spread out/Pack together. Nothing moves unless the player taps a tool; one Undo undoes the whole helper. Scale/elevation/tree rotation/vegetation size are not here — no per-item size feature exists yet, stated plainly. The Town Builder is now complete (Stages 1-5, builds 1036-1042). Landed: commit 8041e127, deploy run 42532242988 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42532242988",
+      "status": "verified",
+      "verifiedAt": "2026-11-08T22:52:03.518Z"
+    },
+    {
+      "build": 1043,
+      "commit": "4a82b393",
+      "description": "Import Hub Stage 1: a hub panel at the top of the Build panel that imports .glb (as before), .gltf (pick its .bin at the same time if it has one), .obj, or a ZIP holding any of those — several files at once, or a whole folder on a desktop browser where the browser supports it. Imported models show in the hub and the Custom category, place like any other item, and one Undo removes them. Honest limits: models render as plain coloured triangles (textures ignored); on iPhone Safari a folder cannot be opened directly; audio is not imported yet (no audio playback in the game); ChatGPT cannot reach files on the phone or computer — uploading here is how a model gets into the game. Landed: commit 4a82b393, deploy run 42542648558 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42542648558",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T00:54:49.777Z"
+    },
+    {
+      "build": 1044,
+      "commit": "a93a1d69",
+      "description": "Import Hub Stage 2 — IndexedDB asset store: imported models now live in a proper on-device store (IndexedDB database ashfall-custom-assets v1, compact versioned manifest in localStorage, metadata only). Per-file cap 1 MB -> 5 MB; library up to 50 MB decoded / 100,000 triangles. Existing uploads migrate automatically once (read-back validated before the legacy key is deleted; a failed move keeps the old copy and the hub says so). Library loads from IndexedDB before placement/rendering with a loading state; the world still boots if IndexedDB is unavailable. Upload failures (including running out of device storage) show a clear message naming the file and the reason. Landed: commit a93a1d69, deploy run 42555446176 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42555446176",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T03:17:22.844Z"
+    },
+    {
+      "build": 1045,
+      "commit": "81d17b79",
+      "description": "Import Hub Stage 3 — preview + library: the hub now shows each model before it joins the library — a real preview drawn from the model's own geometry (software rasterizer, isometric, painter's depth sort, flat mean-vertex-colour fill), with footprint, height, triangles, source file, and format, plus editable name/category/tags. Nothing joins the library until the player taps Add to Asset Library; Cancel drops it (nothing was ever written). Library rows show a 44px preview + name/category/tags/dimensions/source/format, with Rename, per-row category select and tags input, Place, Delete. Search matches name/tag/source filename; filter by category/format; sort by name/format/category/triangles. Import progress is real files/bytes read (staged import, yields to the event loop between files). A model with no triangles says 'cannot preview' instead of showing a fake picture. Landed: commit 81d17b79, deploy run 42566273686 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42566273686",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T05:37:23.783Z"
+    },
+    {
+      "build": 1046,
+      "commit": "5bea9115",
+      "description": "Import Hub Stage 4 — packs / recovery: ZIP import is checked before anything imports — traversal paths (../, absolute, drive-letter, .. mid-path, NUL byte), ZIP-bomb expansion (>100x compressed size, checked on declared central-directory sizes before inflating), >50 MB total uncompressed expansion, >50 entries, ZIP >5 MB, single entry >5 MB, duplicate entry names, and bad CRCs are rejected or skipped with a reason, and a bad entry never aborts the whole import. A .gltf resolves its .bin and named textures relative to its own directory inside the ZIP (subfolders, ../ that stays inside the container); a URI that escapes the container, an absolute path, or a URL is never followed — a missing .bin still fails naming the file, a missing texture is reported, never silently dropped, never claimed as applied (textures are still never rendered). After an import the hub reports exactly which models landed, which entries were skipped and why, and which failed. 'Export library as a ZIP' downloads ashfall-asset-pack.zip — every model in its original format plus ashfall-asset-pack.json (name, format, category, tags, dimensions, triangles, source file); re-importing a pack restores names, categories, and tags from the manifest. If an import would use a name that already exists, the hub asks first — Keep both (renames the newcomer), Replace (removes the old model and its placed copies with one undo stroke, then adds the new one under the same name), or Skip — instead of overwriting silently. Landed: commit 5bea9115, deploy run 42579328390 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42579328390",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T07:27:35.291Z"
+    },
+    {
+      "build": 1047,
+      "commit": "a5cfa961",
+      "description": "Import Hub Stage 5 — AI / development handoff: tick models in the library (or a whole category, or the whole library) and export a ZIP with the models in their original formats, the pack manifest (stamped with the build number), and a short handoff-summary.txt you can copy and paste into your chat. On a device that supports sharing files from the browser, a Share button sends the ZIP straight to the share sheet; otherwise it downloads to this device (on iPhone, find it in Files) and you upload it in your chat. Honest limits, in plain words: ChatGPT and Muse cannot see the files in your browser on their own — nothing reaches them until you upload the ZIP yourself — and the game itself does not run an AI; the files are for an AI to read, name, categorise, or rework into a new pack. Landed: commit a5cfa961, deploy run 42591830479 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42591830479",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T09:15:39.077Z"
+    },
+    {
+      "build": 1048,
+      "commit": "6430a5c3",
+      "description": "Import Hub Stage 6 — integration: imported models are now full citizens of Build mode. Rotation did not exist for customs at all — the renderer ignored rot, R / rotate buttons were gated to palette kinds, and movePlacement dropped rot on a moved custom. Now: rotateCustomXZ + customFootprint, the renderer rotates the mesh's local XZ, the ghost preview validates/draws at the armed rotation with a 'rotated 90 deg' label, R and the rotate buttons work for an armed custom, and Move keeps rot. Chunk capture/paste excluded customs — now chunks capture customs with assetId + rot; paste validates against the live library, and a missing model skips with the reason 'that model is no longer in your library' — never a silent drop. AREA SELECT skipped customs on duplicate and rotate — duplicateArea now routes customs through pasteChunk; planRotate advances a custom's rot. Already true and now proven (not rebuilt): arm/place with ghost preview, Move, Undo/Redo, Remove, save/reload, the 1039 delete rule. Scale — NOT built, said plainly: a render-only scale would lie about the collision rect; a true scale must change footprint, validation, ghost, move/rotate math, area-select, and chunk capture — not small and safe in the last stage. The Import Hub is now complete (Stages 1-6, builds 1043-1048). Landed: commit 6430a5c3, deploy run 42610828517 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42610828517",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T11:41:25.243Z"
+    },
+    {
+      "build": 1049,
+      "commit": "0e3d7c0b",
+      "description": "Ashfall Stage 3 — vegetation: three tree shapes — tall pine (the old shape), broad leafy oak (3.6 high, widest 2.7), slim birch (4.7 high, pale trunk) — assigned deterministically by a hash of the tile (pine 45% / oak 33% / birch 22% over 200x200); the same tile always grows the same tree and reloads are identical. Generated wild + town trees both get the variety; the Build-menu tree places the deterministic shape for its tile (no shape picker yet). Generated bushes — density 0.015, town +-64 = 256, wild +-64 = 238 — non-blocking, walk-through, low green shrubs, clearly not small trees. All 118 town props now render as themselves instead of a pine tree: lamp 75, hedge 28, barrel 6, cart 2, well/windmill/gatehouse 1 each (4 kindless authored crates render as plain boxes). New stallAt (counter + 2 posts + canvas awning, 1.92 high) and crateAt (lamp 1.78, barrel 0.72, hedge 0.75, fountain 1.0, well 1.58, statue 1.75, gatehouse 2.68, cart 0.9, windmill 3.15, crate 0.68). The statue (102,102) and fountain (115,79) render as decor — they used to render as nothing, since the layout marks them non-solid. Verified cause of the 0-generated-stall drop: the blueprint's single stall prop has solid=false, so the adapter's !prop.solid guard skips it before the stall branch — not fixed here (it would change collision); that is Stage 5's market work. Grass density unchanged at 0.08, nothing cut. Verts: town 241,914->252,300 (+4.3%), wild 271,632->280,674 (+3.3%), all centres under the 300k budget. Landed: commit 0e3d7c0b, deploy re-trigger 00fa51ae (first deploy run 42627250839 failed at the deploy step, build succeeded), phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": "2026-11-09T15:03:43.022Z"
+    },
+    {
+      "build": 1050,
+      "commit": "9edb9212",
+      "description": "Ashfall Stage 4 — architecture: roof variety (axis/pitch/parapet, assigned deterministically per house by seed hash — same house always has the same roof and a reload shows the same town; 29 town huts are axisX 19 / axisZ 10, pitches 0.25 shallow 9 / 0.45 standard 13 / 0.6 steep 7, pitched 23 / parapet 6; a placed house keeps the roof it was built with across save/reload, Move, rotate, AREA SELECT, and undo/redo — seed origin stamped at placement and carried by moves; no footprint, door face, or collision changed). 11 generated fenced gardens beside town houses (98 fence tiles, 31 plants), deterministic per house, with the gate gap on the door face — the player walks in through the gate and never steps on a fence tile; walkability diff vs pre-1050 is exactly the 98 fence tiles; all doors/exits reachable from the plaza; the 1042 Fence property helper is untouched and still works. Interior ceilings + hearth glow: every interior has a timber ceiling (floor+2.1, above the 1.33 eye) and a plaster wall band with a doorway gap — rendered in first-person inside only (orbit keeps its cutaway so the room stays visible from above); every interior has a hearth whose warm orange glow burns at night on the house-light schedule (on 17:30-19:30, off by day). Inn/store/smith stay shells — no mechanics. Landed: commit 9edb9212, deploy run 42659047927 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42659047927",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T16:53:41.024Z"
+    },
+    {
+      "build": 1051,
+      "commit": "6a10dece",
+      "description": "Ashfall Stage 5 — settlements: 3 market stalls at the plaza in one compact row at y=108 — blueprint stall (104,108)-(105,108) + generated west (102,108)-(103,108) + generated east (106,108)-(107,108). The verified 1049 cause is fixed properly: the blueprint stall prop (solid=false) now becomes a real stall with stall collision (adapter prop loop), rendered with the 1049 stallAt shape (counter + 2 posts + canvas awning); generated stalls come from marketStallSpots + a blocked-tile context (no road/garden/doorstep/hut/NPC-route/garden-tile); deterministic and reload-safe — near-town stalls are filtered out and re-derived on every load (no duplication, no row growth); Build-menu stall placement still works. Readable districts — market (plaza disc + 2), craft (inn/store/smith/mine rect + variant), farm (windmill rect + placed-farm halo), residential (6-tile house halo), wild — via districtAt + cobbleForTile; cobble paving on market/craft dirt/sand: 69 market + 25 craft slabs (deterministic hash, window-only ground detail like flowers/pebbles; the blocked-tile guard suppresses 1 slab under a tree/lamp); no house moved, no footprint/door/collision changed except stall collision. 3 fixed wild landmarks (stamped fresh every load, never removable, ride the heightfield, own shapes, block via isWalkableWorld): The Ruined Tower 2x2 @ (40,170)-(41,171) with a broken SE corner (renders short + rubble); The Standing Stones ring centre (150,48), 6 slabs, centre walkable; The Hunter's Camp tent (165,130)-(166,130) + firepit (165,131). All 69-92 tiles from the plaza; none blocks a road, path, NPC route, or house. No second settlement; no trading, vendor NPCs, or economy; inn/store/smith stay shells; landmarks are places to visit, not quests. Landed: commit 6a10dece, deploy run 42666118966 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42666118966",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T17:36:59.091Z"
+    },
+    {
+      "build": 1052,
+      "commit": "acc4810c",
+      "description": "Ashfall Stage 6 — atmosphere: night reads as night — the 3D night factor caps at 0.82 (not 976's 0.55 — dayNight.ts untouched, 2.5D unaffected); mixed ground at midnight is 23-33% of noon (was ~50%, the 'overcast day' look); figures/car/corpses keep the old 0.55 cap for readability; the sky gradient + clear colour are clock functions now, not a fixed light-blue background. 120 deterministic stars (hash2 seeds), fade in as night deepens / out by dawn (alpha 0 noon, 1 midnight), emitted into the sky buffer's self-luminous segment; suppressed inside houses. Dawn/dusk grading — gradient horizon warms gold-pink at dawn ([0.94,0.63,0.44]) and deeper orange-red at dusk ([0.92,0.48,0.29]), with a uWarm world tint to match; smooth over game time (max colour step 0.0224/min, warm step 0.0259/min — no pops). Staggered evening lights — fourth off-bucket added to lightScheduleFor (dusk 19:00-20:00, 20%; early 21:30-22:30, 20%; mid 23:00-00:30, 35%; late 04:30-05:30, 25%); live shares: 20:00 21/29, 21:00 21/29, 22:00 19/29, 00:00 12/29, 03:00 6/29; 28 distinct on-times; lanterns and the hearth use the same function, so they inherit the stagger. Rain (stretch, built) — every third day (day % 3 == 1), 14:00-16:00, 120 crossed-quad streaks around the player; visual only. NOT in this build: sun-follow shading — the world buffer carries no normal attribute, so the fragment shader can't tell faces apart; a true sun-follow needs a buffer-format change; the uWarm tint is the honest substitute; no fog or snow, only rain. The Ashfall program is now complete (Stages 3-6: vegetation, architecture, settlements, atmosphere). Landed: commit acc4810c, deploy run 42683144704 success, phone probe PASS 0 page errors.",
+      "qualityGateLevel": 3,
+      "runId": "42683144704",
+      "status": "verified",
+      "verifiedAt": "2026-11-09T19:26:29.144Z"
+    }
+  ],
+  "buildQueue": [],
+  "dashboardLinks": {
+    "dashboardArtifact": "ashfall-development-dashboard",
+    "play": "https://jaydonweircontracting-ux.github.io/Adventure-game-/?v=1030",
+    "repository": "https://github.com/jaydonweircontracting-ux/Adventure-game-"
+  },
+  "developmentDirectives": [
+    {
+      "added": "2026-11-07",
+      "section": "47",
+      "title": "UPDATE SPEED AND EFFICIENCY"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "48",
+      "title": "ASHFALL — 3D GAME MASTER DEVELOPMENT DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "49",
+      "title": "ASHFALL — AUTONOMOUS DEVELOPMENT AND CONTINUOUS COMPLETION DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "50",
+      "title": "ASHFALL — AUTONOMOUS EVOLUTION DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "51",
+      "title": "ASHFALL — ULTIMATE ENGINEERING AND SELF-EVOLVING ARCHITECTURE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "52",
+      "title": "ASHFALL — GOD-TIER ENGINEERING DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "53",
+      "title": "ASHFALL — AUTONOMOUS GOD-TIER DEVELOPMENT DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "54",
+      "title": "ASHFALL ADVENTURE GAME — DEVELOPMENT DASHBOARD: REPAIR, DATA INTEGRATION & AUTONOMOUS MAINTENANCE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "55",
+      "title": "ASHFALL — MASTER INTEGRATION DIRECTIVE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "56",
+      "title": "ASHFALL — QUANTUM-INSPIRED AUTONOMOUS CODE EVOLUTION MACHINE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "57",
+      "title": "ASHFALL — NEXT EVOLUTION LAYER"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "58",
+      "title": "ASHFALL — AUTONOMOUS GAME EVOLUTION & CONTENT CREATION ENGINE"
+    },
+    {
+      "added": "2026-11-07",
+      "section": "59",
+      "title": "ASHFALL — MUSE SELF-EVOLUTION ENGINE"
+    }
+  ],
+  "knownIssues": [
+    {
+      "issue": "Environment write failure blocks all git writes (EPERM on overlayfs) and Chromium launch (SIGTRAP); BUILD 1030 commit/push + phone probe blocked.",
+      "notes": "git cannot create .git/index.lock or write loose objects; even git config --global fails. Chromium dies with SIGTRAP ~100ms after launch (8 variants tried). Local vite build cannot copy the 31,507-file public/ dir. GitHub Actions deploy builds are unaffected. Recovery: retry when the restriction clears (likely on the next deployment/VM replacement).",
+      "reported": "2026-11-07",
+      "status": "blocked"
+    },
+    {
+      "issue": "MEMORY.md truncated to 0 bytes by a failed write (2026-11-07 ~15:16 PST); restored from the injected context copy + dated logs (32,172 bytes, verified).",
+      "notes": "Rule: never use a truncating write on a memory file; use the runtime file API or write-to-temp-then-atomic-replace. Addressed by §54 (atomic writes, backups, recovery, GitHub as the source of truth).",
+      "reported": "2026-11-07",
+      "status": "open"
+    },
+    {
+      "issue": "Sim 684 rig crash: assetMetaFor returns null for 5 variants (cottage-wide, hall-grand, house-balcony, house-tall, shop-banner); simulate.ts crashes dereferencing meta.file; ~1,000 sim lines after the rig section unverified.",
+      "notes": "Sim-only; crash-masked since 694. Awaiting the user's word.",
+      "reported": "2026-10-21",
+      "status": "awaiting_user"
+    },
+    {
+      "issue": "Stone house replacement in 3D mode blocked: package files never arrived (3d-house-sprites/ holds only a README.md describing a DIFFERENT pack).",
+      "notes": "User order 2026-10-28; do NOT build until files arrive. User was asked what size the GLB shows; NO ANSWER.",
+      "reported": "2026-10-28",
+      "status": "blocked"
+    },
+    {
+      "issue": "Generated tree visuals misaligned with collision in non-starting chunks (fieldTreesFor returns field-unit coords 0..140 but the renderer uses raw %).",
+      "notes": "Found unasked, not fixed. Offered to fix; awaiting user decision.",
+      "reported": "2026-09-30",
+      "status": "open"
+    },
+    {
+      "issue": "Zooming too far out makes textures disappear and the screen turn black (screenshot sent).",
+      "notes": "Unresolved. Related: BUILD 608 added a low-detail zoom-out path after a max-zoom lag report, but this report is separate.",
+      "reported": "2026-10-12",
+      "status": "open"
+    },
+    {
+      "issue": "Roads render behind houses and entrances/paths look reversed after the Mosslight rebuild (BUILD 690).",
+      "notes": "Attributed to stale cached house art on the phone; BUILD 690 adds ?v= cache-busting on every art file. Awaiting user confirmation after a fresh load.",
+      "reported": "2026-10-14",
+      "status": "awaiting_user"
+    },
+    {
+      "issue": "Walking still chops near Mosslight village but smooths out farther away (frame-rate collapse under the village load). BUILD 707 announced as the fix but UNVERIFIED.",
+      "notes": "Treat 707 as announced, not shipped, until a fresh play link confirms it.",
+      "reported": "2026-10-15",
+      "status": "unverified"
+    },
+    {
+      "issue": "Phone Options button covers the smith dialogue Leave button (observed during BUILD 1010).",
+      "notes": "Left untouched as outside that order.",
+      "reported": "2026-11-04",
+      "status": "open"
+    }
+  ],
+  "lastUpdateTimestamp": "2026-11-12T18:47:09-07:00",
+  "lastVerifiedCheckpoint": {
+    "build": 1052,
+    "commit": "acc4810c",
+    "description": "Ashfall Stage 6 — atmosphere: night reads as night — the 3D night factor caps at 0.82 (not 976's 0.55 — dayNight.ts untouched, 2.5D unaffected); mixed ground at midnight is 23-33% of noon (was ~50%, the 'overcast day' look); figures/car/corpses keep the old 0.55 cap for readability; the sky gradient + clear colour are clock functions now, not a fixed light-blue background. 120 deterministic stars (hash2 seeds), fade in as night deepens / out by dawn (alpha 0 noon, 1 midnight), emitted into the sky buffer's self-luminous segment; suppressed inside houses. Dawn/dusk grading — gradient horizon warms gold-pink at dawn ([0.94,0.63,0.44]) and deeper orange-red at dusk ([0.92,0.48,0.29]), with a uWarm world tint to match; smooth over game time (max colour step 0.0224/min, warm step 0.0259/min — no pops). Staggered evening lights — fourth off-bucket added to lightScheduleFor (dusk 19:00-20:00, 20%; early 21:30-22:30, 20%; mid 23:00-00:30, 35%; late 04:30-05:30, 25%); live shares: 20:00 21/29, 21:00 21/29, 22:00 19/29, 00:00 12/29, 03:00 6/29; 28 distinct on-times; lanterns and the hearth use the same function, so they inherit the stagger. Rain (stretch, built) — every third day (day % 3 == 1), 14:00-16:00, 120 crossed-quad streaks around the player; visual only. NOT in this build: sun-follow shading — the world buffer carries no normal attribute, so the fragment shader can't tell faces apart; a true sun-follow needs a buffer-format change; the uWarm tint is the honest substitute; no fog or snow, only rain. The Ashfall program is now complete (Stages 3-6: vegetation, architecture, settlements, atmosphere).",
+    "runId": "42683144704",
+    "verifiedAt": "2026-11-09T19:26:29.144Z"
+  },
+  "measuredBaselines": [
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "node measure1030-entry.ts (bundle measure1030-bundle.mjs)",
+      "measurement": "World buffer vertices (town centre)",
+      "result": "237,222 verts (town) / 266,000 verts (wild) — 89% of the 300k budget",
+      "testEnvironment": "Headless measurement (node, esbuild bundle of the real 3D systems) + live phone probe 390x844 (SwiftShader)"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "node measure1030-entry.ts",
+      "measurement": "World rebuild time (steady-state)",
+      "result": "~165-211ms",
+      "testEnvironment": "Headless measurement (node, esbuild bundle)"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "probe1030-baseline.mjs",
+      "measurement": "Live hitch on a 50-tile teleport",
+      "result": "566.6ms",
+      "testEnvironment": "Live phone probe 390x844 (SwiftShader)"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "node measure1030-entry.ts + probe1030-baseline.mjs",
+      "measurement": "Ground uniformity",
+      "result": "91.6% uniform grass; tint variation ±0.027 (nearly invisible); stone terrain dead (0 tiles); no rivers/beaches; ocean meets grass directly",
+      "testEnvironment": "Headless measurement + live phone probe"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "probe1030-baseline.mjs",
+      "measurement": "Harness FPS (SwiftShader — relative baseline only)",
+      "result": "Town 6.79 / wild 7.82 / shore 9.29 / first-person 6.06",
+      "testEnvironment": "Headless harness (SwiftShader)"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "node measure1030-entry.ts",
+      "measurement": "Ground heightfield",
+      "result": "FLAT — no heightfield; max ground-plane vertex y = 0.038",
+      "testEnvironment": "Headless measurement"
+    },
+    {
+      "associatedBuildOrCommit": "1029 / 14491c9f",
+      "date": "2026-11-07",
+      "executionCommand": "node measure1030-entry.ts + probe1030-baseline.mjs",
+      "measurement": "Town composition (live counts, matching headless exactly)",
+      "result": "29 huts, 224 trees, 118 crates (all render as pine trees), 131 rocks, 0 walls, 47 NPCs (49% generic commoner), 0 generated stalls",
+      "testEnvironment": "Headless measurement + live phone probe"
+    }
+  ],
+  "qualityGates": [
+    {
+      "build": 1030,
+      "commit": null,
+      "level": 1,
+      "name": "IMPLEMENTED",
+      "result": "tsc clean (exit 0); ALL 1030 ENTRY ASSERTS PASS (97 checks); ALL 1030 ASSERTS PASS (47 runner checks + entry checks)",
+      "status": "PASSED",
+      "testOrCommand": "tsc --noEmit + standalone asserts (asserts1030-entry.ts + asserts1030.mjs)",
+      "verifiedAt": "2026-11-07T15:04:00-07:00"
+    },
+    {
+      "build": 1030,
+      "commit": null,
+      "level": 2,
+      "name": "INTEGRATED",
+      "result": "Normalized logs IDENTICAL (diff empty), 0 FAIL, same known 684 rig crash. Pristine worktree /home/hatch/pristine1029 @ 14491c9f.",
+      "status": "PASSED",
+      "testOrCommand": "Sim vs pristine1029 (normalized log diff)",
+      "verifiedAt": "2026-11-07T15:07:00-07:00"
+    },
+    {
+      "build": 1030,
+      "commit": null,
+      "level": 3,
+      "name": "VERIFIED",
+      "result": "NOT RUN — phone probe blocked (Chromium SIGTRAP); live verify blocked (no commit/push yet). Probe script ready: ~/workspace/verify1030/probe1030-after.mjs.",
+      "status": "NOT RUN",
+      "testOrCommand": "Phone probe 390x844 (probe1030-after.mjs) + live verify by content marker (served version.json build 1030)",
+      "verifiedAt": null
+    },
+    {
+      "build": 1030,
+      "commit": null,
+      "level": 4,
+      "name": "POLISHED",
+      "result": "NOT RUN — depends on Level 3.",
+      "status": "NOT RUN",
+      "testOrCommand": "Phone probe screenshots + visual inspection + dashboard update",
+      "verifiedAt": null
+    }
+  ],
+  "schemaVersion": "1.0",
+  "stageProgress": [
+    {
+      "acceptanceCriteria": [
+        "Audit written to ~/workspace/verify1030/ASHFALL-STAGE1.md",
+        "Headless measurement exit 0",
+        "Live phone probe 0 page errors",
+        "Repo untouched at 14491c9f, tree clean"
+      ],
+      "completionEvidence": "ASHFALL-STAGE1.md, 660 lines / 36,345 bytes; headless measurement exit 0; live phone probe 0 page errors; repo untouched, HEAD 14491c9f, tree clean. Delivered 2026-11-07 ~13:50 PST.",
+      "dependencies": [],
+      "objective": "Audit the 3D game and measure the baseline (no code changes).",
+      "risks": [],
+      "stage": "Ashfall Stage 1 — Inspection & baseline",
+      "status": "done"
+    },
+    {
+      "acceptanceCriteria": [
+        "Heightfield renders without breaking collision, NPCs, saves, or deterministic gen",
+        "Harness prototype proves base-y agreement before the build",
+        "Live phone probe 0 page errors"
+      ],
+      "completionEvidence": "BUILD 1034 verified live — commit 62354ebf, verified 2026-11-08T02:23:10.474Z, deploy run 42438231684. Full description in buildHistory.",
+      "dependencies": [
+        "BUILD 1032 (house interior walls)"
+      ],
+      "objective": "Visual-only heightfield (gentle rolling hills, walkability unchanged), stronger ground tint, shores (sand band + water edge), stone used or removed.",
+      "risks": [
+        "HIGH — touches ground emission, every object's base y, far rings, picker; harness-prototype the base-y agreement first; fallback is tint+shores+stone only"
+      ],
+      "stage": "Ashfall Stage 2 — Terrain",
+      "status": "done"
+    },
+    {
+      "acceptanceCriteria": [
+        "Three distinct tree designs visible",
+        "No stall/crate renders as a pine tree",
+        "Grass density re-tested vs FPS"
+      ],
+      "completionEvidence": "BUILD 1049 verified live — commit 0e3d7c0b, verified 2026-11-09T15:03:43.022Z, deploy run not recorded. Full description in buildHistory.",
+      "dependencies": [
+        "Ashfall Stage 2"
+      ],
+      "objective": "3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.",
+      "risks": [],
+      "stage": "Ashfall Stage 3 — Vegetation",
+      "status": "done"
+    },
+    {
+      "acceptanceCriteria": [
+        "Roofline variation visible (not all roofAxis='x')",
+        "Interiors have ceilings (no sky visible from inside)"
+      ],
+      "completionEvidence": "BUILD 1050 verified live — commit 9edb9212, verified 2026-11-09T16:53:41.024Z, deploy run 42659047927. Full description in buildHistory.",
+      "dependencies": [
+        "Ashfall Stage 3"
+      ],
+      "objective": "Roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells).",
+      "risks": [],
+      "stage": "Ashfall Stage 4 — Architecture",
+      "status": "done"
+    },
+    {
+      "acceptanceCriteria": [
+        "Market stalls present at the plaza",
+        "Readable districts",
+        "2-3 fixed wild landmarks"
+      ],
+      "completionEvidence": "BUILD 1051 verified live — commit 6a10dece, verified 2026-11-09T17:36:59.091Z, deploy run 42666118966. Full description in buildHistory.",
+      "dependencies": [
+        "Ashfall Stage 4"
+      ],
+      "objective": "Market stalls at the plaza, readable districts, 2-3 fixed wild landmarks; second settlement explicitly out of scope.",
+      "risks": [
+        "Cause of the 0-stall drop is UNVERIFIED — verify before fixing"
+      ],
+      "stage": "Ashfall Stage 5 — Settlements",
+      "status": "done"
+    },
+    {
+      "acceptanceCriteria": [
+        "Night reads as night (not overcast day)",
+        "Stars visible",
+        "Dawn/dusk grading present"
+      ],
+      "completionEvidence": "BUILD 1052 verified live — commit acc4810c, verified 2026-11-09T19:26:29.144Z, deploy run 42683144704. Full description in buildHistory.",
+      "dependencies": [
+        "Ashfall Stage 5"
+      ],
+      "objective": "Night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised.",
+      "risks": [],
+      "stage": "Ashfall Stage 6 — Atmosphere",
+      "status": "done"
+    }
+  ],
+  "teamResponsibilities": [
+    {
+      "responsibility": "Rendering, camera, world streaming, performance, Engine3DWorldView, townLook, sky, ground/terrain emission.",
+      "team": "Team A — 3D Engine"
+    },
+    {
+      "responsibility": "Terrain, vegetation, architecture, settlements, world generation, points of interest, Ashfall Stages 2–6.",
+      "team": "Team B — World Design"
+    },
+    {
+      "responsibility": "Character systems, combat, progression, inventory, equipment, quests, dungeons, skills, AI adventurers.",
+      "team": "Team C — RPG Gameplay"
+    },
+    {
+      "responsibility": "NPC intelligence, schedules, relationships, economy, factions, civilization simulation, world events, emergent stories.",
+      "team": "Team D — Living World"
+    },
+    {
+      "responsibility": "UI, HUD, Build menus, minimap, dashboard, mobile compatibility, player experience, accessibility.",
+      "team": "Team E — Interface and Experience"
+    },
+    {
+      "responsibility": "Testing, simulation, verification, quality gates, performance benchmarking, regression protection, self-healing.",
+      "team": "Team F — QA and Optimization"
+    }
+  ],
+  "verificationHistory": [
+    {
+      "build": 1052,
+      "commit": "acc4810c",
+      "result": "Verified live: served version.json build 1052 @ 2026-11-09T19:26:29.144Z, served index __AG_BUILD='1052', deploy run 42683144704 completed success (head_sha acc4810c, parent confirmed via the Actions API). Asserts 9953 checks pass (parent re-ran directly — ASSERTS-1052 ALL PASS (9953 checks)). Sim vs pristine1051: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100225 vs 100224, the same artifact 1045/1046/1047/1050/1051 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (noon luminance 0.429 vs midnight 0.136 — ratio 0.32; evening sequence 9->25->21->21->19->12 lit; rain day 4 true / day 2 false; town walk steady max 267ms p50 183, wild walk steady max 200ms p50 117 — 300ms gate; sky probe — first-person, open ground: night top-half mean 0.050, 353 star pixels with UI hidden — moon + scattered stars; dawn/dusk gradient photos confirm the warm horizons).",
+      "runId": "42683144704",
+      "verifiedAt": "2026-11-09T19:26:29.144Z"
+    },
+    {
+      "build": 1051,
+      "commit": "6a10dece",
+      "result": "Verified live: served version.json build 1051 @ 2026-11-09T17:36:59.091Z, served index __AG_BUILD='1051', deploy run 42666118966 completed success (head_sha 6a10dece, parent confirmed via the Actions API). Asserts 1910 checks pass (parent re-ran directly — ASSERTS-1051 ALL PASS (1910 checks)). Sim vs pristine1050: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the norm diff is exactly the 1-line bundle-offset artifact at the crash site (100224 vs 100223, the same artifact 1045/1046/1047/1050 showed), and the norm2 diff is IDENTICAL. Phone probe 0 page errors (market-square shot shows the 3-stall row — awnings/counters — + cobble; stall walk-around — player ended (103.4,106.0) north of the row, went around an end, never on a stall tile; district shots — craft: smith + cobble; farm: windmill tower; residential: houses + fenced garden; landmark far+near shots — tower with broken corner, stone ring with open centre, tent + firepit; tower walk-around). Frames: town walk steady max 267ms p50 183; wild walk steady max 317ms in the main run — one frame out of 107; re-ran the wild walk 3x: steady max 200/217/217ms, p50 117, 0 frames >300 — noise, not a regression.",
+      "runId": "42666118966",
+      "verifiedAt": "2026-11-09T17:36:59.091Z"
+    },
+    {
+      "build": 1050,
+      "commit": "9edb9212",
+      "result": "Verified live: served version.json build 1050 @ 2026-11-09T16:53:41.024Z, served index __AG_BUILD='1050', deploy run 42659047927 completed success (head_sha 9edb9212, parent confirmed via the Actions API). Asserts 2453 checks pass (parent re-ran directly — ASSERTS-1050 ALL PASS (2453 checks); parent re-run cost lines: town verts 262,524 p50 222.1ms vs 1049 p50 227.7ms, wild 282,012, shore 239,616, farWild 279,894 — all under the 300k budget). Sim vs pristine1049: both 76 lines, 0 FAILs on both sides, both stop at the same known pre-existing 684 rig crash (assetMetaFor null, meta.file) — the only diff is the stack-trace line number in the crash (bundle.mjs:100223:17 vs :17), the same 1-line bundle-offset artifact as 1045/1046/1047 when code is added. Phone probe 0 page errors (live roof distribution matches the asserts; parapet/steep/shallow roof shots; garden walk-in closest approach 0.13 tiles with no fence tile stepped on; interior day ceilingVerts 6 / wallVerts 36 / hearthGlow 0, night hearthGlow 1 / hearthVerts 36; Exit lands exactly on (79,89); placed Cottage at (145,116) roof x/0.45/pitched survives a real reload unchanged; town walk max 200ms p50 117ms, wild walk max 233ms p50 133ms). Frame-time regression found by the probe and FIXED in this build: the first full probe run showed town walk max frame 600-700ms (steady-state) vs pristine 1049's 200ms — live CDP profiling named worldGardenKey at 59.5% of all CPU (the garden memo's validation hash re-scanned the 1,328-key terrain record on every call, 135.9 us per memo-hit call); the final fix removes the terrain record from the key and hashes the removed-* change-log arrays instead (contract documented in gardens.ts, pinned by a new assert); memo-hit cost is now 8.8 us/call; a 3-run A/B against pristine 1049 showed frame times statistically indistinguishable afterwards.",
+      "runId": "42659047927",
+      "verifiedAt": "2026-11-09T16:53:41.024Z"
+    },
+    {
+      "build": 1049,
+      "commit": "0e3d7c0b",
+      "result": "Verified live: served version.json build 1049 @ 2026-11-09T15:03:43.022Z, served index __AG_BUILD='1049'. The first deploy run 42627250839 failed at the deploy step (build succeeded, deploy job ran 13:40:03Z, failed after ~11 min) — the parent re-triggered with an empty commit 00fa51ae (same content, idempotent) at ~07:01 PST; the re-trigger deploy landed. The re-trigger run ID could not be retrieved at checkpoint time — the public Actions API was rate-limited for the shared proxy IP (remaining 0, reset ~07:34 PST; the VM replacement also changed the egress IP from 104.29.194.191 to 104.29.194.34, also rate-limited). The served content markers are the live-confirmation standard and they confirm 1049 is live. Asserts 641 checks pass (parent re-ran directly — ASSERT_DONE 641 checks passed; parent re-run cost lines: town verts 252,300 p50 217.4ms vs pristine1048 196ms, wild 280,674 p50 220.0ms vs 211.7ms, shore 238,968 p50 155.0ms vs 153.1ms, farWild 279,534 p50 200.1ms vs 175.6ms — all inside the assert gates). Sim vs pristine1048 byte-identical (parent diffed sim1049.norm.log vs sim1048-pristine.norm.log — no diff output; known 684 crash only). Phone probe 0 page errors (three shapes side by side in town and wild; generated bush walked through live — closest approach 0.02 and 0.16 tiles on two runs; lamp, barrel, hedge, statue, fountain photographed as themselves; stall placed twice — 'Placed Market Stall'; tree placed from the Build menu). Frames: town walk max 200ms p50 167ms, wild walk max 217ms p50 183ms, 0 frames >250ms vs the 1035 baseline walk max 200ms — no slowdown.",
+      "runId": null,
+      "verifiedAt": "2026-11-09T15:03:43.022Z"
+    },
+    {
+      "build": 1048,
+      "commit": "6430a5c3",
+      "result": "Verified live: served version.json build 1048 @ 2026-11-09T11:41:25.243Z, run 42610828517 completed success (parent confirmed via the Actions API). Asserts 137 checks pass (parent re-ran directly — ASSERT_DONE 137 checks passed). Sim vs pristine1047 byte-identical (parent diffed sim1048.norm.log vs sim1047-pristine.norm.log — no diff output; 76 lines, 0 FAIL, both stop at the same known 684 rig crash). Phone probe 33 findings, 0 page errors (real .obj uploaded -> armed from the Build panel Custom list -> placed copy 1 by real tap (87,98)-(88,98) -> rotate button -> placed copy 2 at rot 1, 1x2 -> Move tool dragged copy 1 [4,0] -> cottage placed next to it -> area drag selected custom+custom+house -> area move [3,0] together -> Undo -> Redo -> group rotate turned the custom rot 1, 1x2 -> Undo restored it -> saved chunk 'Chunk 1' (custom + a path tile the save rect caught) -> paste armed -> 'Pasted 2 of 2 from Chunk 1' at (140,130) -> Remove took the custom down -> one Undo restored it -> reload: library still has red-box, 3 placed customs survive). Deploy hiccup (agent flag, parent investigated): the deploy run for the studio checkpoint commit 7ab94eae shows completed failure (run 42605503276) — the build job succeeded but the deploy job failed at 'Deploy to GitHub Pages'. Same transient GitHub-side pattern as 1024; the 1048 deploy succeeded afterwards and the live site is at 1048, so the failure is moot — no recovery needed, no code involved (7ab94eae is studio/-only).",
+      "runId": "42610828517",
+      "verifiedAt": "2026-11-09T11:41:25.243Z"
+    },
+    {
+      "build": 1047,
+      "commit": "a5cfa961",
+      "result": "Verified live: served version.json build 1047 @ 2026-11-09T09:15:39.077Z, run 42591830479 completed success (parent confirmed via the Actions API). Asserts 99 checks pass (parent re-ran directly — ASSERT_DONE 99 checks passed); 1046 regression re-run against the new tree: 191 checks pass. Sim vs pristine1046 identical except the expected 1-line bundle offset at the known pre-existing 684 rig crash (parent diffed sim1047.norm.log vs sim1046-pristine.norm.log — file:bundle.mjs:100220 vs file:bundle.mjs:100219; 0 FAILs on both sides, 76 lines each). Phone probe 17 findings, 0 page errors (two models in; tick only red-box -> live summary is exactly red-box — build 1047, manifest v1, 2x1 tiles, 12 triangles — never blue-pyramid; Copy summary used the real clipboard and the clipboard text equals the summary; Export checked downloaded a ZIP with exactly red-box + manifest — build 1047, 1 model — + summary, zero trace of blue-pyramid; Share... fell back to the download — lastSharePath: download — on this device with no Web Share file support; category export held both House models; whole-library export held 2; reload left the library unchanged).",
+      "runId": "42591830479",
+      "verifiedAt": "2026-11-09T09:15:39.077Z"
+    },
+    {
+      "build": 1046,
+      "commit": "5bea9115",
+      "result": "Verified live: served version.json build 1046 @ 2026-11-09T07:27:35.291Z, run 42579328390 completed success (parent confirmed via the Actions API). Asserts 191 checks pass (parent re-ran directly — ASSERT_DONE 191 checks passed). Sim vs pristine1045 identical except the known 1-line bundle offset at the pre-existing 684 rig crash (parent diffed sim1046.norm.log vs sim1045-pristine.norm.log — file:bundle.mjs:100219 vs file:bundle.mjs:100218, both crash identically at line 76). Phone probe 21 findings, 0 page errors (hostile ZIP report exact — landed [red-box], skipped ../evil.obj unsafe-path + notes.txt, failed broken.obj; Keep both -> original + red-box 2, placed copy untouched; Replace -> old model + placed copy gone, new green model under the same name, library still 3; Skip -> library unchanged; export download parsed back in Node — 3 models, manifest lists 3, names correct; reload -> 3 assets + placed pyramid survive).",
+      "runId": "42579328390",
+      "verifiedAt": "2026-11-09T07:27:35.291Z"
+    },
+    {
+      "build": 1045,
+      "commit": "81d17b79",
+      "result": "Verified live: served version.json build 1045 @ 2026-11-09T05:37:23.783Z (a later timestamp than the agent's 05:17:35.635Z read — a fresh deploy regenerated version.json with the same build 1045, same content, idempotent — like the 1036 wake-up case), run 42566273686 completed success (parent confirmed via the Actions API). Asserts 94 checks pass (parent re-ran directly — ASSERT_DONE 94 checks passed). Sim vs pristine1044 byte-identical (parent diffed sim1045.norm.log vs sim1044-pristine.norm.log — no diff output; 0 FAILs on both sides, both stop at the same known 684 rig crash). Phone probe 20 findings, 0 page errors (real red .obj uploaded -> waits in review (1 pending, 0 in library), preview canvas drew 5,852 pixels, all red; review card shows 2x1 tiles, 3 high, red-barn.obj, OBJ, 12 triangles; renamed/categorised/tagged in review, Add kept the edits (Red Barn, House, red/roof); search 'barn' and tag 'roof' narrow to 1 row, 'zzz' shows the empty message; second model added, sort by name orders blue-pyramid before Red Barn; library rename to Crimson Barn stuck; green triangle uploaded and Cancelled — library stayed at 2; Crimson Barn placed in the world (custom placement 123-124x134); reload -> 2 assets with edits intact, placed copy survives).",
+      "runId": "42566273686",
+      "verifiedAt": "2026-11-09T05:37:23.783Z"
+    },
+    {
+      "build": 1044,
+      "commit": "a93a1d69",
+      "result": "Verified live: served version.json build 1044 @ 2026-11-09T03:17:22.844Z, run 42555446176 completed success (parent confirmed via the Actions API). Asserts 114 checks pass (parent re-ran directly — ASSERT_DONE 114 checks passed). Sim vs pristine1043 byte-identical (parent diffed sim1044.norm.log vs sim1043-pristine.norm.log — no diff output; 76 lines each, 0 FAIL, same known 684 rig crash). Phone probe 23 findings, 0 page errors (seeded a real 2-asset legacy localStorage library: both migrated into IndexedDB, legacy key deleted after verified migration, manifest written (204 bytes, metadata only), ashfall-custom-assets v1 confirmed in indexedDB.databases(); hub states the new caps; migrated Legacy Blue placed at (123,134); a real 1.56 MB / 20,000-tri GLB uploaded (over the old 1 MB cap); two rapid uploads (.obj + .zip) both landed (6 assets, nothing lost); reload: 6 assets + placed copy survive; malformed GLB, 6 MB file ('file is over 5 MB'), and unsupported file all fail visibly with the library unchanged). A separate render probe placed a vertical RGB fin from the migrated library — it renders on the ground before AND after reload. Honest caveat: live quota exhaustion could not be forced in this harness (Storage.overrideQuotaForOrigin is a no-op in this Chromium) — the quota path is proven by the Node asserts (store rejects with QuotaExceededError, library unchanged) plus the view's shared persist-first-then-commit path, not by a live browser quota failure.",
+      "runId": "42555446176",
+      "verifiedAt": "2026-11-09T03:17:22.844Z"
+    },
+    {
+      "build": 1043,
+      "commit": "4a82b393",
+      "result": "Verified live: served version.json build 1043 @ 2026-11-09T00:54:49.777Z, run 42542648558 completed success (parent confirmed via the Actions API). Asserts 100 checks pass (parent re-ran directly — ASSERT_DONE 100 checks passed). Sim vs pristine1042 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site (parent diffed sim1043.norm.log vs sim1042-pristine.norm.log — the same 1-line bundle-offset pattern as the 1036 sim diff; 0 FAILs on both sides). Phone probe 19 findings, 0 page errors (hub opens with formats + limits; real .obj uploaded -> 'Red Roof' 2x2, 3 tris; real .zip uploaded -> 3 assets, .txt reported skipped; Custom category lists all three; green preview -> placed custom at (123,134)-(124,135); Undo removes it, Redo brings it back; a bad file is rejected with a message and the library stays at 3). Scope collision reconciled: ChatGPT's wake-up file defined BUILD 1043 as the IndexedDB migration — that becomes Import Hub Stage 2 (build 1044); the wake-up file was updated by the parent so the next agent doesn't re-do 1043 or strip the ZIP support.",
+      "runId": "42542648558",
+      "verifiedAt": "2026-11-09T00:54:49.777Z"
+    },
+    {
+      "build": 1042,
+      "commit": "8041e127",
+      "result": "Verified live: served version.json build 1042 @ 2026-11-08T22:52:03.518Z, run 42532242988 completed success (parent confirmed via the Actions API after the agent hit a transient rate limit). Asserts 142 checks pass (parent re-ran directly — ASSERT_DONE 142 checks passed). Sim vs pristine1041 IDENTICAL (parent diffed sim1042.norm.log vs sim1041-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 28 findings, 0 page errors (cottage placed, path column west, area-select, Doors face paths rotated it to rot 1 (door west); Lanterns along roads put 1 lantern on the road edge; Fence property laid 15 fence tiles with the gate gap open at the west door; Align row lined two lanterns up at y=138, Spread moved them apart (x [129,132]->[128,133]), Pack moved them back; ENHANCE added +32 grass/bush plants with nothing moved; one Undo removed them (22 placements), Redo brought them back (54)). Honest note: scale, elevation, tree rotation, and vegetation size cannot change yet — there is no per-item size feature.",
+      "runId": "42532242988",
+      "verifiedAt": "2026-11-08T22:52:03.518Z"
+    },
+    {
+      "build": 1041,
+      "commit": "58529b47",
+      "result": "Verified live: served version.json build 1041 @ 2026-11-08T20:34:11.972Z, run 42520672033 success. Asserts 152 checks pass (parent re-ran directly — ASSERT_DONE 152 checks passed). Sim vs pristine1040 IDENTICAL (parent diffed sim1041.norm.log vs sim1040-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe 23 findings, 0 page errors (2x2 field placed, all planted → growing at +100 → ready at +200; E harvest Wheat 0 → 2 with HUD showing 'Wood 0 · Stone 0 · Gold 0 · Wheat 2'; harvested tile reset to planted, then regrew to ready; Aldric walked onto the ready tile and harvested it; Undo removed a 5th tile, Redo brought it back). Honest note: harvested wheat has no use yet — no cooking, baking, or selling system.",
+      "runId": "42520672033",
+      "verifiedAt": "2026-11-08T20:34:11.972Z"
+    },
+    {
+      "build": 1040,
+      "commit": "58aa5ecd",
+      "result": "Verified live: served version.json build 1040 @ 2026-11-08T12:26:01.132Z, run 42480115688 success. Asserts 185 checks pass (parent re-ran directly — ASSERT_DONE 185 checks passed). Sim vs pristine1039 IDENTICAL (parent diffed sim1040.norm.log vs sim1039-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PROBE DONE, 35 findings, 0 page errors (all 11 category/kind checks pass; lantern placed + lit at 21:00; bush placed + walked onto; mine placed + Enter prompt at its door; ore placed; 3 bridge tiles placed over the ocean and walked across; one Undo removed the last bridge, Redo brought it back). Honest note: no mining system yet — ore deposits are decoration for now.",
+      "runId": "42480115688",
+      "verifiedAt": "2026-11-08T12:26:01.132Z"
+    },
+    {
+      "build": 1039,
+      "commit": "fa257044",
+      "result": "Verified live: served version.json build 1039 @ 2026-11-08T10:22:21.688Z, run 42470997314 success. Asserts 135 checks pass (parent re-ran directly — ASSERT_DONE 135 checks passed). Sim vs pristine1038 IDENTICAL (parent diffed sim1039.norm.log vs sim1038-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe ALL CHECKS PASS, 0 page errors (place → Undo button → Redo button; real keyboard Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; Remove → Undo; Move drag → Undo; rot-1 cottage → Undo → Redo with rot 1 kept; AREA SELECT move → ONE Undo restores the whole group; new action clears Redo, Redo button disabled). Scaling undo is honestly pending — no scaling feature exists yet, stated in the player note.",
+      "runId": "42470997314",
+      "verifiedAt": "2026-11-08T10:22:21.688Z"
+    },
+    {
+      "build": 1038,
+      "commit": "8963bc65",
+      "result": "Verified live: served version.json build 1038 @ 2026-11-08T08:34:33.394Z, run 42463440575 success. Asserts 145 checks pass (parent re-ran directly — ASSERT_DONE 145 checks passed). Sim vs pristine1037 IDENTICAL (parent diffed sim1038.norm.log vs sim1037-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe all steps passed, 0 page errors (green preview 'Windmill · door faces south'; placed house variant 'windmill' 3x3; stays armed after placing; getHouseFx windmills=1 / millVerts=54; R rotates to rot 1, door faces west; blocks movement; AREA SELECT holds both windmills + tree, moved +5 east together; Remove stroke took the rot-0 windmill down). Screenshots viewed: the windmill reads clearly as a windmill (stone tower, pyramid cap, 4 pale sails, brown door); the blades visibly turned between mill-a and mill-b.",
+      "runId": "42463440575",
+      "verifiedAt": "2026-11-08T08:34:33.394Z"
+    },
+    {
+      "build": 1037,
+      "commit": "67880190",
+      "result": "Verified live: served version.json build 1037 @ 2026-11-08T06:41:23.474Z, run 42455687148 success. Asserts 184 checks pass (parent re-ran directly — ASSERT_DONE 184 checks passed). Sim vs pristine1036 IDENTICAL (parent diffed sim1037.norm.log vs sim1036-pristine.norm.log — byte-identical, both stop at the same pre-existing 684 rig crash). Phone probe PASS — 33 findings, 0 page errors (yellow overlay visible 'Area 7x8 · 9 items'; move +5 east with rot preserved; rotate to rot 1; one Undo restored the whole group, Redo re-applied it; duplicate placed 9 new items; 115-item town delete required the two-tap confirmation and then cleared). ENHANCE and ADJUST are deferred follow-ups, stated in the player note.",
+      "runId": "42455687148",
+      "verifiedAt": "2026-11-08T06:41:23.474Z"
+    },
+    {
+      "build": 1036,
+      "commit": "0b21aba4",
+      "result": "Verified live: served version.json build 1036 @ 2026-11-08T04:34:26.069Z, run 42446451401 success. Asserts 255 checks pass (parent re-ran directly — ASSERT_DONE 255 checks passed). Sim vs pristine1035 IDENTICAL except the 1-line bundle offset at the known 684 rig crash site, 0 FAILs. Phone proof (place twice without re-selecting, rotate a house so its door faces a path, ESC + right-click cancel; focused door probe: rot-1 cottage with its door tile immediately adjacent to a dirt path tile, first-person shot shows the brown door filling the frame with the Enter button showing). 0 page errors.",
+      "runId": "42446451401",
+      "verifiedAt": "2026-11-08T04:34:26.069Z"
+    },
+    {
+      "build": 1035,
+      "commit": "452da72b",
+      "result": "Verified live: served version.json build 1035 @ 2026-11-08T03:10:52.717Z, run 42441522022 success. Asserts 51 checks pass (parent re-ran directly — first re-run FAILED the shore cost check at 87.9% of baseline, a load spike; second and third re-runs PASSED: town 49.1%, wild 51.9%, shore 54.3%, farWild 51.0% of the 1034 baseline; builder 83 steps at 1ms, max step 7.9ms, bit-identical). Sim vs pristine1034 MATCH (modulo bundle path). Phone proof (40s drive + 25s walk): drive max frame 883ms → 233ms, drive frames >500ms 14 → 0, drive frames >250ms 15 → 0, walk max frame 517ms → 200ms. 0 page errors.",
+      "runId": "42441522022",
+      "verifiedAt": "2026-11-08T03:10:52.717Z"
+    },
+    {
+      "build": 1034,
+      "commit": "62354ebf",
+      "result": "Verified live: served version.json build 1034 @ 2026-11-08T02:23:10.474Z, run 42438231684 success. Asserts pass (parent re-ran directly — first re-run FAILED the shore rebuild-cost check at +37.0%, second re-run PASSED with ASSERT_DONE; shore rebuild +34.0%, town +25.0%, wild +22.2%, farWild +32.3% over the pristine1033 baseline — borderline on the +35% threshold). Sim identical to pristine1033. Phone proof (tap-to-move arrived, keyboard walk, ocean blocks, shore shows ocean → foam → sand → grass). 0 page errors.",
+      "runId": "42438231684",
+      "verifiedAt": "2026-11-08T02:23:10.474Z"
+    },
+    {
+      "build": 1033,
+      "commit": "7a9671d4",
+      "result": "Verified live: served version.json build 1033 @ 2026-11-08T01:36:34.895Z, run 42434904636 success. Asserts 49 checks pass (parent re-ran). Sim identical to pristine1032. Phone proof (summon 1 tile away, Enter via the real button, camera follows, hut + lake collision, Exit — car stays, re-enter works, E key, reload → no car). 0 page errors.",
+      "runId": "42434904636",
+      "verifiedAt": "2026-11-08T01:36:34.895Z"
+    },
+    {
+      "build": 1032,
+      "commit": "7d1c8cf9",
+      "result": "Verified live: served version.json build 1032 @ 2026-11-08T01:02:39.379Z, run 42432401556 success, first try. Asserts 418 checks pass (parent re-ran). Sim identical to pristine1031. Phone proof (five wall pushes x 15 samples each, all inside; real Exit lands exactly on the doorstep (79,89) twice; re-entry works; reverse sealed). 0 page errors.",
+      "runId": "42432401556",
+      "verifiedAt": "2026-11-08T01:02:39.379Z"
+    },
+    {
+      "build": 1031,
+      "commit": "336741da",
+      "result": "Verified live: served version.json build 1031 @ 2026-11-08T00:45:25.538Z, run 42431099076 success, first try. Asserts 26 checks pass (parent re-ran). Sim identical to pristine1030. Phone proof (baseline far94 showed NO water, after fix an organic oval matching the projected bbox exactly, walk-to-shore arrival (247.89,33)). 0 page errors.",
+      "runId": "42431099076",
+      "verifiedAt": "2026-11-08T00:45:25.538Z"
+    },
+    {
+      "build": 1029,
+      "commit": "14491c9f",
+      "result": "Verified live: served version.json build 1029, run 42416626999 success, first try. Asserts 94 entry checks pass (parent re-ran); sim identical to pristine1028; phone proof (placed Inn/Blacksmith/General Store, saved HighStreet, reload identical, paste 3 of 3). 0 page errors.",
+      "runId": "42416626999",
+      "verifiedAt": "2026-11-07T21:37:14.339Z"
+    },
+    {
+      "build": 1028,
+      "commit": "7266e49a",
+      "result": "Verified live: served version.json build 1028, run 42410771257 success, first try. Asserts 171 entry checks pass (parent re-ran); sim identical to pristine1027; phone proof (far wall renders + blocks, Remove takes only the tapped tile, removedWalls persistence, sprint icon latch/exhaust/Release!). 0 page errors.",
+      "runId": "42410771257",
+      "verifiedAt": "2026-11-07T20:23:52.159Z"
+    },
+    {
+      "build": 1027,
+      "commit": "16b7eb9e",
+      "result": "Verified live: served version.json build 1027, run 42407766765 success, first try. Asserts 5,710 entry checks pass (parent re-ran); sim identical to pristine1026; phone proof (ocean tap blocked, shore tap walks, placed water, undo/redo, reload persistence). 0 page errors.",
+      "runId": "42407766765",
+      "verifiedAt": "2026-11-07T19:47:03.434Z"
+    },
+    {
+      "build": 1026,
+      "commit": "5d002922",
+      "result": "Verified live: served version.json build 1026, run 42404496335 success, first try. Asserts 143 entry + 41 runner checks pass (parent re-ran); sim identical to pristine1025; phone proof (walk/sprint-hold/exhaust hitches reduced, latch persists, release+repress sprints 13/13). 0 page errors.",
+      "runId": "42404496335",
+      "verifiedAt": "2026-11-07T19:06:53.952Z"
+    }
+  ],
+  "dataCorrections": [
+    {
+      "date": "2026-11-07",
+      "correction": "Master Integration Registry (SS55 Stage A) found an honesty gap: qualityGateLevel was 4 (POLISHED) for builds 1016-1029, but formal Level-4 polish gates with per-build evidence do not exist. Downgraded to 3 (VERIFIED), which the evidence supports (live verification + asserts + sim + phone proof). verifiedAt for 1016-1025 was a midnight placeholder; set to null (exact verification timestamps are not recorded - only the dates are known from the dated logs). Builds 1026-1029 keep their real timestamps + run IDs."
+    }
+  ]
+}

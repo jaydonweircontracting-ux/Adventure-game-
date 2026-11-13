@@ -69,6 +69,11 @@
       "date": "2026-11-07",
       "description": "Honesty-gap correction (found by the Master Integration Registry, SS55 Stage A): dashboard-data.json and history/build-ledger.json downgraded qualityGateLevel from 4 (POLISHED) to 3 (VERIFIED) for builds 1016-1029, because formal Level-4 polish gates with per-build evidence do not exist; verifiedAt/verificationTimestamp set to null for 1016-1025 (exact verification timestamps not recorded - only the dates are known from the dated logs). Builds 1026-1029 keep their real timestamps + run IDs. The Nov 7 snapshot (snapshots/2026-11-07.json) is left untouched as the dated historical record.",
       "type": "correction"
+    },
+    {
+      "date": "2026-11-12",
+      "description": "Dashboard repair (§54 Stage B) complete: artifact v2 fetches studio/dashboard/dashboard-data.json live on every load (raw GitHub URL, HTTP 200, 70,872 bytes); fallback is an embedded snapshot labeled 'Cached snapshot' with its date. Builder jsdom harness ~90 assertions/mode passed (live: 1052/acc4810c + commit link; fallback: identical + snapshot label; filters Verified 37 / Queued 1 / Audits 1 / In progress 0 / All 39; quality gates L3/L4 NOT RUN; missing evidence labeled). Parent confirmed artifact v2 live. Data correction in the same checkpoint: Ashfall Stages 2-6 stageProgress was still 'planned' — marked done with BUILD 1034/1049/1050/1051/1052 evidence. Queue now empty — no next item ordered; candidates (684 sim crash fix-or-accept, 3D minimap G17, ag-3d-* save-key versioning G16) await the user's word. Snapshot snapshots/2026-11-12.json created.",
+      "type": "dashboard"
     }
   ],
   "schemaVersion": "1.0"

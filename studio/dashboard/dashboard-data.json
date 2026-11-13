@@ -2,8 +2,8 @@
   "activeBuild": {
     "build": "Dashboard repair (§54)",
     "commit": null,
-    "description": "One bounded repo task: wire the dashboard artifact ('ashfall-development-dashboard') to read from studio/dashboard/dashboard-data.json instead of hard-coded data. A user-decision item — do not start without the user's word.",
-    "status": "planned"
+    "description": "Stage B complete (2026-11-12): the dashboard artifact ('ashfall-development-dashboard', v2) fetches studio/dashboard/dashboard-data.json live from GitHub on every load and renders from it; if the fetch fails it falls back to an embedded snapshot labeled 'Cached snapshot' with its date. Verified by the builder's jsdom harness (~90 assertions per mode, live + fallback, all passed) and parent-confirmed (artifact v2 live; data URL HTTP 200, 70,872 bytes, lastVerified 1052/acc4810c). No next item is ordered — the queue is empty until the user orders the next work.",
+    "status": "verified"
   },
   "buildHistory": [
     {
@@ -340,14 +340,7 @@
       "verifiedAt": "2026-11-09T19:26:29.144Z"
     }
   ],
-  "buildQueue": [
-    {
-      "build": "Dashboard repair (§54)",
-      "commit": null,
-      "description": "One bounded repo task: permanent GitHub-synced dashboard data (studio/dashboard/), reconcile build history vs commits, four quality gates with real evidence, atomic-write memory protection.",
-      "status": "planned"
-    }
-  ],
+  "buildQueue": [],
   "dashboardLinks": {
     "dashboardArtifact": "ashfall-development-dashboard",
     "play": "https://jaydonweircontracting-ux.github.io/Adventure-game-/?v=1030",
@@ -476,7 +469,7 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-09T13:48:21-07:00",
+  "lastUpdateTimestamp": "2026-11-12T18:47:09-07:00",
   "lastVerifiedCheckpoint": {
     "build": 1052,
     "commit": "acc4810c",
@@ -606,7 +599,7 @@
         "Harness prototype proves base-y agreement before the build",
         "Live phone probe 0 page errors"
       ],
-      "completionEvidence": null,
+      "completionEvidence": "BUILD 1034 verified live — commit 62354ebf, verified 2026-11-08T02:23:10.474Z, deploy run 42438231684. Full description in buildHistory.",
       "dependencies": [
         "BUILD 1032 (house interior walls)"
       ],
@@ -615,7 +608,7 @@
         "HIGH — touches ground emission, every object's base y, far rings, picker; harness-prototype the base-y agreement first; fallback is tint+shores+stone only"
       ],
       "stage": "Ashfall Stage 2 — Terrain",
-      "status": "planned"
+      "status": "done"
     },
     {
       "acceptanceCriteria": [
@@ -623,28 +616,28 @@
         "No stall/crate renders as a pine tree",
         "Grass density re-tested vs FPS"
       ],
-      "completionEvidence": null,
+      "completionEvidence": "BUILD 1049 verified live — commit 0e3d7c0b, verified 2026-11-09T15:03:43.022Z, deploy run not recorded. Full description in buildHistory.",
       "dependencies": [
         "Ashfall Stage 2"
       ],
       "objective": "3 tree shapes, bushes (non-blocking), crates/stalls stop rendering as trees, grass density re-tested vs FPS.",
       "risks": [],
       "stage": "Ashfall Stage 3 — Vegetation",
-      "status": "planned"
+      "status": "done"
     },
     {
       "acceptanceCriteria": [
         "Roofline variation visible (not all roofAxis='x')",
         "Interiors have ceilings (no sky visible from inside)"
       ],
-      "completionEvidence": null,
+      "completionEvidence": "BUILD 1050 verified live — commit 9edb9212, verified 2026-11-09T16:53:41.024Z, deploy run 42659047927. Full description in buildHistory.",
       "dependencies": [
         "Ashfall Stage 3"
       ],
       "objective": "Roof variety (axis/pitch/parapet), gardens/fences, interior ceilings + hearth glow; no mechanics (inn/store/smith stay shells).",
       "risks": [],
       "stage": "Ashfall Stage 4 — Architecture",
-      "status": "planned"
+      "status": "done"
     },
     {
       "acceptanceCriteria": [
@@ -652,7 +645,7 @@
         "Readable districts",
         "2-3 fixed wild landmarks"
       ],
-      "completionEvidence": null,
+      "completionEvidence": "BUILD 1051 verified live — commit 6a10dece, verified 2026-11-09T17:36:59.091Z, deploy run 42666118966. Full description in buildHistory.",
       "dependencies": [
         "Ashfall Stage 4"
       ],
@@ -661,7 +654,7 @@
         "Cause of the 0-stall drop is UNVERIFIED — verify before fixing"
       ],
       "stage": "Ashfall Stage 5 — Settlements",
-      "status": "planned"
+      "status": "done"
     },
     {
       "acceptanceCriteria": [
@@ -669,14 +662,14 @@
         "Stars visible",
         "Dawn/dusk grading present"
       ],
-      "completionEvidence": null,
+      "completionEvidence": "BUILD 1052 verified live — commit acc4810c, verified 2026-11-09T19:26:29.144Z, deploy run 42683144704. Full description in buildHistory.",
       "dependencies": [
         "Ashfall Stage 5"
       ],
       "objective": "Night that reads as night + stars, dawn/dusk grading, staggered evening lights; weather + sun-follow shading are stretch, not promised.",
       "risks": [],
       "stage": "Ashfall Stage 6 — Atmosphere",
-      "status": "planned"
+      "status": "done"
     }
   ],
   "teamResponsibilities": [
