@@ -81,10 +81,22 @@ export const BUILDING_ASSET_META: Record<string, BuildingAssetMeta> = {
   'story-tower':   { variant: 'story-tower',    file: 'buildings/story-tower.png',    w: 2240, h: 1120, anchor: 'base-center', kind: 'civic' },
   // BUILD 982: Mosslight Bank — dims audited from the actual PNG
   // (baked by scripts/bake-bank-png.py, a faithful drawKenneyHouse
-  // port). The bank carries its OWN correct meta; the 5 959 variants
-  // still lack meta (the 684 rig crash) — that fix is a separate user
-  // decision and is deliberately untouched here.
+  // port). The bank carries its OWN correct meta. The 5 959 variants
+  // below it now carry theirs too (BUILD 684 fix, 2026-11-13).
   'bank':          { variant: 'bank',           file: 'buildings/bank.png',           w: 1138, h: 597, anchor: 'base-center', kind: 'civic' },
+  // BUILD 684 fix (2026-11-13): the 5 BUILD 959 Kenney variants lacked meta,
+  // so assetMetaFor returned null and the sim crashed at the Rig684 section.
+  // Dimensions audited from the actual PNG files (IHDR + `file`); kinds follow
+  // the catalog's naming/pool evidence — cottage-wide is a single-story cottage
+  // (COTTAGE_VARIANT_POOL, residential pool); hall-grand is a civic hall like
+  // gatehouse/story-tower; house-balcony/house-tall are two-story 'house-*'
+  // like blue-house/house-timber/plaster-house (stone-house); shop-banner is
+  // a shop (SHOP_VARIANTS + commercial filler pool).
+  'cottage-wide':  { variant: 'cottage-wide',  file: 'buildings/cottage-wide.png',  w: 1280, h: 555, anchor: 'base-center', kind: 'cottage' },
+  'hall-grand':    { variant: 'hall-grand',    file: 'buildings/hall-grand.png',    w: 1280, h: 555, anchor: 'base-center', kind: 'civic' },
+  'house-balcony': { variant: 'house-balcony', file: 'buildings/house-balcony.png', w: 768, h: 811, anchor: 'base-center', kind: 'stone-house' },
+  'house-tall':    { variant: 'house-tall',    file: 'buildings/house-tall.png',    w: 768, h: 811, anchor: 'base-center', kind: 'stone-house' },
+  'shop-banner':   { variant: 'shop-banner',   file: 'buildings/shop-banner.png',   w: 768, h: 555, anchor: 'base-center', kind: 'shop' },
 };
 
 /** The authoritative per-instance building record. */

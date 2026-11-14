@@ -10230,8 +10230,17 @@ console.log('Testing examine system...');
     assert(meta!.anchor === 'base-center', `Rig684: anchor convention for '${v}'`);
   }
   assert(assetMetaFor('no-such-variant') === null, 'Rig684: unknown variant returns null');
-  assert(Object.keys(BUILDING_ASSET_META).length === BUILDING_VARIANTS.length,
-    'Rig684: meta catalog covers every audited variant');
+  // The catalog legitimately holds one entry beyond BUILDING_VARIANTS:
+  // 'starting-house-exterior' (tutorial-house sprite, added BUILD 777,
+  // loaded explicitly in IsoFieldView, not a settlement variant). Length
+  // equality was valid at 684 (10 === 10) and has been a false failure
+  // since 777; assert the real invariant instead — every audited variant
+  // has meta (already proven per-variant in the loop above), and the only
+  // extra key is that one.
+  const extraMetaKeys = Object.keys(BUILDING_ASSET_META).filter(
+    (k) => !(BUILDING_VARIANTS as readonly string[]).includes(k));
+  assert(extraMetaKeys.length === 1 && extraMetaKeys[0] === 'starting-house-exterior',
+    `Rig684: meta catalog covers every audited variant (extra keys: ${extraMetaKeys.join(', ') || 'none'})`);
 
   // 2. Real cottage rigs: 6 Mosslight cottages from the real doorway source.
   const doors = cottageDoorways();
@@ -10581,7 +10590,13 @@ console.log('Testing examine system...');
     assert(pool ? pool.includes(v1) : ['plaster-house', 'green-shop'].includes(v1),
       `Town692: filler variant '${v1}' district-appropriate for ${f.district}`);
     const meta = assetMetaFor(v1);
-    assert(meta !== null && meta.w === 2240 && meta.h === 1120,
+    // Valid rig metadata means the variant is registered with sane dims and
+    // the correct file — NOT a fixed 2240x1120. That size was true of every
+    // filler variant in 692, but BUILD 959 put genuinely different-sized
+    // art in the filler pools (shop-banner 768x555, cottage-wide 1280x555,
+    // house-balcony/house-tall 768x811), so the fixed-size check has been
+    // a false failure since 959.
+    assert(meta !== null && meta.w > 0 && meta.h > 0 && meta.file === `buildings/${v1}.png`,
       `Town692: rig meta valid for filler variant '${v1}'`);
   }
 
