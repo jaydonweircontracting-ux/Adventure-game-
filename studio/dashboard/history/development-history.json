@@ -74,6 +74,11 @@
       "date": "2026-11-12",
       "description": "Dashboard repair (§54 Stage B) complete: artifact v2 fetches studio/dashboard/dashboard-data.json live on every load (raw GitHub URL, HTTP 200, 70,872 bytes); fallback is an embedded snapshot labeled 'Cached snapshot' with its date. Builder jsdom harness ~90 assertions/mode passed (live: 1052/acc4810c + commit link; fallback: identical + snapshot label; filters Verified 37 / Queued 1 / Audits 1 / In progress 0 / All 39; quality gates L3/L4 NOT RUN; missing evidence labeled). Parent confirmed artifact v2 live. Data correction in the same checkpoint: Ashfall Stages 2-6 stageProgress was still 'planned' — marked done with BUILD 1034/1049/1050/1051/1052 evidence. Queue now empty — no next item ordered; candidates (684 sim crash fix-or-accept, 3D minimap G17, ag-3d-* save-key versioning G16) await the user's word. Snapshot snapshots/2026-11-12.json created.",
       "type": "dashboard"
+    },
+    {
+      "date": "2026-11-13",
+      "description": "684 sim crash fixed (commit ece7385d, 2 files +33/-6): 5 BUILDING_ASSET_META entries added in src/game/buildingRig.ts with dims read from the PNG IHDRs (cottage-wide/hall-grand 1280x555, house-balcony/house-tall 768x811, shop-banner 768x555; anchor base-center), plus 2 test-side stale-assert corrections in scripts/simulate.ts (Rig684 length assert — catalog legitimately holds extra starting-house-exterior since BUILD 777; Town692 dims assert — 959 art differs from the 2240x1120 filler size). Pre-fix repro: TypeError at meta.file for cottage-wide, exit 1, no summary. Post-fix full sim runs to completion: 384,678 passed, 51 failed (parent re-ran directly — log byte-identical to the agent run). Rig684 catalog asserts pass; Town692 zero failures. Remaining: 51 failures (46 pre-Rig684 pre-existing + 5 newly unmasked). No game build, no deploy, no markers touched; last verified game checkpoint stays BUILD 1052/acc4810c.",
+      "type": "build"
     }
   ],
   "schemaVersion": "1.0"

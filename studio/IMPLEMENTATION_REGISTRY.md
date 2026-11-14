@@ -100,7 +100,7 @@
 | Q26 | BUILD 1051 Ashfall Stage 5 settlements | COMPLETE AND VERIFIED | Commit 6a10dece, deploy run 42666118966 success; served version.json 1051 @ 2026-11-09T17:36:59.091Z; 1910 asserts pass; 3 market stalls at the plaza, readable districts + cobble, 3 fixed wild landmarks |
 | Q27 | BUILD 1052 Ashfall Stage 6 atmosphere | COMPLETE AND VERIFIED | Commit acc4810c, deploy run 42683144704 success; served version.json 1052 @ 2026-11-09T19:26:29.144Z; 9953 asserts pass; night reads as night + 120 stars, dawn/dusk grading, staggered evening lights, rain |
 | S1 | Stone house replacement (3D) | BLOCKED | FBX package never arrived; only a README in public/sprites/3d-house-sprites/ |
-| S2 | 684 sim crash | BLOCKED | assetMetaFor null for 5 variants; ~1,000 sim lines unverified; awaiting user word |
+| S2 | 684 sim crash | COMPLETE AND VERIFIED | Fixed 2026-11-13 (commit ece7385d): 5 BUILDING_ASSET_META entries added with real PNG dims; sim runs to completion, 384,678 passed / 51 failed (46 pre-existing + 5 newly unmasked); Rig684 catalog asserts pass |
 | S3 | Project Zomboid files disposition | NOT IMPLEMENTED | Awaiting user word; no decision record found |
 | S4 | Syrinscape installer disposition | NOT IMPLEMENTED | Awaiting user word; no decision record found |
 | S5 | Dungeon loot transfer | NOT IMPLEMENTED | Awaiting user word; Stone Soup is separate by design |
@@ -812,14 +812,14 @@
 - **(6) How it will be tested:** Absence verified 2026-10-28; after arrival, stone house renders in 3D with its own textures, all old houses replaced, old models removed.
 - **(7) Completion:** Stone house renders in 3D with its own textures, all old houses replaced, old models removed.
 
-## S2 — 684 sim crash — BLOCKED
+## S2 — 684 sim crash — COMPLETE AND VERIFIED
 - **(1) Intended purpose:** `scripts/simulate.ts` must run to completion; ~1,000 sim lines after the crash point are unverified.
-- **(2) Current implementation:** None (fix). `assetMetaFor` returns null for 5 variants (Rig684 asserts in `simulate.ts` L10213+); every build's sim comparison since reports "same known 684 rig crash" with normalized logs identical and 0 FAIL *before* the crash. This audit did not run the sim — per the dated logs and the task brief.
-- **(3) Dependencies:** User decision to prioritize (listed as "remaining candidate, NOT ordered").
-- **(4) What remains unfinished:** Fix the 5 missing asset metas (or the rig assembly), then run the full sim.
+- **(2) Current implementation:** Fixed 2026-11-13 (commit ece7385d, 2 files +33/−6): 5 BUILDING_ASSET_META entries added in `src/game/buildingRig.ts` with dims read from the PNG IHDRs (cottage-wide/hall-grand 1280×555, house-balcony/house-tall 768×811, shop-banner 768×555; anchor base-center); plus 2 test-side stale-assert corrections in `scripts/simulate.ts` (Rig684 length assert — catalog legitimately holds extra 'starting-house-exterior' since BUILD 777; Town692 dims assert — 959 art differs from the 2240×1120 filler size). Full sim now runs to completion: 384,678 passed, 51 failed (parent re-ran directly — log byte-identical to the agent's). Rig684 catalog asserts pass; Town692 zero failures.
+- **(3) Dependencies:** User decision to prioritize — given 2026-11-13 ("Continue" after the Dashboard repair report named it first among the candidates).
+- **(4) What remains unfinished:** The crash is fixed. Remaining: 51 sim failures (46 pre-Rig684 pre-existing + 5 newly unmasked: cottage-1/2 door-nav defect ×2, windmill-composite missing from knownAssets, Town695 stall rows ×2). The cottage-1/2 door-nav defect is precisely diagnosed (verify684/diag-cottage.log) and is the natural next sim item.
 - **(5) Responsible files/modules:** `scripts/simulate.ts`, `src/game/buildingRig.ts`.
-- **(6) How it will be tested:** `simulate.ts` exits 0 with the post-684 sections asserting.
-- **(7) Completion:** `simulate.ts` exits 0 with the post-684 sections asserting.
+- **(6) How it will be tested:** Full sim runs to completion with the post-684 sections asserting (it does — 69 Testing lines through the summary; exit 1 because 51 failures remain, not a crash). Exit 0 requires clearing the remaining failures.
+- **(7) Completion:** Crash fixed and verified 2026-11-13 (sim completes; Rig684 catalog asserts pass). Full exit-0 completion still needs the 51 remaining failures cleared.
 
 ## S3 — Project Zomboid files disposition
 - **(1) Intended purpose:** Decide what happens to the PZ files (user's files, disposition unknown).
@@ -1147,7 +1147,7 @@
 1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). No next item is ordered — candidates awaiting the user's word are the 684 sim crash fix-or-accept, 3D minimap (G17), and ag-3d-* save-key versioning (G16).
 2. **Ashfall Stage 3 vegetation — DONE (BUILD 1049, see Q24).** 3 tree shapes, generated bushes, props render as themselves; 641 asserts pass, phone probe 0 page errors.
 3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B) — DONE 2026-11-12.** See item 1.
-4. **Fix or formally accept the 684 sim crash (S2).** ~1,000 sim lines unverified on every build; the fix is likely small (5 missing asset metas). If the user won't prioritize it, record it as accepted so the sim comparison stops carrying a known blind spot.
+4. **Fix the 684 sim crash (S2) — DONE 2026-11-13 (commit ece7385d).** Sim runs to completion, 384,678 passed / 51 failed; Rig684 catalog asserts pass. Remaining: 51 failures (46 pre-existing + 5 newly unmasked, incl. the cottage-1/2 door-nav defect — precisely diagnosed, the natural next sim item).
 5. **3D minimap (G17).** A standing user request since 2026-10-12; the 2D minimap exists to port; high daily value for navigation.
 6. **Version the `ag-3d-*` save keys + migration (G16 gap).** Cheap insurance: one version field + a migration path, before any format change silently corrupts saves.
 9. **Reconcile/retire the stale Oct-era autonomous engine + backfill or downgrade the 1016–1029 Level-4 gate claims (D3, D4, D5).** Ledger honesty: cheap (thinking + JSON edits), and it closes the one place where the dashboard currently asserts more than the evidence supports.

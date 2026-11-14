@@ -427,10 +427,10 @@
       "status": "open"
     },
     {
-      "issue": "Sim 684 rig crash: assetMetaFor returns null for 5 variants (cottage-wide, hall-grand, house-balcony, house-tall, shop-banner); simulate.ts crashes dereferencing meta.file; ~1,000 sim lines after the rig section unverified.",
-      "notes": "Sim-only; crash-masked since 694. Awaiting the user's word.",
-      "reported": "2026-10-21",
-      "status": "awaiting_user"
+      "issue": "Sim failures remaining after the 684 crash fix (2026-11-13, commit ece7385d): 51 failed of 384,729 — 46 pre-Rig684 pre-existing + 5 newly unmasked (cottage-1/2 door-nav defect x2, windmill-composite missing from knownAssets, Town695 stall rows x2).",
+      "notes": "Sim-only. The 684 crash itself is fixed — the sim runs to completion (384,678 passed) and Rig684 catalog asserts pass; parent re-ran directly with a byte-identical log. The cottage-1/2 door-nav defect is precisely diagnosed (verify684/diag-cottage.log): door exteriors sit in 6-unit gaps between cottages 1-3 and findPath returns null in all 4 probe directions. Town695 sees 1 stall row, wants >= 12.",
+      "reported": "2026-11-13",
+      "status": "open"
     },
     {
       "issue": "Stone house replacement in 3D mode blocked: package files never arrived (3d-house-sprites/ holds only a README.md describing a DIFFERENT pack).",
@@ -469,7 +469,7 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-12T18:47:09-07:00",
+  "lastUpdateTimestamp": "2026-11-13T19:47:29-07:00",
   "lastVerifiedCheckpoint": {
     "build": 1052,
     "commit": "acc4810c",
