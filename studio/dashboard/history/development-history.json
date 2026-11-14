@@ -79,6 +79,11 @@
       "date": "2026-11-13",
       "description": "684 sim crash fixed (commit ece7385d, 2 files +33/-6): 5 BUILDING_ASSET_META entries added in src/game/buildingRig.ts with dims read from the PNG IHDRs (cottage-wide/hall-grand 1280x555, house-balcony/house-tall 768x811, shop-banner 768x555; anchor base-center), plus 2 test-side stale-assert corrections in scripts/simulate.ts (Rig684 length assert — catalog legitimately holds extra starting-house-exterior since BUILD 777; Town692 dims assert — 959 art differs from the 2240x1120 filler size). Pre-fix repro: TypeError at meta.file for cottage-wide, exit 1, no summary. Post-fix full sim runs to completion: 384,678 passed, 51 failed (parent re-ran directly — log byte-identical to the agent run). Rig684 catalog asserts pass; Town692 zero failures. Remaining: 51 failures (46 pre-Rig684 pre-existing + 5 newly unmasked). No game build, no deploy, no markers touched; last verified game checkpoint stays BUILD 1052/acc4810c.",
       "type": "build"
+    },
+    {
+      "date": "2026-11-13",
+      "description": "BUILD 1053: 3D minimap (G17) — circular 120px north-up minimap top-left in the 3D view; terrain + houses + stalls + NPCs + car; hides inside huts and with Hide UI; tap-to-travel via 1030 A*. New pure module minimap3d.ts (77 standalone asserts ALL PASS, parent re-ran directly; 17 new sim asserts — sim 384,695 passed / 51 failed, pristine-identical except the new header). Phone probe PASS 0 page errors. Commit 8cba4029, deploy run 43553226095 success, served version.json 1053 @ 2026-11-14T03:46:05.139Z. Registry G17 → COMPLETE AND VERIFIED (counts 32/14/20/8/29/4/0, 107 total — counts table regenerated from the actual rows; it had been stale and double-counted Q4).",
+      "type": "build"
     }
   ],
   "schemaVersion": "1.0"

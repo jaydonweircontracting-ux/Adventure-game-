@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": "Dashboard repair (§54)",
-    "commit": null,
-    "description": "Stage B complete (2026-11-12): the dashboard artifact ('ashfall-development-dashboard', v2) fetches studio/dashboard/dashboard-data.json live from GitHub on every load and renders from it; if the fetch fails it falls back to an embedded snapshot labeled 'Cached snapshot' with its date. Verified by the builder's jsdom harness (~90 assertions per mode, live + fallback, all passed) and parent-confirmed (artifact v2 live; data URL HTTP 200, 70,872 bytes, lastVerified 1052/acc4810c). No next item is ordered — the queue is empty until the user orders the next work.",
+    "build": 1053,
+    "commit": "8cba4029",
+    "description": "3D minimap (G17) — circular 120px north-up minimap in the top-left corner of the 3D view (the only free corner: top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip). New pure module minimap3d.ts: terrain from the same effTerrainFor the renderer uses (grass/dirt paths/water/sand/stone), buildings as rects (huts, stalls, landmarks, placed houses/stalls/walls/windmills/mines/customs), NPCs as white dots, car as an orange dot; redraw at most every 250ms + on player-tile change (~1.6ms/frame in node). Hides inside a hut and with Hide UI on; no world-map overlay exists in 3D. Tap-to-travel through the 1030 A* pathfinding. Does not show animals/transients or trees/rocks/crates (sub-pixel). Landed: commit 8cba4029, deploy run 43553226095 success, phone probe PASS 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed).",
     "status": "verified"
   },
   "buildHistory": [
@@ -338,6 +338,15 @@
       "runId": "42683144704",
       "status": "verified",
       "verifiedAt": "2026-11-09T19:26:29.144Z"
+    },
+    {
+      "build": 1053,
+      "commit": "8cba4029",
+      "description": "3D minimap (G17) — circular 120px north-up minimap in the top-left corner of the 3D view (the only free corner: top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip). New pure module minimap3d.ts: terrain from the same effTerrainFor the renderer uses (grass/dirt paths/water/sand/stone), buildings as rects (huts, stalls, landmarks, placed houses/stalls/walls/windmills/mines/customs), NPCs as white dots, car as an orange dot; redraw at most every 250ms + on player-tile change (~1.6ms/frame in node). Hides inside a hut and with Hide UI on; no world-map overlay exists in 3D. Tap-to-travel through the 1030 A* pathfinding. Does not show animals/transients or trees/rocks/crates (sub-pixel). Landed: commit 8cba4029, deploy run 43553226095 success, phone probe PASS 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed).",
+      "qualityGateLevel": 3,
+      "runId": "43553226095",
+      "status": "verified",
+      "verifiedAt": "2026-11-14T03:46:05.139Z"
     }
   ],
   "buildQueue": [],
@@ -469,13 +478,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-13T19:47:29-07:00",
+  "lastUpdateTimestamp": "2026-11-13T20:49:56-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1052,
-    "commit": "acc4810c",
-    "description": "Ashfall Stage 6 — atmosphere: night reads as night — the 3D night factor caps at 0.82 (not 976's 0.55 — dayNight.ts untouched, 2.5D unaffected); mixed ground at midnight is 23-33% of noon (was ~50%, the 'overcast day' look); figures/car/corpses keep the old 0.55 cap for readability; the sky gradient + clear colour are clock functions now, not a fixed light-blue background. 120 deterministic stars (hash2 seeds), fade in as night deepens / out by dawn (alpha 0 noon, 1 midnight), emitted into the sky buffer's self-luminous segment; suppressed inside houses. Dawn/dusk grading — gradient horizon warms gold-pink at dawn ([0.94,0.63,0.44]) and deeper orange-red at dusk ([0.92,0.48,0.29]), with a uWarm world tint to match; smooth over game time (max colour step 0.0224/min, warm step 0.0259/min — no pops). Staggered evening lights — fourth off-bucket added to lightScheduleFor (dusk 19:00-20:00, 20%; early 21:30-22:30, 20%; mid 23:00-00:30, 35%; late 04:30-05:30, 25%); live shares: 20:00 21/29, 21:00 21/29, 22:00 19/29, 00:00 12/29, 03:00 6/29; 28 distinct on-times; lanterns and the hearth use the same function, so they inherit the stagger. Rain (stretch, built) — every third day (day % 3 == 1), 14:00-16:00, 120 crossed-quad streaks around the player; visual only. NOT in this build: sun-follow shading — the world buffer carries no normal attribute, so the fragment shader can't tell faces apart; a true sun-follow needs a buffer-format change; the uWarm tint is the honest substitute; no fog or snow, only rain. The Ashfall program is now complete (Stages 3-6: vegetation, architecture, settlements, atmosphere).",
-    "runId": "42683144704",
-    "verifiedAt": "2026-11-09T19:26:29.144Z"
+    "build": 1053,
+    "commit": "8cba4029",
+    "description": "3D minimap (G17) — circular 120px north-up minimap in the top-left corner of the 3D view (the only free corner: top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip). New pure module minimap3d.ts: terrain from the same effTerrainFor the renderer uses (grass/dirt paths/water/sand/stone), buildings as rects (huts, stalls, landmarks, placed houses/stalls/walls/windmills/mines/customs), NPCs as white dots, car as an orange dot; redraw at most every 250ms + on player-tile change (~1.6ms/frame in node). Hides inside a hut and with Hide UI on; no world-map overlay exists in 3D. Tap-to-travel through the 1030 A* pathfinding. Does not show animals/transients or trees/rocks/crates (sub-pixel). Landed: commit 8cba4029, deploy run 43553226095 success, phone probe PASS 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed).",
+    "runId": "43553226095",
+    "verifiedAt": "2026-11-14T03:46:05.139Z"
   },
   "measuredBaselines": [
     {

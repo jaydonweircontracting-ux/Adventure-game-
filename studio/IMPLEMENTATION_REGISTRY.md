@@ -42,8 +42,8 @@
 | G14 | Skills / XP in 3D | NOT IMPLEMENTED | skills.ts exists (2D only); 3D gathering gives resources, no XP |
 | G15 | AI adventurers in 3D | PARTIALLY IMPLEMENTED | transients.ts walkers exist; full sim (delves/loot/coins) is 2D-only |
 | G16 | Save / persistence (3D keys) | IMPLEMENTED BUT UNVERIFIED | iso-world-v2 versioned+migrated; ag-3d-* keys have NO versioning |
-| G17 | Minimap in 3D | NOT IMPLEMENTED | Zero minimap hits in engine3d/; circular minimap is 2D-only despite standing request |
-| G18 | HUD / Build menu / undo-redo / sprint | PARTIALLY IMPLEMENTED | Build menu + undo/redo + sprint exist; minimap absent (see G17) |
+| G17 | Minimap in 3D | COMPLETE AND VERIFIED | BUILD 1053 (commit 8cba4029): circular 120px north-up minimap top-left in the 3D view; terrain + buildings + NPCs + car; hides inside huts and with Hide UI; tap-to-travel via 1030 A*; 77 standalone asserts, sim +17 (384,695 passed / 51 failed), phone probe 0 page errors |
+| G18 | HUD / Build menu / undo-redo / sprint | PARTIALLY IMPLEMENTED | Build menu + undo/redo + sprint exist; minimap present since BUILD 1053 (see G17) |
 | G19 | Audio in 3D | NOT IMPLEMENTED | Zero audio hits in engine3d/; audio.ts is 2D-only |
 | G20 | Performance (device baseline) | IMPLEMENTED BUT UNVERIFIED | Only SwiftShader harness numbers exist; real-phone FPS unknown |
 | D1 | Live development dashboard (artifact) | COMPLETE AND VERIFIED | Artifact v2 (2026-11-12) fetches studio/dashboard/dashboard-data.json live on every load; fallback embedded snapshot labeled 'Cached snapshot'; builder jsdom harness ~90 assertions/mode passed; parent confirmed v2 live + data URL HTTP 200 |
@@ -274,23 +274,23 @@
 - **(6) How it will be tested:** Save/load round-trip on device; format-bump migration test.
 - **(7) Completion:** A versioned save set that survives a format bump without data loss, verified by a reload round-trip.
 
-## G17 — Minimap in 3D
+## G17 — Minimap in 3D — COMPLETE AND VERIFIED
 - **(1) Intended purpose:** A circular minimap in a corner of the screen showing the area near the player (user request 2026-10-12).
-- **(2) Current implementation:** None in 3D — zero `minimap` hits in `engine3d/`; the circular minimap (`App.tsx:4354+`, `minimapRadar.ts`, `minimapIcons.ts`) is 2D-only.
+- **(2) Current implementation:** BUILD 1053 (commit 8cba4029, 2026-11-13): new pure module `src/game/engine3d/minimap3d.ts` (no React/DOM) wired into `Engine3DWorldView.tsx` as a `Minimap3D` canvas. 120px canvas, 2 px/tile, ±30 tiles visible, north-up with an `N` at the top, player as a white dot in the centre. Terrain from one `effTerrainFor(world)` closure (the same definition the renderer uses, so the map can never disagree with the ground): grass, dirt paths, water, sand, stone. Buildings as rects: huts tan, stalls gold, landmarks grey-brown, placed houses/stalls/walls/windmills/mines/customs included. NPCs as white dots (live resident actors, alive only), car as an orange dot. Terrain grouped into one fill path per colour (the BUILD 980 seam fix). Corner is TOP-LEFT — top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip. Hide conditions: inside a hut, Hide UI on. No world-map overlay exists in 3D, so no third condition. Tap-to-travel via the 1030 A* pathfinding (travelRequestRef bridge reuses the field-tap branch). Does NOT show animals/transients (session-only, no stable map identity) or trees/rocks/crates/lanterns/farm tiles (sub-pixel at 2 px/tile). Redraw at most every 250ms + on player-tile change; ~1.6ms per frame build in node.
 - **(3) Dependencies:** 2D minimap code (`minimapRadar.ts`, `minimapIcons.ts`), 3D world state (player position, nearby terrain/buildings).
-- **(4) What remains unfinished:** Everything in 3D.
-- **(5) Responsible files/modules:** `src/game/minimapRadar.ts`, `minimapIcons.ts`, `Engine3DWorldView.tsx` (wiring point).
+- **(4) What remains unfinished:** Nothing for the core request. Possible follow-ups (not ordered): none recorded.
+- **(5) Responsible files/modules:** `src/game/engine3d/minimap3d.ts`, `Engine3DWorldView.tsx` (wiring point).
 - **(6) How it will be tested:** Phone probe: minimap visible in 3D, updates as the player moves, shows nearby terrain/buildings/player.
-- **(7) Completion:** Minimap visible in 3D showing nearby terrain/buildings/player.
+- **(7) Completion:** Minimap visible in 3D showing nearby terrain/buildings/player — DONE 2026-11-13 (BUILD 1053): 77 standalone asserts ALL PASS (parent re-ran directly), sim +17 (384,695 passed / 51 failed, pristine-identical except the new header), phone probe 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed), served version.json 1053 + `__AG_BUILD="1053"`.
 
 ## G18 — HUD / Build menu / undo-redo / sprint
 - **(1) Intended purpose:** A clean play screen (HUD strip, Build menu with every addition, undo/redo, working sprint/stamina).
 - **(2) Current implementation:** HUD (3D): HP bar + Wood/Stone/Gold counts + Sprint button + stamina state + message line + Enter/Exit buttons (`Engine3DWorldView.tsx:2894–2957`). Build menu: categories Terrain/Buildings/Plants/Props/Custom (`:1315–1324`); kinds `path, grass, water, house-cottage, house-tall, house-shop, house-grand, house-inn, house-smith, house-store, tree, stall, rock, wall` + legacy `house` (old saves only) + custom `.glb` upload (`customAssets.ts`, textures/animation ignored); Move/Remove/Save-area modes; chunk templates (`templates.ts: captureChunk`/`pasteChunk`). Undo/redo: `placements.ts:756+` `createBuildHistory`/`recordBuildChange`/`undoBuildChange`/`redoBuildChange`, stroke entries undo as one unit. Sprint/stamina: `sprint.ts` — walk 3.15 u/s, sprint ×1.6 (5.04), drain 20/s, regen 12/s, exhausted recovers at 25, tap latch 500ms/24px, session-only stamina.
 - **(3) Dependencies:** `placements.ts`, `templates.ts`, `customAssets.ts`, `sprint.ts`, `playerStep.ts`.
-- **(4) What remains unfinished:** Minimap absent (see G17); live verification of undo/redo across all kinds outstanding; Build panel scroll on a physical iPhone unconfirmed (see S14).
+- **(4) What remains unfinished:** Minimap done (BUILD 1053, see G17); live verification of undo/redo across all kinds outstanding; Build panel scroll on a physical iPhone unconfirmed (see S14).
 - **(5) Responsible files/modules:** `Engine3DWorldView.tsx`, `placements.ts`, `templates.ts`, `sprint.ts`, `customAssets.ts`.
 - **(6) How it will be tested:** Phone probes per build (undo/redo restores every palette kind exactly; sprint latch/exhaust/rearm behaviour).
-- **(7) Completion:** Minimap visible in 3D (G17) plus a probe proving undo/redo restores every palette kind exactly.
+- **(7) Completion:** Minimap visible in 3D (G17 — done BUILD 1053) plus a probe proving undo/redo restores every palette kind exactly.
 
 ## G19 — Audio in 3D
 - **(1) Intended purpose:** Sound/music in 3D (footsteps, combat, ambience, music zones).
@@ -1128,27 +1128,27 @@
 
 ---
 
-# Counts per status (89 requirements total)
+# Counts per status (107 requirements total — counted directly from the table rows, 2026-11-13)
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 27 | D12, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S26, T6 |
-| IMPLEMENTED BUT UNVERIFIED | 15 | G1, G3, G4, G5, G7, G9, G16, G20, D1, D7, D9, S14, S21, S22, S25 |
-| PARTIALLY IMPLEMENTED | 22 | G2, G10, G15, G18, D2, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R8, R9, R13, T1, T2, T3, T4 |
+| COMPLETE AND VERIFIED | 32 | G17, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, T6 |
+| IMPLEMENTED BUT UNVERIFIED | 14 | G1, G3, G4, G5, G7, G9, G16, G20, D7, D9, S14, S21, S22, S25 |
+| PARTIALLY IMPLEMENTED | 20 | G2, G10, G15, G18, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R9, R13, T1, T2, T3, T4 |
 | DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
-| NOT IMPLEMENTED | 31 | G8, G11, G12, G13, G14, G17, G19, Q4, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
-| BLOCKED | 5 | S1, S2, E1, E2, E3 |
+| NOT IMPLEMENTED | 29 | G8, G11, G12, G13, G14, G19, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
+| BLOCKED | 4 | S1, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** only 27 of 89 requirements are complete and verified. 31 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1052; the gap is depth (quests, economy, dungeons, skills, audio, minimap) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 15 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale at the 1030 checkpoint — the sections were updated but the counts were not; corrected here at the 1031 checkpoint.)
+**Reading the counts:** 32 of 107 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1053; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows here.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 
-1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). No next item is ordered — candidates awaiting the user's word are the 684 sim crash fix-or-accept, 3D minimap (G17), and ag-3d-* save-key versioning (G16).
+1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). No next item is ordered — candidates awaiting the user's word are the ag-3d-* save-key versioning (G16) and the cottage-1/2 door-nav defect.
 2. **Ashfall Stage 3 vegetation — DONE (BUILD 1049, see Q24).** 3 tree shapes, generated bushes, props render as themselves; 641 asserts pass, phone probe 0 page errors.
 3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B) — DONE 2026-11-12.** See item 1.
 4. **Fix the 684 sim crash (S2) — DONE 2026-11-13 (commit ece7385d).** Sim runs to completion, 384,678 passed / 51 failed; Rig684 catalog asserts pass. Remaining: 51 failures (46 pre-existing + 5 newly unmasked, incl. the cottage-1/2 door-nav defect — precisely diagnosed, the natural next sim item).
-5. **3D minimap (G17).** A standing user request since 2026-10-12; the 2D minimap exists to port; high daily value for navigation.
+5. **3D minimap (G17) — DONE 2026-11-13 (BUILD 1053, commit 8cba4029).** Circular 120px north-up minimap top-left in the 3D view; terrain + houses + stalls + NPCs + car; hides inside huts and with Hide UI; tap-to-travel via 1030 A*; 77 standalone asserts, sim +17 (384,695 passed / 51 failed), phone probe 0 page errors.
 6. **Version the `ag-3d-*` save keys + migration (G16 gap).** Cheap insurance: one version field + a migration path, before any format change silently corrupts saves.
 9. **Reconcile/retire the stale Oct-era autonomous engine + backfill or downgrade the 1016–1029 Level-4 gate claims (D3, D4, D5).** Ledger honesty: cheap (thinking + JSON edits), and it closes the one place where the dashboard currently asserts more than the evidence supports.
 10. **Adjudicate the directive overlaps (see below) and rule OBSOLETE/DUPLICATED where warranted.** Prevents building four competing autonomous engines, three dashboards, and three memory/genome systems. Pure Stage A follow-up work — no code.
@@ -1159,7 +1159,7 @@ Per §55, stages overlap only when dependencies are satisfied and changes do not
 
 - **Stage A — Foundation (in progress).** This registry; reconcile with the legacy audit (S26) once its deliverable lands; establish the §55 doc set (D7: ENGINE_BIBLE, SYSTEM_MAP, PROJECT_STATE, NEXT_TASK, TEST_STATUS); move `studio/` files into the repo (D2, D9). *Exit: registry + docs live in-repo and maintained.*
 - **Stage B — Development infrastructure.** Dashboard wired to repo JSON (D1); gates evidenced per build, historical Level-4 claims backfilled or downgraded (D4, D3); backlog = dashboard JSON, stale Oct-era engine retired or superseded (D5); 684 crash fixed or formally accepted (S2). *Exit: every "verified" claim has evidence; one backlog source of truth.*
-- **Stage C — World systems.** 1031, 1032, Ashfall Stages 2–6 (Q2–Q8); 3D minimap (G17) is a candidate to pull forward into this stage given its impact-per-credit. *Exit: terrain, vegetation, architecture, settlements, atmosphere each live-verified.*
+- **Stage C — World systems.** 1031, 1032, Ashfall Stages 2–6 (Q2–Q8); 3D minimap (G17) — done BUILD 1053. *Exit: terrain, vegetation, architecture, settlements, atmosphere each live-verified.*
 - **Stage D — Living world.** NPC-vs-monster combat in 3D (G8), AI adventurers in 3D (G15), full 2.5D NPC sim in 3D if ordered (S19), NPC dialogue/needs/relationships. *Exit: the world visibly lives without the player.*
 - **Stage E — Gameplay.** Quests (G11), economy/shops (G12), dungeons (G13), skills/XP (G14), combat consequences (G10), inn/store/smith mechanics if ordered (S10). *Exit: the §48.16 acceptance chain demonstrated live.*
 - **Stage F — Polish and optimization.** Device FPS baseline + budgets (G20), audio in 3D (G19), seamless horizon (S16), zoom-out black screen (S24), tree misalignment (S23), BUILD 707 / 945 confirmations (S21, S22), grass sway / placement costs if ordered (S17, S18). *Exit: measured phone baseline; announced-but-unverified items confirmed or re-shipped.*
