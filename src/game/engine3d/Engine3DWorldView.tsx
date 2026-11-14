@@ -118,6 +118,7 @@ import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, max
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
+import { buildMinimap3dFrame, paintMinimap3d, minimap3dTapToWorld, shouldShowMinimap3d, MINIMAP3D_SIZE, MINIMAP3D_REDRAW_MS } from './minimap3d';
 import { CAR_SPEED, CAR_MAX_VERTS, emitCar, carSpawnTile, carExitTile, isCarNear, carBlocksTile, type CarState } from './car';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -1757,6 +1758,73 @@ export function createWorldBuilder(world: IsoWorld, center: Position, enteredHut
 // renders it on demand.
 export interface Diagnostics3D { verts: number; mapW: number; mapH: number; x: number; y: number; }
 
+// BUILD 1053: 3D minimap — circular, north-up, player-centred, TOP-LEFT.
+// Top-left is the only free corner: top-right holds Exit 3D + Options
+// (and the Options dialog below it), the right edge is the Build
+// cluster (bottom 14–448), bottom-left is the HUD strip, bottom-centre
+// is Enter/Exit. 120px like the 2D minimap. The parent gates visibility
+// (hidden inside a hut and while Hide UI is on — there is no world-map
+// overlay in the 3D view, so no third hide condition exists).
+// Redraw is throttled: immediately when the player's tile changes,
+// plus a 250ms interval so NPC/car dots stay live while the player
+// stands still — never per frame, and the frame builder samples one
+// effTerrain closure over a 61x61 window only (the BUILD 1050 lesson).
+// Tap-to-travel goes through the same 1030 A* path as a field tap,
+// via the travelRequestRef bridge (moveTarget lives in the frame-loop
+// effect's closure, not at component level).
+function Minimap3D({ world, playerX, playerY, npcsRef, car, onTapTravel }: {
+  world: IsoWorld;
+  playerX: number;
+  playerY: number;
+  npcsRef: { current: NpcActor3D[] | null };
+  car: { x: number; y: number } | null;
+  onTapTravel: (dest: { x: number; y: number }) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const tileX = Math.round(playerX);
+  const tileY = Math.round(playerY);
+  useEffect(() => {
+    const draw = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const g = canvas.getContext('2d');
+      if (!g) return;
+      const frame = buildMinimap3dFrame({
+        terrainAt: effTerrainFor(world),
+        playerX, playerY,
+        huts: world.huts, stalls: world.stalls,
+        placements: world.placements ?? [],
+        landmarks: world.landmarks ?? [],
+        npcs: (npcsRef.current ?? []).filter((n) => n.alive).map((n) => ({ x: n.x, y: n.y })),
+        car,
+      });
+      paintMinimap3d(g, frame);
+    };
+    draw();
+    const id = window.setInterval(draw, MINIMAP3D_REDRAW_MS);
+    return () => window.clearInterval(id);
+  }, [world, tileX, tileY, car]);
+  return (
+    <canvas
+      ref={canvasRef}
+      data-testid="minimap-3d-canvas"
+      width={MINIMAP3D_SIZE}
+      height={MINIMAP3D_SIZE}
+      aria-label="Minimap — tap to move"
+      onPointerDown={(e) => {
+        const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+        const dest = minimap3dTapToWorld(e.clientX - rect.left, e.clientY - rect.top, playerX, playerY);
+        if (dest) onTapTravel(dest);
+      }}
+      style={{
+        position: 'absolute', left: 12, top: 'max(12px, env(safe-area-inset-top))', zIndex: 4,
+        width: MINIMAP3D_SIZE, height: MINIMAP3D_SIZE, borderRadius: '50%',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)', cursor: 'crosshair', touchAction: 'manipulation',
+      }}
+    />
+  );
+}
+
 export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = false, onDiagnostics }: { onExit?: () => void; fpAuto?: boolean; hideUi?: boolean; onDiagnostics?: (d: Diagnostics3D) => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
@@ -1828,6 +1896,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const playerPathReplanRef=useRef(0);
   const playerPathWaitRef=useRef<{since:number;x:number;y:number}|null>(null);
   const playerPathStuckRef=useRef<{x:number;y:number;since:number}|null>(null);
+  // BUILD 1053: minimap tap-to-travel bridge — the Minimap3D canvas
+  // calls this with a world destination; the implementation is
+  // assigned inside the frame-loop effect (moveTarget and the path
+  // refs live in that closure).
+  const travelRequestRef=useRef<((dest:{x:number;y:number})=>void)|null>(null);
   const sprintLatchRef=useRef(false);
   const sprintPointerIdRef=useRef<number|null>(null);
   const sprintDownRef=useRef<{t:number;x:number;y:number}|null>(null);
@@ -3827,6 +3900,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
       if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
     };
+    // BUILD 1053: minimap tap-to-travel — the same start-a-journey code
+    // as a field tap (walkable check, 1030 A* plan, 'Path blocked' on
+    // no route), exposed to the Minimap3D canvas via travelRequestRef
+    // because moveTarget / playerPathRef live in this effect's closure.
+    // The minimap is hidden inside a hut, so the interior branch is
+    // belt-and-braces parity with the field tap, not a live path.
+    travelRequestRef.current=(dest:{x:number;y:number})=>{
+      if(!walkableAt(dest.x,dest.y)){setMessage('That destination is blocked');return;}
+      if(insideHutRef.current){moveTarget=dest;playerPathRef.current=null;setMessage('Walking to destination');return;}
+      const path=planPlayerPath(stateRef.current.world,stateRef.current.position,dest,figureOccupiedTiles());
+      if(!path){setMessage('Path blocked');return;}
+      playerPathRef.current=path;playerPathReplanRef.current=performance.now();playerPathWaitRef.current=null;playerPathStuckRef.current=null;moveTarget=dest;setMessage('Walking to destination');
+    };
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
     // BUILD 1018: Sprint-button hold backstop (window-level, so a hold
     // ends even when the finger slides off the button and lifts over
@@ -4939,6 +5025,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           user asked for it next to Gold, which lives in this strip. */}
       <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
     </div>}
+    {/* BUILD 1053: 3D minimap, top-left — the only free corner (see the
+        Minimap3D component above for the layout audit). Hidden inside
+        a hut and while Hide UI is on, like the 2D minimap's hide
+        rules; there is no world-map overlay in the 3D view. */}
+    {shouldShowMinimap3d({ insideHut: !!insideHut, hideUi }) && (
+      <Minimap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} npcsRef={npcActorsRef} car={car} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
+    )}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
         First person now engages on full zoom; its setting lives in the

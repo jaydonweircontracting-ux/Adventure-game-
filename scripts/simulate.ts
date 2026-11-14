@@ -11342,6 +11342,41 @@ console.log('Testing item weights + player weight limit (BUILD 950)...');
   assert(carriedWeight({ coins: 999 }, []) === 0, 'W950: coins weigh nothing; bank/chest contents are never inputs');
 }
 
+console.log('Testing 3D minimap mapping (BUILD 1053)...');
+{
+  const { MINIMAP3D_SIZE, MINIMAP3D_PX_PER_TILE, MINIMAP3D_RANGE_TILES, terrainColor3d, minimap3dProject, minimap3dTapToWorld, shouldShowMinimap3d, buildMinimap3dFrame } = await import('../src/game/engine3d/minimap3d.js');
+  assert(MINIMAP3D_SIZE === 120, 'M1053: 120px like the 2D minimap');
+  assert(MINIMAP3D_PX_PER_TILE === 2, 'M1053: 2 px per tile');
+  assert(MINIMAP3D_RANGE_TILES === 30, 'M1053: ±30 tiles visible');
+  assert(terrainColor3d('grass') === '#3a6a3a', 'M1053: grass is the 2D meadow green');
+  assert(terrainColor3d('water') === '#2a5aaa', 'M1053: water is the 2D ocean blue');
+  assert(terrainColor3d('dirt') !== terrainColor3d('grass'), 'M1053: paths read differently from grass');
+  const c = minimap3dProject(0, 0);
+  assert(c.x === 60 && c.y === 60, 'M1053: player projects to the centre');
+  assert(minimap3dProject(0, -30).y === 0, 'M1053: north is up (30 tiles north hits the top rim)');
+  const tap = minimap3dTapToWorld(60, 60, 99, 105);
+  assert(tap !== null && tap.x === 99 && tap.y === 105, 'M1053: centre tap converts to the player tile');
+  assert(minimap3dTapToWorld(0, 0, 99, 105) === null, 'M1053: corner tap outside the circle is rejected');
+  assert(shouldShowMinimap3d({ insideHut: false, hideUi: false }), 'M1053: shown outdoors with UI on');
+  assert(!shouldShowMinimap3d({ insideHut: true, hideUi: false }), 'M1053: hidden inside a hut');
+  assert(!shouldShowMinimap3d({ insideHut: false, hideUi: true }), 'M1053: hidden while Hide UI is on');
+  const frame = buildMinimap3dFrame({
+    terrainAt: (x: number, y: number) => (x === 110 && y === 105 ? 'water' : 'grass'),
+    playerX: 99, playerY: 105,
+    huts: [{ x0: 95, y0: 100, x1: 97, y1: 102 }],
+    stalls: [{ x0: 102, y0: 108, x1: 102 }],
+    placements: [{ kind: 'path', x0: 100, y0: 110, x1: 105, y1: 110 }],
+    landmarks: [],
+    npcs: [{ x: 100, y: 106 }, { x: 200, y: 200 }],
+    car: { x: 101, y: 107 },
+  });
+  const water = frame.terrainByColor.find((g) => g.color === '#2a5aaa');
+  assert(water !== undefined && water.cells.length === 1, 'M1053: the one water tile paints blue');
+  assert(frame.buildings.length === 2, `M1053: hut + stall draw, path placement does not (got ${frame.buildings.length})`);
+  assert(frame.npcs.length === 1, 'M1053: NPC in range draws, far NPC does not');
+  assert(frame.car !== null, 'M1053: car dot draws in range');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
