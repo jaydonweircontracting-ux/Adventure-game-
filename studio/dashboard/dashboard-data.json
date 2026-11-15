@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1059,
-    "commit": "46046733",
-    "description": "Utility scorer (G25) — Founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins; deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores. Three probe-caught fixes: builder pin (latent in 1058), site held while away (1058 doc stated it, code never had it), deforestation cliff (work radius 30-60; only 8 trees within 30, rebuild stalled at 1/6). Follow-up NOT built: sustainable wood supply (replanting/forestry) before ~7 huts. Landed: commit 46046733 (5 commits), deploy run 43765315050 success, phone probe PASS 0 page errors (all three divergences observed: hunger 35 + energy 20 midday -> sleep; hut done + pile 24 -> all three rest; construction pending + pile 2 -> build). First build 220s, rebuild 520s; builder NOT starved.",
+    "build": 1060,
+    "commit": "392ed83f",
+    "description": "NPC memory + relationships (G26) — New pure module memory.ts: founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0-100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50). The scorer rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts. Save version 3 with migration. Landed: commit 392ed83f, deploy run 43768325984 success, phone probe PASS 0 page errors (togetherness observed: first build step Greta-Perrin 54; rest Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 tiles, max distance 1; sleep affinity up to 59; reload affinity + memories byte-identical).",
     "status": "verified"
   },
   "buildHistory": [
@@ -401,6 +401,15 @@
       "runId": "43765315050",
       "status": "verified",
       "verifiedAt": "2026-11-15T21:45:27.640Z"
+    },
+    {
+      "build": 1060,
+      "commit": "392ed83f",
+      "description": "NPC memory + relationships (G26) — New pure module memory.ts: founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0-100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50). The scorer rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts. Save version 3 with migration. Landed: commit 392ed83f, deploy run 43768325984 success, phone probe PASS 0 page errors (togetherness observed: first build step Greta-Perrin 54; rest Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 tiles, max distance 1; sleep affinity up to 59; reload affinity + memories byte-identical).",
+      "qualityGateLevel": 3,
+      "runId": "43768325984",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T22:17:16.829Z"
     }
   ],
   "buildQueue": [],
@@ -532,13 +541,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T15:01:59-07:00",
+  "lastUpdateTimestamp": "2026-11-15T15:22:17-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1059,
-    "commit": "46046733",
-    "description": "Utility scorer (G25) — Founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins; deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores. Three probe-caught fixes: builder pin (latent in 1058), site held while away (1058 doc stated it, code never had it), deforestation cliff (work radius 30-60; only 8 trees within 30, rebuild stalled at 1/6). Follow-up NOT built: sustainable wood supply (replanting/forestry) before ~7 huts. Landed: commit 46046733 (5 commits), deploy run 43765315050 success, phone probe PASS 0 page errors (all three divergences observed: hunger 35 + energy 20 midday -> sleep; hut done + pile 24 -> all three rest; construction pending + pile 2 -> build). First build 220s, rebuild 520s; builder NOT starved.",
-    "runId": "43765315050",
-    "verifiedAt": "2026-11-15T21:45:27.640Z"
+    "build": 1060,
+    "commit": "392ed83f",
+    "description": "NPC memory + relationships (G26) — New pure module memory.ts: founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0-100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50). The scorer rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts. Save version 3 with migration. Landed: commit 392ed83f, deploy run 43768325984 success, phone probe PASS 0 page errors (togetherness observed: first build step Greta-Perrin 54; rest Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 tiles, max distance 1; sleep affinity up to 59; reload affinity + memories byte-identical).",
+    "runId": "43768325984",
+    "verifiedAt": "2026-11-15T22:17:16.829Z"
   },
   "measuredBaselines": [
     {
