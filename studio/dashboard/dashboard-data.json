@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1057,
-    "commit": "7395f593",
-    "description": "First settlers (G23) — Three founder NPCs (Marlow, Greta, Perrin) at a camp (124,120), needs-driven (hunger/energy/social ported from villageLife.ts), chopping trees and carrying wood to a visible log-pile stockpile with a real count; HUD \"Camp · Wood N · Food M\"; E reports founder status/needs and the pile count. Save versioning (G16) rides along: new key ag-3d-founders-v1 with version field + migration; old roster key untouched. Wait decision: waiting founders simulate per wait-step (needs decay + re-choice), positions/chopping/deliveries do NOT fast-forward. Landed: commit 7395f593, deploy run 43755316379 success, phone probe PASS 0 page errors (delivery observed in 15s: stockpile 0-2; Marlow eating hunger 10-100, food 30-29; all three asleep at 22:00; 1h wait wood 4-4; reload persistence).",
+    "build": 1058,
+    "commit": "a4b3adb3",
+    "description": "NPC construction (G24) — Founders spend the stockpile (12 wood = 6 work steps x 2, 3 ticks/step, one builder at a time) building a real hut at (128,120) through the player validatePlacement + addPlacement path: collision, door (128,121), interior, founders sleep inside at their hut beds. Door-clearance asserted (camp-approach 6 steps, approach-spawn 46 steps). Wood leaves the pile ONLY on a completed work step; hut appears only at 6/6. Mid-build 1h wait freezes everything. Save: ag-3d-founders-v1 now version 2; hut rides in the world save via w.placements. Landed: commit a4b3adb3, phone probe PASS 0 page errors (hut built in 178s observed: Marlow-Greta-Marlow-Greta-Perrin handoff; slower than the ~90s estimate because the pile runs dry). Deploy run ID unavailable (Actions API rate-limited); live-verified by served version.json 1058 @ 2026-11-15T20:39:03.316Z.",
     "status": "verified"
   },
   "buildHistory": [
@@ -383,6 +383,15 @@
       "runId": "43755316379",
       "status": "verified",
       "verifiedAt": "2026-11-15T19:59:06.560Z"
+    },
+    {
+      "build": 1058,
+      "commit": "a4b3adb3",
+      "description": "NPC construction (G24) — Founders spend the stockpile (12 wood = 6 work steps x 2, 3 ticks/step, one builder at a time) building a real hut at (128,120) through the player validatePlacement + addPlacement path: collision, door (128,121), interior, founders sleep inside at their hut beds. Door-clearance asserted (camp-approach 6 steps, approach-spawn 46 steps). Wood leaves the pile ONLY on a completed work step; hut appears only at 6/6. Mid-build 1h wait freezes everything. Save: ag-3d-founders-v1 now version 2; hut rides in the world save via w.placements. Landed: commit a4b3adb3, phone probe PASS 0 page errors (hut built in 178s observed: Marlow-Greta-Marlow-Greta-Perrin handoff; slower than the ~90s estimate because the pile runs dry). Deploy run ID unavailable (Actions API rate-limited); live-verified by served version.json 1058 @ 2026-11-15T20:39:03.316Z.",
+      "qualityGateLevel": 3,
+      "runId": null,
+      "status": "verified",
+      "verifiedAt": "2026-11-15T20:39:03.316Z"
     }
   ],
   "buildQueue": [],
@@ -514,13 +523,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T13:03:59-07:00",
+  "lastUpdateTimestamp": "2026-11-15T13:44:44-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1057,
-    "commit": "7395f593",
-    "description": "First settlers (G23) — Three founder NPCs (Marlow, Greta, Perrin) at a camp (124,120), needs-driven (hunger/energy/social ported from villageLife.ts), chopping trees and carrying wood to a visible log-pile stockpile with a real count; HUD \"Camp · Wood N · Food M\"; E reports founder status/needs and the pile count. Save versioning (G16) rides along: new key ag-3d-founders-v1 with version field + migration; old roster key untouched. Wait decision: waiting founders simulate per wait-step (needs decay + re-choice), positions/chopping/deliveries do NOT fast-forward. Landed: commit 7395f593, deploy run 43755316379 success, phone probe PASS 0 page errors (delivery observed in 15s: stockpile 0-2; Marlow eating hunger 10-100, food 30-29; all three asleep at 22:00; 1h wait wood 4-4; reload persistence).",
-    "runId": "43755316379",
-    "verifiedAt": "2026-11-15T19:59:06.560Z"
+    "build": 1058,
+    "commit": "a4b3adb3",
+    "description": "NPC construction (G24) — Founders spend the stockpile (12 wood = 6 work steps x 2, 3 ticks/step, one builder at a time) building a real hut at (128,120) through the player validatePlacement + addPlacement path: collision, door (128,121), interior, founders sleep inside at their hut beds. Door-clearance asserted (camp-approach 6 steps, approach-spawn 46 steps). Wood leaves the pile ONLY on a completed work step; hut appears only at 6/6. Mid-build 1h wait freezes everything. Save: ag-3d-founders-v1 now version 2; hut rides in the world save via w.placements. Landed: commit a4b3adb3, phone probe PASS 0 page errors (hut built in 178s observed: Marlow-Greta-Marlow-Greta-Perrin handoff; slower than the ~90s estimate because the pile runs dry). Deploy run ID unavailable (Actions API rate-limited); live-verified by served version.json 1058 @ 2026-11-15T20:39:03.316Z.",
+    "runId": null,
+    "verifiedAt": "2026-11-15T20:39:03.316Z"
   },
   "measuredBaselines": [
     {
