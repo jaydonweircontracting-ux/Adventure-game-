@@ -1,11 +1,16 @@
 // NEURON HEX scheduler — pure dependency engine + CLI.
 // The engine never edits the queue. It computes eligibility, stalls, and
 // metrics from tasks.json; the parent/dispatcher update the queue.
-// CLI: node scheduler.mjs status [--state <monitor-state.json>]
-//   prints a JSON summary, writes status.json + STATUS.md next to this file.
+// CLI:
+//   node scheduler.mjs status [--state <monitor-state.json>] [--out <dir>]
+//     prints a JSON summary; writes neuron-hex-status.json/.md to <dir>.
+//   node scheduler.mjs check [--state <monitor-state.json>]
+//     read-only: prints one verdict line (RELEASABLE <id> | NONE <reason>).
+//     Used by the hook detector (5s poll) — it writes nothing.
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { readEvents, aggregateEvents } from './events.mjs';
 
 export const STALL_THRESHOLD_MS = 90 * 60 * 1000; // 90 minutes without a heartbeat
 const HEX_ID = /^0x[0-9A-Fa-f]+$/;
@@ -79,6 +84,58 @@ export function nextTask(tasks, conditions) {
   return list[0];
 }
 
+// --- V1.1 parallel release: which tasks can start now, up to maxWorkers ---
+// Two tasks conflict when they share a workspace (same worktree, or both on
+// the main checkout) or when their file lists overlap. One code agent per
+// working tree; the dispatcher never releases conflicting tasks together.
+export function workspaceOf(task) {
+  return task.worktree || 'main-checkout';
+}
+
+export function conflicts(a, b) {
+  if (workspaceOf(a) === workspaceOf(b)) return true;
+  const fa = new Set(a.files || []);
+  return (b.files || []).some((f) => fa.has(f));
+}
+
+export function maxWorkersFor(queue) {
+  const n = queue && queue.concurrency && queue.concurrency.maxWorkers;
+  return Number.isInteger(n) && n >= 1 ? n : 2;
+}
+
+// Eligible tasks that can start right now: sorted by (priority, hex id),
+// capped by free slots, skipping anything that conflicts with an active
+// task or with a task already selected in this plan.
+export function releasePlan(tasks, conditions, maxWorkers) {
+  const byId = validate(tasks);
+  const active = tasks.filter((t) => t.status === 'in_progress');
+  const slots = Math.max(0, maxWorkers - active.length);
+  if (slots === 0) return [];
+  const list = tasks.filter((t) => isEligible(t, byId, conditions));
+  list.sort((a, b) => (a.priority - b.priority) || (hexValue(a.id) - hexValue(b.id)));
+  const plan = [];
+  for (const t of list) {
+    if (plan.length >= slots) break;
+    if (active.some((a) => conflicts(a, t))) continue;
+    if (plan.some((p) => conflicts(p, t))) continue;
+    plan.push(t);
+  }
+  return plan;
+}
+
+// Read-only verdict for the hook detector: RELEASABLE <id> when a task can
+// start now, otherwise NONE <reason>. Writes nothing.
+export function checkVerdict(tasks, conditions, maxWorkers, nowMs = Date.now()) {
+  const plan = releasePlan(tasks, conditions, maxWorkers);
+  if (plan.length > 0) return { verdict: 'RELEASABLE', taskId: plan[0].id, reason: null };
+  const stalled = stalledTasks(tasks, nowMs);
+  if (stalled.length > 0) return { verdict: 'NONE', taskId: null, reason: 'stalled-needs-parent' };
+  const byId = validate(tasks);
+  const elig = tasks.filter((t) => isEligible(t, byId, conditions));
+  if (elig.length === 0) return { verdict: 'NONE', taskId: null, reason: 'no-eligible' };
+  return { verdict: 'NONE', taskId: null, reason: 'no-releasable' };
+}
+
 function lastBeat(task) {
   return Date.parse(task.heartbeatAt || task.startedAt || '') || null;
 }
@@ -147,11 +204,13 @@ export function readConditions(stateFile) {
   }
 }
 
-export function renderStatus(tasks, conditions, nowMs = Date.now()) {
+export function renderStatus(tasks, conditions, nowMs = Date.now(), extra = {}) {
   const byId = validate(tasks);
   const eligible = eligibleTasks(tasks, conditions);
   const next = nextTask(tasks, conditions);
   const stalled = stalledTasks(tasks, nowMs);
+  const maxWorkers = extra.maxWorkers || 2;
+  const plan = releasePlan(tasks, conditions, maxWorkers);
   return {
     generatedAt: new Date(nowMs).toISOString(),
     queue: 'autonomous-village',
@@ -160,6 +219,9 @@ export function renderStatus(tasks, conditions, nowMs = Date.now()) {
     metrics: metrics(tasks),
     bottleneck: bottleneck(tasks),
     conditions,
+    maxWorkers,
+    releasePlan: plan.map((t) => ({ id: t.id, title: t.title, priority: t.priority })),
+    events: extra.eventsAgg || null,
     next: next ? { id: next.id, title: next.title, priority: next.priority } : null,
     eligible: eligible.map((t) => ({ id: t.id, title: t.title, priority: t.priority })),
     inProgress: tasks.filter((t) => t.status === 'in_progress').map((t) => ({ id: t.id, title: t.title, startedAt: t.startedAt || null, heartbeatAt: t.heartbeatAt || null })),
@@ -189,6 +251,10 @@ export function renderStatusMd(s) {
   lines.push('');
   if (s.next) lines.push(`**Next eligible:** ${s.next.id} — ${s.next.title} (priority ${s.next.priority}).`);
   else lines.push('**Next eligible:** none.');
+  if (s.releasePlan && s.releasePlan.length) lines.push(`**Release plan:** ${s.releasePlan.map((t) => t.id).join(', ')} (up to ${s.maxWorkers} workers).`);
+  if (s.events && s.events.total > 0) {
+    lines.push(`**Events:** ${s.events.total} logged; ${s.events.completedLastHour} completed in the last hour; avg release→completion ${s.events.avgReleaseToCompletionMs !== null ? `${Math.round(s.events.avgReleaseToCompletionMs / 1000)}s` : 'n/a'}; duplicate-prevented ${s.events.byType.duplicate_prevented || 0}; failed ${s.events.byType.failed || 0}.`);
+  }
   if (s.bottleneck) lines.push(`**Bottleneck:** ${s.bottleneck.id} — ${s.bottleneck.title} (${s.bottleneck.waitingOnIt} task(s) wait on it; status ${s.bottleneck.status}${s.bottleneck.blockedReason ? ` — ${s.bottleneck.blockedReason}` : ''}).`);
   lines.push(`**CI gate:** ${s.conditions.ciConclusion || 'unknown'}${s.conditions.ciHeadSha ? ` on ${s.conditions.ciHeadSha.slice(0, 8)}` : ''}${s.conditions.ciRunId ? ` (run ${s.conditions.ciRunId})` : ''}.`);
   if (s.metrics.avgCompletionMs !== null) lines.push(`**Throughput:** ${s.metrics.completed} completed, average task time ${Math.round(s.metrics.avgCompletionMs / 1000)}s over ${s.metrics.timedCompletions} timed completion(s).`);
@@ -230,22 +296,30 @@ const queuePath = path.join(here, 'tasks.json');
 // would dirty the tree a build agent is about to use.
 const DEFAULT_OUT = '/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files';
 const DEFAULT_STATE = '/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json';
+const EVENTS_LOG = '/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/neuron-hex-events.jsonl';
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   const mode = process.argv[2];
-  if (mode !== 'status') {
-    console.error('usage: node scheduler.mjs status [--state <monitor-state.json>]');
-    process.exit(2);
-  }
   const stateIdx = process.argv.indexOf('--state');
   const stateFile = stateIdx >= 0 ? process.argv[stateIdx + 1] : DEFAULT_STATE;
+  const queue = JSON.parse(readFileSync(queuePath, 'utf8'));
+  const conditions = { ...readConditions(stateFile), approvals: queue.approvals || {} };
+  const maxWorkers = maxWorkersFor(queue);
+  if (mode === 'check') {
+    const v = checkVerdict(queue.tasks, conditions, maxWorkers);
+    console.log(v.verdict === 'RELEASABLE' ? `RELEASABLE ${v.taskId}` : `NONE ${v.reason}`);
+    process.exit(0);
+  }
+  if (mode !== 'status') {
+    console.error('usage: node scheduler.mjs status [--state <path>] [--out <dir>] | node scheduler.mjs check [--state <path>]');
+    process.exit(2);
+  }
   const outIdx = process.argv.indexOf('--out');
   const outDir = outIdx >= 0 ? process.argv[outIdx + 1] : DEFAULT_OUT;
   const statusPath = path.join(outDir, 'neuron-hex-status.json');
   const statusMdPath = path.join(outDir, 'neuron-hex-status.md');
-  const queue = JSON.parse(readFileSync(queuePath, 'utf8'));
-  const conditions = { ...readConditions(stateFile), approvals: queue.approvals || {} };
-  const status = renderStatus(queue.tasks, conditions);
+  const eventsAgg = aggregateEvents(readEvents(EVENTS_LOG));
+  const status = renderStatus(queue.tasks, conditions, Date.now(), { maxWorkers, eventsAgg });
   const tmp = statusPath + '.tmp';
   writeFileSync(tmp, JSON.stringify(status, null, 2) + '\n');
   const back = JSON.parse(readFileSync(tmp, 'utf8'));
@@ -254,5 +328,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
   const tmpMd = statusMdPath + '.tmp';
   writeFileSync(tmpMd, renderStatusMd(status));
   renameSync(tmpMd, statusMdPath);
-  console.log(JSON.stringify({ next: status.next, eligible: status.eligible.map((t) => t.id), stalled: status.stalled.map((t) => t.id), bottleneck: status.bottleneck && status.bottleneck.id, counts: status.counts, ci: status.conditions.ciConclusion }, null, 2));
+  console.log(JSON.stringify({ next: status.next, releasePlan: status.releasePlan.map((t) => t.id), stalled: status.stalled.map((t) => t.id), bottleneck: status.bottleneck && status.bottleneck.id, counts: status.counts, ci: status.conditions.ciConclusion, events: status.events }, null, 2));
 }

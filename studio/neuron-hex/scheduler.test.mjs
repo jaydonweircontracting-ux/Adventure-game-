@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   validate, gatesPass, isEligible, eligibleTasks, nextTask,
   stalledTasks, metrics, bottleneck, readConditions,
+  releasePlan, conflicts, workspaceOf, maxWorkersFor, checkVerdict,
 } from './scheduler.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -99,5 +100,56 @@ const stallSet = [
 ];
 const stalled = stalledTasks(stallSet, now).map((t) => t.id).sort();
 check(stalled.join(',') === '0x01,0x03', `stalled flags the 2h-old and the timestamp-less in-progress tasks (got ${stalled.join(',')})`);
+
+// --- V1.1: conflicts + releasePlan + checkVerdict (synthetic) ---
+const mk = (id, over) => ({ id, title: id, status: 'pending', priority: 2, dependsOn: [], gates: [], files: [], worktree: null, ...(over || {}) });
+check(!conflicts(mk('0x01', { worktree: '/w/a', files: ['src/a.ts'] }), mk('0x02', { worktree: '/w/b', files: ['src/b.ts'] })), 'different worktrees, no shared files: no conflict');
+check(conflicts(mk('0x01', { worktree: '/w/a' }), mk('0x02', { worktree: '/w/a' })), 'same worktree conflicts');
+check(conflicts(mk('0x01'), mk('0x02')), 'both on the main checkout conflict');
+check(conflicts(mk('0x01', { worktree: '/w/a', files: ['src/shared.ts'] }), mk('0x02', { worktree: '/w/b', files: ['src/shared.ts'] })), 'shared file conflicts across worktrees');
+check(workspaceOf(mk('0x01')) === 'main-checkout', 'null worktree maps to main-checkout');
+check(workspaceOf(mk('0x01', { worktree: '/w/a' })) === '/w/a', 'worktree maps to itself');
+check(maxWorkersFor({}) === 2, 'maxWorkers defaults to 2');
+check(maxWorkersFor({ concurrency: { maxWorkers: 3 } }) === 3, 'maxWorkers reads the queue value');
+check(maxWorkersFor({ concurrency: { maxWorkers: 0 } }) === 2, 'maxWorkers below 1 falls back to 2');
+
+const planSet = [
+  mk('0x01', { priority: 1, worktree: '/w/a', files: ['src/a.ts'] }),
+  mk('0x02', { priority: 1, worktree: '/w/b', files: ['src/b.ts'] }),
+  mk('0x03', { priority: 2, worktree: '/w/c', files: ['src/c.ts'] }),
+];
+check(releasePlan(planSet, {}, 2).map((t) => t.id).join(',') === '0x01,0x02', 'maxWorkers 2 releases the two highest-priority independent tasks');
+check(releasePlan(planSet, {}, 1).map((t) => t.id).join(',') === '0x01', 'maxWorkers 1 releases only the first');
+const planConflict = [
+  mk('0x01', { priority: 1, worktree: '/w/a', files: ['src/a.ts'] }),
+  mk('0x02', { priority: 1, worktree: '/w/a', files: ['src/b.ts'] }),
+  mk('0x03', { priority: 2, worktree: '/w/b', files: ['src/b.ts'] }),
+];
+check(releasePlan(planConflict, {}, 2).map((t) => t.id).join(',') === '0x01,0x03', 'same-worktree task skipped, next independent task taken instead');
+const planSharedFile = [
+  mk('0x01', { priority: 1, worktree: '/w/a', files: ['src/shared.ts'] }),
+  mk('0x02', { priority: 1, worktree: '/w/b', files: ['src/shared.ts'] }),
+  mk('0x03', { priority: 2, worktree: '/w/c', files: ['src/c.ts'] }),
+];
+check(releasePlan(planSharedFile, {}, 2).map((t) => t.id).join(',') === '0x01,0x03', 'shared-file task skipped, next independent task taken instead');
+const planActive = [
+  mk('0x01', { priority: 1, worktree: '/w/a', status: 'in_progress', startedAt: new Date().toISOString() }),
+  mk('0x02', { priority: 1, worktree: '/w/b' }),
+  mk('0x03', { priority: 2, worktree: '/w/c' }),
+];
+check(releasePlan(planActive, {}, 2).map((t) => t.id).join(',') === '0x02', 'one active worker leaves one slot');
+check(releasePlan(planActive, {}, 1).length === 0, 'active worker fills the only slot');
+const planGated = [
+  mk('0x01', { priority: 1, worktree: '/w/a', gates: [{ type: 'ci' }] }),
+  mk('0x02', { priority: 2, worktree: '/w/b' }),
+];
+check(releasePlan(planGated, { ciPass: false }, 2).map((t) => t.id).join(',') === '0x02', 'gated task skipped while its gate fails; the ungated one releases');
+check(releasePlan(planGated, { ciPass: true }, 2).map((t) => t.id).join(',') === '0x01,0x02', 'gated task releases once its gate passes');
+
+// checkVerdict on the real queue: 0x0C is in progress, nothing eligible -> NONE no-eligible.
+const v = checkVerdict(tasks, { ciPass: false, approvals: {} }, 2);
+check(v.verdict === 'NONE' && v.reason === 'no-eligible', 'real queue check verdict is NONE no-eligible while 0x0C runs');
+const v2 = checkVerdict(planSet, {}, 2);
+check(v2.verdict === 'RELEASABLE' && v2.taskId === '0x01', 'synthetic queue check verdict is RELEASABLE 0x01');
 
 console.log(`SCHEDULER ASSERTS: ${n} passed`);

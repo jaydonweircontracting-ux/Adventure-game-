@@ -180,5 +180,106 @@ and dispatcher are how they execute without being reread each message.
 - `neuron-hex-status.json` / `neuron-hex-status.md` — generated snapshots
   in the goal's hidden_files (do not hand-edit; kept out of the repo so the
   dispatcher never dirties the checkout).
-- Dispatcher cron `neuron-hex-dispatcher` (~30m) — see its saved body for
+- Dispatcher cron `neuron-hex-dispatcher` (5m safety net) — see its saved body for
   the spawn/verify rules.
+- `events.mjs` + `events.test.mjs` — append-only timing log + aggregates.
+- Hook `neuron-hex-eligible` (script `~/hooks/scripts/neuron-hex-eligible.sh`, 5s poll) — the fast path.
+
+## 11. V1.1 — LIGHTSPEED DISPATCH (2026-11-15, user's order)
+
+The 30-minute dispatcher is replaced by an event-driven system with a fast
+fallback. The scheduler itself is NOT rebuilt — V1.1 extends it (release
+plan, check mode, events) and preserves commit 8067f654's architecture.
+
+### The five modes, mapped to real mechanisms
+
+| User's mode | Real mechanism | Actual latency |
+|---|---|---|
+| Event-driven (immediate) | Runtime handoffs: a worker's completion/failure arrives instantly in the parent's context; the parent verifies, updates the queue, and releases the next task in that same turn. User messages are events too. | Immediate (the handoff turn) |
+| Ultra-fast (1s target) | **Not available.** The hook system's minimum poll interval is 5 seconds — 1 second cannot be set. The 5s hook is the fastest real fallback. | 5s poll (the floor) |
+| Rapid (5s) | Hook `neuron-hex-eligible`, poll_interval_secs 5. Detector: `node scheduler.mjs check` (~110ms, local files only, no API calls). Wakes the dispatcher only when a task is releasable. | 5s |
+| Background (30s) | Same hook. A 5s lightweight local check is cheap enough that a separate 30s mode adds nothing; the hook stays silent (no agent turn, no cost beyond ~110ms of local reads) when nothing is releasable. | 5s |
+| Idle (event-triggered) | When the queue has no pending task that could become eligible without the user, the parent disables the hook (safe shutdown). Otherwise the hook polls and stays silent — the poll itself is the minimum price of the fast path. | No agent turns while idle |
+
+### The flow (Event → Queue → Worker → Verification)
+
+Task finishes → the runtime delivers a completion handoff (the event) →
+the parent verifies the result against the parent standard → the queue
+updates (task done, with commit + verification note) → the scheduler
+recalculates dependencies → the next eligible task releases (releasePlan,
+up to maxWorkers, conflict-checked) → a worker starts on its own worktree
+→ verification runs → the result determines the next release. A worker's
+"done" is a claim until the parent verifies it.
+
+### What the hook can and cannot see
+
+The hook's detector reads only local files (tasks.json + the monitor state
+file). It CANNOT see CI directly: polling the GitHub API every 5 seconds
+would burn the shared rate limit (the proxy IP is already rate-limited) and
+is not a real option. CI completion reaches the system through the
+pr61-validation-monitor cron (20 min) or a parent check — the monitor's
+state file is what the scheduler reads, and the hook notices the change
+within 5 seconds of the monitor updating it. Faster scheduling cannot
+bypass the gates: 0x02 still needs CI green AND the user's merge
+authorization, and the hook uses the same eligibility computation as the
+scheduler, so it cannot release a gated task.
+
+### Parallel execution
+
+`tasks.json` carries `concurrency: {maxWorkers: 2}`. The release plan is
+`releasePlan(tasks, conditions, maxWorkers)`: eligible tasks sorted by
+(priority, hex id), capped by free slots (maxWorkers minus active workers),
+skipping anything that conflicts with an active task or with a task already
+selected. Two tasks conflict when they share a workspace (same worktree, or
+both on the main checkout) or when their file lists overlap. The village
+chain is serial by dependency, so 2 is a ceiling for independent work, not
+a target — the quest-fix ∥ trees pair is the proven shape. The dispatcher
+and the hook both re-verify the plan before spawning; if the worker count
+is inconclusive, they spawn nothing.
+
+### No wasted execution
+
+- The hook wakes an agent only when a task is releasable; silent polls cost
+  ~110ms of local reads and no agent turn.
+- The dispatcher cron (5m) is a safety net, not the primary path; it stays
+  silent on no-ops.
+- The scheduler's `check` mode writes nothing (read-only verdict).
+- Duplicate prevention: the release plan subtracts active workers; the
+  dispatcher re-checks the agent list before spawning; `duplicate_prevented`
+  events are counted in the log.
+- Task state survives restarts: tasks.json + the events log are files on
+  disk; the scheduler recomputes everything from them.
+
+### Metrics (events log)
+
+`neuron-hex-events.jsonl` in the goal hidden_files. Events: released,
+completed, failed, stalled, duplicate_prevented, eligible_detected. The
+status snapshot aggregates: total events, completions in the last hour,
+average release→completion time, average detection→release time (released
+events carry `detectedAt` from the hook's wake payload), duplicate-prevented
+and failed counts. Measured 2026-11-15: scheduler `check` 111–115ms (3
+runs); hook dry-run silent 139ms, wake 135ms; scheduler asserts 53 passed;
+events asserts 10 passed.
+
+### Verification (done 2026-11-15)
+
+- Immediate dispatch after task completion: the parent already releases in
+  the handoff turn (proven by the 0x0C spawn in the step-26 handoff turn).
+- Hook silent path: dry-run, decision silent, "no releasable task: NONE
+  no-eligible", 139ms — correct while 0x0C is in progress.
+- Hook wake path: synthetic queue with one releasable task, dry-run
+  decision wake, payload {"task":"0x02","detectedAt":"..."}, 135ms. Test
+  hook + test script + synthetic queue removed after.
+- Restart recovery: the scheduler recomputes from tasks.json + the monitor
+  state; no in-memory state exists to lose.
+- Concurrent independent tasks: releasePlan asserts (2 released at
+  maxWorkers 2, 1 at maxWorkers 1, same-worktree and shared-file tasks
+  skipped, active worker consumes a slot, gated task skipped until its
+  gate passes).
+- Dependency enforcement + duplicate prevention: releasePlan only returns
+  eligible tasks; slots subtract active workers; the dispatcher re-checks
+  the agent list.
+- Pause and shutdown: pause = set a task `blocked`; safe shutdown = disable
+  the dispatcher cron + the hook (both listed in Controls).
+- The 1-second target is NOT met and is not claimed: the hook floor is 5s.
+  The immediate path (handoff) has no poll interval at all.
