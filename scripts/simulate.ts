@@ -11496,6 +11496,72 @@ console.log('Testing 3D world clock + wait (BUILD 1056)...');
   saveClock({ minutes: 480, day: 1 });
 }
 
+console.log('Testing 3D first settlers (BUILD 1057)...');
+{
+  const F = await import('../src/game/engine3d/founders.js');
+  const { defaultWorld } = await import('../src/game/iso/isoWorld.js');
+  const { stripTownContent } = await import('../src/game/engine3d/wilderness.js');
+  const { npcWalkable } = await import('../src/game/engine3d/townsfolk3d.js');
+  assert(F.FOUNDERS_ENABLED === true, 'M1057: founders flag is on (separate from WILDERNESS_ONLY)');
+  assert(F.FOUNDER_CAMP.x === 124 && F.FOUNDER_CAMP.y === 120, 'M1057: camp at (124,120)');
+  assert(F.FOUNDER_NAMES.join(',') === 'Marlow,Greta,Perrin', 'M1057: three new founders (none in the old 47)');
+  assert(F.FOUNDER_START_FOOD === 30 && F.FOUNDER_WOOD_PER_TREE === 2 && F.FOUNDER_CHOP_TICKS === 3, 'M1057: 30 starting food, 2 wood per tree, 3 chop ticks');
+  const fit = { hunger: 80, energy: 90, social: 60 };
+  assert(F.chooseFounderActivity(fit, 600, 30) === 'work', 'M1057: fit founder works by day');
+  assert(F.chooseFounderActivity(fit, 1350, 30) === 'sleep', 'M1057: night → sleep');
+  assert(F.chooseFounderActivity({ hunger: 20, energy: 90, social: 60 }, 600, 30) === 'eat', 'M1057: hungry + food → eat');
+  assert(F.chooseFounderActivity({ hunger: 20, energy: 90, social: 60 }, 600, 0) === 'work', 'M1057: hungry + no food → work (no hidden refill)');
+  assert(F.chooseFounderActivity({ hunger: 80, energy: 10, social: 60 }, 600, 30) === 'sleep', 'M1057: low energy → sleep');
+  assert(F.chooseFounderActivity({ hunger: 80, energy: 90, social: 10 }, 600, 30) === 'rest', 'M1057: lonely → rest');
+  const d60 = F.decayFounderNeeds(fit, 60, 'work');
+  assert(Math.abs(d60.hunger - 71) < 0.001, 'M1057: hunger decays 9/hr (villageLife parity)');
+  assert(Math.abs(F.decayFounderNeeds({ hunger: 80, energy: 10, social: 60 }, 480, 'sleep').energy - 100) < 0.001, 'M1057: a night of sleep restores energy to 100');
+  const meal = F.eatFounderMeal({ hunger: 20, energy: 90, social: 60 }, 30);
+  assert(meal.needs.hunger === 100 && meal.foodStock === 29, 'M1057: one meal restores hunger, food 30→29');
+  assert(F.eatFounderMeal({ hunger: 20, energy: 90, social: 60 }, 0).foodStock === 0, 'M1057: no food → no meal');
+  assert(F.deliverFounderWood(4, 2) === 6 && F.deliverFounderWood(6, 0) === 6, 'M1057: stockpile rises ONLY on delivery');
+  assert(F.stockpileLogsFor(125, 120, 0, 0).length === 12 && F.stockpileLogsFor(125, 120, 0, 10).length === 72, 'M1057: log pile grows with wood (1 log at 0, 6 at 10)');
+  const fresh = F.freshFoundersSave(1000);
+  assert(fresh.version === 1 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v1 save');
+  assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh)))) === JSON.stringify(fresh), 'M1057: versioned save round-trips');
+  const v0 = F.migrateFoundersSave({ founders: [{ name: 'Marlow', x: 130, y: 130 }] });
+  assert(v0 !== null && v0.version === 1 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates (missing founders restored, food defaults to 30)');
+  assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1057: unknown version / null → null (fresh defaults)');
+  // The 1056 localStorage stand-in is still in place: the founders
+  // save/load runs against it (the real persistence is proven by the
+  // phone probe's reload check).
+  F.saveFoundersSave(fresh);
+  const reloadedF = F.loadFoundersSave();
+  assert(reloadedF !== null && JSON.stringify(reloadedF) === JSON.stringify(fresh), 'M1057: founders save survives save/load under ag-3d-founders-v1');
+  const w = F.defaultFounderState('Marlow', 0, 1000);
+  w.needs = { hunger: 80, energy: 90, social: 60 };
+  const stepped = F.applyFounderWaitStep(w, 10, 600, 30, 1010);
+  assert(Math.abs(stepped.needs.hunger - 78.5) < 0.001 && stepped.x === w.x && stepped.y === w.y && stepped.lastAbs === 1010, 'M1057: wait step decays needs, never moves the founder, advances lastAbs');
+  const steppedNight = F.applyFounderWaitStep({ ...w, needs: { hunger: 80, energy: 50, social: 60 }, activity: 'work' }, 10, 1295, 30, 1010);
+  assert(steppedNight.activity === 'sleep', 'M1057: wait step crossing into the night re-chooses sleep');
+  const world = stripTownContent(defaultWorld());
+  assert(F.FOUNDER_SLEEP_TILES.every((t: { x: number; y: number }) => npcWalkable(world, t.x, t.y)), 'M1057: camp sleep tiles are walkable');
+  const tree = F.nearestTreeTile(world, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(tree !== null && tree.tx === 122 && tree.ty === 122, 'M1057: nearest tree to camp is (122,122), 4 tiles away');
+  const wt = F.treeWorkTile(world, tree!.tx, tree!.ty);
+  assert(wt !== null && npcWalkable(world, wt!.x, wt!.y), 'M1057: the tree has a walkable work tile');
+  let walker = F.defaultFounderState('Marlow', 0, 0);
+  walker.x = F.FOUNDER_CAMP_CENTRE.x;
+  walker.y = F.FOUNDER_CAMP_CENTRE.y;
+  let p = F.emptyFounderPath();
+  let steps = 0, arrived = false;
+  while (steps < 40 && !arrived) {
+    const res = F.stepFounderMove(world, { x: Math.round(walker.x), y: Math.round(walker.y) }, wt!, p, () => false);
+    p = res.path; walker.x = res.pos.x; walker.y = res.pos.y; arrived = res.arrived; steps++;
+  }
+  assert(arrived, 'M1057: founder walks from camp to the tree work tile on the real world');
+  const stuck = F.stepFounderMove(world, { x: 122, y: 118 }, { x: 124, y: 120 }, { destKey: '124,120', path: [{ x: 122, y: 118 }], index: 1, noPathTicks: 0, blockedTicks: 0, detour: false }, () => false);
+  assert(stuck.path.path.length > 0 && stuck.path.index === 0, 'M1057: exhausted sidestep path replans fresh (no 11-tick stall)');
+  const treesBefore = world.trees.length;
+  assert(F.chopTreeAt(world, tree!.tx, tree!.ty) === true && world.trees.length === treesBefore - 1, 'M1057: chop fells the tree (leaves world.trees)');
+  assert(F.chopTreeAt(world, tree!.tx, tree!.ty) === false, 'M1057: the same tree cannot be chopped twice');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

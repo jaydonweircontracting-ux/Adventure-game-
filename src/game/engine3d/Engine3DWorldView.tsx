@@ -112,8 +112,11 @@ function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size:
   return <canvas ref={ref} width={size} height={size} data-testid={testid} style={{ display: 'block', width: size, height: size, borderRadius: 6, background: '#d8e2d4', border: '1px solid rgba(255,255,255,.25)' }} />;
 }
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorCeilingFor, interiorWallBandFor, interiorHearthFor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
-import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
+import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, quantizeTile, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
+// BUILD 1057: founder settlers — the first NPCs of the empty world
+// (needs-driven, chopping wood to a visible camp stockpile).
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, chooseFounderActivity, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -1787,11 +1790,12 @@ export interface Diagnostics3D { verts: number; mapW: number; mapH: number; x: n
 // Tap-to-travel goes through the same 1030 A* path as a field tap,
 // via the travelRequestRef bridge (moveTarget lives in the frame-loop
 // effect's closure, not at component level).
-function Minimap3D({ world, playerX, playerY, npcsRef, car, onTapTravel }: {
+function Minimap3D({ world, playerX, playerY, npcsRef, foundersRef, car, onTapTravel }: {
   world: IsoWorld;
   playerX: number;
   playerY: number;
   npcsRef: { current: NpcActor3D[] | null };
+  foundersRef: { current: FounderState[] | null };
   car: { x: number; y: number } | null;
   onTapTravel: (dest: { x: number; y: number }) => void;
 }) {
@@ -1810,7 +1814,7 @@ function Minimap3D({ world, playerX, playerY, npcsRef, car, onTapTravel }: {
         huts: world.huts, stalls: world.stalls,
         placements: world.placements ?? [],
         landmarks: world.landmarks ?? [],
-        npcs: (npcsRef.current ?? []).filter((n) => n.alive).map((n) => ({ x: n.x, y: n.y })),
+        npcs: [...(npcsRef.current ?? []).filter((n) => n.alive).map((n) => ({ x: n.x, y: n.y })), ...(foundersRef.current ?? []).map((f) => ({ x: f.x, y: f.y }))],
         car,
       });
       paintMinimap3d(g, frame);
@@ -2136,6 +2140,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
+  // BUILD 1057: founder settlers (the NPC-built-towns vision's first
+  // residents). A SEPARATE array + save key from npcActorsRef on
+  // purpose: the old 47-roster stays preserved untouched in
+  // ag-3d-npcs-v1 while the founders live in ag-3d-founders-v1.
+  // Stockpile + food are refs (the tick owns them); campUi mirrors
+  // them for the HUD.
+  const foundersRef=useRef<FounderState[]>([]);
+  const founderStockpileRef=useRef(0);
+  const founderFoodRef=useRef(FOUNDER_START_FOOD);
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
   // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
@@ -2160,6 +2173,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [clockUi,setClockUi]=useState(loadClock());
   const [waitSheetOpen,setWaitSheetOpen]=useState(false);
   const [waitProgress,setWaitProgress]=useState<{done:number;total:number;label:string}|null>(null);
+  // BUILD 1057: the founders' camp readout — the REAL stockpile
+  // count (wood delivered by the founders) + the shared food stock.
+  // Updated by the founder tick / wait steps when either changes.
+  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD});
   const waitingRef=useRef(false);
   const waitTimerRef=useRef<number|null>(null);
   const waitStartHpRef=useRef(100);
@@ -2193,6 +2210,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(waitInterrupted(waitStartHpRef.current,healthRef.current)){cancelWait('interrupted');return;}
       const step=Math.min(WAIT_STEP_MINUTES,remaining);
       clockRef.current=advanceClock(clockRef.current,step);saveClock(clockRef.current);setClockUi(clockRef.current);
+      // BUILD 1057: waiting founders simulate per wait-step — needs
+      // decay + activity re-choice by the stepped clock (sleep
+      // restores energy). Positions, chopping, and deliveries do NOT
+      // fast-forward (the real-time founder tick pauses during a
+      // wait, so no wood appears without a delivery). lastAbs
+      // advances with the step, so the first post-wait tick does not
+      // re-decay the waited span. Saved each step, like the clock.
+      if(FOUNDERS_ENABLED){
+        const nowAbs=founderAbsMinutes(clockRef.current.day,clockRef.current.minutes);
+        for(let i=0;i<foundersRef.current.length;i++){
+          foundersRef.current[i]=applyFounderWaitStep(foundersRef.current[i],step,clockRef.current.minutes,founderFoodRef.current,nowAbs);
+        }
+        saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current));
+      }
       remaining-=step;
       if(remaining<=0){cancelWait('done');return;}
       setWaitProgress({done:total-waitStepsFor(remaining),total,label});
@@ -3129,6 +3160,33 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     if(!world.placements)world.placements=[];
     setPlacedCount(world.placements.length);
     npcActorsRef.current=savedNpcActors(world);
+    // BUILD 1057: founders load from the versioned founders save (or
+    // fresh defaults at the camp on first run — the old roster is
+    // never read or written here). Positions validate against the
+    // live world: an unwalkable saved tile snaps to a nearby
+    // walkable one, or the camp centre. Needs resume from where the
+    // save left them (no offline catch-up decay — the world does not
+    // run while the game is closed, same as the old NPCs).
+    if(FOUNDERS_ENABLED){
+      const saved=loadFoundersSave();
+      const clockAbs=founderAbsMinutes(clockRef.current.day,clockRef.current.minutes);
+      const states=saved?foundersStateOf(saved):FOUNDER_NAMES.map((n,i)=>defaultFounderState(n,i,clockAbs));
+      for(const f of states){
+        if(!npcWalkable(world,f.x,f.y)){
+          const near=quantizeTile(world,f.x,f.y,8);
+          f.x=near?near.x:FOUNDER_CAMP_CENTRE.x;f.y=near?near.y:FOUNDER_CAMP_CENTRE.y;
+        }
+        // 'chopping' is session-only (the tree target is not saved) —
+        // a founder reloaded mid-chop walks to a tree again.
+        if(f.workState==='chopping')f.workState='toTree';
+        f.treeTarget=null;f.workTile=null;f.chopTicks=0;
+        f.lastAbs=clockAbs;
+      }
+      foundersRef.current=states;
+      founderStockpileRef.current=saved?saved.stockpileWood:0;
+      founderFoodRef.current=saved?saved.foodStock:FOUNDER_START_FOOD;
+      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current});
+    }
     // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
     // are built once per world load; hut-derived anchors resolve live per
     // tick inside buildAnchors, so mid-session house removals fall back.
@@ -3212,7 +3270,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     let worldVertCount=0;
     // BUILD 1014: last frame's house-fx emission stats, for the
     // getHouseFx test hook (probes only).
-    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
+    let lastFxStats={houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,stockpileTiles:0,stockpileVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     // BUILD 992: one zoom parameter for pinch + wheel, routed through
@@ -3290,6 +3348,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const animalSlotBase=transientSlotBase+MAX_TRANSIENTS;
     const animalSlotCap=maxAnimalVerts();
     for(let i=0;i<MAX_ANIMALS;i++)figureSlotCounts.push(animalSlotCap);
+    // BUILD 1057: founder GPU slots. Three fixed slots after the
+    // animal slots, sized to the largest villager figure — the same
+    // discipline as transient/animal slots (a slot never changes
+    // size when its occupant's figure changes).
+    const founderSlotBase=animalSlotBase+MAX_ANIMALS;
+    const founderSlotCap=maxVillagerVerts();
+    for(let i=0;i<FOUNDER_NAMES.length;i++)figureSlotCounts.push(founderSlotCap);
     const figureSlots=figureSlotLayout(figureSlotCounts);
     const figureScratch=new Float32Array(Math.max(...figureSlotCounts)*6);
     const slotUploaded=new Map<number,FigurePoseKey>();
@@ -4479,6 +4544,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // changes the field with no world rebuild.
       const nowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
       const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs) as FarmStage}));
+      // BUILD 1057: the founders' log pile rides the same fx call as
+      // the wheat — the pile is per-frame fx (it grows with
+      // deliveries), so it needs no world rebuild. The input is the
+      // pile tile + the real stockpile count; 0 wood still shows 1
+      // log (the camp has a pile).
+      const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:founderStockpileRef.current}]:[];
       // BUILD 1050: the entered hut's interior shell + hearth — the
       // ceiling and wall band render only in first-person inside (the
       // orbit view keeps its cutaway so the room stays visible from
@@ -4497,8 +4568,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           hearthLit: houseLitAt(clockRef.current.minutes, lightScheduleFor(seedHutIn.x0, seedHutIn.y0)),
         };
       }
-      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx);
-      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
+      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs);
+      lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
         if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);
@@ -4601,6 +4672,29 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const tBaseY=surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5);
         emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,tBaseY);
         emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre,tBaseY);
+      }
+      // BUILD 1057: founder figures ride the same glide/yaw/phase/slot
+      // machinery as residents and transients: logical tiles come from
+      // the 900ms founder timer, render positions glide toward them at
+      // the demo speed, and only dirty slots re-emit. Founders are
+      // adults (no child scale) and use villagerSpecFor(name) like
+      // residents. Slots are fixed per founder (founderSlotBase +
+      // index); the render key is namespaced ('founder:Marlow') so it
+      // can never collide with a resident or transient key.
+      for(let fi=0;fi<foundersRef.current.length;fi++){
+        const f=foundersRef.current[fi];
+        const slot=founderSlotBase+fi;
+        const target={x:f.x,y:f.y};
+        let st=npcRender.get('founder:'+f.name);
+        if(!st){st={x:target.x,y:target.y,yaw:Math.PI,phase:0};npcRender.set('founder:'+f.name,st);}
+        else if(needsRenderSnap({x:st.x,y:st.y},target)){st.x=target.x;st.y=target.y;}
+        const step=advanceRenderPos({x:st.x,y:st.y},target,dtNpc);
+        const moved=step.dist>0;
+        let yaw=st.yaw;
+        if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
+        const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
+        st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
+        emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
       }
       // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
       // machinery as residents and transients: logical tiles come from
@@ -4743,6 +4837,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(dead){const currentInventory=inventoryRef.current;const next={...currentInventory,gold:(currentInventory.gold||0)+5,[dead.name+' loot']:(currentInventory[dead.name+' loot']||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}dead.looted=true;try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
         const near=npcActorsRef.current.find(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
+        // BUILD 1057: founders answer E with their state (name,
+        // activity, needs) — no dialogue UI yet, just the message
+        // line. The stockpile tile answers with the real count.
+        const nearFounder=FOUNDERS_ENABLED?foundersRef.current.find(f=>Math.abs(f.x-p.x)<=1&&Math.abs(f.y-p.y)<=1):undefined;
+        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);setMessage(nearFounder.name+': '+nearFounder.activity+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social);return}
+        if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food');return}
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
         if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
@@ -4919,6 +5019,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
       setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;animalPath.delete(id);return true;}return false;},
       getAnimalRenderPos:(id:string)=>{const r=animalRender.get(id);return r?{x:r.x,y:r.y,h:r.h}:null;},
+      // BUILD 1057 test hooks (probes only — no gameplay effect):
+      // read founders (name, tile, activity, work state, carrying,
+      // chop progress, needs, and the shared stockpile/food counts),
+      // teleport one (drops the cached founder path, the 999 lesson),
+      // set needs (to force eat/sleep/rest without waiting for
+      // decay), and read its render position (floats).
+      getFounders:()=>foundersRef.current.map(f=>({name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
+      setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
+      setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
+      getFounderRenderPos:(name:string)=>{const r=npcRender.get('founder:'+name);return r?{x:r.x,y:r.y}:null;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -5098,6 +5208,102 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!WILDERNESS_ONLY){try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}}
     },900);
 
+    // BUILD 1057: founder life — the first NPCs of the empty world.
+    // One 900ms tick, the resident pattern: needs decay from elapsed
+    // GAME minutes (clock-driven, not tick-driven — the 1056 wait
+    // steps the clock, so this tick pauses during a wait and the
+    // wait's own step function advances needs instead), activity
+    // re-chosen from needs, then the activity executes: sleep/eat/
+    // rest walk to the camp; work walks to a tree, chops 3 ticks,
+    // carries 2 wood to the stockpile. The stockpile count goes up
+    // ONLY on a delivery. A felled tree leaves world.trees (or
+    // removedWildTrees) with a world rebuild, exactly like the
+    // player's E-key chop, so the player sees it fall and cannot chop
+    // the same tree twice. NOTHING here touches NPC_SAVE_KEY:
+    // founders save to ag-3d-founders-v1, and the old roster is
+    // never read or written.
+    const founderPath=new Map<string,FounderPathState>();
+    const founderSkippedTrees=new Map<string,Set<string>>();
+    const founderTimer=window.setInterval(()=>{
+      if(!FOUNDERS_ENABLED||waitingRef.current)return;
+      const clock=clockRef.current;
+      const nowAbs=founderAbsMinutes(clock.day,clock.minutes);
+      const player=stateRef.current.position;
+      const founders=foundersRef.current;
+      let worldDirty=false;
+      let stockChanged=false;
+      for(const f of founders){
+        const elapsed=Math.max(0,nowAbs-f.lastAbs);
+        f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
+        f.lastAbs=nowAbs;
+        f.activity=chooseFounderActivity(f.needs,clock.minutes,founderFoodRef.current);
+        // Eat: at the eat tile, one meal from the shared camp stock.
+        if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
+          const res=eatFounderMeal(f.needs,founderFoodRef.current);
+          if(res.foodStock!==founderFoodRef.current){f.needs=res.needs;founderFoodRef.current=res.foodStock;stockChanged=true;}
+        }
+        // Work: pick a tree (nearest within range of the camp,
+        // skipping ones with no walkable tile beside them), chop 3
+        // ticks, carry 2 wood home. No tree in range → idle at camp
+        // (visible, honest — the camp's woods are exhausted).
+        if(f.activity==='work'&&f.workState==='toTree'&&!f.treeTarget){
+          let skipped=founderSkippedTrees.get(f.name);
+          if(!skipped){skipped=new Set();founderSkippedTrees.set(f.name,skipped);}
+          const tree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS,skipped);
+          if(tree){
+            const wt=treeWorkTile(world,tree.tx,tree.ty);
+            if(wt){f.treeTarget={x:tree.tx,y:tree.ty};f.workTile=wt;}
+            else skipped.add(tree.tx+','+tree.ty);
+          }
+          if(!f.treeTarget)f.workState='idle';
+        }
+        const dest=founderDestination(f);
+        const cx=Math.round(f.x),cy=Math.round(f.y);
+        const atDest=cx===dest.x&&cy===dest.y;
+        if(!atDest){
+          let p=founderPath.get(f.name);
+          if(!p){p=emptyFounderPath();founderPath.set(f.name,p);}
+          const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)||founders.some(o=>o!==f&&Math.round(o.x)===x&&Math.round(o.y)===y)||npcActorsRef.current.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y);
+          const res=stepFounderMove(world,{x:cx,y:cy},dest,p,occupied);
+          founderPath.set(f.name,res.path);
+          if(res.pos.x!==cx||res.pos.y!==cy){f.x=res.pos.x;f.y=res.pos.y;}
+          if(res.arrived)founderPath.delete(f.name);
+        }
+        if(atDest||(Math.round(f.x)===dest.x&&Math.round(f.y)===dest.y)){
+          // Arrived: act on the destination.
+          if(f.activity==='work'){
+            if(f.workState==='toTree'&&f.treeTarget){
+              // At the tree's work tile: start chopping.
+              f.workState='chopping';f.chopTicks=0;
+            }else if(f.workState==='chopping'&&f.treeTarget){
+              f.chopTicks++;
+              if(f.chopTicks>=FOUNDER_CHOP_TICKS){
+                // The tree is gone (chopped by the player first) →
+                // no wood, walk home empty and re-target.
+                const fell=chopTreeAt(world,f.treeTarget.x,f.treeTarget.y);
+                if(fell){f.carrying=FOUNDER_WOOD_PER_TREE;worldDirty=true;}
+                f.treeTarget=null;f.workTile=null;f.chopTicks=0;
+                f.workState='toStockpile';
+              }
+            }else if(f.workState==='toStockpile'&&f.carrying>0){
+              founderStockpileRef.current=deliverFounderWood(founderStockpileRef.current,f.carrying);
+              f.carrying=0;f.workState='toTree';stockChanged=true;
+              setMessage(f.name+' delivered wood to the camp stockpile');
+            }else if(f.workState==='toStockpile'){
+              f.workState='toTree';
+            }
+          }
+          // Sleep/rest at camp need no arrival action — the needs
+          // decay already applied the sleep/rest gains this tick.
+        }
+        // Idle (no tree in range) retries next tick.
+        if(f.activity==='work'&&f.workState==='idle')f.workState='toTree';
+      }
+      if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
+      if(stockChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current});
+      saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current));
+    },900);
+
     // BUILD 1000: transient life. Mount spawns one traveler + one
     // adventurer when an out-of-view road entry exists (the town
     // reads as lived-in on first load, never a pop-in); the timer
@@ -5225,7 +5431,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteBuffer(rainBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(founderTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteBuffer(rainBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
@@ -5276,6 +5482,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           icon hides with it (the old button stayed visible) — the
           user asked for it next to Gold, which lives in this strip. */}
       <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
+      {/* BUILD 1057: the founders' camp — the real stockpile count
+          (wood delivered by the founders) and the shared food stock.
+          Lives in the HUD strip, so Hide UI hides it with the rest. */}
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food}</span></div>
     </div>}
     {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
         A centred panel (the sheet covers the canvas, so taps land on it,
@@ -5305,7 +5515,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         a hut and while Hide UI is on, like the 2D minimap's hide
         rules; there is no world-map overlay in the 3D view. */}
     {shouldShowMinimap3d({ insideHut: !!insideHut, hideUi, mapOpen }) && (
-      <Minimap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} npcsRef={npcActorsRef} car={car} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
+      <Minimap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} npcsRef={npcActorsRef} foundersRef={foundersRef} car={car} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
     )}
     {/* BUILD 1055: Map button — below the minimap (left:12, top:140:
         minimap top 12 + 120px + 8 gap), the only free slot in the

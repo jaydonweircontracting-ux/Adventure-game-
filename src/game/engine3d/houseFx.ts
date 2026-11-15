@@ -52,6 +52,10 @@ import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise,
 import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
 import { LANTERN_GLOW, LANTERN_GLOW_BOX, lanternBoxCentre } from './lantern';
 import { wheatStalksFor, type FarmWheatInput } from './farm';
+// BUILD 1057: the founders' log pile rides the fx call like the wheat
+// (per-frame, time-varying — it grows with deliveries, so it cannot
+// live in the static world buffer).
+import { stockpileLogsFor } from './founders';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, seedRectForHut } from './placements';
 import { sameHut, type InteriorQuad } from './interiors';
@@ -443,6 +447,11 @@ export interface HouseFxCounts {
   wheatTiles: number;
   /** BUILD 1041: wheat stalk verts (in the night segment). */
   wheatVerts: number;
+  /** BUILD 1057: stockpile tiles whose log piles were emitted this
+   *  frame (in the night segment). */
+  stockpileTiles: number;
+  /** BUILD 1057: log-pile verts (in the night segment). */
+  stockpileVerts: number;
   /** BUILD 1050: interior ceiling verts this frame (night segment). */
   ceilingVerts: number;
   /** BUILD 1050: interior wall-band verts this frame (night segment). */
@@ -498,6 +507,11 @@ function pushGlowBox(out: number[], cx: number, cy: number, cz: number, size: nu
  *  it — the fx module never samples the terrain itself). */
 export interface LanternFxInput { tx: number; ty: number; baseY: number; }
 
+/** BUILD 1057: one founders' log pile — the pile tile, its heightfield
+ *  base y, and the REAL stockpile count (the pile grows with
+ *  deliveries: 1 log at 0 wood, +1 per 2 wood, capped at 6). */
+export interface StockpileFxInput { tx: number; ty: number; baseY: number; wood: number; }
+
 /**
  * Emit the house fx for one frame into `out` (6 floats per vertex:
  * pos + rgb, the sky.ts convention). `out` must start empty; emission
@@ -513,8 +527,12 @@ export interface LanternFxInput { tx: number; ty: number; baseY: number; }
  * ceiling/walls emit in the night segment (ordinary surfaces that
  * darken at night), the hearth glow in the lit segment (self-luminous
  * fire, the lantern precedent).
+ * BUILD 1057: the founders' log pile rides the same call (an 8th
+ * argument) — per-frame like the wheat, in the night segment (ordinary
+ * wood that darkens at night); the pile grows with the real
+ * stockpile count.
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = []): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -564,6 +582,21 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     if (!fits(cost)) break;
     wheatTiles++;
     wheatVerts += cost;
+    for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
+  }
+  // BUILD 1057: the founders' log pile — a pyramid of horizontal logs
+  // on the stockpile tile, growing with the real stockpile count (1
+  // log at 0 wood, +1 per 2 wood, capped at 6). In the night segment
+  // like the wheat (ordinary wood that darkens at night). A pile
+  // that does not fit stops the pass (deterministic).
+  let stockpileTiles = 0, stockpileVerts = 0;
+  for (const t of stockpile) {
+    const tris = stockpileLogsFor(t.tx, t.ty, t.baseY, t.wood);
+    if (tris.length === 0) continue;
+    const cost = tris.length * 3;
+    if (!fits(cost)) break;
+    stockpileTiles++;
+    stockpileVerts += cost;
     for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
   }
   // BUILD 1050: the entered hut's interior shell — ceiling + wall
@@ -621,5 +654,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
 }
