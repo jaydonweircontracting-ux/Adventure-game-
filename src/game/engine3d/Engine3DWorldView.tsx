@@ -113,6 +113,7 @@ function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size:
 }
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorCeilingFor, interiorWallBandFor, interiorHearthFor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
+import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -2151,6 +2152,53 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 993: the 3D day clock (1 game minute per real second while the
   // view is mounted, persisted so phases survive reloads). Default 08:00.
   const clockRef=useRef(loadClock());
+  // BUILD 1056: world clock + wait system. clockUi is the rendered clock
+  // (the 1s interval refreshes it, so the HUD readout ticks live);
+  // waitingRef is what the frame loop / tap handlers read to freeze the
+  // player while a wait runs; waitTimerRef is cleared on cancel, on
+  // completion, and on unmount, so a wait can never outlive the view.
+  const [clockUi,setClockUi]=useState(loadClock());
+  const [waitSheetOpen,setWaitSheetOpen]=useState(false);
+  const [waitProgress,setWaitProgress]=useState<{done:number;total:number;label:string}|null>(null);
+  const waitingRef=useRef(false);
+  const waitTimerRef=useRef<number|null>(null);
+  const waitStartHpRef=useRef(100);
+  // Bridge for cancelling a tap journey from outside the render effect
+  // (moveTarget lives in the effect's closure — same pattern as the
+  // 1053 travelRequestRef bridge). Assigned inside the effect.
+  const cancelWalkRef=useRef<(()=>void)|null>(null);
+  const cancelWait=(reason:'done'|'cancelled'|'interrupted')=>{
+    if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}
+    waitingRef.current=false;setWaitProgress(null);
+    if(reason==='done')setMessage('You waited until '+formatDayClock(clockRef.current)+'.');
+    else if(reason==='cancelled')setMessage('You stop waiting.');
+    else setMessage('Something attacked you — you stop waiting.');
+  };
+  const startWait=(totalMinutes:number,label:string)=>{
+    if(waitingRef.current||totalMinutes<=0)return;
+    // Clear any stale timer without messaging (no wait is running).
+    if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}
+    // Stop the player dead (2D parity: movement keys cleared, walk
+    // stopped) — the journey bridge clears moveTarget + path, and the
+    // frame loop ignores all movement input while waitingRef is set.
+    cancelWalkRef.current?.();
+    waitingRef.current=true;setWaitSheetOpen(false);
+    const total=waitStepsFor(totalMinutes);
+    waitStartHpRef.current=healthRef.current;
+    setWaitProgress({done:0,total,label});
+    let remaining=totalMinutes;
+    const timer=window.setInterval(()=>{
+      // A wolf bite (or the 0 → 100 exhaustion restore) ends the wait:
+      // HP only ever moves by damage or that restore in 3D.
+      if(waitInterrupted(waitStartHpRef.current,healthRef.current)){cancelWait('interrupted');return;}
+      const step=Math.min(WAIT_STEP_MINUTES,remaining);
+      clockRef.current=advanceClock(clockRef.current,step);saveClock(clockRef.current);setClockUi(clockRef.current);
+      remaining-=step;
+      if(remaining<=0){cancelWait('done');return;}
+      setWaitProgress({done:total-waitStepsFor(remaining),total,label});
+    },WAIT_STEP_MS);
+    waitTimerRef.current=timer;
+  };
   // BUILD 1011: cloud-drift clock (real seconds, accumulated per frame;
   // session-only — clouds keep drifting, they do not need persistence).
   const skyDriftRef=useRef(0);
@@ -4053,7 +4101,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               else{if(result.item.kind==='farm')result.item.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);pushHistory({kind:'place',item:result.item});setMessage('Placed '+placementLabel(result.item));}
             }
           }
-        } else if(!areaTapConsumed) {
+        } else if(!areaTapConsumed&&!waitingRef.current) {
+          // BUILD 1056: taps never start a walk while waiting.
           const destination=pickGround(e.clientX,e.clientY);
           if(!destination){/* no ground picked — nothing to do */}
           else if(!walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
@@ -4075,6 +4124,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
       if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
     };
+    // BUILD 1056: walk-cancel bridge for the wait system (moveTarget
+    // lives in this closure; the Wait button lives outside it).
+    cancelWalkRef.current=()=>{playerPathRef.current=null;moveTarget=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;};
     // BUILD 1053: minimap tap-to-travel — the same start-a-journey code
     // as a field tap (walkable check, 1030 A* plan, 'Path blocked' on
     // no route), exposed to the Minimap3D canvas via travelRequestRef
@@ -4082,6 +4134,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // The minimap is hidden inside a hut, so the interior branch is
     // belt-and-braces parity with the field tap, not a live path.
     travelRequestRef.current=(dest:{x:number;y:number})=>{
+      // BUILD 1056: no new journeys while waiting — cancel the wait
+      // first (the wait sheet's Cancel button, or the progress Cancel).
+      if(waitingRef.current){setMessage('You are waiting — cancel the wait to travel.');return;}
       if(!walkableAt(dest.x,dest.y)){setMessage('That destination is blocked');return;}
       if(insideHutRef.current){moveTarget=dest;playerPathRef.current=null;setMessage('Walking to destination');return;}
       const path=planPlayerPath(stateRef.current.world,stateRef.current.position,dest,figureOccupiedTiles());
@@ -4138,12 +4193,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // dropped. Otherwise a tap journey follows its A* waypoints;
       // a direct push (interior taps) keeps the old behaviour.
       const heldKeys=[...keys].filter(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
-      if(heldKeys.length>0){
+      // BUILD 1056: frozen while waiting — no key or tap-journey input
+      // moves the player; hasInput stays false, so stamina never drains
+      // and no step is taken. The wait's own timer is the only thing
+      // that advances anything.
+      if(!waitingRef.current&&heldKeys.length>0){
         if(playerPathRef.current||moveTarget){playerPathRef.current=null;moveTarget=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;}
         moveDx=(heldKeys.includes('d')||heldKeys.includes('arrowright')?1:0)-(heldKeys.includes('a')||heldKeys.includes('arrowleft')?1:0);
         moveDy=(heldKeys.includes('s')||heldKeys.includes('arrowdown')?1:0)-(heldKeys.includes('w')||heldKeys.includes('arrowup')?1:0);
         hasInput=true;
-      }else if(moveTarget){
+      }else if(!waitingRef.current&&moveTarget){
         // Entering a hut ends an outdoor tap journey (the waypoints
         // are outside; interior taps walk direct, see the tap handler).
         if(insideHutRef.current&&playerPathRef.current){playerPathRef.current=null;moveTarget=null;}
@@ -4787,6 +4846,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 993 test hooks: day clock read/set + NPC teleport (probes
       // only — no gameplay effect). setClock persists like the live clock.
       getClock:()=>({...clockRef.current}),
+      // BUILD 1056: wait state for probes (no gameplay effect).
+      isWaiting:()=>waitingRef.current,
       setClock:(minutes:number,day?:number)=>{clockRef.current={minutes:((Math.floor(minutes)%1440)+1440)%1440,day:day??clockRef.current.day};saveClock(clockRef.current);},
       // BUILD 1011 test hooks: sky state read + cloud-drift set (probes
       // only — no gameplay effect).
@@ -4925,9 +4986,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // BUILD 993: the day clock advances 1 game minute per real second
     // while the view is mounted, persisted so phases survive reloads.
     const clockTimer=window.setInterval(()=>{
+      // BUILD 1056: paused while a wait runs — the wait's own timer
+      // advances the clock, so the live tick must not double-advance it.
+      if(waitingRef.current)return;
       const c=clockRef.current;let minutes=c.minutes+1,day=c.day;
       if(minutes>=1440){minutes-=1440;day+=1;}
-      clockRef.current={minutes,day};saveClock(clockRef.current);
+      clockRef.current={minutes,day};saveClock(clockRef.current);setClockUi(clockRef.current);
     },1000);
     // BUILD 993: roster NPCs walk their 2.5D schedules. Destinations
     // recompute from the clock every tick (anchors resolve hut doorsteps
@@ -5161,7 +5225,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }
     },BARK_CHECK_MS);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteBuffer(rainBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(corpseBuffer);gl.deleteBuffer(skyBuffer);gl.deleteBuffer(skyObjBuffer);gl.deleteBuffer(fxBuffer);gl.deleteBuffer(carBuffer);gl.deleteBuffer(rainBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
@@ -5194,6 +5258,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         already shows "Tired" while exhausted. */}
     {!hideUi && <div data-testid="hud-text" style={{position:'absolute',left:10,bottom:10,maxWidth:260,padding:'6px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>
       <div title={message} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:240}}>{message}</div>
+      {/* BUILD 1056: world clock readout + Wait button — the clock reads
+          the real 3D day clock (clockUi refreshes every second), same
+          format as the 2D game minus the year (the 3D clock has none).
+          Lives in the HUD strip, so Hide UI hides it with the rest. */}
+      <div style={{marginTop:2,display:'flex',alignItems:'center',gap:6}}><span data-testid="clock-readout" style={{fontWeight:700}}>🕐 {formatDayClock(clockUi)}</span><button type="button" data-testid="wait-open" aria-label="Wait" onClick={()=>setWaitSheetOpen(v=>!v)} style={{padding:'2px 8px',border:'1px solid #c4d1bd',borderRadius:6,background:'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1.4}}>⏳ Wait</button></div>
       <div style={{marginTop:2}}>HP {health}/100<div style={{display:'inline-block',width:80,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="hp-bar" style={{width:health+'%',height:'100%',background:'#5fbf6f'}} /></div></div>
       <div style={{marginTop:2}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:100,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired':''}</div>
       {/* BUILD 1028: the Sprint control is a SMALL icon at the bottom
@@ -5208,6 +5277,29 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           user asked for it next to Gold, which lives in this strip. */}
       <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onPointerUp={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,true)} onPointerCancel={(e)=>releaseSprintPointer(e.pointerId,e.clientX,e.clientY,false)} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
     </div>}
+    {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
+        A centred panel (the sheet covers the canvas, so taps land on it,
+        not the field). The progress panel shows the live clock as it
+        fast-forwards, so the player watches time pass. */}
+    {waitSheetOpen && !waitProgress && (
+      <div data-testid="wait-sheet" style={{position:'absolute',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:30,width:280,padding:14,borderRadius:12,border:'1px solid #c4d1bd',background:'#172c23f2',color:'#fff'}}>
+        <div style={{fontWeight:700,fontSize:16}}>Wait</div>
+        <div style={{fontSize:12,opacity:.85,marginTop:2,lineHeight:1.4}}>Time passes — the sun, the lights and the rain move with it. A wolf attack ends the wait.</div>
+        {waitOptionsFor(clockUi).map(o=>(
+          <button key={o.id} type="button" data-testid={'wait-option-'+o.id} onClick={()=>startWait(o.minutes,o.label)} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:'10px 12px',border:'1px solid #c4d1bd',borderRadius:9,background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>{o.label}</button>
+        ))}
+        <button type="button" data-testid="wait-close" onClick={()=>setWaitSheetOpen(false)} style={{display:'block',width:'100%',marginTop:10,padding:'8px 12px',border:'1px solid #c4d1bd',borderRadius:9,background:'transparent',color:'#fff',fontWeight:700,fontSize:14}}>Close</button>
+      </div>
+    )}
+    {waitProgress && (
+      <div data-testid="wait-progress" style={{position:'absolute',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:30,width:280,padding:14,borderRadius:12,border:'1px solid #c4d1bd',background:'#172c23f2',color:'#fff',textAlign:'center'}}>
+        <div style={{fontWeight:700,fontSize:16}}>Waiting…</div>
+        <div style={{fontSize:12,opacity:.85,marginTop:4}}>{waitProgress.label} · {waitRemainingLabel((waitProgress.total-waitProgress.done)*WAIT_STEP_MINUTES)}</div>
+        <div style={{height:8,marginTop:10,borderRadius:4,background:'#3a4a3f',overflow:'hidden'}}><div style={{width:(waitProgress.done/waitProgress.total*100)+'%',height:'100%',background:'#5fbf6f'}} /></div>
+        <div data-testid="wait-clock" style={{fontSize:13,marginTop:8,fontWeight:700}}>🕐 {formatDayClock(clockUi)}</div>
+        <button type="button" data-testid="wait-cancel" onClick={()=>cancelWait('cancelled')} style={{marginTop:10,padding:'8px 16px',border:'1px solid #c4d1bd',borderRadius:9,background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Cancel</button>
+      </div>
+    )}
     {/* BUILD 1053: 3D minimap, top-left — the only free corner (see the
         Minimap3D component above for the layout audit). Hidden inside
         a hut and while Hide UI is on, like the 2D minimap's hide

@@ -11458,6 +11458,44 @@ console.log('Testing 3D world map (BUILD 1055)...');
   assert(shouldShowMinimap3d({ insideHut: false, hideUi: false, mapOpen: false }), 'M1055: minimap shows with the world map closed');
 }
 
+console.log('Testing 3D world clock + wait (BUILD 1056)...');
+{
+  const { formatDayClock, advanceClock, minutesUntilHour, waitOptionsFor, waitStepsFor, waitRealMsFor, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS } = await import('../src/game/engine3d/worldclock.js');
+  const { loadClock, saveClock } = await import('../src/game/engine3d/townsfolk3d.js');
+  assert(formatDayClock({ minutes: 480, day: 1 }) === '8:00 AM · Day 1', 'M1056: 08:00 formats as 8:00 AM · Day 1');
+  assert(formatDayClock({ minutes: 0, day: 1 }) === '12:00 AM · Day 1', 'M1056: midnight is 12:00 AM');
+  assert(formatDayClock({ minutes: 720, day: 1 }) === '12:00 PM · Day 1', 'M1056: noon is 12:00 PM');
+  assert(formatDayClock({ minutes: 1439, day: 1 }) === '11:59 PM · Day 1', 'M1056: 23:59 formats');
+  const adv = advanceClock({ minutes: 1400, day: 1 }, 60);
+  assert(adv.minutes === 20 && adv.day === 2, 'M1056: advance crosses midnight into day 2');
+  assert(advanceClock({ minutes: 480, day: 1 }, 1440).day === 2, 'M1056: advance a full day');
+  assert(minutesUntilHour({ minutes: 480, day: 1 }, 6) === 1320, 'M1056: 8 AM to next 6 AM is 22h');
+  assert(minutesUntilHour({ minutes: 360, day: 1 }, 6) === 1440, 'M1056: exactly on the hour waits a full day');
+  const opts = waitOptionsFor({ minutes: 480, day: 1 });
+  assert(opts.length === 6 && opts[0].minutes === 60 && opts[3].minutes === 480, 'M1056: six wait options, 1h/2h/4h/8h + morning + evening');
+  assert(opts[4].minutes === 1320 && opts[5].minutes === 600, 'M1056: morning/evening options match the clock');
+  assert(WAIT_STEP_MINUTES === 10 && WAIT_STEP_MS === 110, 'M1056: 10 game-min per 110ms step (2D parity)');
+  assert(waitStepsFor(480) === 48 && waitRealMsFor(480) === 5280, 'M1056: 8h wait is 48 steps / 5.28 real seconds');
+  assert(waitInterrupted(100, 100) === false && waitInterrupted(100, 94) === true, 'M1056: unchanged HP waits, a bite interrupts');
+  assert(waitInterrupted(6, 100) === true, 'M1056: exhaustion restore interrupts');
+  assert(waitRemainingLabel(130) === '2h 10m left', 'M1056: remaining label');
+  // The waited time persists through the same save/load the live clock
+  // uses (ag-3d-clock-v1): save an advanced clock, load it back. Node
+  // has no localStorage, so the round-trip runs against a faithful
+  // in-memory stand-in (the real persistence is proven by the phone
+  // probe's reload check); nothing runs after this section, so the
+  // stand-in cannot leak into another test.
+  const simStore = new Map<string, string>();
+  (globalThis as unknown as { localStorage: unknown }).localStorage = {
+    getItem: (k: string) => (simStore.has(k) ? simStore.get(k)! : null),
+    setItem: (k: string, v: string) => { simStore.set(k, v); },
+  };
+  saveClock({ minutes: 960, day: 2 });
+  const reloaded = loadClock();
+  assert(reloaded.minutes === 960 && reloaded.day === 2, 'M1056: waited-to 4 PM day 2 survives save/load');
+  saveClock({ minutes: 480, day: 1 });
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
