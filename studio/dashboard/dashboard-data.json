@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1058,
-    "commit": "a4b3adb3",
-    "description": "NPC construction (G24) — Founders spend the stockpile (12 wood = 6 work steps x 2, 3 ticks/step, one builder at a time) building a real hut at (128,120) through the player validatePlacement + addPlacement path: collision, door (128,121), interior, founders sleep inside at their hut beds. Door-clearance asserted (camp-approach 6 steps, approach-spawn 46 steps). Wood leaves the pile ONLY on a completed work step; hut appears only at 6/6. Mid-build 1h wait freezes everything. Save: ag-3d-founders-v1 now version 2; hut rides in the world save via w.placements. Landed: commit a4b3adb3, phone probe PASS 0 page errors (hut built in 178s observed: Marlow-Greta-Marlow-Greta-Perrin handoff; slower than the ~90s estimate because the pile runs dry). Deploy run ID unavailable (Actions API rate-limited); live-verified by served version.json 1058 @ 2026-11-15T20:39:03.316Z.",
+    "build": 1059,
+    "commit": "46046733",
+    "description": "Utility scorer (G25) — Founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins; deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores. Three probe-caught fixes: builder pin (latent in 1058), site held while away (1058 doc stated it, code never had it), deforestation cliff (work radius 30-60; only 8 trees within 30, rebuild stalled at 1/6). Follow-up NOT built: sustainable wood supply (replanting/forestry) before ~7 huts. Landed: commit 46046733 (5 commits), deploy run 43765315050 success, phone probe PASS 0 page errors (all three divergences observed: hunger 35 + energy 20 midday -> sleep; hut done + pile 24 -> all three rest; construction pending + pile 2 -> build). First build 220s, rebuild 520s; builder NOT starved.",
     "status": "verified"
   },
   "buildHistory": [
@@ -392,6 +392,15 @@
       "runId": null,
       "status": "verified",
       "verifiedAt": "2026-11-15T20:39:03.316Z"
+    },
+    {
+      "build": 1059,
+      "commit": "46046733",
+      "description": "Utility scorer (G25) — Founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins; deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores. Three probe-caught fixes: builder pin (latent in 1058), site held while away (1058 doc stated it, code never had it), deforestation cliff (work radius 30-60; only 8 trees within 30, rebuild stalled at 1/6). Follow-up NOT built: sustainable wood supply (replanting/forestry) before ~7 huts. Landed: commit 46046733 (5 commits), deploy run 43765315050 success, phone probe PASS 0 page errors (all three divergences observed: hunger 35 + energy 20 midday -> sleep; hut done + pile 24 -> all three rest; construction pending + pile 2 -> build). First build 220s, rebuild 520s; builder NOT starved.",
+      "qualityGateLevel": 3,
+      "runId": "43765315050",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T21:45:27.640Z"
     }
   ],
   "buildQueue": [],
@@ -523,13 +532,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T13:44:44-07:00",
+  "lastUpdateTimestamp": "2026-11-15T15:01:59-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1058,
-    "commit": "a4b3adb3",
-    "description": "NPC construction (G24) — Founders spend the stockpile (12 wood = 6 work steps x 2, 3 ticks/step, one builder at a time) building a real hut at (128,120) through the player validatePlacement + addPlacement path: collision, door (128,121), interior, founders sleep inside at their hut beds. Door-clearance asserted (camp-approach 6 steps, approach-spawn 46 steps). Wood leaves the pile ONLY on a completed work step; hut appears only at 6/6. Mid-build 1h wait freezes everything. Save: ag-3d-founders-v1 now version 2; hut rides in the world save via w.placements. Landed: commit a4b3adb3, phone probe PASS 0 page errors (hut built in 178s observed: Marlow-Greta-Marlow-Greta-Perrin handoff; slower than the ~90s estimate because the pile runs dry). Deploy run ID unavailable (Actions API rate-limited); live-verified by served version.json 1058 @ 2026-11-15T20:39:03.316Z.",
-    "runId": null,
-    "verifiedAt": "2026-11-15T20:39:03.316Z"
+    "build": 1059,
+    "commit": "46046733",
+    "description": "Utility scorer (G25) — Founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins; deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores. Three probe-caught fixes: builder pin (latent in 1058), site held while away (1058 doc stated it, code never had it), deforestation cliff (work radius 30-60; only 8 trees within 30, rebuild stalled at 1/6). Follow-up NOT built: sustainable wood supply (replanting/forestry) before ~7 huts. Landed: commit 46046733 (5 commits), deploy run 43765315050 success, phone probe PASS 0 page errors (all three divergences observed: hunger 35 + energy 20 midday -> sleep; hut done + pile 24 -> all three rest; construction pending + pile 2 -> build). First build 220s, rebuild 520s; builder NOT starved.",
+    "runId": "43765315050",
+    "verifiedAt": "2026-11-15T21:45:27.640Z"
   },
   "measuredBaselines": [
     {
