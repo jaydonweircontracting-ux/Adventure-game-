@@ -5386,9 +5386,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // Destination: building founders work at the approach tile;
         // sleeping founders head for the approach tile too (the door)
         // and the arrival block steps them through it. Everyone else
-        // uses the 1057 destination.
+        // uses the 1057 destination. BUILD 1059: the site override
+        // applies ONLY while the activity is work/build — a builder
+        // who chooses eat/rest/sleep must LEAVE the site (to the eat
+        // tile, the camp, or bed), or they are pinned there: eating
+        // requires the eat tile and the arrival block gates build
+        // ticks on work/build, so a hungry builder would stand at
+        // the site starving, not eating and not building, until the
+        // pile refilled. (The 1058 build took 233s in the 1059 probe
+        // for exactly this reason — Marlow sat 'eat'+'building' for
+        // ~90s. The 1058 fixed priority only flipped to eat at
+        // hunger ≤30, so it rarely showed; the scorer flips earlier
+        // as the nearest tree recedes.) workState/buildTicks are
+        // preserved while they are away — they resume where they
+        // left off, and nobody else takes the site meanwhile
+        // (someoneBuilding stays true).
         let dest=founderDestination(f);
-        if(f.workState==='toSite'||f.workState==='building')dest=HUT_APPROACH;
+        if((f.activity==='work'||f.activity==='build')&&(f.workState==='toSite'||f.workState==='building'))dest=HUT_APPROACH;
         else if(f.activity==='sleep'&&hutPlaced)dest=HUT_APPROACH;
         const cx=Math.round(f.x),cy=Math.round(f.y);
         const atDest=cx===dest.x&&cy===dest.y;
