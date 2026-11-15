@@ -11,6 +11,11 @@
  * Run: `node tests/real-game/movement.mjs`
  *
  * BUILD 534: Initial version.
+ * PR #61 step-26 repair: ArrowLeft/ArrowRight rotate the camera since
+ * BUILD 953 (they return early in the keydown handler and never reach
+ * keysRef), so movement uses WASD — KeyD moves right, KeyA moves left.
+ * The (400,300) focus click sets a tap-to-move target (BUILD 366); holding
+ * a movement key cancels it (BUILD 668), so it cannot steer the checks.
  */
 import { chromium } from 'playwright';
 
@@ -56,7 +61,8 @@ try {
       if (!(await page.evaluate(() => window.__gameTest.isInInterior()))) { exited = true; break; }
       const p = await page.evaluate(() => window.__gameTest.getInteriorPos());
       let key = 'ArrowDown';
-      if (Math.abs(p.x - 50) > 3) key = p.x < 50 ? 'ArrowRight' : 'ArrowLeft';
+      // WASD for left/right: ArrowLeft/ArrowRight rotate the camera (BUILD 953).
+      if (Math.abs(p.x - 50) > 3) key = p.x < 50 ? 'KeyD' : 'KeyA';
       await page.keyboard.down(key);
       await page.waitForTimeout(700);
       await page.keyboard.up(key);
@@ -70,11 +76,11 @@ try {
   // Field movement
   if (exited) {
     const fieldStart = await page.evaluate(() => window.__gameTest.getPlayerPos());
-    await page.keyboard.down('ArrowRight');
+    await page.keyboard.down('KeyD');
     await page.waitForTimeout(1500);
-    await page.keyboard.up('ArrowRight');
+    await page.keyboard.up('KeyD');
     const fieldAfter = await page.evaluate(() => window.__gameTest.getPlayerPos());
-    check('Field movement (ArrowRight)',
+    check('Field movement (KeyD)',
       fieldAfter.x > fieldStart.x,
       `(${fieldStart.x.toFixed(1)},${fieldStart.y.toFixed(1)}) → (${fieldAfter.x.toFixed(1)},${fieldAfter.y.toFixed(1)})`);
   }
