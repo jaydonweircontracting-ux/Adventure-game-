@@ -11507,12 +11507,24 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(F.FOUNDER_NAMES.join(',') === 'Marlow,Greta,Perrin', 'M1057: three new founders (none in the old 47)');
   assert(F.FOUNDER_START_FOOD === 30 && F.FOUNDER_WOOD_PER_TREE === 2 && F.FOUNDER_CHOP_TICKS === 3, 'M1057: 30 starting food, 2 wood per tree, 3 chop ticks');
   const fit = { hunger: 80, energy: 90, social: 60 };
-  assert(F.chooseFounderActivity(fit, 600, 30) === 'work', 'M1057: fit founder works by day');
-  assert(F.chooseFounderActivity(fit, 1350, 30) === 'sleep', 'M1057: night → sleep');
-  assert(F.chooseFounderActivity({ hunger: 20, energy: 90, social: 60 }, 600, 30) === 'eat', 'M1057: hungry + food → eat');
-  assert(F.chooseFounderActivity({ hunger: 20, energy: 90, social: 60 }, 600, 0) === 'work', 'M1057: hungry + no food → work (no hidden refill)');
-  assert(F.chooseFounderActivity({ hunger: 80, energy: 10, social: 60 }, 600, 30) === 'sleep', 'M1057: low energy → sleep');
-  assert(F.chooseFounderActivity({ hunger: 80, energy: 90, social: 10 }, 600, 30) === 'rest', 'M1057: lonely → rest');
+  // BUILD 1059: the 1057 fixed priority (chooseFounderActivity) is
+  // DELETED — these asserts now use the utility scorer with the same
+  // intent (a fit founder works by day, night → sleep, hungry +
+  // food → eat, no food → no meal, low energy → sleep, lonely →
+  // rest). The context is hut-done + empty pile, so 'work' means
+  // chopping for the buffer, not building.
+  const U = await import('../src/game/engine3d/utility.js');
+  const doneC = { state: 'done', progress: 6, spentWood: 12 };
+  const ctx1057 = (over: Record<string, unknown>) => ({
+    needs: fit, minutes: 600, foodStock: 30, stockpileWood: 0, construction: doneC,
+    nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, ...over,
+  });
+  assert(U.chooseScoredActivity(ctx1057({})).activity === 'work', 'M1057: fit founder works by day');
+  assert(U.chooseScoredActivity(ctx1057({ minutes: 1350 })).activity === 'sleep', 'M1057: night → sleep');
+  assert(U.chooseScoredActivity(ctx1057({ needs: { hunger: 20, energy: 90, social: 60 } })).activity === 'eat', 'M1057: hungry + food → eat');
+  assert(U.chooseScoredActivity(ctx1057({ needs: { hunger: 20, energy: 90, social: 60 }, foodStock: 0 })).activity === 'work', 'M1057: hungry + no food → work (no hidden refill)');
+  assert(U.chooseScoredActivity(ctx1057({ needs: { hunger: 80, energy: 10, social: 60 } })).activity === 'sleep', 'M1057: low energy → sleep');
+  assert(U.chooseScoredActivity(ctx1057({ needs: { hunger: 80, energy: 90, social: 10 } })).activity === 'rest', 'M1057: lonely → rest');
   const d60 = F.decayFounderNeeds(fit, 60, 'work');
   assert(Math.abs(d60.hunger - 71) < 0.001, 'M1057: hunger decays 9/hr (villageLife parity)');
   assert(Math.abs(F.decayFounderNeeds({ hunger: 80, energy: 10, social: 60 }, 480, 'sleep').energy - 100) < 0.001, 'M1057: a night of sleep restores energy to 100');
@@ -11535,9 +11547,12 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(reloadedF !== null && JSON.stringify(reloadedF) === JSON.stringify(fresh), 'M1057: founders save survives save/load under ag-3d-founders-v1');
   const w = F.defaultFounderState('Marlow', 0, 1000);
   w.needs = { hunger: 80, energy: 90, social: 60 };
-  const stepped = F.applyFounderWaitStep(w, 10, 600, 30, 1010);
+  // BUILD 1059: the wait step takes the scorer's world context now
+  // (same rule as the real-time tick — the re-choice is scored).
+  const waitCtx = { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null };
+  const stepped = F.applyFounderWaitStep(w, 10, 600, 30, 1010, waitCtx);
   assert(Math.abs(stepped.needs.hunger - 78.5) < 0.001 && stepped.x === w.x && stepped.y === w.y && stepped.lastAbs === 1010, 'M1057: wait step decays needs, never moves the founder, advances lastAbs');
-  const steppedNight = F.applyFounderWaitStep({ ...w, needs: { hunger: 80, energy: 50, social: 60 }, activity: 'work' }, 10, 1295, 30, 1010);
+  const steppedNight = F.applyFounderWaitStep({ ...w, needs: { hunger: 80, energy: 50, social: 60 }, activity: 'work' }, 10, 1295, 30, 1010, waitCtx);
   assert(steppedNight.activity === 'sleep', 'M1057: wait step crossing into the night re-chooses sleep');
   const world = stripTownContent(defaultWorld());
   assert(F.FOUNDER_SLEEP_TILES.every((t: { x: number; y: number }) => npcWalkable(world, t.x, t.y)), 'M1057: camp sleep tiles are walkable');
@@ -11608,8 +11623,93 @@ console.log('Testing 3D NPC construction — first hut (BUILD 1058)...');
   const saved = F.foundersSaveOf(states, 8, 25, { state: 'building', progress: 3, spentWood: 6 });
   const rt = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(saved)));
   assert(rt !== null && rt.construction.progress === 3 && rt.construction.spentWood === 6 && rt.stockpileWood === 8, 'M1058: v2 save round-trips construction + pile');
-  assert(F.chooseFounderActivity({ hunger: 80, energy: 10, social: 60 }, 600, 30) === 'sleep', 'M1058: a tired founder sleeps — needs gate the build, they never build exhausted');
-  assert(F.chooseFounderActivity({ hunger: 80, energy: 90, social: 60 }, 600, 30) === 'work', 'M1058: a fit founder works by day (may build)');
+  assert((F as Record<string, unknown>).chooseFounderActivity === undefined, 'M1058: the fixed priority is gone (1059 deleted it — see the M1059 section)');
+  const U58 = await import('../src/game/engine3d/utility.js');
+  const pendC = { state: 'building', progress: 2, spentWood: 4 };
+  const ctx1058 = (over: Record<string, unknown>) => ({
+    needs: { hunger: 80, energy: 90, social: 60 }, minutes: 600, foodStock: 30, stockpileWood: 4, construction: pendC,
+    nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, ...over,
+  });
+  assert(U58.chooseScoredActivity(ctx1058({ needs: { hunger: 80, energy: 10, social: 60 } })).activity === 'sleep', 'M1058: a tired founder sleeps — needs gate the build, they never build exhausted');
+  assert(U58.chooseScoredActivity(ctx1058({})).activity === 'build', 'M1058: a fit founder builds by day when the pile holds wood (1059: the scorer picks build over chop here — the old priority said work)');
+}
+
+console.log('Testing 3D utility scorer — founders choose by scored utility (BUILD 1059)...');
+{
+  const U = await import('../src/game/engine3d/utility.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const doneC = { state: 'done', progress: 6, spentWood: 12 };
+  const pendC = { state: 'building', progress: 2, spentWood: 4 };
+  const fit = { hunger: 80, energy: 90, social: 60 };
+  const ctx = (over: Record<string, unknown>) => ({
+    needs: fit, minutes: 600, foodStock: 30, stockpileWood: 0, construction: doneC,
+    nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, ...over,
+  });
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.001;
+  // --- Score math (exact values, not just winners). ---
+  assert(close(U.utilityNeed(20), 0.8) && close(U.utilityNeed(100), 0) && close(U.utilityNeed(0), 1), 'M1059: need(x) = (100-x)/100');
+  const sFit = U.scoreFounderActivities(ctx({}));
+  assert(close(sFit.sleep, 0.01) && close(sFit.eat, 0.048) && close(sFit.rest, 0.144) && close(sFit.work, 0.37) && sFit.build === 0, 'M1059: fit founder, hut done, empty pile — work 0.37 leads, build gated 0');
+  const sTired = U.scoreFounderActivities(ctx({ needs: { hunger: 80, energy: 20, social: 60 } }));
+  assert(close(sTired.sleep, 0.64), 'M1059: sleep = need(energy)^2 (energy 20 → 0.64)');
+  const sHungry = U.scoreFounderActivities(ctx({ needs: { hunger: 20, energy: 90, social: 60 } }));
+  assert(close(sHungry.eat, 0.768), 'M1059: eat = need(hunger)^2 x 1.2 (hunger 20 → 0.768)');
+  assert(U.scoreFounderActivities(ctx({ needs: { hunger: 20, energy: 90, social: 60 }, foodStock: 0 })).eat === 0, 'M1059: eat is 0 with no food (no hidden refill)');
+  const sNight = U.scoreFounderActivities(ctx({ minutes: 1350 }));
+  assert(close(sNight.sleep, 0.81), 'M1059: night sleep = need^2 + 0.8 (energy 90 at night → 0.81)');
+  assert(U.chooseScoredActivity(ctx({ minutes: 1350, needs: { hunger: 20, energy: 90, social: 60 } })).activity === 'sleep', 'M1059: night sleep (0.81) beats a hungry founder\'s eat (0.768)');
+  assert(U.chooseScoredActivity(ctx({ minutes: 1350, needs: { hunger: 15, energy: 90, social: 60 } })).activity === 'eat', 'M1059: nearly starving at night eats first (eat 0.867 > sleep 0.81 — a late dinner, then bed)');
+  const sLonely = U.scoreFounderActivities(ctx({ needs: { hunger: 80, energy: 90, social: 10 } }));
+  assert(close(sLonely.rest, 0.729), 'M1059: rest = need(social)^2 x 0.9 (social 10 → 0.729)');
+  // Work value follows the wood the hut still needs.
+  assert(close(U.scoreFounderActivities(ctx({ construction: { state: 'none', progress: 0, spentWood: 0 }, stockpileWood: 0 })).work, 0.57), 'M1059: work is worth most when the hut needs all 12 wood (0.57)');
+  assert(close(U.scoreFounderActivities(ctx({ construction: pendC, stockpileWood: 6 })).work, 0.237), 'M1059: work fades as the pile fills (spent 4 + pile 6, 2 still needed → 0.237)');
+  assert(U.scoreFounderActivities(ctx({ nearestTreeDist: null })).work === 0, 'M1059: work is 0 with no tree in range');
+  assert(U.scoreFounderActivities(ctx({ stockpileWood: 24 })).work === 0, 'M1059: work is 0 with a full pile and the hut done (no sink)');
+  // Build gates: hut done / short pile / another builder → exactly 0.
+  assert(U.scoreFounderActivities(ctx({ stockpileWood: 4 })).build === 0, 'M1059: build is 0 when the hut is done (default context is doneC)');
+  assert(U.scoreFounderActivities(ctx({ construction: pendC, stockpileWood: 1 })).build === 0, 'M1059: build is 0 with less than a step\'s wood');
+  assert(U.scoreFounderActivities(ctx({ construction: pendC, stockpileWood: 4, builderTaken: true })).build === 0, 'M1059: build is 0 when another founder is building');
+  assert(close(U.scoreFounderActivities(ctx({ construction: pendC, stockpileWood: 4 })).build, 0.72), 'M1059: build = 0.80 - distance penalty (site 4 away → 0.72)');
+  // Continuation bonus: +0.10 for the current job.
+  assert(close(U.scoreFounderActivities(ctx({ construction: pendC, stockpileWood: 4, currentJob: 'build' })).build, 0.82), 'M1059: a builder\'s build scores +0.10 (continuation)');
+  assert(close(U.scoreFounderActivities(ctx({ construction: { state: 'none', progress: 0, spentWood: 0 }, stockpileWood: 0, currentJob: 'chop' })).work, 0.67), 'M1059: a chopper\'s work scores +0.10 (continuation)');
+  // --- The three divergences (old priority vs scorer). ---
+  const divA = U.chooseScoredActivity(ctx({ needs: { hunger: 35, energy: 20, social: 60 } }));
+  assert(divA.activity === 'sleep' && close(divA.scores.sleep, 0.64) && close(divA.scores.work, 0.37), 'M1059 DIVERGENCE (a): mid hunger (35) + low energy (20) → sleep, where the old priority said work');
+  const divB = U.chooseScoredActivity(ctx({ stockpileWood: 24 }));
+  assert(divB.activity === 'rest' && divB.scores.work === 0, 'M1059 DIVERGENCE (b): hut done + pile 24 → rest, where the old priority said work (chop into a pile with no sink)');
+  const divC = U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 4 }));
+  assert(divC.activity === 'build' && close(divC.topScore, 0.72) && close(divC.runnerUpScore, 0.303), 'M1059 DIVERGENCE (c): build pending + pile 4 + tree 4 away → build 0.72 > work 0.30, where the old priority said work');
+  // --- Determinism: ties break by the fixed order, same input twice. ---
+  const tie = U.chooseScoredActivity(ctx({ needs: { hunger: 100, energy: 100, social: 100 }, foodStock: 0, nearestTreeDist: null }));
+  assert(tie.activity === 'sleep' && tie.topScore === 0 && tie.runnerUp !== 'sleep', 'M1059: all-zero tie breaks to sleep (first in the fixed order), runner-up is never the winner');
+  const d1 = U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 4 }));
+  const d2 = U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 4 }));
+  assert(JSON.stringify(d1) === JSON.stringify(d2), 'M1059: same input → same decision (deterministic, no randomness)');
+  assert(U.UTILITY_TIE_ORDER.join(',') === 'sleep,eat,build,work,rest', 'M1059: tie order is sleep > eat > build > work > rest');
+  // --- The decision carries its WHY (E reports it). ---
+  assert(divC.top === 'build' && divC.runnerUp === 'work' && close(divC.runnerUpScore, 0.303), 'M1059: the decision names its winner and runner-up with scores');
+  // --- Needs decay treats building like work (social drains alone). ---
+  const dBuild = F.decayFounderNeeds(fit, 60, 'build');
+  assert(close(dBuild.social, 60 - 0.04 * 60) && close(dBuild.hunger, 71), 'M1059: building decays social like work (alone at the site)');
+  // --- Save is unchanged: still v2, 'build' activity round-trips. ---
+  assert(F.FOUNDER_SAVE_VERSION === 2, 'M1059: founders save stays v2 (scores are computed live, nothing stored)');
+  const withBuild = F.freshFoundersSave(1000);
+  withBuild.founders[0].activity = 'build';
+  withBuild.founders[0].workState = 'building';
+  const rtB = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(withBuild)));
+  assert(rtB !== null && rtB.founders[0].activity === 'build' && rtB.founders[0].workState === 'building', 'M1059: a saved build activity round-trips');
+  const doneWithBuild = F.migrateFoundersSave({ version: 2, founders: [{ name: 'Marlow', activity: 'build', workState: 'building' }], construction: { state: 'done', progress: 6, spentWood: 12 } });
+  assert(doneWithBuild !== null && doneWithBuild.founders[0].workState === 'toTree', 'M1059: a done hut resets a saved mid-build founder to chopping');
+  // --- Wait step re-chooses by the SAME scorer (no second rule). ---
+  const w1059 = F.defaultFounderState('Marlow', 0, 1000);
+  w1059.needs = { hunger: 35, energy: 20, social: 60 };
+  w1059.activity = 'work';
+  const stepped1059 = F.applyFounderWaitStep(w1059, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null });
+  assert(stepped1059.activity === 'sleep' && stepped1059.lastDecision !== undefined && stepped1059.lastDecision.top === 'sleep', 'M1059: a wait step re-chooses by the scorer too (divergence (a) holds across a wait)');
+  assert(C.HUT_COST_WOOD === 12 && C.HUT_WOOD_PER_STEP === 2, 'M1059: hut cost constants unchanged (the scorer spends the same wood)');
 }
 
 // ---- Results ----

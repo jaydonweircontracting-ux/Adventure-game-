@@ -116,7 +116,8 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathN
 import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
-import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, chooseFounderActivity, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
+import { chooseScoredActivity, founderDistToSite } from './utility';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
@@ -2223,10 +2224,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // wait, so no wood appears without a delivery). lastAbs
       // advances with the step, so the first post-wait tick does not
       // re-decay the waited span. Saved each step, like the clock.
+      // BUILD 1059: the re-choice is the SAME utility scorer the
+      // real-time tick uses — the world context (pile, construction,
+      // nearest tree, builder-taken, current job) rides along, so a
+      // wait never re-chooses by a different rule.
       if(FOUNDERS_ENABLED){
         const nowAbs=founderAbsMinutes(clockRef.current.day,clockRef.current.minutes);
+        const wWorld=stateRef.current.world;
+        const wTree=nearestTreeTile(wWorld,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
+        const wTreeDist=wTree?Math.abs(wTree.tx-FOUNDER_CAMP.x)+Math.abs(wTree.ty-FOUNDER_CAMP.y):null;
         for(let i=0;i<foundersRef.current.length;i++){
-          foundersRef.current[i]=applyFounderWaitStep(foundersRef.current[i],step,clockRef.current.minutes,founderFoodRef.current,nowAbs);
+          const wf=foundersRef.current[i];
+          foundersRef.current[i]=applyFounderWaitStep(wf,step,clockRef.current.minutes,founderFoodRef.current,nowAbs,{
+            foodStock:founderFoodRef.current,
+            stockpileWood:founderStockpileRef.current,
+            construction:constructionRef.current,
+            nearestTreeDist:wTreeDist,
+            distToSite:founderDistToSite({x:Math.round(wf.x),y:Math.round(wf.y)}),
+            builderTaken:foundersRef.current.some(o=>o!==wf&&(o.workState==='toSite'||o.workState==='building')),
+            currentJob:wf.workState==='toSite'||wf.workState==='building'?'build':(wf.workState==='chopping'||wf.workState==='toStockpile'||(wf.workState==='toTree'&&!!wf.treeTarget)?'chop':null),
+          });
         }
         // BUILD 1058: construction does NOT advance during a wait
         // (positions, chopping, deliveries, and building all pause);
@@ -4870,9 +4887,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
         // BUILD 1057: founders answer E with their state (name,
         // activity, needs) — no dialogue UI yet, just the message
-        // line. The stockpile tile answers with the real count.
+        // line. BUILD 1059: the answer also says WHY — the scored
+        // decision ("build 0.72 > work 0.30"), so the player can see
+        // the utility choice. The stockpile tile answers with the
+        // real count.
         const nearFounder=FOUNDERS_ENABLED?foundersRef.current.find(f=>Math.abs(f.x-p.x)<=1&&Math.abs(f.y-p.y)<=1):undefined;
-        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);setMessage(nearFounder.name+': '+nearFounder.activity+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social);return}
+        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social);return}
         if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food');return}
         // BUILD 1058: E at the founders' hut reports its state:
         // progress + wood spent while building, whose hut it is once
@@ -5271,7 +5291,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // GAME minutes (clock-driven, not tick-driven — the 1056 wait
     // steps the clock, so this tick pauses during a wait and the
     // wait's own step function advances needs instead), activity
-    // re-chosen from needs, then the activity executes: sleep/eat/
+    // re-chosen by the utility scorer (BUILD 1059 — the 1057 fixed
+    // priority is gone), then the activity executes: sleep/eat/
     // rest walk to the camp; work walks to a tree, chops 3 ticks,
     // carries 2 wood to the stockpile. The stockpile count goes up
     // ONLY on a delivery. A felled tree leaves world.trees (or
@@ -5300,11 +5321,25 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const reconciled=reconcileConstruction(constructionRef.current,hutPlaced);
       if(reconciled!==constructionRef.current){constructionRef.current=reconciled;hutChanged=true;}
       const hutDone=constructionRef.current.state==='done';
+      // BUILD 1059: nearest-tree distance, once per tick (shared by
+      // all three founders' scores — the tree set does not change
+      // inside a tick).
+      const tickTree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
+      const tickTreeDist=tickTree?Math.abs(tickTree.tx-FOUNDER_CAMP.x)+Math.abs(tickTree.ty-FOUNDER_CAMP.y):null;
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);
         f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
         f.lastAbs=nowAbs;
-        f.activity=chooseFounderActivity(f.needs,clock.minutes,founderFoodRef.current);
+        // BUILD 1059: the activity is the utility scorer's choice —
+        // needs + context (time, food, pile, construction, distances,
+        // who is building, current job). The 1057 fixed priority is
+        // gone. The decision is stored on the founder (session-only)
+        // so E can report WHY.
+        const builderTaken=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
+        const currentJob=f.workState==='toSite'||f.workState==='building'?'build':(f.workState==='chopping'||f.workState==='toStockpile'||(f.workState==='toTree'&&!!f.treeTarget)?'chop':null);
+        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:founderFoodRef.current,stockpileWood:founderStockpileRef.current,construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob});
+        f.activity=decision.activity;
+        f.lastDecision=decision;
         // Eat: at the eat tile, one meal from the shared camp stock.
         if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
           const res=eatFounderMeal(f.needs,founderFoodRef.current);
@@ -5324,8 +5359,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // 'toTree' and no tree target becomes the builder when the
         // hut is unfinished, the pile holds a step's wood, and nobody
         // else is building (one builder — the site has one work tile,
-        // the approach tile). Otherwise they chop as before.
-        if(f.activity==='work'&&f.workState==='toTree'&&!f.treeTarget){
+        // the approach tile). Otherwise they chop as before. BUILD
+        // 1059: the assignment runs for 'build' AND 'work' — the
+        // scorer may name either, and a 'build' founder whose step
+        // cannot start (pile just ran dry, another founder took the
+        // site) falls back to chopping instead of idling. A founder
+        // mid-chop (tree targeted) finishes the tree first: the
+        // work-state machine carries them, so a scorer flip never
+        // strands wood on a tree.
+        if((f.activity==='work'||f.activity==='build')&&f.workState==='toTree'&&!f.treeTarget){
           const someoneBuilding=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
           if(!hutDone&&!someoneBuilding&&canBuild(constructionRef.current,founderStockpileRef.current)){
             f.workState='toSite';
@@ -5369,7 +5411,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             const i=FOUNDER_NAMES.indexOf(f.name);
             const bed=HUT_SLEEP_TILES[i>=0?i:0];
             f.x=bed.x;f.y=bed.y;founderPath.delete(f.name);
-          }else if(f.activity==='work'){
+          }else if(f.activity==='work'||f.activity==='build'){
             if(f.workState==='toSite'){
               // At the approach tile: start building.
               f.workState='building';f.buildTicks=0;
@@ -5431,7 +5473,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           // decay already applied the sleep/rest gains this tick.
         }
         // Idle (no tree in range) retries next tick.
-        if(f.activity==='work'&&f.workState==='idle')f.workState='toTree';
+        if((f.activity==='work'||f.activity==='build')&&f.workState==='idle')f.workState='toTree';
       }
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
       if(stockChanged||hutChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});

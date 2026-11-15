@@ -18,11 +18,12 @@
  *   function of ELAPSED GAME MINUTES, not of ticks — so the 1056 wait
  *   (10 game-minutes per 110ms step) advances needs exactly like real
  *   time does, with no special-casing.
- * - ACTIVITY CHOICE is the seed of the utility brain: needs pick
- *   between 3 activities (sleep / eat / rest / work is 4 with work as
- *   the default), NOT a full scored action list — that comes later.
- *   Sleep wins at night or when energy is low; eat wins when hungry
- *   and the camp has food; rest wins when social is low; else work.
+ * - ACTIVITY CHOICE is the utility scorer (utility.ts, BUILD 1059):
+ *   needs + context (time, food, pile, construction, distances,
+ *   who is building, current job) score five activities — sleep /
+ *   eat / rest / work / build — and the highest wins. The 1057 fixed
+ *   priority is gone; the scorer IS the decision, in the real-time
+ *   tick and in the wait-step re-choice.
  * - FOOD: the camp starts with 30 meals — supplies the founders
  *   brought with them. Eating consumes 1 and restores hunger to 100.
  *   Nothing replenishes it yet (farming/hunting is a later build); a
@@ -69,6 +70,8 @@
 import { planPathNpc, pathHasUnwalkableTile, npcWalkable, quantizeTile, sidestepTile } from './townsfolk3d';
 import { blockedAction } from './npcMotion';
 import { wildTreeAt } from './wildTerrain';
+import { chooseScoredActivity } from './utility';
+import type { ScoredDecision, UtilityWorldContext } from './utility';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
@@ -138,14 +141,8 @@ export const SOCIAL_CAMP_GAIN_PER_MIN = 0.03;
 /** Night starts 21:30, day starts 06:00 (villageLife wake/sleep). */
 export const NIGHT_START_MIN = 1290;
 export const DAY_START_MIN = 360;
-/** Eat when hunger is at or below this. */
-export const HUNGER_EAT_AT = 30;
-/** Sleep when energy is at or below this (or at night). */
-export const ENERGY_SLEEP_AT = 15;
-/** Rest at camp when social is at or below this. */
-export const SOCIAL_REST_AT = 25;
 
-export type FounderActivity = 'sleep' | 'eat' | 'rest' | 'work';
+export type FounderActivity = 'sleep' | 'eat' | 'rest' | 'work' | 'build';
 
 /** True during the founders' night (sleep hours). */
 export function isFounderNight(minutes: number): boolean {
@@ -154,16 +151,12 @@ export function isFounderNight(minutes: number): boolean {
 }
 
 /**
- * The seed of the utility brain: needs pick the activity. Sleep wins
- * at night or on low energy; eat wins when hungry and the camp has
- * food; rest wins when social is low; else work. Pure.
+ * BUILD 1059: the fixed priority is DELETED — activity choice is the
+ * utility scorer (utility.ts: scoreFounderActivities /
+ * chooseScoredActivity). The scorer IS the decision, in the
+ * real-time tick and in the wait-step re-choice below. Nothing in
+ * this file picks an activity by hand any more.
  */
-export function chooseFounderActivity(needs: FounderNeeds, minutes: number, foodStock: number): FounderActivity {
-  if (isFounderNight(minutes) || needs.energy <= ENERGY_SLEEP_AT) return 'sleep';
-  if (needs.hunger <= HUNGER_EAT_AT && foodStock > 0) return 'eat';
-  if (needs.social <= SOCIAL_REST_AT) return 'rest';
-  return 'work';
-}
 
 /**
  * Decay needs by `elapsedMin` game minutes under the current
@@ -179,7 +172,9 @@ export function decayFounderNeeds(needs: FounderNeeds, elapsedMin: number, activ
       ? Math.min(100, needs.energy + ENERGY_SLEEP_PER_MIN * e)
       : Math.max(0, needs.energy - ENERGY_DRAIN_PER_MIN * e);
   let social = needs.social;
-  if (activity === 'work') social = Math.max(0, social - SOCIAL_WORK_DECAY_PER_MIN * e);
+  // BUILD 1059: building is work for social (alone at the site) —
+  // it decays like chopping, not like resting at camp.
+  if (activity === 'work' || activity === 'build') social = Math.max(0, social - SOCIAL_WORK_DECAY_PER_MIN * e);
   else if (activity === 'rest') social = Math.min(100, social + SOCIAL_REST_GAIN_PER_MIN * e);
   else social = Math.min(100, social + SOCIAL_CAMP_GAIN_PER_MIN * e);
   return { hunger, energy, social };
@@ -234,6 +229,9 @@ export type FounderState = {
   /** Absolute game minutes (day*1440 + minutes) at the last update —
    *  decay is computed from elapsed clock time, never from ticks. */
   lastAbs: number;
+  /** BUILD 1059: the last scored decision (session-only, never
+   *  saved) — so E can report WHY the founder chose this activity. */
+  lastDecision?: ScoredDecision;
 };
 
 /** Absolute game minutes: the clock's (day, minutes) as one number. */
@@ -449,20 +447,23 @@ export function stepFounderMove(
 /**
  * One 1056 wait step (10 game-minutes) for a founder: needs decay by
  * the step under the CURRENT activity, then the activity is re-chosen
- * from the new needs + the stepped clock. Sleep restores energy.
- * Positions, chopping, and deliveries do NOT fast-forward — the
- * real-time founder tick pauses during a wait, so this is the only
- * simulation that runs. No eating during a wait (meals happen at the
- * camp, and the founder is wherever the wait found them); when the
- * wait ends the tick resumes and the founder walks to eat. `nowAbs`
- * is the stepped clock's absolute minutes — lastAbs advances with
- * it, so the first post-wait tick does not re-decay the waited span.
- * Pure.
+ * from the new needs + the stepped clock — by the SAME utility scorer
+ * the real-time tick uses (BUILD 1059: the world context — pile,
+ * construction, tree distance, builder-taken, current job — rides
+ * along, so a wait never re-chooses by a different rule). Sleep
+ * restores energy. Positions, chopping, and deliveries do NOT
+ * fast-forward — the real-time founder tick pauses during a wait, so
+ * this is the only simulation that runs. No eating during a wait
+ * (meals happen at the camp, and the founder is wherever the wait
+ * found them); when the wait ends the tick resumes and the founder
+ * walks to eat. `nowAbs` is the stepped clock's absolute minutes —
+ * lastAbs advances with it, so the first post-wait tick does not
+ * re-decay the waited span. Pure.
  */
-export function applyFounderWaitStep(f: FounderState, stepMinutes: number, minutes: number, foodStock: number, nowAbs: number): FounderState {
+export function applyFounderWaitStep(f: FounderState, stepMinutes: number, minutes: number, foodStock: number, nowAbs: number, world: UtilityWorldContext): FounderState {
   const needs = decayFounderNeeds(f.needs, stepMinutes, f.activity);
-  const activity = chooseFounderActivity(needs, minutes, foodStock);
-  return { ...f, needs, activity, lastAbs: nowAbs };
+  const decision = chooseScoredActivity({ ...world, needs, minutes, foodStock });
+  return { ...f, needs, activity: decision.activity, lastDecision: decision, lastAbs: nowAbs };
 }
 
 // --- Save: versioned founders state (G16) ---
@@ -560,7 +561,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       return Number.isFinite(n) ? n : d;
     };
     const activity =
-      s?.activity === 'sleep' || s?.activity === 'eat' || s?.activity === 'rest' || s?.activity === 'work'
+      s?.activity === 'sleep' || s?.activity === 'eat' || s?.activity === 'rest' || s?.activity === 'work' || s?.activity === 'build'
         ? (s.activity as FounderActivity)
         : 'work';
     let workState: FounderWorkState =
