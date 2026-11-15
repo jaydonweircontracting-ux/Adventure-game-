@@ -99,6 +99,11 @@
       "date": "2026-11-15",
       "description": "BUILD 1056: World clock + wait in 3D (G22) — clock readout in the HUD strip + Wait sheet (1/2/4/8h, until morning/evening) mirroring the 2D startWait step; fast-forward advances sky/lights/rain/crops; wolf-bite interruption; waited time survives reload. CORRECTION: a wait system DOES exist in 2D (App.tsx startWait) — the earlier \"no wait system exists anywhere\" was wrong; 3D had none. 53 standalone asserts ALL PASS (parent re-ran directly); sim +16 (384,745 passed / 51 failed — parent re-ran with totals printed, pristine 384,729/51). Phone probe PASS 0 page errors. Commit 7f0a080d, deploy run 43746050758 success, served version.json 1056 @ 2026-11-15T18:20:08.666Z. Registry G22 added (counts 35/14/20/8/29/4/0, 110 total). NPC_TOWNS_VISION.md committed. Ordered queue: EMPTY — \"First settlers\" (vision audit's recommended first NPC build) awaits the user's go-ahead.",
       "type": "build"
+    },
+    {
+      "date": "2026-11-15",
+      "description": "BUILD 1057: First settlers (G23) — three founder NPCs (Marlow, Greta, Perrin) at a camp (124,120), needs-driven, chopping trees and carrying wood to a visible log-pile stockpile with a real count; HUD Camp line; E reports founder status/needs and the pile count. Save versioning (G16) rides along (ag-3d-founders-v1, version field + migration; old roster key untouched). Wait decision: waiting founders simulate per wait-step, positions/chopping/deliveries do NOT fast-forward. 142 standalone asserts ALL PASS (parent re-ran directly from source); sim +30 (384,775 passed / 51 failed — parent re-ran with totals printed, pristine 384,745/51). Phone probe PASS 0 page errors. One real defect caught and fixed in-build: founder stall after sidestepping (exhausted-path branch fell into the 11-tick sealed wait instead of replanning) — delivery time 27s to 15s. Commit 7395f593, deploy run 43755316379 success, served version.json 1057 @ 2026-11-15T19:59:06.560Z. Registry G23 added (counts 36/14/20/8/29/4/0, 111 total). 8-hour autonomous run: next is NPC construction (1058, first hut from the stockpile).",
+      "type": "build"
     }
   ],
   "schemaVersion": "1.0"
