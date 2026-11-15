@@ -29,13 +29,14 @@
 //     straddle its edge, and the old scan never looked.
 //   - Everything else is grass (the terrainAt fallback, kept).
 // Obstacle rule: the stored wilderness scatter in defaultWorld uses
-// hash2(x, y, 7) with tree < 0.006 and rock in [0.006, 0.008), skipping
-// inTown/onRoad/inPond — and every one of those exclusions is false
-// outside the map, so the SAME hash with the SAME salt and thresholds
-// continues the scatter exactly past the edge. Verified in the 1024
-// asserts: every stored scatter tree/rock satisfies its rule. A tile
-// cannot be both a lake and a tree/rock: lake wins, so no tree stands
-// in a lake and no rock sits in one.
+// the forest-cluster rule (isoWorld scatterTreeAt: forest 6% / meadow
+// 0.6% since BUILD 1061, was a flat hash2(x, y, 7) < 0.006) with rocks
+// in [0.006, 0.008) where no tree stands, skipping inTown/onRoad/
+// inPond — and every one of those exclusions is false outside the
+// map, so the SAME rule continues the scatter exactly past the edge.
+// Verified in the 1024 asserts: every stored scatter tree/rock
+// satisfies its rule. A tile cannot be both a lake and a tree/rock:
+// lake wins, so no tree stands in a lake and no rock sits in one.
 // Walkability: wild grass is walkable; ocean, lakes, wild trees and
 // wild rocks block, exactly like their in-map counterparts (water,
 // tree, rock). Chopped/mined wild items stay gone via the world's
@@ -45,7 +46,7 @@
 // (walkableWithPlacements -> isWalkableWorld) stays in-bounds. The
 // wilderness is player-only by construction — "empty chunks", as
 // ordered: landscape, no town, no NPCs, no quests.
-import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, type Terrain } from '../iso/isoWorld';
+import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, scatterTreeAt, type Terrain } from '../iso/isoWorld';
 import { groundNoise, groundElevation } from './townLook';
 import { placedPathKeyInts, placedWaterKeyInts, tileKeyInt } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
@@ -69,17 +70,24 @@ export function wildLakeAt(x: number, y: number): boolean {
   return lakeNoiseAt(x, y) > WILD_LAKE_THRESHOLD;
 }
 
-/** True when the scatter hash puts a wild tree on this tile
- *  (and the tile is not a lake or ocean — water wins). */
+/** True when the scatter rule puts a wild tree on this tile
+ *  (and the tile is not a lake or ocean — water wins). BUILD 1061:
+ *  the rule is the forest-cluster scatterTreeAt (forest 6% / meadow
+ *  0.6%), so the wilderness past the edge matches the in-map forests
+ *  instead of the old flat 0.6%. */
 export function wildTreeAt(x: number, y: number): boolean {
-  return !oceanAt(x, y) && !wildLakeAt(x, y) && wildScatter(x, y) < WILD_TREE_MAX;
+  return !oceanAt(x, y) && !wildLakeAt(x, y) && scatterTreeAt(x, y);
 }
 
 /** True when the scatter hash puts a wild rock on this tile
- *  (and the tile is not a lake or ocean — water wins). */
+ *  (and the tile is not a lake or ocean — water wins). BUILD 1061:
+ *  a forest tile in the old rock band is a TREE now (scatterTreeAt
+ *  wins the band, like defaultWorld's if/else-if), so the rock rule
+ *  excludes tree tiles — a tile is never both a tree and a rock. */
 export function wildRockAt(x: number, y: number): boolean {
   if (oceanAt(x, y)) return false;
   if (wildLakeAt(x, y)) return false;
+  if (scatterTreeAt(x, y)) return false;
   const h = wildScatter(x, y);
   return h >= WILD_TREE_MAX && h < WILD_ROCK_MAX;
 }

@@ -27,10 +27,13 @@
 //     has is drawn — no invented markers. Animals and transients are
 //     NOT drawn: they are session-only wanderers with no stable
 //     identity on the map, and the resident NPCs + car already cover
-//     the "who is near me" question. Trees, rocks, crates, lanterns
-//     and farm tiles are NOT drawn either: at 2 px/tile a tree is a
+//     the "who is near me" question. Trees ARE drawn since BUILD 1061:
+//     a grass tile holding a tree paints as forest (the world map's
+//     forest colour), so a forest reads as a darker patch and the
+//     uniform-green circle of the empty world is gone. Rocks, crates,
+//     lanterns and farm tiles are NOT drawn: at 2 px/tile a rock is a
 //     sub-pixel speckle and the 2D minimap likewise draws terrain,
-//     not individual trees (its forest is a terrain colour).
+//     not individual rocks (its forest is a terrain colour).
 //   - Performance (the BUILD 1050 lesson): the frame builder samples
 //     ONE effTerrain closure over a 61x61 window (3,721 lookups, each
 //     two Set hits + a Map hit) and groups terrain into one fill path
@@ -86,6 +89,12 @@ export const MINIMAP3D_CAR_COLOR = '#ff7f2a';
 export const MINIMAP3D_PLAYER_COLOR = '#ffffff';
 /** Background (2D terrain mode: dark green). */
 export const MINIMAP3D_BG_COLOR = '#1a2a1a';
+/** Forest (BUILD 1061): a grass tile holding a tree. Same value as
+ *  WORLDMAP3D_FOREST_COLOR (worldmap3d.ts) — forest reads the same
+ *  on both maps. A separate constant, not an import: worldmap3d
+ *  already imports terrainColor3d from this module, so importing
+ *  the colour back would cycle the two modules. */
+export const MINIMAP3D_FOREST_COLOR = '#2a5a2a';
 /** Circle border (2D: white, 2px). */
 export const MINIMAP3D_BORDER_COLOR = '#ffffff';
 
@@ -161,6 +170,12 @@ export interface Minimap3dFrame {
 
 export interface Minimap3dFrameInput {
   terrainAt: (x: number, y: number) => Terrain;
+  /** BUILD 1061: true when a tree stands on the tile (stored list
+   *  in-map, wild rule out-of-map — the same closure the world map
+   *  uses). A grass tile with a tree paints as forest. Optional so
+   *  older callers keep working; without it the map paints exactly
+   *  as before (uniform green where there are trees). */
+  treeAt?: (x: number, y: number) => boolean;
   playerX: number;
   playerY: number;
   huts: readonly HutRect[];
@@ -193,7 +208,14 @@ export function buildMinimap3dFrame(input: Minimap3dFrameInput): Minimap3dFrame 
       // Tile centre in canvas px; the tile paints as one 2px square.
       const c = minimap3dProject(tx - playerX + 0.5, ty - playerY + 0.5);
       if (!insideCircle(c.x, c.y)) continue;
-      const color = terrainColor3d(terrainAt(tx, ty));
+      // BUILD 1061: a grass tile holding a tree is forest, not meadow
+      // — the forest patches read on the map day and night (the map
+      // takes no night shading). One terrainAt call per tile, same as
+      // before; the tree test is a Set lookup + hash, not a scan.
+      const t = terrainAt(tx, ty);
+      const color = t === 'grass' && input.treeAt && input.treeAt(tx, ty)
+        ? MINIMAP3D_FOREST_COLOR
+        : terrainColor3d(t);
       let cells = byColor.get(color);
       if (!cells) { cells = []; byColor.set(color, cells); }
       cells.push({ x: c.x - MINIMAP3D_PX_PER_TILE / 2, y: c.y - MINIMAP3D_PX_PER_TILE / 2 });

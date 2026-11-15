@@ -38,7 +38,7 @@
 //
 // Pure module (no React, no WebGL, no I/O) so the sim and the
 // standalone asserts can import it directly.
-import { terrainKey, type IsoWorld, type Terrain } from '../iso/isoWorld';
+import { oceanAt, scatterTreeAt, terrainKey, TREE_PROTECTED_TILES, type IsoWorld, type Terrain } from '../iso/isoWorld';
 import { stampExtraRocks } from './townAdditions3d';
 
 /** BUILD 1054: true = the 3D world generates as pure wilderness. */
@@ -86,5 +86,34 @@ export function stripTownContent(source: IsoWorld): IsoWorld {
     landmarks: [],
   };
   stampExtraRocks(world);
+  // BUILD 1061: re-forest the ghost town. The generator never
+  // planted inside the old town rect (defaultWorld's scatter loop
+  // skips |x-100| <= 24, |y-100| <= 24 — the town needed clear
+  // ground), and the migration copies that exclusion, so the player
+  // spawn (99,105) and the camp's west side sat in a treeless hole:
+  // nearest tree to the spawn was 19 tiles away even though the
+  // tile is forest (the noise field says forest; the scatter hash
+  // is uniform, 6.01% < 0.06 across the map — the hole is the
+  // exclusion, not the density). The town is stripped in this mode,
+  // so the footprint regrows with the same scatter rule. A
+  // deterministic derivation on every load, so it is idempotent: a
+  // tile already in the list is skipped, a chopped tree stays
+  // chopped via removedTrees, and water / rocks / placements / the
+  // spawn ring / the protected camp tiles stay clear. Runs after
+  // stampExtraRocks so no rock lands on a new tree.
+  const treeKeys = new Set(world.trees.map((t) => terrainKey(t.tx, t.ty)));
+  const rockKeys = new Set(world.rocks.map((r) => terrainKey(r.tx, r.ty)));
+  const blocked = new Set<string>();
+  for (const p of source.placements ?? []) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) blocked.add(terrainKey(x, y));
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blocked.add(terrainKey(source.playerStart.tx + dx, source.playerStart.ty + dy));
+  for (const k of TREE_PROTECTED_TILES) blocked.add(k);
+  for (let y = 76; y <= 124; y++) for (let x = 76; x <= 124; x++) {
+    const k = terrainKey(x, y);
+    if (treeKeys.has(k) || removedTreeKeys.has(k) || rockKeys.has(k) || blocked.has(k)) continue;
+    if (!scatterTreeAt(x, y)) continue;
+    if (oceanAt(x, y) || terrain[k] === 'water') continue;
+    world.trees.push({ tx: x, ty: y });
+    treeKeys.add(k);
+  }
   return world;
 }

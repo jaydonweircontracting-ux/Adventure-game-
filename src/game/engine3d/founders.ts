@@ -381,6 +381,13 @@ export function chopTreeAt(world: IsoWorld, tx: number, ty: number): boolean {
   const seeded = (world.trees ?? []).find((t) => t.tx === tx && t.ty === ty);
   if (seeded) {
     world.trees = (world.trees ?? []).filter((t) => t !== seeded);
+    // BUILD 1061: record the chop in removedTrees (the same reason
+    // as the E-key handler) — the tree-density migration re-stamps
+    // trees from the rule, and without the record a founder-felled
+    // tree would resurrect on the next load.
+    if (!world.removedTrees) world.removedTrees = [];
+    const k = tx + ',' + ty;
+    if (!world.removedTrees.includes(k)) world.removedTrees.push(k);
     return true;
   }
   if ((tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) && wildTreeAt(tx, ty)) {

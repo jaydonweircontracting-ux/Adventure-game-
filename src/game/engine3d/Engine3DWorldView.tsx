@@ -1815,6 +1815,18 @@ function Minimap3D({ world, playerX, playerY, npcsRef, foundersRef, car, onTapTr
       if (!g) return;
       const frame = buildMinimap3dFrame({
         terrainAt: effTerrainFor(world),
+        // BUILD 1061: forest on the minimap — the same tree closure
+        // the world map uses (stored list in-map, wild rule past the
+        // edge, chopped wild trees excluded), so the map can never
+        // show a forest where no tree stands.
+        treeAt: (() => {
+          const treeSet = new Set((world.trees ?? []).map((t) => t.tx + ',' + t.ty));
+          const removedWild = new Set(world.removedWildTrees ?? []);
+          return (x: number, y: number) => {
+            if (inBounds(world, x, y)) return treeSet.has(x + ',' + y);
+            return wildTreeAt(x, y) && !removedWild.has(x + ',' + y);
+          };
+        })(),
         playerX, playerY,
         huts: world.huts, stalls: world.stalls,
         placements: world.placements ?? [],
@@ -4941,7 +4953,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
         if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
-        if(tree){world.trees=world.trees.filter(c=>c!==tree);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        // BUILD 1061: a chopped tree is recorded in removedTrees (the
+        // rock branch above has done this since 987 for the same
+        // reason) — the tree-density migration in loadWorld re-stamps
+        // trees from the rule, and without the record a chopped tree
+        // would resurrect on the next load.
+        if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         // BUILD 1024: wild trees/rocks past the old edge harvest the
         // same way (2 wood / 1 stone) and stay gone via the
         // removedWildTrees / removedWildRocks sets. Same 1-tile reach

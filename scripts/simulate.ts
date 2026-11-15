@@ -11715,11 +11715,11 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   const W1059 = await import('../src/game/iso/isoWorld.js');
   const world1059 = W1059.defaultWorld();
   const near1059 = world1059.trees.map((t: { tx: number; ty: number }) => Math.abs(t.tx - F.FOUNDER_CAMP.x) + Math.abs(t.ty - F.FOUNDER_CAMP.y)).sort((a: number, b: number) => a - b);
-  assert(near1059.filter((d: number) => d <= 30).length === 8, 'M1059: only 8 trees within 30 of camp (the cliff — the first hut fells ~7)');
-  assert(near1059.filter((d: number) => d <= 60).length === 46, 'M1059: 46 trees within 60 (headroom for ~7 huts)');
-  const felled1059 = new Set(world1059.trees.slice().sort((a: { tx: number; ty: number }, b: { tx: number; ty: number }) => (Math.abs(a.tx - F.FOUNDER_CAMP.x) + Math.abs(a.ty - F.FOUNDER_CAMP.y)) - (Math.abs(b.tx - F.FOUNDER_CAMP.x) + Math.abs(b.ty - F.FOUNDER_CAMP.y))).slice(0, 8).map((t: { tx: number; ty: number }) => t.tx + ',' + t.ty));
+  assert(near1059.filter((d: number) => d <= 30).length === 58, 'M1059: 58 trees within 30 of camp (BUILD 1061 forests — the cliff is gone: the first hut fells ~7 of 58, not 7 of 8)');
+  assert(near1059.filter((d: number) => d <= 60).length === 154, 'M1059: 154 trees within 60 (headroom for ~25 huts)');
+  const felled1059 = new Set(world1059.trees.slice().sort((a: { tx: number; ty: number }, b: { tx: number; ty: number }) => (Math.abs(a.tx - F.FOUNDER_CAMP.x) + Math.abs(a.ty - F.FOUNDER_CAMP.y)) - (Math.abs(b.tx - F.FOUNDER_CAMP.x) + Math.abs(b.ty - F.FOUNDER_CAMP.y))).slice(0, 58).map((t: { tx: number; ty: number }) => t.tx + ',' + t.ty));
   const next1059 = F.nearestTreeTile(world1059, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS, felled1059);
-  assert(next1059 !== null && Math.abs(next1059.tx - F.FOUNDER_CAMP.x) + Math.abs(next1059.ty - F.FOUNDER_CAMP.y) === 31, 'M1059: after felling the 8 in-range trees the nearest is 31 away — inside the new radius');
+  assert(next1059 !== null && Math.abs(next1059.tx - F.FOUNDER_CAMP.x) + Math.abs(next1059.ty - F.FOUNDER_CAMP.y) === 31, 'M1059: after felling the 58 in-range trees the nearest is 31 away — inside the new radius');
   assert(F.nearestTreeTile(world1059, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, 30, felled1059) === null, 'M1059: at the old radius 30 the same search returns nothing (the rebuild stall)');
   assert(U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 0, nearestTreeDist: 31 })).activity === 'work', 'M1059: work still wins over rest at a 31-tile tree when the pile is dry and needs are fit');
 }
@@ -11814,6 +11814,98 @@ console.log('Testing 3D NPC memory + relationships — founders remember each ot
   const stepped1060 = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 90, companionAtCamp: true });
   const stepped1060b = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 50, companionAtCamp: true });
   assert(stepped1060.activity === 'rest' && stepped1060b.activity === 'work', 'M1060: a wait step re-chooses with the companionship premium too (social 40 + close friend at camp → rest; neutral friend → work)');
+}
+
+console.log('Testing tree density — forests, not speckles (BUILD 1061)...');
+{
+  const W = await import('../src/game/iso/isoWorld.js');
+  const { wildTreeAt, wildRockAt } = await import('../src/game/engine3d/wildTerrain.js');
+  const { buildMinimap3dFrame, MINIMAP3D_FOREST_COLOR } = await import('../src/game/engine3d/minimap3d.js');
+  const { WORLDMAP3D_FOREST_COLOR } = await import('../src/game/engine3d/worldmap3d.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  // --- The rule: forests at 6%, meadows at the old 0.6%, same hash. ---
+  assert(W.FOREST_NOISE_THRESHOLD === 0.55 && W.FOREST_TREE_MAX === 0.06 && W.MEADOW_TREE_MAX === 0.006, 'M1061: rule constants (forest 0.55 / 6% / meadow 0.6%)');
+  assert(W.forestAt(124, 120) === false && W.forestAt(133, 120) === true, 'M1061: camp is meadow, the tile 9 east is forest');
+  assert(W.forestAt(99, 105) === true, 'M1061: the player spawn sits in a forest');
+  let oldCount = 0;
+  for (let y = 0; y < 200; y++) for (let x = 0; x < 200; x++) {
+    if (W.oldScatterTreeAt(x, y)) { oldCount++; assert(W.scatterTreeAt(x, y), `M1061: old tree at (${x},${y}) is still a tree`); }
+  }
+  assert(oldCount > 200, `M1061: old-rule tiles in-map: ${oldCount}`);
+  // --- The fresh world: 830 trees, camp/spawn/hut clear. ---
+  const world = W.defaultWorld();
+  assert(world.trees.length === 830, `M1061: fresh world has 830 trees (got ${world.trees.length})`);
+  assert(world.rocks.length === 41, `M1061: fresh world has 41 rocks (got ${world.rocks.length})`);
+  assert(world.treeGen === W.TREE_GEN, 'M1061: fresh world is stamped treeGen 2');
+  const near = world.trees.map((t: { tx: number; ty: number }) => Math.abs(t.tx - F.FOUNDER_CAMP.x) + Math.abs(t.ty - F.FOUNDER_CAMP.y)).sort((a: number, b: number) => a - b);
+  assert(near.filter((d: number) => d <= 30).length === 58, 'M1061: 58 trees within Manhattan 30 of camp (was 8)');
+  assert(near.filter((d: number) => d <= 60).length === 154, 'M1061: 154 trees within Manhattan 60 of camp (was 46)');
+  for (const k of W.TREE_PROTECTED_TILES) assert(!world.trees.some((t: { tx: number; ty: number }) => t.tx + ',' + t.ty === k), `M1061: no tree on protected tile ${k}`);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) assert(!world.trees.some((t: { tx: number; ty: number }) => t.tx === 99 + dx && t.ty === 105 + dy), `M1061: no tree on the spawn ring (${99 + dx},${105 + dy})`);
+  // --- Wild rule: disjoint, water never a tree. ---
+  {
+    let wt = 0, wr = 0, both = 0;
+    for (let y = 0; y < 200; y++) for (let x = 0; x < 200; x++) {
+      if (wildTreeAt(x, y)) wt++;
+      if (wildRockAt(x, y)) wr++;
+      if (wildTreeAt(x, y) && wildRockAt(x, y)) both++;
+    }
+    assert(wt === 943, `M1061: wildTreeAt in-map is 943 (got ${wt})`);
+    assert(wr === 44, `M1061: wildRockAt in-map is 44 (got ${wr})`);
+    assert(both === 0, 'M1061: no tile is both a wild tree and a wild rock');
+  }
+  // --- Migration: a genuine old save gains 576 trees, keeps its rocks. ---
+  const oldW = JSON.parse(JSON.stringify(world));
+  oldW.trees = oldW.trees.filter((t: { tx: number; ty: number }) => !(W.scatterTreeAt(t.tx, t.ty) && !W.oldScatterTreeAt(t.tx, t.ty)));
+  for (let y = 3; y < 197; y++) for (let x = 3; x < 197; x++) {
+    const inTown = Math.abs(x - 100) <= 24 && Math.abs(y - 100) <= 24;
+    const onRoad = x === 99 || x === 100 || y === 99 || y === 100;
+    const inPond = x >= 118 && x <= 124 && y >= 80 && y <= 86;
+    if (inTown || onRoad || inPond || W.oceanAt(x, y)) continue;
+    const h = W.hash2(x, y, 7);
+    if (W.forestAt(x, y) && h >= 0.006 && h < 0.008 && !oldW.rocks.some((r: { tx: number; ty: number }) => r.tx === x && r.ty === y)) oldW.rocks.push({ tx: x, ty: y });
+  }
+  delete oldW.treeGen;
+  assert(oldW.trees.length === 226 && oldW.rocks.length === 69, `M1061: genuine old world is 226 trees / 69 rocks (got ${oldW.trees.length}/${oldW.rocks.length})`);
+  const mig = W.migrateTreeDensity(oldW);
+  assert(mig.added === 576, `M1061: migration adds 576 trees (got ${mig.added})`);
+  assert(mig.world.trees.length === 802 && mig.world.rocks.length === 69, `M1061: migrated world is 802 trees / 69 rocks (got ${mig.world.trees.length}/${mig.world.rocks.length})`);
+  assert(mig.world.treeGen === W.TREE_GEN, 'M1061: migrated world is stamped treeGen 2');
+  assert(W.migrateTreeDensity(mig.world).added === 0, 'M1061: migration is idempotent');
+  const choppedOld = JSON.parse(JSON.stringify(oldW));
+  const victim = oldW.trees.find((t: { tx: number; ty: number }) => W.oldScatterTreeAt(t.tx, t.ty));
+  choppedOld.trees = choppedOld.trees.filter((t: { tx: number; ty: number }) => !(t.tx === victim.tx && t.ty === victim.ty));
+  assert(!W.migrateTreeDensity(choppedOld).world.trees.some((t: { tx: number; ty: number }) => t.tx === victim.tx && t.ty === victim.ty), 'M1061: a chopped old tree is not resurrected by the migration');
+  // --- Chop records the removal (founders share this path with E-key). ---
+  const wChop = JSON.parse(JSON.stringify(world));
+  const tree = wChop.trees.find((t: { tx: number; ty: number }) => W.oldScatterTreeAt(t.tx, t.ty));
+  assert(F.chopTreeAt(wChop, tree.tx, tree.ty) === true && (wChop.removedTrees ?? []).includes(tree.tx + ',' + tree.ty), 'M1061: chopTreeAt records the felled tree in removedTrees');
+  // --- Minimap: grass + tree paints forest. ---
+  const frame = buildMinimap3dFrame({
+    terrainAt: () => 'grass', treeAt: (x: number, y: number) => x === 105 && y === 100,
+    playerX: 100, playerY: 100, huts: [], stalls: [], placements: [], landmarks: [], npcs: [], car: null,
+  });
+  assert(frame.terrainByColor.some((g: { color: string }) => g.color === MINIMAP3D_FOREST_COLOR), 'M1061: the minimap paints a forest group when treeAt reports a tree');
+  assert(MINIMAP3D_FOREST_COLOR === WORLDMAP3D_FOREST_COLOR, 'M1061: minimap and world-map forest colours agree');
+  const framePlain = buildMinimap3dFrame({
+    terrainAt: () => 'grass',
+    playerX: 100, playerY: 100, huts: [], stalls: [], placements: [], landmarks: [], npcs: [], car: null,
+  });
+  assert(!framePlain.terrainByColor.some((g: { color: string }) => g.color === MINIMAP3D_FOREST_COLOR), 'M1061: without treeAt the minimap has no forest group');
+  // --- The adapter re-forests the ghost town (the layer the player sees). ---
+  const { stripTownContent } = await import('../src/game/engine3d/wilderness.js');
+  const adaptedFresh = stripTownContent(world);
+  assert(adaptedFresh.trees.length === 917, `M1061: adapted fresh world has 917 trees (got ${adaptedFresh.trees.length})`);
+  const adaptedMig = stripTownContent(mig.world);
+  assert(adaptedMig.trees.length === 889, `M1061: adapted migrated world has 889 trees (got ${adaptedMig.trees.length})`);
+  const manSpawn = Math.min(...adaptedMig.trees.map((t: { tx: number; ty: number }) => Math.abs(t.tx - 99) + Math.abs(t.ty - 105)));
+  assert(manSpawn === 4, `M1061: adapted nearest tree to the spawn is 4 away (was 19; got ${manSpawn})`);
+  assert(stripTownContent(adaptedMig).trees.length === adaptedMig.trees.length, 'M1061: stripping twice is idempotent');
+  const choppedAdapted = JSON.parse(JSON.stringify(adaptedMig));
+  const reVictim = adaptedMig.trees.find((t: { tx: number; ty: number }) => !mig.world.trees.some((s: { tx: number; ty: number }) => s.tx === t.tx && s.ty === t.ty));
+  choppedAdapted.trees = choppedAdapted.trees.filter((t: { tx: number; ty: number }) => !(t.tx === reVictim.tx && t.ty === reVictim.ty));
+  choppedAdapted.removedTrees = [...(choppedAdapted.removedTrees ?? []), reVictim.tx + ',' + reVictim.ty];
+  assert(!stripTownContent(choppedAdapted).trees.some((t: { tx: number; ty: number }) => t.tx === reVictim.tx && t.ty === reVictim.ty), 'M1061: a chopped re-forested tree stays chopped after a re-strip');
 }
 
 // ---- Results ----

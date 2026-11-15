@@ -2,6 +2,7 @@
 // The world is fully data-driven so the in-game map builder can reshape it.
 import type { TilePoint } from './projection';
 import type { HouseVariantId } from '../engine3d/townLook';
+import { groundNoise } from '../engine3d/townLook';
 
 export type Terrain = 'grass' | 'dirt' | 'sand' | 'stone' | 'water';
 
@@ -170,6 +171,14 @@ export interface IsoWorld {
    *  with none. */
   removedWildTrees?: string[];
   removedWildRocks?: string[];
+  /** BUILD 1061: tree-density generation of this world's stored tree
+   *  list. 2 = the forest-cluster rule (scatterTreeAt). Absent = the
+   *  old 0.6% uniform scatter (defaultWorld before 1061) — loadWorld
+   *  migrates such saves once via migrateTreeDensity and stamps 2.
+   *  The marker is what makes the migration cheap (a stamped world
+   *  skips the scan) and what keeps a chopped migrated tree gone
+   *  even if the removedTrees record were ever lost. */
+  treeGen?: number;
 }
 
 /** BUILD 1006: one moved generated hut. Both rects carry doorX/doorY. */
@@ -262,6 +271,124 @@ export function hash2(x: number, y: number, s: number): number {
   return h / 4294967296;
 }
 
+// ---------------------------------------------------------------------------
+// BUILD 1061 — tree density: forest clusters over the uniform scatter.
+//
+// The audit (BUILD 1061): the world had 226 trees on 40,000 tiles
+// (0.6% uniform scatter) — a 21-tile treeless hole around (101,101),
+// 4 trees within 12 tiles of the founders' camp, 20 within ±30 — and
+// the minimap never drew trees at all, so the player's screenshot
+// showed an empty meadow and a uniform green circle. The fix is
+// forests, not just more speckles: a coherent noise field marks
+// forest regions (~28% of the map at 24-tile scale) where trees grow
+// 10x denser, while meadows keep the old 0.6% scatter — so the world
+// reads as forest AND meadow, and the minimap/world map show real
+// forest patches instead of uniform green. The same rule governs the
+// stored scatter (defaultWorld), the wild out-of-map trees
+// (wildTreeAt), and the save migration below — one rule, so the
+// renderer, the founders' tree search, the E-key chop, and
+// walkability can never disagree about where a tree stands.
+// ---------------------------------------------------------------------------
+/** Forest-field scale (tiles): one forest blob is ~24+ tiles across. */
+export const FOREST_NOISE_SPACING = 24;
+/** Forest-field threshold: groundNoise(x, y, 24) above this is forest
+ *  (~28% of eligible tiles at 0.55 — measured in verify1061-trees). */
+export const FOREST_NOISE_THRESHOLD = 0.55;
+/** Tree chance inside a forest (6% — a tree every ~17 tiles, mean
+ *  spacing ~4 tiles: a real forest, not a wall of trunks). */
+export const FOREST_TREE_MAX = 0.06;
+/** Tree chance outside a forest — the pre-1061 scatter, unchanged,
+ *  so meadows stay meadows. */
+export const MEADOW_TREE_MAX = 0.006;
+/** The old uniform rule, kept by name for the migration diff. */
+export const OLD_SCATTER_TREE_MAX = 0.006;
+
+/** True when the forest field puts this tile inside a forest region.
+ *  Pure position — the same tile is always forest or always meadow. */
+export function forestAt(x: number, y: number): boolean {
+  return groundNoise(x, y, FOREST_NOISE_SPACING) > FOREST_NOISE_THRESHOLD;
+}
+
+/** The tree rule: forest tiles grow trees at 6%, meadow tiles at the
+ *  old 0.6%. The scatter hash (salt 7) is unchanged from the old
+ *  rule, so every old tree is still a tree under the new rule. */
+export function scatterTreeAt(x: number, y: number): boolean {
+  const h = hash2(x, y, 7);
+  return forestAt(x, y) ? h < FOREST_TREE_MAX : h < MEADOW_TREE_MAX;
+}
+
+/** The pre-1061 tree rule (uniform 0.6%): used only by the migration
+ *  to tell a genuinely new tree from one that was always there. */
+export function oldScatterTreeAt(x: number, y: number): boolean {
+  return hash2(x, y, 7) < OLD_SCATTER_TREE_MAX;
+}
+
+/** Tree-density generation stamp (see IsoWorld.treeGen). */
+export const TREE_GEN = 2;
+
+/** Tiles the founders' camp needs clear, as "x,y" keys. The camp
+ *  (founders.ts: FOUNDER_CAMP 124,120, stockpile 125,120, eat
+ *  123,120, sleep row 123..125,119) is not forest today (measured),
+ *  but the exclusion is load-bearing, not decorative: a tree on the
+ *  log-pile tile would block deliveries and a tree on a sleep tile
+ *  would block rest. The hut door approach (128,122) joins them.
+ *  Kept as literals here (not an import of founders.ts — that would
+ *  cycle isoWorld -> founders -> isoWorld); the standalone asserts
+ *  cross-check these against the founders exports, so a camp move
+ *  fails loudly instead of drifting silently. */
+export const TREE_PROTECTED_TILES: ReadonlySet<string> = new Set([
+  '124,120', '125,120', '123,120',
+  '123,119', '124,119', '125,119',
+  '128,122',
+]);
+
+/**
+ * Migrate a stored world to the forest-cluster tree rule. Adds every
+ * tile that is a tree under the NEW rule but was NOT a tree under the
+ * OLD rule — and nothing else — so:
+ *  - a tree the player or a founder already chopped (gone from the
+ *    list, old-rule tile) is NEVER re-added: it satisfies the old
+ *    rule, so the diff excludes it even though no removed-record
+ *    exists for pre-1061 chops;
+ *  - a tree removed via Build Remove (removedTrees) or a wild chop
+ *    (removedWildTrees) is excluded by its record;
+ *  - a migrated tree chopped AFTER this build is excluded by the
+ *    removedTrees record the chop now writes (E-key + founders),
+ *    and by the treeGen stamp as a second guard.
+ * Also excluded: water (ocean/pond), the old town + roads, rocks,
+ *  crates, stalls, hut rects, any placement rect, the player spawn
+ *  ring, and the protected camp tiles above. Returns the world
+ *  (a copy only when something changed) and how many trees were
+ *  added. Idempotent: a second call on the result adds 0. Pure —
+ *  it reads the world and returns a new one; the caller saves.
+ */
+export function migrateTreeDensity(w: IsoWorld): { world: IsoWorld; added: number } {
+  if ((w.treeGen ?? 0) >= TREE_GEN) return { world: w, added: 0 };
+  const C = 100; // town centre, same constant as defaultWorld
+  const existing = new Set((w.trees ?? []).map((t) => terrainKey(t.tx, t.ty)));
+  const removed = new Set([...(w.removedTrees ?? []), ...(w.removedWildTrees ?? [])]);
+  const blocked = new Set<string>();
+  for (const r of w.rocks ?? []) blocked.add(terrainKey(r.tx, r.ty));
+  for (const c of w.crates ?? []) blocked.add(terrainKey(c.tx, c.ty));
+  for (const s of w.stalls ?? []) for (let x = s.x0; x <= s.x1; x++) blocked.add(terrainKey(x, s.y0));
+  for (const h of w.huts ?? []) for (let y = h.y0; y <= h.y1; y++) for (let x = h.x0; x <= h.x1; x++) blocked.add(terrainKey(x, y));
+  for (const p of w.placements ?? []) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) blocked.add(terrainKey(x, y));
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blocked.add(terrainKey(w.playerStart.tx + dx, w.playerStart.ty + dy));
+  for (const k of TREE_PROTECTED_TILES) blocked.add(k);
+  const added: TilePoint[] = [];
+  for (let y = 3; y < w.h - 3; y++) for (let x = 3; x < w.w - 3; x++) {
+    const inTown = Math.abs(x - C) <= 24 && Math.abs(y - C) <= 24;
+    const onRoad = x === C - 1 || x === C || y === C - 1 || y === C;
+    const inPond = x >= C + 18 && x <= C + 24 && y >= C - 20 && y <= C - 14;
+    if (inTown || onRoad || inPond || oceanAt(x, y)) continue;
+    if (!scatterTreeAt(x, y) || oldScatterTreeAt(x, y)) continue;
+    const k = terrainKey(x, y);
+    if (existing.has(k) || removed.has(k) || blocked.has(k)) continue;
+    added.push({ tx: x, ty: y });
+  }
+  return { world: { ...w, trees: [...(w.trees ?? []), ...added], treeGen: TREE_GEN }, added: added.length };
+}
+
 /** BUILD 1027 — the western ocean. A basic ocean at the world's west
  *  edge: a wavy north-south coastline around x≈12, extending
  *  infinitely west past the old map edge (the 1024 wilderness is
@@ -333,12 +460,17 @@ export function defaultWorld(): IsoWorld {
     const inOcean = oceanAt(x, y);
     if (inTown || onRoad || inPond || inOcean) continue;
     const r = hash2(x, y, 7);
-    if (r < 0.006) trees.push(wp(x, y));
+    // BUILD 1061: forest clusters — scatterTreeAt (forest 6% /
+    // meadow 0.6%) replaces the flat 0.6% rule. Tree first: a forest
+    // tile in the old rock band is a tree now, not a rock.
+    if (scatterTreeAt(x, y)) trees.push(wp(x, y));
     else if (r < 0.008) rocks.push(wp(x, y));
   }
 
   return {
     v: 4, w, h, terrain, walls,
+    // BUILD 1061: a fresh world is born at the forest-cluster density.
+    treeGen: TREE_GEN,
     huts: [
       { x0: C - 4, y0: C - 5, x1: C - 2, y1: C - 3 },
       { x0: C + 2, y0: C + 2, x1: C + 4, y1: C + 4 },
@@ -401,10 +533,18 @@ export function loadWorld(): IsoWorld {
             })),
             playerStart: sh(w.playerStart.tx, w.playerStart.ty),
           };
-          saveWorld(moved);
-          return moved;
+          // BUILD 1061: a v3 save predates the forest rule — migrate
+          // its trees too, then save the migrated world once.
+          const tm = migrateTreeDensity(moved);
+          saveWorld(tm.world);
+          return tm.world;
         }
-        return w;
+        // BUILD 1061: migrate an old-rule save (treeGen absent) to the
+        // forest-cluster rule once, and save the migrated world so the
+        // next load skips the scan. A stamped world returns untouched.
+        const tm = migrateTreeDensity(w);
+        if (tm.world !== w) saveWorld(tm.world);
+        return tm.world;
       }
     }
   } catch { /* fall through to default */ }
