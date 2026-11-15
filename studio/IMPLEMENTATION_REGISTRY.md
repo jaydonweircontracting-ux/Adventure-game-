@@ -125,6 +125,7 @@
 | S24 | Zoom-out black screen | NOT IMPLEMENTED | Reported 2026-10-12, unresolved; BUILD 608 path is a separate report |
 | S25 | Roads behind houses after BUILD 690 | IMPLEMENTED BUT UNVERIFIED | Attributed to stale cached art; awaiting user confirmation after fresh load |
 | S26 | Legacy codebase audit (§52 FINAL COMMAND) | COMPLETE AND VERIFIED | Audit DONE 2026-11-07 ~15:00 (LEGACY_AUDIT.md, 230 lines); A47/B104/C56/D41+2 assets/E |
+| S27 | Clean wilderness: town + NPCs gated off (NPC-built towns later) | COMPLETE AND VERIFIED | BUILD 1054 (commit d5b185c4): WILDERNESS_ONLY flag in wilderness.ts gates the town + NPCs off; world is trees/terrain/water only; nothing deleted; roster preserved in storage |
 | T1 | Standing rule: skills earn XP only from real actions | PARTIALLY IMPLEMENTED | Mining/chopping actions exist; XP wiring + UI + save/load not evidenced complete |
 | T2 | Standing rule: everything added goes in Build menus | PARTIALLY IMPLEMENTED | Followed since 1025 (Rock/Water/Wall); palette-gap audit re-run per build |
 | T3 | Standing rule: doors and paths must line up | PARTIALLY IMPLEMENTED | Quality bar in force; even-width door offset (S8) is a live violation |
@@ -276,7 +277,7 @@
 
 ## G17 — Minimap in 3D — COMPLETE AND VERIFIED
 - **(1) Intended purpose:** A circular minimap in a corner of the screen showing the area near the player (user request 2026-10-12).
-- **(2) Current implementation:** BUILD 1053 (commit 8cba4029, 2026-11-13): new pure module `src/game/engine3d/minimap3d.ts` (no React/DOM) wired into `Engine3DWorldView.tsx` as a `Minimap3D` canvas. 120px canvas, 2 px/tile, ±30 tiles visible, north-up with an `N` at the top, player as a white dot in the centre. Terrain from one `effTerrainFor(world)` closure (the same definition the renderer uses, so the map can never disagree with the ground): grass, dirt paths, water, sand, stone. Buildings as rects: huts tan, stalls gold, landmarks grey-brown, placed houses/stalls/walls/windmills/mines/customs included. NPCs as white dots (live resident actors, alive only), car as an orange dot. Terrain grouped into one fill path per colour (the BUILD 980 seam fix). Corner is TOP-LEFT — top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip. Hide conditions: inside a hut, Hide UI on. No world-map overlay exists in 3D, so no third condition. Tap-to-travel via the 1030 A* pathfinding (travelRequestRef bridge reuses the field-tap branch). Does NOT show animals/transients (session-only, no stable map identity) or trees/rocks/crates/lanterns/farm tiles (sub-pixel at 2 px/tile). Redraw at most every 250ms + on player-tile change; ~1.6ms per frame build in node.
+- **(2) Current implementation:** BUILD 1053 (commit 8cba4029, 2026-11-13): new pure module `src/game/engine3d/minimap3d.ts` (no React/DOM) wired into `Engine3DWorldView.tsx` as a `Minimap3D` canvas. 120px canvas, 2 px/tile, ±30 tiles visible, north-up with an `N` at the top, player as a white dot in the centre. Terrain from one `effTerrainFor(world)` closure (the same definition the renderer uses, so the map can never disagree with the ground): grass, dirt paths, water, sand, stone. Buildings as rects: huts tan, stalls gold, landmarks grey-brown, placed houses/stalls/walls/windmills/mines/customs included. NPCs as white dots (live resident actors, alive only), car as an orange dot. Terrain grouped into one fill path per colour (the BUILD 980 seam fix). Corner is TOP-LEFT — top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip. Hide conditions: inside a hut, Hide UI on. No world-map overlay exists in 3D, so no third condition. Tap-to-travel via the 1030 A* pathfinding (travelRequestRef bridge reuses the field-tap branch). Does NOT show animals/transients (session-only, no stable map identity) or trees/rocks/crates/lanterns/farm tiles (sub-pixel at 2 px/tile). Redraw at most every 250ms + on player-tile change; ~1.6ms per frame build in node. Since BUILD 1054 (WILDERNESS_ONLY), the minimap shows terrain-only — buildings/NPCs/car are gated off with the town; they return when the flag flips.
 - **(3) Dependencies:** 2D minimap code (`minimapRadar.ts`, `minimapIcons.ts`), 3D world state (player position, nearby terrain/buildings).
 - **(4) What remains unfinished:** Nothing for the core request. Possible follow-ups (not ordered): none recorded.
 - **(5) Responsible files/modules:** `src/game/engine3d/minimap3d.ts`, `Engine3DWorldView.tsx` (wiring point).
@@ -1037,6 +1038,15 @@
 - **(6) How it will be tested:** A–E classification published with dependency evidence per file.
 - **(7) Completion:** Audit published (done). Removal phase: only verified-D files removed, with 3D still passing tsc + sim + phone probe after each removal (see R6).
 
+## S27 — Clean wilderness: town + NPCs gated off (NPC-built towns later) — COMPLETE AND VERIFIED
+- **(1) Intended purpose:** Empty world as the fresh starting point — trees, terrain, water only — so NPCs can build and create the towns later (user direction 2026-11-15; video + transcript describing that vision awaited).
+- **(2) Current implementation:** BUILD 1054 (commit d5b185c4, 2026-11-15): new `src/game/engine3d/wilderness.ts` exporting `WILDERNESS_ONLY = true` + `stripTownContent(source)` — the single reversal point (flip the flag to restore the town). Gated off: `applyMosslightTownLayout` (returns the stripped world), `savedNpcActors` (returns `[]`), the NPC 900ms tick (early-returns), transient mount/timer spawns, car summon, `cobbleForTile` (always false). Removed from the player's view: all villagers/NPCs, houses/huts, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks (Ruined Tower, Standing Stones, Hunter's Camp), house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing was deleted — `townsfolk3d.ts`, `villagers.ts`, `mosslightLayout`, `settlements.ts`, `gardens.ts`, `houseFx`, `car.ts`, `transients.ts` all still in the code. Existing saves load clean via the adapter (every load): authored town content and NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster in localStorage (`ag-3d-npcs-v1`) is preserved untouched (verified intact after ticks running).
+- **(3) Dependencies:** User's video + transcript for the NPC-built-towns vision (awaited).
+- **(4) What remains unfinished:** The NPC-built-towns rework itself (direction input awaited). Open user decisions: Build mode stay-or-go in the empty world; wild animals stay-or-go (session-only wildlife was NOT removed — not in the removal list).
+- **(5) Responsible files/modules:** `src/game/engine3d/wilderness.ts`, `Engine3DWorldView.tsx`, `settlements.ts`, `scripts/simulate.ts` (clean-wilderness section).
+- **(6) How it will be tested:** Phone probe: fresh start shows empty wilderness; old save loads clean with inventory/position/placements intact.
+- **(7) Completion:** Clean wilderness verified 2026-11-15 (BUILD 1054): 72 standalone asserts ALL PASS (parent re-ran directly), sim +18 (384,713 passed / 51 failed, pristine-identical except the new header), phone probe 0 page errors, served version.json 1054 + `__AG_BUILD="1054"`.
+
 ---
 
 # Standing rules
@@ -1128,11 +1138,11 @@
 
 ---
 
-# Counts per status (107 requirements total — counted directly from the table rows, 2026-11-13)
+# Counts per status (108 requirements total — counted directly from the table rows, 2026-11-15)
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 32 | G17, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, T6 |
+| COMPLETE AND VERIFIED | 33 | G17, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, S27, T6 |
 | IMPLEMENTED BUT UNVERIFIED | 14 | G1, G3, G4, G5, G7, G9, G16, G20, D7, D9, S14, S21, S22, S25 |
 | PARTIALLY IMPLEMENTED | 20 | G2, G10, G15, G18, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R9, R13, T1, T2, T3, T4 |
 | DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
@@ -1140,11 +1150,11 @@
 | BLOCKED | 4 | S1, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** 32 of 107 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1053; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows here.)
+**Reading the counts:** 33 of 108 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1054; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows there, and again here for S27.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 
-1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). No next item is ordered — candidates awaiting the user's word are the ag-3d-* save-key versioning (G16) and the cottage-1/2 door-nav defect.
+1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). **Ordered queue:** Map button + overworld map (1055), then world clock + wait system (1056). Awaiting the user's word: ag-3d-* save-key versioning (G16), cottage-1/2 door-nav defect, Build-mode stay-or-go, wild animals stay-or-go; video + transcript for the NPC-built-towns vision (S27).
 2. **Ashfall Stage 3 vegetation — DONE (BUILD 1049, see Q24).** 3 tree shapes, generated bushes, props render as themselves; 641 asserts pass, phone probe 0 page errors.
 3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B) — DONE 2026-11-12.** See item 1.
 4. **Fix the 684 sim crash (S2) — DONE 2026-11-13 (commit ece7385d).** Sim runs to completion, 384,678 passed / 51 failed; Rig684 catalog asserts pass. Remaining: 51 failures (46 pre-existing + 5 newly unmasked, incl. the cottage-1/2 door-nav defect — precisely diagnosed, the natural next sim item).

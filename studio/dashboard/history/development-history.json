@@ -84,6 +84,11 @@
       "date": "2026-11-13",
       "description": "BUILD 1053: 3D minimap (G17) — circular 120px north-up minimap top-left in the 3D view; terrain + houses + stalls + NPCs + car; hides inside huts and with Hide UI; tap-to-travel via 1030 A*. New pure module minimap3d.ts (77 standalone asserts ALL PASS, parent re-ran directly; 17 new sim asserts — sim 384,695 passed / 51 failed, pristine-identical except the new header). Phone probe PASS 0 page errors. Commit 8cba4029, deploy run 43553226095 success, served version.json 1053 @ 2026-11-14T03:46:05.139Z. Registry G17 → COMPLETE AND VERIFIED (counts 32/14/20/8/29/4/0, 107 total — counts table regenerated from the actual rows; it had been stale and double-counted Q4).",
       "type": "build"
+    },
+    {
+      "date": "2026-11-15",
+      "description": "BUILD 1054: clean empty wilderness (S27) — user direction change: villagers removed for rework, NPCs will build towns later (video + transcript awaited). WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; world is trees/terrain/water only; nothing deleted. The 1054 map build was stopped mid-flight (brief assumed the old world) and its uncommitted edits reverted before this build started. 72 standalone asserts ALL PASS (parent re-ran directly); sim +18 (384,713 passed / 51 failed, pristine-identical except the new header). Phone probe PASS 0 page errors. Commit d5b185c4, deploy run 43741279142 success, served version.json 1054 @ 2026-11-15T17:29:49.433Z. Registry S27 added (counts 33/14/20/8/29/4/0, 108 total). Ordered queue: map button + overworld map (1055), world clock + wait system (1056). Open user decisions: Build mode stay-or-go, wild animals stay-or-go.",
+      "type": "build"
     }
   ],
   "schemaVersion": "1.0"

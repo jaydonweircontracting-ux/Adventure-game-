@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1053,
-    "commit": "8cba4029",
-    "description": "3D minimap (G17) — circular 120px north-up minimap in the top-left corner of the 3D view (the only free corner: top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip). New pure module minimap3d.ts: terrain from the same effTerrainFor the renderer uses (grass/dirt paths/water/sand/stone), buildings as rects (huts, stalls, landmarks, placed houses/stalls/walls/windmills/mines/customs), NPCs as white dots, car as an orange dot; redraw at most every 250ms + on player-tile change (~1.6ms/frame in node). Hides inside a hut and with Hide UI on; no world-map overlay exists in 3D. Tap-to-travel through the 1030 A* pathfinding. Does not show animals/transients or trees/rocks/crates (sub-pixel). Landed: commit 8cba4029, deploy run 43553226095 success, phone probe PASS 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed).",
+    "build": 1054,
+    "commit": "d5b185c4",
+    "description": "Clean wilderness (S27) — WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; the world is trees/terrain/water only. Removed from view: all villagers/NPCs, houses, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks, house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing deleted — town/NPC code stays, gated off, single reversal point (flip the flag). Existing saves load clean via the adapter (every load): authored town + NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster (ag-3d-npcs-v1) is preserved untouched. Landed: commit d5b185c4, deploy run 43741279142 success, phone probe PASS 0 page errors (fresh start all zeros man-made; old save loads clean with inventory/position/placements intact).",
     "status": "verified"
   },
   "buildHistory": [
@@ -347,6 +347,15 @@
       "runId": "43553226095",
       "status": "verified",
       "verifiedAt": "2026-11-14T03:46:05.139Z"
+    },
+    {
+      "build": 1054,
+      "commit": "d5b185c4",
+      "description": "Clean wilderness (S27) — WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; the world is trees/terrain/water only. Removed from view: all villagers/NPCs, houses, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks, house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing deleted — town/NPC code stays, gated off, single reversal point (flip the flag). Existing saves load clean via the adapter (every load): authored town + NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster (ag-3d-npcs-v1) is preserved untouched. Landed: commit d5b185c4, deploy run 43741279142 success, phone probe PASS 0 page errors (fresh start all zeros man-made; old save loads clean with inventory/position/placements intact).",
+      "qualityGateLevel": 3,
+      "runId": "43741279142",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T17:29:49.433Z"
     }
   ],
   "buildQueue": [],
@@ -478,13 +487,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-13T20:49:56-07:00",
+  "lastUpdateTimestamp": "2026-11-15T10:33:07-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1053,
-    "commit": "8cba4029",
-    "description": "3D minimap (G17) — circular 120px north-up minimap in the top-left corner of the 3D view (the only free corner: top-right holds Exit 3D + Options, the right edge is the Build cluster, bottom-left is the HUD strip). New pure module minimap3d.ts: terrain from the same effTerrainFor the renderer uses (grass/dirt paths/water/sand/stone), buildings as rects (huts, stalls, landmarks, placed houses/stalls/walls/windmills/mines/customs), NPCs as white dots, car as an orange dot; redraw at most every 250ms + on player-tile change (~1.6ms/frame in node). Hides inside a hut and with Hide UI on; no world-map overlay exists in 3D. Tap-to-travel through the 1030 A* pathfinding. Does not show animals/transients or trees/rocks/crates (sub-pixel). Landed: commit 8cba4029, deploy run 43553226095 success, phone probe PASS 0 page errors (frame max 217ms, tracking + hide conditions + tap-to-travel confirmed).",
-    "runId": "43553226095",
-    "verifiedAt": "2026-11-14T03:46:05.139Z"
+    "build": 1054,
+    "commit": "d5b185c4",
+    "description": "Clean wilderness (S27) — WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; the world is trees/terrain/water only. Removed from view: all villagers/NPCs, houses, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks, house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing deleted — town/NPC code stays, gated off, single reversal point (flip the flag). Existing saves load clean via the adapter (every load): authored town + NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster (ag-3d-npcs-v1) is preserved untouched. Landed: commit d5b185c4, deploy run 43741279142 success, phone probe PASS 0 page errors (fresh start all zeros man-made; old save loads clean with inventory/position/placements intact).",
+    "runId": "43741279142",
+    "verifiedAt": "2026-11-15T17:29:49.433Z"
   },
   "measuredBaselines": [
     {
