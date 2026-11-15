@@ -77,8 +77,12 @@ export function advanceLivingWorld(
     throw new Error('living world: incompatible state schema');
   }
 
-  const targetDay = Math.max(1, Math.floor(clock.day));
+  const requestedDay = Math.max(1, Math.floor(clock.day));
   const lastAdvancedDay = Math.max(0, Math.floor(previous.lastAdvancedDay));
+  // Advance in bounded batches. If a save returns after a very long absence,
+  // repeated calls at the same clock value can safely catch up without marking
+  // days as simulated before their systems have actually processed them.
+  const targetDay = Math.min(requestedDay, lastAdvancedDay + MAX_RESOURCE_CATCH_UP_DAYS);
   if (targetDay <= lastAdvancedDay) {
     return {
       state: previous,
@@ -105,7 +109,13 @@ export function advanceLivingWorld(
   // These are the existing shared ledgers: NPC output enters civilization
   // settlement storage before the civilization economy advances.
   const civilization = previous.civilization;
-  const nextClock = { ...clock, day: targetDay };
+  const nextClock = {
+    ...clock,
+    day: targetDay,
+    year: 1 + Math.floor((targetDay - 1) / 360),
+    month: 1 + Math.floor(((targetDay - 1) % 360) / 30),
+    week: 1 + Math.floor((targetDay - 1) / 7),
+  };
   applyNPCProduction(civilization, townsfolk, nextClock);
   const beforeCivilizationDay = civilization.lastSimDay;
   advanceCivilization(civilization, nextClock);
