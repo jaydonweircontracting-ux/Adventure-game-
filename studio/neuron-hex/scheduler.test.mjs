@@ -32,32 +32,39 @@ const NO_CI = { ciPass: false, approvals: { 'pr61-merge': true } };
 const NO_APPROVAL = { ciPass: true, approvals: {} };
 
 // --- real queue, CI failing (current monitor state) ---
-check(tasks.length === 11, 'queue has 11 tasks');
+check(tasks.length === 12, 'queue has 12 tasks');
 check(queue.approvals && queue.approvals['pr61-merge'] === false, 'pr61-merge approval starts false');
 check(!gatesPass(t02, NO_CI), '0x02 gates fail closed when CI fails');
 check(!gatesPass(t02, NO_APPROVAL), '0x02 gates fail closed when the merge is not approved');
 check(gatesPass(t02, GREEN), '0x02 gates pass when CI passes AND the merge is approved');
 check(!isEligible(t02, byId, NO_CI), '0x02 not eligible while CI fails');
 check(!isEligible(t02, byId, NO_APPROVAL), '0x02 not eligible while the merge is unapproved');
-check(isEligible(t02, byId, GREEN), '0x02 eligible once CI passes and the merge is approved');
+check(!isEligible(t02, byId, GREEN), '0x02 not eligible while 0x0C is in progress');
 check(nextTask(tasks, NO_CI) === null, 'nothing eligible while CI fails');
 check(nextTask(tasks, NO_APPROVAL) === null, 'nothing eligible while the merge is unapproved');
-check(nextTask(tasks, GREEN).id === '0x02', 'next is 0x02 once both gates pass');
+check(nextTask(tasks, GREEN) === null, 'nothing eligible while 0x0C is in progress');
 check(!isEligible(t03, byId, GREEN), '0x03 not eligible until 0x02 is done');
 check(!isEligible(t0A, byId, GREEN), '0x0A (blocked on user word) never eligible');
-check(eligibleTasks(tasks, GREEN).map((t) => t.id).join(',') === '0x02', 'only 0x02 eligible with both gates green');
+check(eligibleTasks(tasks, GREEN).length === 0, 'no eligible tasks while 0x0C is in progress');
+// Once the step-26 repair lands, 0x02 is next (deps done, both gates green).
+const done0C = tasks.map((t) => (t.id === '0x0C' ? { ...t, status: 'done', completedAt: '2026-11-15T23:40:00Z' } : t));
+const byId2 = validate(done0C);
+check(isEligible(byId2.get('0x02'), byId2, GREEN), '0x02 eligible once 0x0C is done and both gates pass');
+check(nextTask(done0C, GREEN).id === '0x02', 'next is 0x02 once 0x0C is done and both gates pass');
+check(eligibleTasks(done0C, GREEN).map((t) => t.id).join(',') === '0x02', 'only 0x02 eligible once 0x0C is done and both gates pass');
 
 // --- real queue metrics + bottleneck ---
 const m = metrics(tasks);
-check(m.total === 11 && m.counts.done === 1 && m.counts.pending === 9 && m.counts.blocked === 1 && m.counts.in_progress === 0,
-  `counts are done 1 / pending 9 / blocked 1 / in_progress 0 (got ${JSON.stringify(m.counts)})`);
+check(m.total === 12 && m.counts.done === 1 && m.counts.pending === 9 && m.counts.blocked === 1 && m.counts.in_progress === 1,
+  `counts are done 1 / pending 9 / blocked 1 / in_progress 1 (got ${JSON.stringify(m.counts)})`);
 check(m.avgCompletionMs === 212000, `avg completion is 212000ms for 0x01 (got ${m.avgCompletionMs})`);
-check(bottleneck(tasks).id === '0x02' && bottleneck(tasks).waitingOnIt === 8, 'bottleneck is 0x02 with 8 tasks waiting on it');
+check(bottleneck(tasks).id === '0x0C' && bottleneck(tasks).waitingOnIt === 9, 'bottleneck is 0x0C with 9 tasks waiting on it');
 
-// --- conditions read from the real monitor state file ---
+// --- conditions read from the real monitor state file (values change per run; assert the mapping, not one run) ---
+const rawState = JSON.parse(readFileSync('/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json', 'utf8'));
 const cond = readConditions('/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json');
-check(cond.ciPass === false && cond.ciConclusion === 'failure' && cond.ciHeadSha === '69dfb623b7' && cond.ciRunId === 43771819960,
-  'monitor state reads as CI failure on 69dfb623, run 43771819960');
+check(cond.ciPass === (rawState.conclusion === 'success') && cond.ciHeadSha === rawState.head_sha && cond.ciRunId === rawState.last_reported_run_id && cond.ciConclusion === rawState.conclusion,
+  'readConditions maps the monitor state fields correctly');
 check(readConditions('/nonexistent/state.json').ciPass === false, 'missing state file fails closed');
 
 // --- synthetic: validation rejects bad queues ---
