@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1055,
-    "commit": "a23e8d92",
-    "description": "World map in 3D (G21) — Map button under the minimap (left:12, top:140); zoomable/pannable whole-world map (264x264 frame, zoom 0.5x-3x, opens centred on the player) from renderTerrain over effTerrainFor — the DISPLAY terrain the renderer paints. Measured colour counts, asserted exactly: meadow 56132, water 11958, sand 857, stone 418, forest 331 of 69,696 tiles. The frame type has NO buildings/NPCs/car/landmarks fields, so the map cannot draw a town that is not there. Tap-to-travel via the 1030 A* bridge; minimap hides while open; game keeps running. Three probe-caught defects fixed in-build: Close button under the host Options button (fixed by layout), canvas pan math (fixed to absolute 50%/50% like the 2D map), overlay HUD bleed-through (made fully opaque). Landed: commit a23e8d92, deploy run 43743821054 success, phone probe PASS 0 page errors (map opens ~2.1s, zoom/pan/tap-to-travel confirmed, frames max 167ms).",
+    "build": 1056,
+    "commit": "7f0a080d",
+    "description": "World clock + wait in 3D (G22) — Clock readout in the HUD strip (\"5:00 PM · Day 1\", ticks live) + Wait sheet (1/2/4/8h, until morning/evening) mirroring the 2D startWait step (10 min/110ms, 8h wait ~5.3s). Time source found, not invented: the 3D DayClock already existed (BUILD 993). Fast-forward advances sky/lights/rain/crops by construction; wolves interrupt on HP change; waited time survives reload. Landed: commit 7f0a080d, deploy run 43746050758 success, phone probe PASS 0 page errors (4h wait 17:00-21:00, world genuinely dark, Cancel works, reload keeps the waited time).",
     "status": "verified"
   },
   "buildHistory": [
@@ -365,6 +365,15 @@
       "runId": "43743821054",
       "status": "verified",
       "verifiedAt": "2026-11-15T17:56:42.309Z"
+    },
+    {
+      "build": 1056,
+      "commit": "7f0a080d",
+      "description": "World clock + wait in 3D (G22) — Clock readout in the HUD strip (\"5:00 PM · Day 1\", ticks live) + Wait sheet (1/2/4/8h, until morning/evening) mirroring the 2D startWait step (10 min/110ms, 8h wait ~5.3s). Time source found, not invented: the 3D DayClock already existed (BUILD 993). Fast-forward advances sky/lights/rain/crops by construction; wolves interrupt on HP change; waited time survives reload. Landed: commit 7f0a080d, deploy run 43746050758 success, phone probe PASS 0 page errors (4h wait 17:00-21:00, world genuinely dark, Cancel works, reload keeps the waited time).",
+      "qualityGateLevel": 3,
+      "runId": "43746050758",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T18:20:08.666Z"
     }
   ],
   "buildQueue": [],
@@ -496,13 +505,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T11:01:53-07:00",
+  "lastUpdateTimestamp": "2026-11-15T11:23:26-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1055,
-    "commit": "a23e8d92",
-    "description": "World map in 3D (G21) — Map button under the minimap (left:12, top:140); zoomable/pannable whole-world map (264x264 frame, zoom 0.5x-3x, opens centred on the player) from renderTerrain over effTerrainFor — the DISPLAY terrain the renderer paints. Measured colour counts, asserted exactly: meadow 56132, water 11958, sand 857, stone 418, forest 331 of 69,696 tiles. The frame type has NO buildings/NPCs/car/landmarks fields, so the map cannot draw a town that is not there. Tap-to-travel via the 1030 A* bridge; minimap hides while open; game keeps running. Three probe-caught defects fixed in-build: Close button under the host Options button (fixed by layout), canvas pan math (fixed to absolute 50%/50% like the 2D map), overlay HUD bleed-through (made fully opaque). Landed: commit a23e8d92, deploy run 43743821054 success, phone probe PASS 0 page errors (map opens ~2.1s, zoom/pan/tap-to-travel confirmed, frames max 167ms).",
-    "runId": "43743821054",
-    "verifiedAt": "2026-11-15T17:56:42.309Z"
+    "build": 1056,
+    "commit": "7f0a080d",
+    "description": "World clock + wait in 3D (G22) — Clock readout in the HUD strip (\"5:00 PM · Day 1\", ticks live) + Wait sheet (1/2/4/8h, until morning/evening) mirroring the 2D startWait step (10 min/110ms, 8h wait ~5.3s). Time source found, not invented: the 3D DayClock already existed (BUILD 993). Fast-forward advances sky/lights/rain/crops by construction; wolves interrupt on HP change; waited time survives reload. Landed: commit 7f0a080d, deploy run 43746050758 success, phone probe PASS 0 page errors (4h wait 17:00-21:00, world genuinely dark, Cancel works, reload keeps the waited time).",
+    "runId": "43746050758",
+    "verifiedAt": "2026-11-15T18:20:08.666Z"
   },
   "measuredBaselines": [
     {

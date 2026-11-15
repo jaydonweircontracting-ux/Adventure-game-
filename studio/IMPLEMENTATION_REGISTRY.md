@@ -47,6 +47,7 @@
 | G19 | Audio in 3D | NOT IMPLEMENTED | Zero audio hits in engine3d/; audio.ts is 2D-only |
 | G20 | Performance (device baseline) | IMPLEMENTED BUT UNVERIFIED | Only SwiftShader harness numbers exist; real-phone FPS unknown |
 | G21 | World map in 3D | COMPLETE AND VERIFIED | BUILD 1055 (commit a23e8d92): Map button under the minimap; zoomable/pannable whole-world map from renderTerrain over effTerrainFor; measured colour counts; tap-to-travel via 1030 A*; 78 standalone asserts, sim +16 (384,729 passed / 51 failed), phone probe 0 page errors |
+| G22 | World clock + wait in 3D | COMPLETE AND VERIFIED | BUILD 1056 (commit 7f0a080d): clock readout in the HUD strip ("5:00 PM · Day 1", ticks live) + Wait sheet (1/2/4/8h, until morning/evening) mirroring the 2D startWait step (10 min/110ms); fast-forward advances sky/lights/rain/crops; wolf-bite interruption; 53 standalone asserts, sim +16 (384,745 passed / 51 failed), phone probe 0 page errors |
 | D1 | Live development dashboard (artifact) | COMPLETE AND VERIFIED | Artifact v2 (2026-11-12) fetches studio/dashboard/dashboard-data.json live on every load; fallback embedded snapshot labeled 'Cached snapshot'; builder jsdom harness ~90 assertions/mode passed; parent confirmed v2 live + data URL HTTP 200 |
 | D2 | §54 dashboard data in repo (studio/dashboard/) | COMPLETE AND VERIFIED | Files in repo studio/dashboard/ since the studio/ move (4a070435); dashboard-data.json current through 2026-11-12 (1052 verified, repair verified, Stages 2-6 done); artifact reads them live; snapshots 2026-11-07 + 2026-11-12 |
 | D3 | Build ledger / verification history | PARTIALLY IMPLEMENTED | 110 verify*/ dirs, 1016–1029 evidenced; 1016–1025 carry midnight-placeholder dates, no run IDs |
@@ -320,6 +321,15 @@
 - **(5) Responsible files/modules:** `src/game/engine3d/worldmap3d.ts`, `Engine3DWorldView.tsx`, `minimap3d.ts` (shouldShowMinimap3d + mapOpen).
 - **(6) How it will be tested:** Phone probe: Map button opens the overlay, map shows the accurate surface, zoom/pan/tap-to-travel work, minimap hides while open.
 - **(7) Completion:** Map button + overworld map verified 2026-11-15 (BUILD 1055): 78 standalone asserts ALL PASS (parent re-ran directly), sim +16 (384,729 passed / 51 failed — parent re-ran with totals printed, pristine 384,713/51), phone probe 0 page errors, served version.json 1055 + `__AG_BUILD="1055"`.
+
+## G22 — World clock + wait in 3D — COMPLETE AND VERIFIED
+- **(1) Intended purpose:** A visible world clock in the 3D view and a wait system that genuinely advances the world (user request 2026-11-15).
+- **(2) Current implementation:** BUILD 1056 (commit 7f0a080d, 2026-11-15): new pure module `src/game/engine3d/worldclock.ts` (123 lines). Time source found, not invented: the 3D day clock already existed (BUILD 993) — `DayClock { minutes, day }` in townsfolk3d.ts, persisted under `ag-3d-clock-v1`, 1 game minute per real second, default 08:00 day 1. Sky, night factor, lights, hearth glow, rain, and farm growth are all pure functions of (day, minutes), so advancing the clock advances the world by construction. Clock readout at the top of the bottom-left HUD strip, next to a small Wait button — "🕐 5:00 PM · Day 1", the 2D format minus the year (the 3D clock has no year); ticks live every second. Wait sheet (mirrors the 2D menu): Wait 1/2/4/8 hours, Wait until morning (6 AM), Wait until evening (6 PM). Correction to the earlier record: a wait system DOES exist in 2D (App.tsx `startWait`, line 8823) — it was 3D that had none; 1056 mirrors the 2D options and its 10-game-minutes-per-110ms step exactly, so an 8-hour wait takes ~5.3 real seconds. Each wait step advances the clock and persists it; the live 1-second tick pauses during a wait so nothing double-advances. The player is frozen while waiting (keys, taps, map travel blocked) and the wait always ends — target reached, Cancel, or interrupted. Interruption is real: wolves hunt the player in 3D (6-damage bites on their 900ms tick); any HP change ends the wait. What advances: the clock, and through it the sky, lights, rain, crop growth. Animals keep their own real-time tick. NPC schedules do NOT advance: the NPC tick is gated off by WILDERNESS_ONLY and there are no actors. Waiting is allowed anywhere on foot. Waited time survives save/load (proven by the probe's reload check).
+- **(3) Dependencies:** DayClock (townsfolk3d.ts), sky/atmosphere/lights/rain (pure functions of the clock), animals.ts (interruption), the 2D startWait (reference for options + step timing).
+- **(4) What remains unfinished:** When NPCs return, the wait must decide whether waiting NPCs simulate per wait-step or sleep through the wait — flagged by the vision audit (an 8-hour wait is ~5.3 real seconds, ~6 NPC ticks). The 3D clock has no year/seasons (the 2.5D clock does) — a clock decision is needed before seasons/aging/multi-year history.
+- **(5) Responsible files/modules:** `src/game/engine3d/worldclock.ts`, `Engine3DWorldView.tsx`, `townsfolk3d.ts` (DayClock).
+- **(6) How it will be tested:** Phone probe: clock visible and ticking, all six wait options present, wait advances clock/day and sky/lighting, player frozen mid-wait, Cancel works, interruption on HP change, waited time survives reload.
+- **(7) Completion:** World clock + wait verified 2026-11-15 (BUILD 1056): 53 standalone asserts ALL PASS (parent re-ran directly), sim +16 (384,745 passed / 51 failed — parent re-ran with totals printed, pristine 384,729/51), phone probe 0 page errors, served version.json 1056 + `__AG_BUILD="1056"`.
 
 ---
 
@@ -1148,11 +1158,11 @@
 
 ---
 
-# Counts per status (109 requirements total — counted directly from the table rows, 2026-11-15)
+# Counts per status (110 requirements total — counted directly from the table rows, 2026-11-15)
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 34 | G17, G21, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, S27, T6 |
+| COMPLETE AND VERIFIED | 35 | G17, G21, G22, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, S27, T6 |
 | IMPLEMENTED BUT UNVERIFIED | 14 | G1, G3, G4, G5, G7, G9, G16, G20, D7, D9, S14, S21, S22, S25 |
 | PARTIALLY IMPLEMENTED | 20 | G2, G10, G15, G18, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R9, R13, T1, T2, T3, T4 |
 | DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
@@ -1160,11 +1170,11 @@
 | BLOCKED | 4 | S1, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** 34 of 109 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1055; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows there, and again for S27/G21.)
+**Reading the counts:** 35 of 110 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1056; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows there, and again for S27/G21/G22.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 
-1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). **Ordered queue:** world clock + wait system (1056). Awaiting the user's word: ag-3d-* save-key versioning (G16), cottage-1/2 door-nav defect, Build-mode stay-or-go, wild animals stay-or-go; video + transcript for the NPC-built-towns vision (S27).
+1. **Dashboard repair (§54 Stage B) — DONE 2026-11-12.** Artifact v2 fetches studio/dashboard/dashboard-data.json live; data checkpoint committed (repair verified, Stages 2–6 done, queue empty). **Ordered queue: EMPTY** — map (1055) and clock/wait (1056) both landed. **Awaiting the user's go-ahead:** "First settlers" (the vision audit's recommended first NPC build — 3 founder NPCs, needs-driven, wood stockpile; see studio/NPC_TOWNS_VISION.md + ~/workspace/verify-vision/PLAN.md). Awaiting the user's word: ag-3d-* save-key versioning (G16 — rides along inside First settlers if ordered), cottage-1/2 door-nav defect, Build-mode stay-or-go, wild animals stay-or-go, old-47 roster disposition.
 2. **Ashfall Stage 3 vegetation — DONE (BUILD 1049, see Q24).** 3 tree shapes, generated bushes, props render as themselves; 641 asserts pass, phone probe 0 page errors.
 3. **Wire the dashboard artifact to the JSON (D2, D9, R8 — Stage B) — DONE 2026-11-12.** See item 1.
 4. **Fix the 684 sim crash (S2) — DONE 2026-11-13 (commit ece7385d).** Sim runs to completion, 384,678 passed / 51 failed; Rig684 catalog asserts pass. Remaining: 51 failures (46 pre-existing + 5 newly unmasked, incl. the cottage-1/2 door-nav defect — precisely diagnosed, the natural next sim item).
