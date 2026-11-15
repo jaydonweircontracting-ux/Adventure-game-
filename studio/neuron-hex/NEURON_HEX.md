@@ -247,6 +247,17 @@ is inconclusive, they spawn nothing.
 - Duplicate prevention: the release plan subtracts active workers; the
   dispatcher re-checks the agent list before spawning; `duplicate_prevented`
   events are counted in the log.
+- **Claim lock (V1.1 fix, 2026-11-15):** the hook fires every 5s, so a
+  releasable task would wake a dispatcher on EVERY poll until tasks.json
+  flips to in_progress — five wakes in 25s for 0x02 proved it. The hook
+  script now writes a claim (`~/hooks/state/neuron-hex-claim.json`,
+  {task, claimedAt}) when it wakes (live runs only — dry runs never write
+  state), and stays silent while a fresh claim (< 5 min) exists for the
+  same task. When the check returns NONE (the task is in_progress, done,
+  or no longer eligible) the script clears the claim. The claim is the
+  first layer; the dispatcher's agent-list re-check is the second.
+  If a dispatcher never runs, the claim expires after 5 min and the hook
+  wakes again — no permanent lock.
 - Task state survives restarts: tasks.json + the events log are files on
   disk; the scheduler recomputes everything from them.
 
