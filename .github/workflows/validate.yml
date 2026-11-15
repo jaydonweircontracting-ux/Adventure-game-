@@ -59,6 +59,8 @@ jobs:
         run: npm run test:world-dev-foundation
       - name: Settlement economy regression test
         run: npm run test:settlement-economy
+      - name: Unified living-world simulation regression test
+        run: npm run test:world-simulation
       - name: Caravan trade regression test
         run: npm run test:caravan-trade
       - name: Quest playthrough regression test
