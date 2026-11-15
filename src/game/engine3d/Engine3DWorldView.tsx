@@ -119,6 +119,7 @@ import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprin
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
 import { buildMinimap3dFrame, paintMinimap3d, minimap3dTapToWorld, shouldShowMinimap3d, MINIMAP3D_SIZE, MINIMAP3D_REDRAW_MS } from './minimap3d';
+import { WILDERNESS_ONLY, stripTownContent } from './wilderness';
 import { CAR_SPEED, CAR_MAX_VERTS, emitCar, carSpawnTile, carExitTile, isCarNear, carBlocksTile, type CarState } from './car';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
@@ -224,6 +225,12 @@ export function savedPosition(world: IsoWorld): Position {
 // Exported for standalone build-verification asserts (crate/stall counts
 // in the adapted world); the game itself calls it internally only.
 export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
+  // BUILD 1054: clean wilderness — the town + NPC systems are gated
+  // off pending the NPC-built-towns rework. stripTownContent keeps
+  // trees/rocks/terrain/water and the player's own placements and
+  // drops every generated man-made thing. The layout code below is
+  // untouched; flip WILDERNESS_ONLY in wilderness.ts to restore it.
+  if (WILDERNESS_ONLY) return stripTownContent(source);
   const world: IsoWorld = {
     ...source,
     terrain: { ...source.terrain },
@@ -441,6 +448,11 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
 // ignored — schedules recompute destinations from the clock every tick.
 // Exported for standalone build-verification asserts (migration proofs).
 export function savedNpcActors(world: IsoWorld): NpcActor3D[] {
+  // BUILD 1054: villagers are gated off — no NPCs spawn. The saved
+  // roster in localStorage (NPC_SAVE_KEY) is left untouched, and the
+  // per-tick serializer is gated the same way, so the roster survives
+  // for the town rework.
+  if (WILDERNESS_ONLY) return [];
   const statics = buildStaticAnchors(world);
   const anchors = buildAnchors(world, statics);
   const homeTile = (homeKey: string) => anchors.points[homeKey] ?? anchors.plaza;
@@ -2841,6 +2853,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // hook). Gated on not driving and not inside a hut; when boxed in
   // the player gets "No room for the car here" instead of a car.
   const summonCar=()=>{
+    // BUILD 1054: no car in the clean wilderness (the button is
+    // hidden too — this guards the test hook).
+    if(WILDERNESS_ONLY){setMessage('No cars in the wilderness');return;}
     if(drivingRef.current){setMessage('You are already driving');return;}
     if(insideHutRef.current){setMessage('Cannot summon the car inside');return;}
     const p=stateRef.current.position;
@@ -4672,7 +4687,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // keep driving toward the cleared destination.
       clearMoveTarget:()=>{moveTarget=null;playerPathRef.current=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;},
       getTransients:()=>transientActorsRef.current.map(t=>({id:t.id,kind:t.kind,name:t.name,x:t.x,y:t.y,state:t.state,slotId:t.slotId,exit:t.exit})),
-      spawnTransient:(kind:'traveler'|'adventurer')=>{const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
+      spawnTransient:(kind:'traveler'|'adventurer')=>{if(WILDERNESS_ONLY)return null;const live=transientActorsRef.current;const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,false);if(s){transientActorsRef.current=[...live,s];return s.id;}return null;},
       // BUILD 1013 test hooks (probes only — no gameplay effect):
       // read animals, force-spawn one (bypasses pacing + the
       // out-of-view rule so probes can watch it, but never the caps
@@ -4768,6 +4783,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // counts consecutive ticks behind the same occupied tile (998).
     const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number;blockedTicks:number;detour:boolean}>();
     const npcTimer=window.setInterval(()=>{
+      // BUILD 1054: villagers are gated off — the tick has no actors
+      // to move, and the roster save at its end is gated too.
+      if(WILDERNESS_ONLY)return;
       const actors=npcActorsRef.current;
       const clock=clockRef.current;
       const anchors=buildAnchors(world,staticAnchors);
@@ -4849,7 +4867,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           }
         }
       });
-      try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
+      // BUILD 1054: never overwrite the saved villager roster while
+      // the villagers are gated off — actors is [] in wilderness
+      // mode, and writing it would wipe the roster the town rework
+      // restores.
+      if(!WILDERNESS_ONLY){try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}}
     },900);
 
     // BUILD 1000: transient life. Mount spawns one traveler + one
@@ -4867,18 +4889,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,true);
       if(s)transientActorsRef.current=[...live,s];
     };
-    mountSpawn('traveler');
-    mountSpawn('adventurer');
+    // BUILD 1054: no travelers or adventurers in the clean
+    // wilderness — the mount spawns are skipped outright.
+    if(!WILDERNESS_ONLY){mountSpawn('traveler');mountSpawn('adventurer');}
     const transientTimer=window.setInterval(()=>{
       transientTickRef.current++;
       const tick=transientTickRef.current;
       const player=stateRef.current.position;
       const live=transientActorsRef.current;
-      if(tick%TRAVELER_SPAWN_TICKS===0&&live.filter(t=>t.kind==='traveler').length<MAX_TRAVELERS){
+      if(!WILDERNESS_ONLY&&tick%TRAVELER_SPAWN_TICKS===0&&live.filter(t=>t.kind==='traveler').length<MAX_TRAVELERS){
         const s=spawnTransient(world,'traveler',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
         if(s)transientActorsRef.current=[...transientActorsRef.current,s];
       }
-      if(tick%ADVENTURER_SPAWN_TICKS===ADVENTURER_SPAWN_PHASE&&live.filter(t=>t.kind==='adventurer').length<MAX_ADVENTURERS){
+      if(!WILDERNESS_ONLY&&tick%ADVENTURER_SPAWN_TICKS===ADVENTURER_SPAWN_PHASE&&live.filter(t=>t.kind==='adventurer').length<MAX_ADVENTURERS){
         const s=spawnTransient(world,'adventurer',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
         if(s)transientActorsRef.current=[...transientActorsRef.current,s];
       }
@@ -5043,7 +5066,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         visible like Build; disabled (dimmed, the Undo/Redo pattern)
         while driving or inside a hut. Summons the red sports car
         next to the player. */}
-    <button type="button" data-testid="car-summon" disabled={driving||!!insideHut} onClick={summonCar} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16,opacity:(driving||insideHut)?0.45:1}}>Car</button>
+    {!WILDERNESS_ONLY&&<button type="button" data-testid="car-summon" disabled={driving||!!insideHut} onClick={summonCar} style={{position:'absolute',right:12,bottom:262,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16,opacity:(driving||insideHut)?0.45:1}}>Car</button>}
     {/* BUILD 989 minimized cluster, extended by 991, 995, and 996: fixed stack above
         Build (Walk at bottom:76, Undo at bottom:138, Redo at
         bottom:200 — same 62px step) so positions never shift. Walk

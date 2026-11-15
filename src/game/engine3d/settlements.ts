@@ -20,6 +20,7 @@
 // next clear spot instead of forcing one onto a road.
 
 import { hash2 } from './townLook';
+import { WILDERNESS_ONLY } from './wilderness';
 import { gardensFor } from './gardens';
 import { hutDoor, hutExitPoint } from './interiors';
 import { terrainAt, type HutRect, type IsoWorld } from '../iso/isoWorld';
@@ -260,6 +261,9 @@ export const COBBLE_COLOR: [number, number, number] = [0.42, 0.42, 0.4];
  *  decor tiles (the statue, the fountain) are excluded by the
  *  caller too, so no slab clips through a plinth. */
 export function cobbleForTile(w: IsoWorld, x: number, y: number): boolean {
+  // BUILD 1054: no cobbled paving in the clean wilderness — the
+  // market/craft districts are grass until the towns return.
+  if (WILDERNESS_ONLY) return false;
   const d = districtAt(w, x, y);
   if (d !== 'market' && d !== 'craft') return false;
   const t = terrainAt(w, x, y);

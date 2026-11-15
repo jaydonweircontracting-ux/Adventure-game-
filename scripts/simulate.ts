@@ -11377,6 +11377,51 @@ console.log('Testing 3D minimap mapping (BUILD 1053)...');
   assert(frame.car !== null, 'M1053: car dot draws in range');
 }
 
+console.log('Testing clean wilderness (BUILD 1054)...');
+{
+  const { WILDERNESS_ONLY, stripTownContent } = await import('../src/game/engine3d/wilderness.js');
+  const { applyMosslightTownLayout, savedNpcActors } = await import('../src/game/engine3d/Engine3DWorldView.js');
+  const { defaultWorld, terrainAt } = await import('../src/game/iso/isoWorld.js');
+  const { ROSTER_3D, buildStaticAnchors, buildAnchors } = await import('../src/game/engine3d/townsfolk3d.js');
+  const { TOWN_BUILDINGS } = await import('../src/game/engine3d/townAdditions3d.js');
+  const { WILD_LANDMARKS, cobbleForTile } = await import('../src/game/engine3d/settlements.js');
+  const { gardensFor } = await import('../src/game/engine3d/gardens.js');
+  const { mosslightEngineLayout } = await import('../src/game/mosslightLayout.js');
+  const { buildMinimap3dFrame, terrainColor3d } = await import('../src/game/engine3d/minimap3d.js');
+  const { houseFxInputsFor } = await import('../src/game/engine3d/houseFx.js');
+  assert(WILDERNESS_ONLY === true, 'M1054: WILDERNESS_ONLY is on');
+  const seed = defaultWorld();
+  assert(seed.huts.length === 4 && seed.stalls.length === 4, 'M1054: seed world is a town (4 huts, 4 stalls)');
+  const clean = stripTownContent(seed);
+  assert(clean.huts.length === 0 && clean.stalls.length === 0 && clean.walls.length === 0 && clean.crates.length === 0 && clean.npcSpawns.length === 0, 'M1054: strip removes huts/stalls/walls/crates/NPC spawns');
+  assert((clean.landmarks ?? []).length === 0 && (clean.propDecor ?? []).length === 0, 'M1054: strip removes landmarks and prop decor');
+  assert(Object.values(clean.terrain).filter((t) => t === 'dirt' || t === 'sand').length === 0, 'M1054: strip removes dirt/sand terrain');
+  assert(terrainAt(clean, 121, 83) === 'water' && terrainAt(clean, 100, 100) === 'grass' && terrainAt(clean, 5, 100) === 'water', 'M1054: pond + ocean stay, plaza is grass');
+  assert(clean.trees.length > 100 && clean.rocks.length > 50, `M1054: trees/rocks survive (${clean.trees.length}/${clean.rocks.length})`);
+  assert(seed.huts.length === 4, 'M1054: strip never mutates the source');
+  const adapted = applyMosslightTownLayout(defaultWorld());
+  assert(adapted.huts.length === 0 && adapted.stalls.length === 0 && adapted.walls.length === 0 && adapted.crates.length === 0 && adapted.npcSpawns.length === 0, 'M1054: adapter returns a clean world');
+  assert(Object.values(adapted.terrain).filter((t) => t === 'dirt' || t === 'sand').length === 0, 'M1054: adapter strips dirt/sand too');
+  assert(savedNpcActors(clean).length === 0 && savedNpcActors(defaultWorld()).length === 0, 'M1054: no villagers spawn');
+  assert(ROSTER_3D.length >= 40 && TOWN_BUILDINGS.length === 3 && WILD_LANDMARKS.length === 3, 'M1054: roster/town buildings/landmarks still exist (gated, not deleted)');
+  assert(mosslightEngineLayout().lots.filter((l) => l.kind === 'building').length > 0, 'M1054: layout generator still produces building lots');
+  const dirtWorld = { ...clean, terrain: { ...clean.terrain, '102,102': 'dirt' } };
+  assert(cobbleForTile(dirtWorld, 102, 102) === false, 'M1054: no cobble on dirt in the market district');
+  assert(gardensFor(clean).length === 0 && houseFxInputsFor(clean, false).length === 0, 'M1054: no gardens or house fx without houses');
+  const statics = buildStaticAnchors(clean);
+  const anchors = buildAnchors(clean, statics);
+  assert(Number.isFinite(statics.plaza.x) && anchors.plaza.x === statics.plaza.x, 'M1054: anchors resolve on a hut-less world');
+  const frame = buildMinimap3dFrame({
+    terrainAt: (x: number, y: number) => terrainAt(clean, x, y),
+    playerX: 100, playerY: 100,
+    huts: clean.huts, stalls: clean.stalls,
+    placements: clean.placements ?? [], landmarks: clean.landmarks ?? [],
+    npcs: [], car: null,
+  });
+  assert(frame.buildings.length === 0 && frame.npcs.length === 0 && frame.car === null, 'M1054: minimap shows no buildings/NPCs/car on the clean world');
+  assert(frame.terrainByColor.some((g) => g.color === terrainColor3d('water')), 'M1054: minimap still paints water on the clean world');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
