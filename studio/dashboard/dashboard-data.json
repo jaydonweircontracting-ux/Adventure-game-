@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1054,
-    "commit": "d5b185c4",
-    "description": "Clean wilderness (S27) — WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; the world is trees/terrain/water only. Removed from view: all villagers/NPCs, houses, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks, house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing deleted — town/NPC code stays, gated off, single reversal point (flip the flag). Existing saves load clean via the adapter (every load): authored town + NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster (ag-3d-npcs-v1) is preserved untouched. Landed: commit d5b185c4, deploy run 43741279142 success, phone probe PASS 0 page errors (fresh start all zeros man-made; old save loads clean with inventory/position/placements intact).",
+    "build": 1055,
+    "commit": "a23e8d92",
+    "description": "World map in 3D (G21) — Map button under the minimap (left:12, top:140); zoomable/pannable whole-world map (264x264 frame, zoom 0.5x-3x, opens centred on the player) from renderTerrain over effTerrainFor — the DISPLAY terrain the renderer paints. Measured colour counts, asserted exactly: meadow 56132, water 11958, sand 857, stone 418, forest 331 of 69,696 tiles. The frame type has NO buildings/NPCs/car/landmarks fields, so the map cannot draw a town that is not there. Tap-to-travel via the 1030 A* bridge; minimap hides while open; game keeps running. Three probe-caught defects fixed in-build: Close button under the host Options button (fixed by layout), canvas pan math (fixed to absolute 50%/50% like the 2D map), overlay HUD bleed-through (made fully opaque). Landed: commit a23e8d92, deploy run 43743821054 success, phone probe PASS 0 page errors (map opens ~2.1s, zoom/pan/tap-to-travel confirmed, frames max 167ms).",
     "status": "verified"
   },
   "buildHistory": [
@@ -356,6 +356,15 @@
       "runId": "43741279142",
       "status": "verified",
       "verifiedAt": "2026-11-15T17:29:49.433Z"
+    },
+    {
+      "build": 1055,
+      "commit": "a23e8d92",
+      "description": "World map in 3D (G21) — Map button under the minimap (left:12, top:140); zoomable/pannable whole-world map (264x264 frame, zoom 0.5x-3x, opens centred on the player) from renderTerrain over effTerrainFor — the DISPLAY terrain the renderer paints. Measured colour counts, asserted exactly: meadow 56132, water 11958, sand 857, stone 418, forest 331 of 69,696 tiles. The frame type has NO buildings/NPCs/car/landmarks fields, so the map cannot draw a town that is not there. Tap-to-travel via the 1030 A* bridge; minimap hides while open; game keeps running. Three probe-caught defects fixed in-build: Close button under the host Options button (fixed by layout), canvas pan math (fixed to absolute 50%/50% like the 2D map), overlay HUD bleed-through (made fully opaque). Landed: commit a23e8d92, deploy run 43743821054 success, phone probe PASS 0 page errors (map opens ~2.1s, zoom/pan/tap-to-travel confirmed, frames max 167ms).",
+      "qualityGateLevel": 3,
+      "runId": "43743821054",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T17:56:42.309Z"
     }
   ],
   "buildQueue": [],
@@ -487,13 +496,13 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T10:33:07-07:00",
+  "lastUpdateTimestamp": "2026-11-15T11:01:53-07:00",
   "lastVerifiedCheckpoint": {
-    "build": 1054,
-    "commit": "d5b185c4",
-    "description": "Clean wilderness (S27) — WILDERNESS_ONLY flag in new wilderness.ts gates the town + NPCs off; the world is trees/terrain/water only. Removed from view: all villagers/NPCs, houses, town buildings, walls, market stalls, paths/cobble, fountains, lanterns, crates, farm plots, gardens, prop decor, the car, fixed wild landmarks, house hearth/glow. Kept: pine/oak/birch trees (226 on a fresh start) + bushes, terrain heightfield, ocean, authored pond, wild lakes, rocks (134), HUD, sprint/stamina, Build mode, the 1053 minimap (now terrain-only). Nothing deleted — town/NPC code stays, gated off, single reversal point (flip the flag). Existing saves load clean via the adapter (every load): authored town + NPC state drop out; player inventory/gold/position and player placements survive; the saved villager roster (ag-3d-npcs-v1) is preserved untouched. Landed: commit d5b185c4, deploy run 43741279142 success, phone probe PASS 0 page errors (fresh start all zeros man-made; old save loads clean with inventory/position/placements intact).",
-    "runId": "43741279142",
-    "verifiedAt": "2026-11-15T17:29:49.433Z"
+    "build": 1055,
+    "commit": "a23e8d92",
+    "description": "World map in 3D (G21) — Map button under the minimap (left:12, top:140); zoomable/pannable whole-world map (264x264 frame, zoom 0.5x-3x, opens centred on the player) from renderTerrain over effTerrainFor — the DISPLAY terrain the renderer paints. Measured colour counts, asserted exactly: meadow 56132, water 11958, sand 857, stone 418, forest 331 of 69,696 tiles. The frame type has NO buildings/NPCs/car/landmarks fields, so the map cannot draw a town that is not there. Tap-to-travel via the 1030 A* bridge; minimap hides while open; game keeps running. Three probe-caught defects fixed in-build: Close button under the host Options button (fixed by layout), canvas pan math (fixed to absolute 50%/50% like the 2D map), overlay HUD bleed-through (made fully opaque). Landed: commit a23e8d92, deploy run 43743821054 success, phone probe PASS 0 page errors (map opens ~2.1s, zoom/pan/tap-to-travel confirmed, frames max 167ms).",
+    "runId": "43743821054",
+    "verifiedAt": "2026-11-15T17:56:42.309Z"
   },
   "measuredBaselines": [
     {
