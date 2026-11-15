@@ -11422,6 +11422,42 @@ console.log('Testing clean wilderness (BUILD 1054)...');
   assert(frame.terrainByColor.some((g) => g.color === terrainColor3d('water')), 'M1054: minimap still paints water on the clean world');
 }
 
+console.log('Testing 3D world map (BUILD 1055)...');
+{
+  const { WORLDMAP3D_TILES_X, WORLDMAP3D_TILES_Y, WORLDMAP3D_SIZE, WORLDMAP3D_PX_PER_TILE, WORLDMAP3D_ZOOM_SCALES, WORLDMAP3D_DEFAULT_ZOOM, WORLDMAP3D_FOREST_COLOR, worldmap3dTileColor, worldmap3dTerrainLabel, worldmap3dProject, worldmap3dCanvasToWorld, worldmap3dClampPan, worldmap3dPanForPlayer, buildWorldMap3dFrame } = await import('../src/game/engine3d/worldmap3d.js');
+  const { terrainColor3d, shouldShowMinimap3d } = await import('../src/game/engine3d/minimap3d.js');
+  const { effTerrainFor, renderTerrain } = await import('../src/game/engine3d/wildTerrain.js');
+  const { stripTownContent } = await import('../src/game/engine3d/wilderness.js');
+  const { defaultWorld } = await import('../src/game/iso/isoWorld.js');
+  assert(WORLDMAP3D_TILES_X === 264 && WORLDMAP3D_TILES_Y === 264, 'M1055: extent is 264x264 (200x200 + 32-tile wild margin)');
+  assert(WORLDMAP3D_SIZE === 528 && WORLDMAP3D_PX_PER_TILE === 2, 'M1055: 528px canvas at 2 px/tile');
+  assert(WORLDMAP3D_ZOOM_SCALES[WORLDMAP3D_DEFAULT_ZOOM] === 1.5, 'M1055: default zoom is 1.5x');
+  assert(worldmap3dProject(-32, -32).x === 0 && worldmap3dProject(-32, -32).y === 0, 'M1055: extent origin projects to canvas 0,0');
+  assert(worldmap3dProject(100, 99).y < worldmap3dProject(100, 101).y, 'M1055: north is up');
+  assert(worldmap3dCanvasToWorld(-1, 100) === null && worldmap3dCanvasToWorld(528, 100) === null, 'M1055: taps outside the extent are rejected');
+  assert(worldmap3dTileColor('grass', true) === WORLDMAP3D_FOREST_COLOR, 'M1055: grass holding a tree is forest');
+  assert(worldmap3dTileColor('foam', false) === terrainColor3d('water'), 'M1055: foam paints as water');
+  assert(worldmap3dTerrainLabel('foam') === 'Water', 'M1055: foam labels as Water');
+  const clamped = worldmap3dClampPan(9999, -9999, 3, 360, 700);
+  assert(clamped.x === Math.floor((1584 - 360) / 2), 'M1055: pan clamps at full zoom');
+  const pan = worldmap3dPanForPlayer(100, 100, 1.5, 360, 700);
+  const p = worldmap3dProject(100.5, 100.5);
+  assert(Math.abs((p.x - WORLDMAP3D_SIZE / 2) * 1.5 + pan.x + 180 - 180) < 1, 'M1055: center-on-player pan math');
+  const clean1055 = stripTownContent(defaultWorld());
+  const eff1055 = effTerrainFor(clean1055);
+  const frame1055 = buildWorldMap3dFrame({
+    terrainAt: (x: number, y: number) => renderTerrain(eff1055, x, y),
+    treeAt: (x: number, y: number) => false,
+    playerX: 99, playerY: 105,
+  });
+  assert(frame1055.terrainByColor.reduce((s, g) => s + g.cells.length, 0) === 264 * 264, 'M1055: frame covers every extent tile exactly once');
+  assert(!('buildings' in frame1055) && !('npcs' in frame1055) && !('car' in frame1055), 'M1055: frame carries no buildings/NPCs/car fields');
+  const water1055 = frame1055.terrainByColor.find((g) => g.color === terrainColor3d('water'));
+  assert((water1055?.cells.length ?? 0) === 11958, 'M1055: water cells match the measured world (ocean + pond + lakes)');
+  assert(!shouldShowMinimap3d({ insideHut: false, hideUi: false, mapOpen: true }), 'M1055: minimap hides while the world map is open');
+  assert(shouldShowMinimap3d({ insideHut: false, hideUi: false, mapOpen: false }), 'M1055: minimap shows with the world map closed');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

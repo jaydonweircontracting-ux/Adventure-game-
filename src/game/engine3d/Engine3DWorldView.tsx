@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
@@ -119,6 +119,7 @@ import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprin
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
 import { buildMinimap3dFrame, paintMinimap3d, minimap3dTapToWorld, shouldShowMinimap3d, MINIMAP3D_SIZE, MINIMAP3D_REDRAW_MS } from './minimap3d';
+import { buildWorldMap3dFrame, paintWorldMap3d, worldmap3dCanvasToWorld, worldmap3dClampPan, worldmap3dPanForPlayer, worldmap3dTerrainLabel, WORLDMAP3D_SIZE, WORLDMAP3D_PX_PER_TILE, WORLDMAP3D_ZOOM_SCALES, WORLDMAP3D_DEFAULT_ZOOM } from './worldmap3d';
 import { WILDERNESS_ONLY, stripTownContent } from './wilderness';
 import { CAR_SPEED, CAR_MAX_VERTS, emitCar, carSpawnTile, carExitTile, isCarNear, carBlocksTile, type CarState } from './car';
 import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
@@ -1775,8 +1776,9 @@ export interface Diagnostics3D { verts: number; mapW: number; mapH: number; x: n
 // (and the Options dialog below it), the right edge is the Build
 // cluster (bottom 14–448), bottom-left is the HUD strip, bottom-centre
 // is Enter/Exit. 120px like the 2D minimap. The parent gates visibility
-// (hidden inside a hut and while Hide UI is on — there is no world-map
-// overlay in the 3D view, so no third hide condition exists).
+// (hidden inside a hut, while Hide UI is on, and while the world map
+// is open — BUILD 1055 added the overlay, so the third hide condition
+// exists now).
 // Redraw is throttled: immediately when the player's tile changes,
 // plus a 250ms interval so NPC/car dots stay live while the player
 // stands still — never per frame, and the frame builder samples one
@@ -1837,9 +1839,167 @@ function Minimap3D({ world, playerX, playerY, npcsRef, car, onTapTravel }: {
   );
 }
 
+// BUILD 1055: 3D overworld map — full-screen overlay, whole world.
+// The Map button sits below the minimap (top-left, left:12, top:140 —
+// the only free slot in that corner; top-right holds Exit 3D +
+// Options, the right edge is the Build cluster, bottom-left is the
+// HUD strip). The overlay follows the 2D WorldMap modal's UX: opens
+// centered on the player, zoom buttons, drag to pan, tap a place to
+// walk there, close button, minimap hidden while it is open, game
+// keeps running (the 2D map only locks input; it does not pause).
+// The canvas draws ONCE per open/zoom (never per frame — the BUILD
+// 1050 lesson); pan is a CSS transform on the wrapper, like the 2D
+// atlas. The terrain comes from effTerrainFor (the same definition
+// the renderer uses), trees from the world tree list + wildTreeAt —
+// so the map can never disagree with the surface. Tap-to-travel
+// reuses the 1030 A* bridge (travelRequestRef), exactly like the
+// minimap tap; the map closes when a journey starts.
+function WorldMap3D({ world, playerX, playerY, onClose, onTapTravel }: {
+  world: IsoWorld;
+  playerX: number;
+  playerY: number;
+  onClose: () => void;
+  onTapTravel: (dest: { x: number; y: number }) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [zoom, setZoom] = useState(WORLDMAP3D_DEFAULT_ZOOM);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const tileX = Math.round(playerX);
+  const tileY = Math.round(playerY);
+  const zoomScale = WORLDMAP3D_ZOOM_SCALES[zoom];
+  // Lock body scroll while the map is open (the 2D modal does the
+  // same for iOS Safari); the 3D view is full-screen, but the lock
+  // is harmless and keeps a swipe panning the map, never the page.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  // Draw once per open / zoom / player-tile change. The player cannot
+  // move while the overlay is open (it covers the field), so the tile
+  // dep is a safety net, not a redraw loop.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    const treeSet = new Set((world.trees ?? []).map((t) => t.tx + ',' + t.ty));
+    const removedWild = new Set(world.removedWildTrees ?? []);
+    const eff = effTerrainFor(world);
+    const frame = buildWorldMap3dFrame({
+      terrainAt: (x, y) => renderTerrain(eff, x, y),
+      treeAt: (x, y) => {
+        if (inBounds(world, x, y)) return treeSet.has(x + ',' + y);
+        return wildTreeAt(x, y) && !removedWild.has(x + ',' + y);
+      },
+      playerX, playerY,
+    });
+    paintWorldMap3d(g, frame);
+  }, [world, zoom, tileX, tileY, playerX, playerY]);
+  // Open centered on the player (the 2D modal centers on the player's
+  // chunk the same way). Runs once on mount.
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    setPan(worldmap3dPanForPlayer(playerX, playerY, zoomScale, stage.clientWidth, stage.clientHeight));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const clampPan = (x: number, y: number, scale: number) => {
+    const stage = stageRef.current;
+    if (!stage) return { x, y };
+    return worldmap3dClampPan(x, y, scale, stage.clientWidth, stage.clientHeight);
+  };
+  const changeZoom = (next: number) => {
+    const clamped = Math.min(WORLDMAP3D_ZOOM_SCALES.length - 1, Math.max(0, next));
+    const oldScale = WORLDMAP3D_ZOOM_SCALES[zoom];
+    const newScale = WORLDMAP3D_ZOOM_SCALES[clamped];
+    const ratio = newScale / oldScale;
+    setZoom(clamped);
+    // Zoom anchors on the viewport center (the 2D modal does the
+    // same): scale pan by the ratio so the point under the center
+    // stays under it instead of drifting to a corner.
+    setPan((p) => clampPan(p.x * ratio, p.y * ratio, newScale));
+  };
+  const onStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y, moved: false };
+  };
+  const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > 6) drag.moved = true;
+    if (drag.moved) setPan(clampPan(drag.panX + dx, drag.panY + dy, zoomScale));
+  };
+  const endStageDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    // A tap (no drag) travels to the tile under the finger — the
+    // minimap's tap-to-travel, through the same 1030 A* bridge. The
+    // map closes so the player sees the world as they walk. The
+    // canvas rect already accounts for the wrapper's pan/scale.
+    if (drag && !drag.moved) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0) {
+          const px = ((e.clientX - rect.left) / rect.width) * WORLDMAP3D_SIZE;
+          const py = ((e.clientY - rect.top) / rect.height) * WORLDMAP3D_SIZE;
+          const dest = worldmap3dCanvasToWorld(px, py);
+          if (dest) {
+            onTapTravel(dest);
+            onClose();
+          }
+        }
+      }
+    }
+  };
+  const hereTerrain = renderTerrain(effTerrainFor(world), tileX, tileY);
+  return (
+    <div data-testid="world-map-overlay" role="dialog" aria-modal="true" aria-label="World map" style={{ position: 'absolute', inset: 0, zIndex: 10, background: '#0a100c', display: 'flex', flexDirection: 'column', color: '#fff', paddingTop: 'max(58px, calc(env(safe-area-inset-top) + 50px))' }}>
+      {/* Top padding clears the host Options button: the overlay lives
+          inside the 3D view's own stacking context (game-view-3d is
+          position:fixed zIndex 20000), so no z-index here can ever put
+          it above the host Options button (fixed, zIndex 30002) — the
+          button floats above the overlay's top-right corner by design.
+          The padding (the same offset the Options dialog itself uses)
+          keeps every overlay control below the button instead of
+          fighting it. zIndex 10 already beats everything inside the
+          3D view (Build panel 4, minimap 4, Enter/Exit 6). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
+        <strong style={{ flex: 1, fontSize: 16 }}>World Map</strong>
+        <span data-testid="world-map-area-label" style={{ fontSize: 12, opacity: 0.85 }}>{worldmap3dTerrainLabel(hereTerrain)} · ({tileX}, {tileY})</span>
+        <button type="button" data-testid="world-map-close" aria-label="Close world map" onClick={onClose} style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #c4d1bd', background: '#22392d', color: '#fff', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px 10px' }}>
+        <span style={{ flex: 1, fontSize: 12, opacity: 0.75 }}>Drag to look around · Tap a place to walk there</span>
+        <div aria-label="Map zoom controls" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" data-testid="world-map-zoom-out" aria-label="Zoom out" disabled={zoom === 0} onClick={() => changeZoom(zoom - 1)} style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #c4d1bd', background: '#22392d', color: '#fff', fontWeight: 700, fontSize: 16, opacity: zoom === 0 ? 0.45 : 1 }}>−</button>
+          <span data-testid="world-map-zoom-level" style={{ fontSize: 13, minWidth: 44, textAlign: 'center' }}>×{zoomScale}</span>
+          <button type="button" data-testid="world-map-zoom-in" aria-label="Zoom in" disabled={zoom === WORLDMAP3D_ZOOM_SCALES.length - 1} onClick={() => changeZoom(zoom + 1)} style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #c4d1bd', background: '#22392d', color: '#fff', fontWeight: 700, fontSize: 16, opacity: zoom === WORLDMAP3D_ZOOM_SCALES.length - 1 ? 0.45 : 1 }}>+</button>
+        </div>
+      </div>
+      <div ref={stageRef} data-testid="world-map-stage" style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}
+        onPointerDown={onStagePointerDown} onPointerMove={onStagePointerMove} onPointerUp={endStageDrag} onPointerCancel={() => { dragRef.current = null; }}>
+        <span aria-hidden="true" style={{ position: 'absolute', left: 12, top: 8, zIndex: 2, fontSize: 13, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none' }}>N ↑</span>
+        <div style={{ position: 'absolute', left: '50%', top: '50%', width: WORLDMAP3D_SIZE, height: WORLDMAP3D_SIZE, marginLeft: -WORLDMAP3D_SIZE / 2, marginTop: -WORLDMAP3D_SIZE / 2, transformOrigin: 'center', transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoomScale + ')' }}>
+          <canvas ref={canvasRef} data-testid="world-map-canvas" width={WORLDMAP3D_SIZE} height={WORLDMAP3D_SIZE} aria-label="Overworld map" style={{ display: 'block', width: WORLDMAP3D_SIZE, height: WORLDMAP3D_SIZE }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = false, onDiagnostics }: { onExit?: () => void; fpAuto?: boolean; hideUi?: boolean; onDiagnostics?: (d: Diagnostics3D) => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
+  // BUILD 1055: overworld-map overlay state. The Map button is a
+  // control button (always visible, like Build/Exit 3D); the overlay
+  // hides the minimap while it is open (the 2D precedent, BUILD 691).
+  const [mapOpen,setMapOpen]=useState(false);
   // BUILD 992: first person (was the 983 street view, now engaged by
   // zooming all the way in). The ref is what the render loop reads;
   // the state drives the first-person hint text. fpAuto comes from the
@@ -5052,8 +5212,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         Minimap3D component above for the layout audit). Hidden inside
         a hut and while Hide UI is on, like the 2D minimap's hide
         rules; there is no world-map overlay in the 3D view. */}
-    {shouldShowMinimap3d({ insideHut: !!insideHut, hideUi }) && (
+    {shouldShowMinimap3d({ insideHut: !!insideHut, hideUi, mapOpen }) && (
       <Minimap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} npcsRef={npcActorsRef} car={car} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
+    )}
+    {/* BUILD 1055: Map button — below the minimap (left:12, top:140:
+        minimap top 12 + 120px + 8 gap), the only free slot in the
+        top-left corner. A control button, so it stays visible like
+        Build/Exit 3D (inside huts, with Hide UI on). Toggles the
+        overworld-map overlay. */}
+    <button type="button" data-testid="world-map-open" aria-label="Open world map" onClick={()=>setMapOpen(v=>!v)} style={{position:'absolute',left:12,top:140,zIndex:4,padding:'10px 16px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700,fontSize:15}}>🗺 Map</button>
+    {mapOpen && (
+      <WorldMap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} onClose={()=>setMapOpen(false)} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
     )}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.

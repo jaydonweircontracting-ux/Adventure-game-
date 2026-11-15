@@ -122,13 +122,14 @@ export function minimap3dTapToWorld(
 
 /** Hide conditions. The 2D minimap hides inside buildings (609),
  *  while the world map is open (691), while Options is open (663),
- *  and while a shop is open (697). The 3D view has no world-map
- *  overlay and no shop overlay, and its Options dialog lives in the
- *  host at the top-right — clear of this map's top-left corner — so
- *  the only two conditions that exist here are inside-a-hut and
- *  Hide UI (the map is HUD, like the status strip). */
-export function shouldShowMinimap3d(opts: { insideHut: boolean; hideUi: boolean }): boolean {
-  return !opts.insideHut && !opts.hideUi;
+ *  and while a shop is open (697). The 3D view has a world-map
+ *  overlay since BUILD 1055, and no shop overlay, and its Options
+ *  dialog lives in the host at the top-right — clear of this map's
+ *  top-left corner — so the conditions here are inside-a-hut, Hide
+ *  UI (the map is HUD, like the status strip), and the world map
+ *  being open. */
+export function shouldShowMinimap3d(opts: { insideHut: boolean; hideUi: boolean; mapOpen?: boolean }): boolean {
+  return !opts.insideHut && !opts.hideUi && !opts.mapOpen;
 }
 
 /** Placement kinds that read as buildings on the map. Paths, trees,
