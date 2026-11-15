@@ -117,6 +117,8 @@ import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRema
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
 import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, chooseFounderActivity, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
+// BUILD 1058: NPC construction — the first hut from the stockpile.
+import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -2149,6 +2151,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const foundersRef=useRef<FounderState[]>([]);
   const founderStockpileRef=useRef(0);
   const founderFoodRef=useRef(FOUNDER_START_FOOD);
+  // BUILD 1058: the first hut's construction (progress + wood spent).
+  // The tick owns it; the founders save persists it (v2).
+  const constructionRef=useRef<ConstructionState>(freshConstruction());
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
   // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
@@ -2176,7 +2181,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1057: the founders' camp readout — the REAL stockpile
   // count (wood delivered by the founders) + the shared food stock.
   // Updated by the founder tick / wait steps when either changes.
-  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD});
+  // BUILD 1058: + the hut progress ('—' / '3/6' / 'done').
+  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,hut:'—'});
   const waitingRef=useRef(false);
   const waitTimerRef=useRef<number|null>(null);
   const waitStartHpRef=useRef(100);
@@ -2222,7 +2228,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         for(let i=0;i<foundersRef.current.length;i++){
           foundersRef.current[i]=applyFounderWaitStep(foundersRef.current[i],step,clockRef.current.minutes,founderFoodRef.current,nowAbs);
         }
-        saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current));
+        // BUILD 1058: construction does NOT advance during a wait
+        // (positions, chopping, deliveries, and building all pause);
+        // the saved construction rides along unchanged.
+        saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current,constructionRef.current));
       }
       remaining-=step;
       if(remaining<=0){cancelWait('done');return;}
@@ -3172,20 +3181,37 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const clockAbs=founderAbsMinutes(clockRef.current.day,clockRef.current.minutes);
       const states=saved?foundersStateOf(saved):FOUNDER_NAMES.map((n,i)=>defaultFounderState(n,i,clockAbs));
       for(const f of states){
-        if(!npcWalkable(world,f.x,f.y)){
+        // BUILD 1058: a founder saved INSIDE the finished hut is
+        // asleep in their own bed — keep the tile (npcWalkable
+        // refuses hut tiles, so the generic snap below would throw
+        // them out of the house).
+        const insideHut=hutPlacementExists(world)&&insideHutRect(f.x,f.y);
+        if(!insideHut&&!npcWalkable(world,f.x,f.y)){
           const near=quantizeTile(world,f.x,f.y,8);
           f.x=near?near.x:FOUNDER_CAMP_CENTRE.x;f.y=near?near.y:FOUNDER_CAMP_CENTRE.y;
         }
         // 'chopping' is session-only (the tree target is not saved) —
         // a founder reloaded mid-chop walks to a tree again.
         if(f.workState==='chopping')f.workState='toTree';
-        f.treeTarget=null;f.workTile=null;f.chopTicks=0;
+        // BUILD 1058: a founder reloaded at the build site resumes
+        // the step from 0 ticks (like the chop reset above); a
+        // founder reloaded mid-build whose hut finished while they
+        // were away goes back to chopping.
+        f.treeTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;
         f.lastAbs=clockAbs;
       }
       foundersRef.current=states;
       founderStockpileRef.current=saved?saved.stockpileWood:0;
       founderFoodRef.current=saved?saved.foodStock:FOUNDER_START_FOOD;
-      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current});
+      // BUILD 1058: construction loads from the v2 founders save
+      // (v1 saves migrate to a fresh one). If the save says 'done'
+      // but the world has no hut placement, reconcile: the founders
+      // rebuild from the pile.
+      constructionRef.current=saved&&saved.construction?reconcileConstruction(saved.construction,hutPlacementExists(world)):freshConstruction();
+      if(constructionRef.current.state==='done'){
+        for(const f of foundersRef.current)if(f.workState==='toSite'||f.workState==='building')f.workState='toTree';
+      }
+      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});
     }
     // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
     // are built once per world load; hut-derived anchors resolve live per
@@ -4550,6 +4576,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // pile tile + the real stockpile count; 0 wood still shows 1
       // log (the camp has a pile).
       const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:founderStockpileRef.current}]:[];
+      // BUILD 1058: the first hut's build site rides the same fx call
+      // as the pile — per-frame fx (foundation + frame grow with the
+      // real construction progress), so it needs no world rebuild.
+      // At progress 6 the real hut placement renders instead.
+      const siteInputs=(FOUNDERS_ENABLED&&constructionRef.current.state==='building')?[{baseY:surfaceElevation(effTerrainDraw,HUT_CENTRE.x+.5,HUT_CENTRE.y+.5),progress:constructionRef.current.progress}]:[];
       // BUILD 1050: the entered hut's interior shell + hearth — the
       // ceiling and wall band render only in first-person inside (the
       // orbit view keeps its cutaway so the room stays visible from
@@ -4568,7 +4599,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           hearthLit: houseLitAt(clockRef.current.minutes, lightScheduleFor(seedHutIn.x0, seedHutIn.y0)),
         };
       }
-      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs);
+      const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs);
       lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
       if(fxCounts.totalVerts>0){
         gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
@@ -4843,6 +4874,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const nearFounder=FOUNDERS_ENABLED?foundersRef.current.find(f=>Math.abs(f.x-p.x)<=1&&Math.abs(f.y-p.y)<=1):undefined;
         if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);setMessage(nearFounder.name+': '+nearFounder.activity+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social);return}
         if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food');return}
+        // BUILD 1058: E at the founders' hut reports its state:
+        // progress + wood spent while building, whose hut it is once
+        // finished. After the door check (the door enters) and after
+        // the stockpile check (the pile tile sits against the hut's
+        // west wall, and its count still wins there). A player-built
+        // cottage on the exact site is adopted by the founders (the
+        // tick reconciles it to 'done'), so the only states here are
+        // 'building' and 'done'.
+        if(FOUNDERS_ENABLED&&hutPlacementExists(world)){
+          const nearHut=Math.abs(p.x-HUT_CENTRE.x)<=3&&Math.abs(p.y-HUT_CENTRE.y)<=2;
+          if(nearHut){
+            const c=constructionRef.current;
+            if(c.state==='done'){setMessage('The founders\' hut — Marlow, Greta and Perrin sleep here');return;}
+            if(c.state==='building'){
+              const b=foundersRef.current.find(f=>f.workState==='building'||f.workState==='toSite');
+              setMessage('First hut: '+c.progress+'/'+HUT_WORK_STEPS+' built · '+c.spentWood+' wood spent'+(b?' · '+b.name+' is building':' · waiting for wood'));
+              return;
+            }
+          }
+        }
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
         if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
@@ -5025,10 +5076,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>({name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
+      getFounders:()=>foundersRef.current.map(f=>({name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
       setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
       getFounderRenderPos:(name:string)=>{const r=npcRender.get('founder:'+name);return r?{x:r.x,y:r.y}:null;},
+      // BUILD 1058 test hooks (probes only — no gameplay effect):
+      // read the hut construction (state/progress/wood spent +
+      // whether the hut placement exists), and seed the stockpile
+      // (probe setup only — the game itself only ever changes the
+      // pile by delivery or by a build step).
+      getConstruction:()=>({...constructionRef.current,hutPlaced:hutPlacementExists(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
+      setStockpileWood:(n:number)=>{founderStockpileRef.current=Math.max(0,Math.round(n));setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});return founderStockpileRef.current;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -5232,6 +5290,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const founders=foundersRef.current;
       let worldDirty=false;
       let stockChanged=false;
+      let hutChanged=false;
+      // BUILD 1058: reconcile once per tick — a 'done' hut whose
+      // placement is gone (the player removed it with Build Remove)
+      // resets to 'none', so the founders rebuild from the pile. A
+      // ready hut (progress 6, placement blocked) is NOT reset — it
+      // is waiting for a clear rect, not removed.
+      const hutPlaced=hutPlacementExists(world);
+      const reconciled=reconcileConstruction(constructionRef.current,hutPlaced);
+      if(reconciled!==constructionRef.current){constructionRef.current=reconciled;hutChanged=true;}
+      const hutDone=constructionRef.current.state==='done';
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);
         f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
@@ -5242,37 +5310,103 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           const res=eatFounderMeal(f.needs,founderFoodRef.current);
           if(res.foodStock!==founderFoodRef.current){f.needs=res.needs;founderFoodRef.current=res.foodStock;stockChanged=true;}
         }
-        // Work: pick a tree (nearest within range of the camp,
-        // skipping ones with no walkable tile beside them), chop 3
-        // ticks, carry 2 wood home. No tree in range → idle at camp
-        // (visible, honest — the camp's woods are exhausted).
-        if(f.activity==='work'&&f.workState==='toTree'&&!f.treeTarget){
-          let skipped=founderSkippedTrees.get(f.name);
-          if(!skipped){skipped=new Set();founderSkippedTrees.set(f.name,skipped);}
-          const tree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS,skipped);
-          if(tree){
-            const wt=treeWorkTile(world,tree.tx,tree.ty);
-            if(wt){f.treeTarget={x:tree.tx,y:tree.ty};f.workTile=wt;}
-            else skipped.add(tree.tx+','+tree.ty);
-          }
-          if(!f.treeTarget)f.workState='idle';
+        // BUILD 1058: door transitions (the player's Enter/Exit, one
+        // tile through the door — never a path through walls, so the
+        // 990 rule stands). Inside + not sleeping → step out to the
+        // approach tile and walk on from there. Inside + sleeping →
+        // stay asleep (no movement this tick).
+        let insideHut=hutPlaced&&insideHutRect(Math.round(f.x),Math.round(f.y));
+        if(insideHut&&f.activity!=='sleep'){
+          f.x=HUT_APPROACH.x;f.y=HUT_APPROACH.y;founderPath.delete(f.name);
+          insideHut=false;
         }
-        const dest=founderDestination(f);
+        // Work assignment: build vs chop. A founder with workState
+        // 'toTree' and no tree target becomes the builder when the
+        // hut is unfinished, the pile holds a step's wood, and nobody
+        // else is building (one builder — the site has one work tile,
+        // the approach tile). Otherwise they chop as before.
+        if(f.activity==='work'&&f.workState==='toTree'&&!f.treeTarget){
+          const someoneBuilding=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
+          if(!hutDone&&!someoneBuilding&&canBuild(constructionRef.current,founderStockpileRef.current)){
+            f.workState='toSite';
+          }else{
+            let skipped=founderSkippedTrees.get(f.name);
+            if(!skipped){skipped=new Set();founderSkippedTrees.set(f.name,skipped);}
+            const tree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS,skipped);
+            if(tree){
+              const wt=treeWorkTile(world,tree.tx,tree.ty);
+              if(wt){f.treeTarget={x:tree.tx,y:tree.ty};f.workTile=wt;}
+              else skipped.add(tree.tx+','+tree.ty);
+            }
+            if(!f.treeTarget)f.workState='idle';
+          }
+        }
+        // Destination: building founders work at the approach tile;
+        // sleeping founders head for the approach tile too (the door)
+        // and the arrival block steps them through it. Everyone else
+        // uses the 1057 destination.
+        let dest=founderDestination(f);
+        if(f.workState==='toSite'||f.workState==='building')dest=HUT_APPROACH;
+        else if(f.activity==='sleep'&&hutPlaced)dest=HUT_APPROACH;
         const cx=Math.round(f.x),cy=Math.round(f.y);
         const atDest=cx===dest.x&&cy===dest.y;
-        if(!atDest){
-          let p=founderPath.get(f.name);
-          if(!p){p=emptyFounderPath();founderPath.set(f.name,p);}
-          const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)||founders.some(o=>o!==f&&Math.round(o.x)===x&&Math.round(o.y)===y)||npcActorsRef.current.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y);
-          const res=stepFounderMove(world,{x:cx,y:cy},dest,p,occupied);
-          founderPath.set(f.name,res.path);
-          if(res.pos.x!==cx||res.pos.y!==cy){f.x=res.pos.x;f.y=res.pos.y;}
-          if(res.arrived)founderPath.delete(f.name);
+        if(!insideHut||f.activity!=='sleep'){
+          if(!atDest){
+            let p=founderPath.get(f.name);
+            if(!p){p=emptyFounderPath();founderPath.set(f.name,p);}
+            const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)||founders.some(o=>o!==f&&Math.round(o.x)===x&&Math.round(o.y)===y)||npcActorsRef.current.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y);
+            const res=stepFounderMove(world,{x:cx,y:cy},dest,p,occupied);
+            founderPath.set(f.name,res.path);
+            if(res.pos.x!==cx||res.pos.y!==cy){f.x=res.pos.x;f.y=res.pos.y;}
+            if(res.arrived)founderPath.delete(f.name);
+          }
         }
         if(atDest||(Math.round(f.x)===dest.x&&Math.round(f.y)===dest.y)){
           // Arrived: act on the destination.
-          if(f.activity==='work'){
-            if(f.workState==='toTree'&&f.treeTarget){
+          if(f.activity==='sleep'&&hutPlaced&&!insideHut){
+            // Through the door to their bed (their hut sleep tile —
+            // the north row, door lane kept clear).
+            const i=FOUNDER_NAMES.indexOf(f.name);
+            const bed=HUT_SLEEP_TILES[i>=0?i:0];
+            f.x=bed.x;f.y=bed.y;founderPath.delete(f.name);
+          }else if(f.activity==='work'){
+            if(f.workState==='toSite'){
+              // At the approach tile: start building.
+              f.workState='building';f.buildTicks=0;
+            }else if(f.workState==='building'){
+              f.buildTicks++;
+              if(f.buildTicks>=HUT_TICKS_PER_STEP){
+                f.buildTicks=0;
+                if(founderStockpileRef.current>=HUT_WOOD_PER_STEP){
+                  const res=spendBuildStep(constructionRef.current,founderStockpileRef.current);
+                  constructionRef.current=res.construction;
+                  founderStockpileRef.current=res.stockpileWood;
+                  stockChanged=true;hutChanged=true;
+                  if(res.completed){
+                    // Stamp the hut through the same placement path
+                    // the player uses. The rect may be occupied this
+                    // tick (a founder crossing it) — then the builder
+                    // waits at the site and retries next cycle; the
+                    // progress is banked, no wood is spent twice.
+                    const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
+                    const npcTiles=founders.map(o=>({x:Math.round(o.x),y:Math.round(o.y)}));
+                    const placed=validatePlacement(world,HUT_KIND,HUT_CENTRE.x,HUT_CENTRE.y,playerTile,npcTiles,0);
+                    if(placed.ok){
+                      addPlacement(world,placed.item);
+                      saveWorld(world);worldDirty=true;
+                      constructionRef.current=finishConstruction(constructionRef.current);
+                      f.workState='toTree';
+                      setMessage('The founders finished their first hut!');
+                    }else if(res.spent){
+                      setMessage('The hut is ready — waiting for a clear spot');
+                    }
+                  }
+                }else{
+                  // Pile ran dry mid-build: back to chopping.
+                  f.workState='toTree';f.treeTarget=null;f.workTile=null;
+                }
+              }
+            }else if(f.workState==='toTree'&&f.treeTarget){
               // At the tree's work tile: start chopping.
               f.workState='chopping';f.chopTicks=0;
             }else if(f.workState==='chopping'&&f.treeTarget){
@@ -5300,8 +5434,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(f.activity==='work'&&f.workState==='idle')f.workState='toTree';
       }
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
-      if(stockChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current});
-      saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current));
+      if(stockChanged||hutChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});
+      saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current,constructionRef.current));
     },900);
 
     // BUILD 1000: transient life. Mount spawns one traveler + one
@@ -5485,7 +5619,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food}</span></div>
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Hut {campUi.hut}</span></div>
     </div>}
     {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
         A centred panel (the sheet covers the canvas, so taps land on it,

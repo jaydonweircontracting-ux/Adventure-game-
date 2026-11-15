@@ -56,6 +56,7 @@ import { wheatStalksFor, type FarmWheatInput } from './farm';
 // (per-frame, time-varying — it grows with deliveries, so it cannot
 // live in the static world buffer).
 import { stockpileLogsFor } from './founders';
+import { constructionSiteTrisFor } from './construction';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, seedRectForHut } from './placements';
 import { sameHut, type InteriorQuad } from './interiors';
@@ -452,6 +453,11 @@ export interface HouseFxCounts {
   stockpileTiles: number;
   /** BUILD 1057: log-pile verts (in the night segment). */
   stockpileVerts: number;
+  /** BUILD 1058: 1 when the build site emitted this frame (in the
+   *  night segment), else 0. */
+  siteTiles: number;
+  /** BUILD 1058: build-site verts (in the night segment). */
+  siteVerts: number;
   /** BUILD 1050: interior ceiling verts this frame (night segment). */
   ceilingVerts: number;
   /** BUILD 1050: interior wall-band verts this frame (night segment). */
@@ -512,6 +518,11 @@ export interface LanternFxInput { tx: number; ty: number; baseY: number; }
  *  deliveries: 1 log at 0 wood, +1 per 2 wood, capped at 6). */
 export interface StockpileFxInput { tx: number; ty: number; baseY: number; wood: number; }
 
+/** BUILD 1058: the first hut's build site — its heightfield base y
+ *  and the REAL construction progress (0..5: foundation, posts,
+ *  beams, roof frame; at 6 the real hut placement renders instead). */
+export interface ConstructionSiteFxInput { baseY: number; progress: number; }
+
 /**
  * Emit the house fx for one frame into `out` (6 floats per vertex:
  * pos + rgb, the sky.ts convention). `out` must start empty; emission
@@ -531,8 +542,11 @@ export interface StockpileFxInput { tx: number; ty: number; baseY: number; wood:
  * argument) — per-frame like the wheat, in the night segment (ordinary
  * wood that darkens at night); the pile grows with the real
  * stockpile count.
+ * BUILD 1058: the first hut's build site rides the same call (a 9th
+ * argument) — per-frame like the pile, in the night segment; the
+ * foundation + frame grow with the real construction progress.
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = []): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = [], site: ConstructionSiteFxInput[] = []): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -599,6 +613,22 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     stockpileVerts += cost;
     for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
   }
+  // BUILD 1058: the first hut's build site — foundation slab +
+  // frame that grow with the real construction progress (0..5). At
+  // step 6 the real hut placement renders instead, so the site emits
+  // nothing. In the night segment like the pile (ordinary wood and
+  // stone that darken at night). A site that does not fit stops the
+  // pass (deterministic).
+  let siteTiles = 0, siteVerts = 0;
+  for (const t of site) {
+    const tris = constructionSiteTrisFor(t.baseY, t.progress);
+    if (tris.length === 0) continue;
+    const cost = tris.length * 3;
+    if (!fits(cost)) break;
+    siteTiles++;
+    siteVerts += cost;
+    for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
+  }
   // BUILD 1050: the entered hut's interior shell — ceiling + wall
   // band, in the night segment (ordinary surfaces: they darken at
   // night like the room's floor and furniture). Only when the view
@@ -654,5 +684,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, siteTiles, siteVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
 }

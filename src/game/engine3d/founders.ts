@@ -53,7 +53,9 @@
  *   roster's `ag-3d-npcs-v1` is never touched, migrated, or
  *   overwritten. A save without a version field migrates as v0
  *   (defaults filled); an unknown future version falls back to fresh
- *   defaults rather than guessing.
+ *   defaults rather than guessing. BUILD 1058: v2 adds the
+ *   construction state (the first hut) + buildTicks; v1 saves
+ *   migrate to a fresh construction (no hut started).
  * - FOUNDERS flag: `FOUNDERS_ENABLED` here, scoped separately from
  *   WILDERNESS_ONLY — the old town stays gated off.
  *
@@ -67,6 +69,7 @@
 import { planPathNpc, pathHasUnwalkableTile, npcWalkable, quantizeTile, sidestepTile } from './townsfolk3d';
 import { blockedAction } from './npcMotion';
 import { wildTreeAt } from './wildTerrain';
+import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
 
@@ -76,8 +79,9 @@ export const FOUNDERS_ENABLED = true;
 
 /** Founder save key (new — the old roster's ag-3d-npcs-v1 is untouched). */
 export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
-/** Current founders-save format version (G16). */
-export const FOUNDER_SAVE_VERSION = 1;
+/** Current founders-save format version (G16). v2 (BUILD 1058)
+ *  adds the construction state (the first hut) + buildTicks. */
+export const FOUNDER_SAVE_VERSION = 2;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -206,7 +210,7 @@ export function deliverFounderWood(stockpileWood: number, carrying: number): num
 
 // --- Founder state ---
 
-export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle';
+export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building';
 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
@@ -221,6 +225,8 @@ export type FounderState = {
   carrying: number;
   /** Chop ticks spent on the current tree. */
   chopTicks: number;
+  /** BUILD 1058: build ticks spent on the current hut work step. */
+  buildTicks: number;
   /** Tree being worked, if any (session-only). */
   treeTarget: { x: number; y: number } | null;
   /** Walkable tile adjacent to treeTarget to chop from (session-only). */
@@ -247,6 +253,7 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     workState: 'toTree',
     carrying: 0,
     chopTicks: 0,
+    buildTicks: 0,
     treeTarget: null,
     workTile: null,
     lastAbs: clockAbs,
@@ -471,6 +478,8 @@ export type FounderSave = {
   activity: FounderActivity;
   workState: FounderWorkState;
   chopTicks: number;
+  /** BUILD 1058: build ticks on the current hut work step. */
+  buildTicks: number;
   lastAbs: number;
 };
 
@@ -479,10 +488,13 @@ export type FoundersSaveState = {
   founders: FounderSave[];
   stockpileWood: number;
   foodStock: number;
+  /** BUILD 1058: the first hut's construction (v2; v1 saves have
+   *  none and migrate to a fresh one). */
+  construction: ConstructionState;
 };
 
-/** Fresh v1 save: founders at their sleep tiles, empty stockpile,
- *  full starting food. */
+/** Fresh v2 save: founders at their sleep tiles, empty stockpile,
+ *  full starting food, no hut started. */
 export function freshFoundersSave(clockAbs: number): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
@@ -497,10 +509,12 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
       activity: 'work' as FounderActivity,
       workState: 'toTree' as FounderWorkState,
       chopTicks: 0,
+      buildTicks: 0,
       lastAbs: clockAbs,
     })),
     stockpileWood: 0,
     foodStock: FOUNDER_START_FOOD,
+    construction: { state: 'none', progress: 0, spentWood: 0 },
   };
 }
 
@@ -509,18 +523,34 @@ function clampNeed(n: number, fallback: number): number {
 }
 
 /**
- * Migrate an unknown founders save to v1. Missing version field =
+ * Migrate an unknown founders save to v2. Missing version field =
  * v0 (defaults filled); version 1 = validated + clamped (unknown
  * founder names dropped, missing founders restored at camp,
- * 'chopping' resets to 'toTree' — the tree target is session-only);
- * any other version, or a non-object, returns null (fresh defaults —
- * never guess at an unknown future format). Pure.
+ * 'chopping' resets to 'toTree' — the tree target is session-only),
+ * construction defaults to fresh (v1 predates the hut); version 2 =
+ * validated + clamped the same way; any other version, or a
+ * non-object, returns null (fresh defaults — never guess at an
+ * unknown future format). Pure.
  */
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
+  // BUILD 1058: construction from the save (v2), else fresh. A
+  // 'done' construction with a founder still marked building/toSite
+  // (saved mid-completion) resets that founder to 'toTree' below.
+  const rawC = (v.construction && typeof v.construction === 'object' ? v.construction : {}) as Record<string, unknown>;
+  const cState = rawC.state === 'building' || rawC.state === 'done' ? rawC.state : 'none';
+  const construction: ConstructionState = {
+    state: cState,
+    progress: Math.max(0, Math.min(6, Math.round(Number(rawC.progress) || 0))),
+    spentWood: Math.max(0, Math.round(Number(rawC.spentWood) || 0)),
+  };
+  if (construction.state === 'done') {
+    construction.progress = 6;
+    construction.spentWood = 12;
+  }
   const founders: FounderSave[] = FOUNDER_NAMES.map((name, i) => {
     const s = rawFounders.find(
       (f: unknown) => f && typeof f === 'object' && (f as Record<string, unknown>).name === name,
@@ -533,10 +563,11 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       s?.activity === 'sleep' || s?.activity === 'eat' || s?.activity === 'rest' || s?.activity === 'work'
         ? (s.activity as FounderActivity)
         : 'work';
-    const workState =
-      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle'
+    let workState: FounderWorkState =
+      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building'
         ? (s.workState as FounderWorkState)
         : 'toTree';
+    if (construction.state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
     return {
       name,
       x: Math.round(num('x', FOUNDER_SLEEP_TILES[i].x)),
@@ -548,6 +579,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       activity,
       workState,
       chopTicks: Math.max(0, Math.round(num('chopTicks', 0))),
+      buildTicks: Math.max(0, Math.round(num('buildTicks', 0))),
       lastAbs: Math.max(0, Math.round(num('lastAbs', 0))),
     };
   });
@@ -559,7 +591,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
     v.foodStock == null || !Number.isFinite(Number(v.foodStock))
       ? FOUNDER_START_FOOD
       : Math.max(0, Math.round(Number(v.foodStock)));
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock };
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -592,7 +624,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, construction: ConstructionState): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -606,10 +638,12 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       activity: f.activity,
       workState: f.workState,
       chopTicks: f.chopTicks,
+      buildTicks: f.buildTicks,
       lastAbs: f.lastAbs,
     })),
     stockpileWood,
     foodStock,
+    construction: { ...construction },
   };
 }
 
@@ -625,6 +659,7 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
     workState: s.workState,
     carrying: s.carrying,
     chopTicks: s.chopTicks,
+    buildTicks: s.buildTicks ?? 0,
     treeTarget: null,
     workTile: null,
     lastAbs: s.lastAbs,

@@ -11522,10 +11522,10 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(F.deliverFounderWood(4, 2) === 6 && F.deliverFounderWood(6, 0) === 6, 'M1057: stockpile rises ONLY on delivery');
   assert(F.stockpileLogsFor(125, 120, 0, 0).length === 12 && F.stockpileLogsFor(125, 120, 0, 10).length === 72, 'M1057: log pile grows with wood (1 log at 0, 6 at 10)');
   const fresh = F.freshFoundersSave(1000);
-  assert(fresh.version === 1 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v1 save');
+  assert(fresh.version === 2 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v2 save (1058: version bumped, construction rides along)');
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh)))) === JSON.stringify(fresh), 'M1057: versioned save round-trips');
   const v0 = F.migrateFoundersSave({ founders: [{ name: 'Marlow', x: 130, y: 130 }] });
-  assert(v0 !== null && v0.version === 1 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates (missing founders restored, food defaults to 30)');
+  assert(v0 !== null && v0.version === 2 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v2 (missing founders restored, food defaults to 30)');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1057: unknown version / null → null (fresh defaults)');
   // The 1056 localStorage stand-in is still in place: the founders
   // save/load runs against it (the real persistence is proven by the
@@ -11560,6 +11560,56 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   const treesBefore = world.trees.length;
   assert(F.chopTreeAt(world, tree!.tx, tree!.ty) === true && world.trees.length === treesBefore - 1, 'M1057: chop fells the tree (leaves world.trees)');
   assert(F.chopTreeAt(world, tree!.tx, tree!.ty) === false, 'M1057: the same tree cannot be chopped twice');
+}
+
+console.log('Testing 3D NPC construction — first hut (BUILD 1058)...');
+{
+  const C = await import('../src/game/engine3d/construction.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const { defaultWorld } = await import('../src/game/iso/isoWorld.js');
+  const { stripTownContent } = await import('../src/game/engine3d/wilderness.js');
+  const { validatePlacement, addPlacement, placedHutRects, walkableWithPlacements } = await import('../src/game/engine3d/placements.js');
+  const { nearestDoorHut } = await import('../src/game/engine3d/interiors.js');
+  const world = stripTownContent(defaultWorld());
+  assert(C.HUT_CENTRE.x === 128 && C.HUT_CENTRE.y === 120, 'M1058: hut centre (128,120), east of the camp');
+  assert(C.HUT_RECT.x0 === 126 && C.HUT_RECT.y0 === 119 && C.HUT_RECT.x1 === 129 && C.HUT_RECT.y1 === 121, 'M1058: hut rect 126..129 x 119..121 (cottage 4x3)');
+  assert(C.HUT_DOOR.x === 128 && C.HUT_DOOR.y === 121 && C.HUT_APPROACH.x === 128 && C.HUT_APPROACH.y === 122, 'M1058: door (128,121) south, approach (128,122)');
+  assert(C.HUT_COST_WOOD === 12 && C.HUT_WORK_STEPS === 6 && C.HUT_WOOD_PER_STEP === 2 && C.HUT_TICKS_PER_STEP === 3, 'M1058: 12 wood = 6 steps x 2, 3 ticks per step');
+  assert(C.HUT_SLEEP_TILES.length === 3 && C.HUT_SLEEP_TILES.every((t: { x: number; y: number }) => C.insideHutRect(t.x, t.y) && t.x !== C.HUT_DOOR.x), 'M1058: three hut sleep tiles inside the rect, door lane clear');
+  assert(C.hutSiteProblems(world).length === 0, 'M1058: hut rect is clear on the real fresh world');
+  const reach = C.hutDoorReachable(world);
+  assert(reach.campToApproach === 6 && reach.approachToSpawn === 46, 'M1058: door reachable — camp->approach 6, approach->spawn 46 (the cottage warning, asserted)');
+  assert(C.verifyHutSite(world).ok === true, 'M1058: verifyHutSite ok');
+  const placed = validatePlacement(world, C.HUT_KIND, C.HUT_CENTRE.x, C.HUT_CENTRE.y, { x: 99, y: 105 }, [], 0);
+  assert(placed.ok === true, 'M1058: validatePlacement ok at the site (the player placement path)');
+  addPlacement(world, placed.item);
+  assert(C.hutPlacementExists(world) === true, 'M1058: hut placement exists after addPlacement');
+  assert(placedHutRects(world).some((r: { x0: number; y0: number; x1: number; y1: number; doorX: number; doorY: number }) => r.x0 === 126 && r.doorX === 128 && r.doorY === 121), 'M1058: placedHutRects carries the hut with its door');
+  assert(!walkableWithPlacements(world, world.crates, 127, 120) && !walkableWithPlacements(world, world.crates, 128, 121), 'M1058: hut tiles collide');
+  assert(walkableWithPlacements(world, world.crates, C.HUT_APPROACH.x, C.HUT_APPROACH.y) === true, 'M1058: approach tile stays walkable');
+  assert(nearestDoorHut(placedHutRects(world), C.HUT_APPROACH.x, C.HUT_APPROACH.y) !== null, 'M1058: door found from the approach tile');
+  let c = C.freshConstruction();
+  let pile = 12;
+  assert(C.canBuild(c, 1) === false && C.canBuild(c, 2) === true, 'M1058: one step needs 2 wood');
+  for (let i = 0; i < 6; i++) { const r = C.spendBuildStep(c, pile); c = r.construction; pile = r.stockpileWood; }
+  assert(c.progress === 6 && c.spentWood === 12 && pile === 0 && c.state === 'building', 'M1058: 6 steps spend 12 wood, hut is READY (not done until the placement lands)');
+  assert(C.spendBuildStep(c, 0).spent === false, 'M1058: a ready hut spends nothing while waiting for a clear rect');
+  const doneC = C.finishConstruction(c);
+  assert(doneC.state === 'done' && doneC.progress === 6 && doneC.spentWood === 12, 'M1058: finish flips a placed hut to done');
+  assert(C.reconcileConstruction(doneC, true) === doneC, 'M1058: done + hut present stays done');
+  assert(C.reconcileConstruction(doneC, false).state === 'none', 'M1058: done + hut removed resets (rebuild from the pile)');
+  assert(C.reconcileConstruction(c, false) === c, 'M1058: ready hut (placement blocked) is NOT reset');
+  assert(C.hutProgressLabel({ state: 'building', progress: 3, spentWood: 6 }) === '3/6' && C.hutProgressLabel(doneC) === 'done', 'M1058: progress labels');
+  assert(C.constructionSiteTrisFor(0, 1).length === 12 && C.constructionSiteTrisFor(0, 2).length === 60 && C.constructionSiteTrisFor(0, 4).length === 84 && C.constructionSiteTrisFor(0, 5).length === 96 && C.constructionSiteTrisFor(0, 6).length === 0, 'M1058: build-site visual grows with progress, nothing at step 6');
+  assert(F.FOUNDER_SAVE_VERSION === 2, 'M1058: founders save is v2');
+  const v1 = F.migrateFoundersSave({ version: 1, founders: [], stockpileWood: 4, foodStock: 28 });
+  assert(v1 !== null && v1.version === 2 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v2 with a fresh construction, wood survives');
+  const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 0));
+  const saved = F.foundersSaveOf(states, 8, 25, { state: 'building', progress: 3, spentWood: 6 });
+  const rt = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(saved)));
+  assert(rt !== null && rt.construction.progress === 3 && rt.construction.spentWood === 6 && rt.stockpileWood === 8, 'M1058: v2 save round-trips construction + pile');
+  assert(F.chooseFounderActivity({ hunger: 80, energy: 10, social: 60 }, 600, 30) === 'sleep', 'M1058: a tired founder sleeps — needs gate the build, they never build exhausted');
+  assert(F.chooseFounderActivity({ hunger: 80, energy: 90, social: 60 }, 600, 30) === 'work', 'M1058: a fit founder works by day (may build)');
 }
 
 // ---- Results ----
