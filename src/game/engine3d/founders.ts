@@ -56,7 +56,10 @@
  *   (defaults filled); an unknown future version falls back to fresh
  *   defaults rather than guessing. BUILD 1058: v2 adds the
  *   construction state (the first hut) + buildTicks; v1 saves
- *   migrate to a fresh construction (no hut started).
+ *   migrate to a fresh construction (no hut started). BUILD 1060:
+ *   v3 adds each founder's social state (affinity + memories,
+ *   memory.ts); v2 saves migrate with fresh social (neutral, no
+ *   memories).
  * - FOUNDERS flag: `FOUNDERS_ENABLED` here, scoped separately from
  *   WILDERNESS_ONLY — the old town stays gated off.
  *
@@ -72,6 +75,8 @@ import { blockedAction } from './npcMotion';
 import { wildTreeAt } from './wildTerrain';
 import { chooseScoredActivity } from './utility';
 import type { ScoredDecision, UtilityWorldContext } from './utility';
+import { freshFounderSocial } from './memory';
+import type { FounderSocial } from './memory';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
@@ -83,8 +88,11 @@ export const FOUNDERS_ENABLED = true;
 /** Founder save key (new — the old roster's ag-3d-npcs-v1 is untouched). */
 export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
 /** Current founders-save format version (G16). v2 (BUILD 1058)
- *  adds the construction state (the first hut) + buildTicks. */
-export const FOUNDER_SAVE_VERSION = 2;
+ *  adds the construction state (the first hut) + buildTicks. v3
+ *  (BUILD 1060) adds each founder's social state (affinity +
+ *  memories, memory.ts) — v2 saves migrate with fresh social
+ *  (neutral toward each other, no memories). */
+export const FOUNDER_SAVE_VERSION = 3;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -245,6 +253,16 @@ export type FounderState = {
   /** BUILD 1059: the last scored decision (session-only, never
    *  saved) — so E can report WHY the founder chose this activity. */
   lastDecision?: ScoredDecision;
+  /** BUILD 1060: pairwise affinity + memories (memory.ts) — the
+   *  founder's social state. Saved (v3); the runtime copy is the
+   *  live one the tick records into. */
+  social: FounderSocial;
+  /** BUILD 1060: the tile this founder rests on (session-only,
+   *  never saved) — a tile beside their closest founder at camp
+   *  (memory.ts restTileFor), or null for the camp centre. Set when
+   *  the founder's activity becomes 'rest', cleared when it
+   *  changes away. */
+  restTile: { x: number; y: number } | null;
 };
 
 /** Absolute game minutes: the clock's (day, minutes) as one number. */
@@ -268,6 +286,8 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     treeTarget: null,
     workTile: null,
     lastAbs: clockAbs,
+    social: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
+    restTile: null,
   };
 }
 
@@ -278,7 +298,10 @@ export function founderDestination(f: FounderState): { x: number; y: number } {
     return FOUNDER_SLEEP_TILES[i >= 0 ? i : 0];
   }
   if (f.activity === 'eat') return FOUNDER_EAT_TILE;
-  if (f.activity === 'rest') return FOUNDER_CAMP_CENTRE;
+  // BUILD 1060: rest is beside the founder's closest founder at
+  // camp (restTile, set when the activity becomes 'rest') — or the
+  // camp centre when there is no companion to rest with.
+  if (f.activity === 'rest') return f.restTile ?? FOUNDER_CAMP_CENTRE;
   // Work: carrying → the stockpile (deliver at the camp centre, beside
   // the pile); otherwise → the tree's work tile (a walkable tile
   // adjacent to the tree — the tree tile itself blocks movement), or
@@ -495,6 +518,10 @@ export type FounderSave = {
   /** BUILD 1058: build ticks on the current hut work step. */
   buildTicks: number;
   lastAbs: number;
+  /** BUILD 1060: pairwise affinity + memories (v3; v2 saves have
+   *  none and migrate to fresh social). Named socialState — the
+   *  save's `social` field is already the needs social (a number). */
+  socialState?: FounderSocial;
 };
 
 export type FoundersSaveState = {
@@ -507,8 +534,8 @@ export type FoundersSaveState = {
   construction: ConstructionState;
 };
 
-/** Fresh v2 save: founders at their sleep tiles, empty stockpile,
- *  full starting food, no hut started. */
+/** Fresh v3 save: founders at their sleep tiles, empty stockpile,
+ *  full starting food, no hut started, neutral toward each other. */
 export function freshFoundersSave(clockAbs: number): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
@@ -525,6 +552,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
       chopTicks: 0,
       buildTicks: 0,
       lastAbs: clockAbs,
+      socialState: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
     })),
     stockpileWood: 0,
     foodStock: FOUNDER_START_FOOD,
@@ -537,19 +565,67 @@ function clampNeed(n: number, fallback: number): number {
 }
 
 /**
- * Migrate an unknown founders save to v2. Missing version field =
+ * Validate a saved social state for one founder (v3): affinity
+ * keys must be the OTHER founders' names, clamped 0..100;
+ * affinityDay must be finite numbers ≥ 0; memories must have a
+ * valid type, an other-founder name (never self), and finite
+ * day/abs — anything else is dropped; the list is capped at 12
+ * (oldest first out). Unknown/missing input → fresh social.
+ * Pure.
+ */
+export function validateFounderSocial(value: unknown, selfName: string): FounderSocial {
+  const fresh = freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== selfName));
+  if (!value || typeof value !== 'object') return fresh;
+  const v = value as Record<string, unknown>;
+  const affinity: Record<string, number> = { ...fresh.affinity };
+  const affinityDay: Record<string, number> = { ...fresh.affinityDay };
+  if (v.affinity && typeof v.affinity === 'object') {
+    for (const [k, raw] of Object.entries(v.affinity as Record<string, unknown>)) {
+      if (k === selfName || !FOUNDER_NAMES.includes(k)) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n)) affinity[k] = Math.max(0, Math.min(100, Math.round(n)));
+    }
+  }
+  if (v.affinityDay && typeof v.affinityDay === 'object') {
+    for (const [k, raw] of Object.entries(v.affinityDay as Record<string, unknown>)) {
+      if (k === selfName || !FOUNDER_NAMES.includes(k)) continue;
+      const n = Number(raw);
+      if (Number.isFinite(n)) affinityDay[k] = Math.max(0, Math.floor(n));
+    }
+  }
+  const memories: FounderSocial['memories'] = [];
+  if (Array.isArray(v.memories)) {
+    for (const m of v.memories) {
+      if (!m || typeof m !== 'object') continue;
+      const r = m as Record<string, unknown>;
+      if (r.type !== 'build' && r.type !== 'eat' && r.type !== 'rest' && r.type !== 'sleep') continue;
+      if (typeof r.other !== 'string' || r.other === selfName || !FOUNDER_NAMES.includes(r.other)) continue;
+      const day = Number(r.day);
+      const abs = Number(r.abs);
+      if (!Number.isFinite(day) || !Number.isFinite(abs)) continue;
+      memories.push({ type: r.type, other: r.other, day: Math.floor(day), abs: Math.floor(abs) });
+    }
+  }
+  while (memories.length > 12) memories.shift();
+  return { affinity, affinityDay, memories };
+}
+
+/**
+ * Migrate an unknown founders save to v3. Missing version field =
  * v0 (defaults filled); version 1 = validated + clamped (unknown
  * founder names dropped, missing founders restored at camp,
  * 'chopping' resets to 'toTree' — the tree target is session-only),
  * construction defaults to fresh (v1 predates the hut); version 2 =
- * validated + clamped the same way; any other version, or a
+ * validated + clamped the same way, social defaults to fresh
+ * (v2 predates memory); version 3 = validated + clamped, social
+ * validated by validateFounderSocial; any other version, or a
  * non-object, returns null (fresh defaults — never guess at an
  * unknown future format). Pure.
  */
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1058: construction from the save (v2), else fresh. A
   // 'done' construction with a founder still marked building/toSite
@@ -595,6 +671,9 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       chopTicks: Math.max(0, Math.round(num('chopTicks', 0))),
       buildTicks: Math.max(0, Math.round(num('buildTicks', 0))),
       lastAbs: Math.max(0, Math.round(num('lastAbs', 0))),
+      // BUILD 1060: social from the save (v3) — v2 and older have
+      // none and migrate to fresh (neutral, no memories).
+      socialState: validateFounderSocial(s?.socialState, name),
     };
   });
   const stockpileWood =
@@ -654,6 +733,11 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       chopTicks: f.chopTicks,
       buildTicks: f.buildTicks,
       lastAbs: f.lastAbs,
+      socialState: {
+        affinity: { ...f.social.affinity },
+        affinityDay: { ...f.social.affinityDay },
+        memories: f.social.memories.map((m) => ({ ...m })),
+      },
     })),
     stockpileWood,
     foodStock,
@@ -677,6 +761,8 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
     treeTarget: null,
     workTile: null,
     lastAbs: s.lastAbs,
+    social: validateFounderSocial(s.socialState, s.name),
+    restTile: null,
   }));
 }
 

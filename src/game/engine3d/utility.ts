@@ -27,6 +27,15 @@
  *   30-meal stock lasts ~4 days instead of ~5).
  * - rest = need(social)^2 x 0.9. Beats the hardest work at social
  *   ≤ ~20; a lonely founder rests at camp instead of working.
+ *   BUILD 1060: + a companionship premium when the founder's
+ *   closest founder is at camp — 0.15 x ((closestAffinity - 50)/50)
+ *   x need(social), so a lonely founder with a close friend at camp
+ *   rests more eagerly than a lonely founder alone (affinity 90 →
+ *   +0.12 x need; affinity 50, neutral → +0). The premium is the
+ *   RELATIONSHIP effect over neutral company, not company itself —
+ *   so the same needs score differently by who is at camp. The
+ *   rest DESTINATION (a tile beside the closest founder) is picked
+ *   by memory.ts restTileFor, not here — the scorer only scores.
  * - work (chop) = 0 when no tree is in range. Otherwise:
  *   - construction pending: 0.25 + 0.40 x min(1, needWood/12) -
  *     0.02 x min(8, treeDist), where needWood = max(0, 12 - spent -
@@ -93,6 +102,15 @@ export type UtilityWorldContext = {
   /** The founder's current job, for the continuation bonus — null
    *  when free (no tree targeted, not building). */
   currentJob: 'chop' | 'build' | null;
+  /** BUILD 1060: the founder's highest effective affinity to any
+   *  other founder (0..100, neutral 50 — memory.ts). Optional:
+   *  absent means no relationship data (the 1059 asserts) and the
+   *  companionship premium is 0, so old scores are unchanged. */
+  closestAffinity?: number;
+  /** BUILD 1060: true when the founder's closest founder is at
+   *  camp (within 3 tiles of the camp centre) — the premium only
+   *  applies when the friend is actually there to rest with. */
+  companionAtCamp?: boolean;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -134,6 +152,9 @@ export const UTILITY_CONTINUATION_BONUS = 0.1;
 /** Pile size at which chopping for the buffer is worth nothing
  *  (hut done). */
 export const UTILITY_PILE_FULL = 24;
+/** BUILD 1060: companionship premium on rest — the most a close
+ *  friend at camp can add (at affinity 100 and full social need). */
+export const UTILITY_COMPANION_BONUS = 0.15;
 
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
@@ -153,7 +174,16 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
 
   const sleep = clamp01(utilityNeed(needs.energy) ** 2 + (isFounderNight(minutes) ? UTILITY_NIGHT_BONUS : 0));
   const eat = foodStock > 0 ? clamp01(utilityNeed(needs.hunger) ** 2 * UTILITY_EAT_WEIGHT) : 0;
-  const rest = clamp01(utilityNeed(needs.social) ** 2 * UTILITY_REST_WEIGHT);
+  // BUILD 1060: the companionship premium — a lonely founder rests
+  // more eagerly when their closest founder is at camp. The premium
+  // scales with affinity ABOVE neutral (50): a neutral 50 adds
+  // nothing, a close 90 adds 0.15 x 0.8 x need(social). Absent
+  // relationship data (the 1059 callers) the premium is 0.
+  const companionBonus =
+    ctx.companionAtCamp && ctx.closestAffinity !== undefined
+      ? UTILITY_COMPANION_BONUS * Math.max(0, (ctx.closestAffinity - 50) / 50) * utilityNeed(needs.social)
+      : 0;
+  const rest = clamp01(utilityNeed(needs.social) ** 2 * UTILITY_REST_WEIGHT + companionBonus);
 
   let work = 0;
   if (nearestTreeDist !== null) {

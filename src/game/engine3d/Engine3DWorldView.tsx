@@ -118,6 +118,8 @@ import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRema
 // (needs-driven, chopping wood to a visible camp stockpile).
 import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
 import { chooseScoredActivity, founderDistToSite } from './utility';
+import { closestFounder, memoryCountsFor, recordSharedEvent, restTileFor } from './memory';
+import type { SharedEventType } from './memory';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
@@ -2153,7 +2155,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const founderStockpileRef=useRef(0);
   const founderFoodRef=useRef(FOUNDER_START_FOOD);
   // BUILD 1058: the first hut's construction (progress + wood spent).
-  // The tick owns it; the founders save persists it (v2).
+  // The tick owns it; the founders save persists it (v3).
   const constructionRef=useRef<ConstructionState>(freshConstruction());
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
@@ -2235,6 +2237,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const wTreeDist=wTree?Math.abs(wTree.tx-FOUNDER_CAMP.x)+Math.abs(wTree.ty-FOUNDER_CAMP.y):null;
         for(let i=0;i<foundersRef.current.length;i++){
           const wf=foundersRef.current[i];
+          // BUILD 1060: the wait-step re-choice is the SAME scorer
+          // the real-time tick uses — including the companionship
+          // premium (the closest founder's effective affinity, and
+          // whether they are at camp). A wait never re-chooses by a
+          // different rule. (No events are recorded during a wait —
+          // the founders are wherever the wait found them, and
+          // positions do not fast-forward.)
+          const wClosest=closestFounder(wf.social,clockRef.current.day);
+          const wCompanion=wClosest?foundersRef.current.find(o=>o.name===wClosest.name):undefined;
+          const wCompanionAtCamp=!!wCompanion&&Math.abs(Math.round(wCompanion.x)-FOUNDER_CAMP.x)+Math.abs(Math.round(wCompanion.y)-FOUNDER_CAMP.y)<=3;
           foundersRef.current[i]=applyFounderWaitStep(wf,step,clockRef.current.minutes,founderFoodRef.current,nowAbs,{
             foodStock:founderFoodRef.current,
             stockpileWood:founderStockpileRef.current,
@@ -2243,6 +2255,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             distToSite:founderDistToSite({x:Math.round(wf.x),y:Math.round(wf.y)}),
             builderTaken:foundersRef.current.some(o=>o!==wf&&(o.workState==='toSite'||o.workState==='building')),
             currentJob:wf.workState==='toSite'||wf.workState==='building'?'build':(wf.workState==='chopping'||wf.workState==='toStockpile'||(wf.workState==='toTree'&&!!wf.treeTarget)?'chop':null),
+            closestAffinity:wClosest?wClosest.affinity:50,
+            companionAtCamp:wCompanionAtCamp,
           });
         }
         // BUILD 1058: construction does NOT advance during a wait
@@ -3215,6 +3229,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // founder reloaded mid-build whose hut finished while they
         // were away goes back to chopping.
         f.treeTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;
+        f.restTile=null;
         f.lastAbs=clockAbs;
       }
       foundersRef.current=states;
@@ -4892,7 +4907,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the utility choice. The stockpile tile answers with the
         // real count.
         const nearFounder=FOUNDERS_ENABLED?foundersRef.current.find(f=>Math.abs(f.x-p.x)<=1&&Math.abs(f.y-p.y)<=1):undefined;
-        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social);return}
+        // BUILD 1060: the answer also names the founder's closest
+        // companion and what they have shared ("closest Greta 62 —
+        // built 2×, ate 1×, rested 3×") — the counts come from the
+        // founder's actual memories, so the player never sees a
+        // count the founder does not remember. Only non-zero counts
+        // are shown.
+        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+rel);return}
         if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food');return}
         // BUILD 1058: E at the founders' hut reports its state:
         // progress + wood spent while building, whose hut it is once
@@ -5099,6 +5120,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getFounders:()=>foundersRef.current.map(f=>({name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
       setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
+      // BUILD 1060 test hooks (probes only — no gameplay effect):
+      // read each founder's social state (affinity + memories +
+      // closest companion at the current day) and set one affinity
+      // (probe setup — lets a probe give two founders a history
+      // without waiting for days of shared meals).
+      getFounderSocial:()=>foundersRef.current.map(f=>({name:f.name,affinity:{...f.social.affinity},affinityDay:{...f.social.affinityDay},memories:f.social.memories.map(m=>({...m})),closest:closestFounder(f.social,clockRef.current.day)})),
+      setFounderAffinity:(name:string,other:string,value:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(!f||!FOUNDER_NAMES.includes(other)||other===name)return false;f.social={...f.social,affinity:{...f.social.affinity,[other]:Math.max(0,Math.min(100,Math.round(value)))},affinityDay:{...f.social.affinityDay,[other]:clockRef.current.day}};return true;},
       getFounderRenderPos:(name:string)=>{const r=npcRender.get('founder:'+name);return r?{x:r.x,y:r.y}:null;},
       // BUILD 1058 test hooks (probes only — no gameplay effect):
       // read the hut construction (state/progress/wood spent +
@@ -5337,9 +5365,49 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // so E can report WHY.
         const builderTaken=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
         const currentJob=f.workState==='toSite'||f.workState==='building'?'build':(f.workState==='chopping'||f.workState==='toStockpile'||(f.workState==='toTree'&&!!f.treeTarget)?'chop':null);
-        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:founderFoodRef.current,stockpileWood:founderStockpileRef.current,construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob});
+        // BUILD 1060: the companion context for the scorer — the
+        // founder's closest founder (highest effective affinity)
+        // and whether they are at camp (within 3 tiles of the camp
+        // centre). The rest score's companionship premium rides on
+        // these two numbers.
+        const prevActivity=f.activity;
+        const tClosest=closestFounder(f.social,clock.day);
+        const tCompanion=tClosest?founders.find(o=>o.name===tClosest.name):undefined;
+        const tCompanionAtCamp=!!tCompanion&&Math.abs(Math.round(tCompanion.x)-FOUNDER_CAMP.x)+Math.abs(Math.round(tCompanion.y)-FOUNDER_CAMP.y)<=3;
+        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:founderFoodRef.current,stockpileWood:founderStockpileRef.current,construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
         f.activity=decision.activity;
         f.lastDecision=decision;
+        // BUILD 1060: activity transitions record shared events
+        // (memory.ts) — the relationship only grows through moments
+        // the founders actually live together. Rest and sleep record
+        // on the transition into the activity, with every other
+        // founder already in that activity: the second founder to
+        // flip records for the pair, so each shared session counts
+        // once. A founder who flips away and back starts a new
+        // session. The rest tile is picked on the transition too —
+        // a tile beside the closest founder at camp (memory.ts
+        // restTileFor), or the camp centre when the companion is
+        // out working.
+        if(f.activity!==prevActivity){
+          f.restTile=null;
+          if(f.activity==='rest'){
+            if(tClosest&&tCompanionAtCamp&&tCompanion){
+              const taken=new Set(founders.filter(o=>o!==f&&o.restTile).map(o=>o.restTile!.x+','+o.restTile!.y));
+              f.restTile=restTileFor({x:Math.round(tCompanion.x),y:Math.round(tCompanion.y)},taken,(x,y)=>npcWalkable(world,x,y),FOUNDER_CAMP_CENTRE);
+            }
+            for(const o of founders){
+              if(o===f||o.activity!=='rest')continue;
+              f.social=recordSharedEvent(f.social,o.name,'rest',clock.day,nowAbs);
+              o.social=recordSharedEvent(o.social,f.name,'rest',clock.day,nowAbs);
+            }
+          }else if(f.activity==='sleep'){
+            for(const o of founders){
+              if(o===f||o.activity!=='sleep')continue;
+              f.social=recordSharedEvent(f.social,o.name,'sleep',clock.day,nowAbs);
+              o.social=recordSharedEvent(o.social,f.name,'sleep',clock.day,nowAbs);
+            }
+          }
+        }
         // BUILD 1059: a builder who stops building RELEASES the site.
         // When the scorer sends a toSite/building founder to eat, rest,
         // sleep, or chop (pile dry), they leave the site — workState
@@ -5361,7 +5429,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // Eat: at the eat tile, one meal from the shared camp stock.
         if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
           const res=eatFounderMeal(f.needs,founderFoodRef.current);
-          if(res.foodStock!==founderFoodRef.current){f.needs=res.needs;founderFoodRef.current=res.foodStock;stockChanged=true;}
+          if(res.foodStock!==founderFoodRef.current){f.needs=res.needs;founderFoodRef.current=res.foodStock;stockChanged=true;
+            // BUILD 1060: a shared meal — record 'eat' with every
+            // other founder at the eat tile (within 1 tile). The
+            // meal is a discrete moment, so it records once.
+            for(const o of founders){if(o!==f&&Math.abs(Math.round(o.x)-FOUNDER_EAT_TILE.x)<=1&&Math.abs(Math.round(o.y)-FOUNDER_EAT_TILE.y)<=1){f.social=recordSharedEvent(f.social,o.name,'eat',clock.day,nowAbs);o.social=recordSharedEvent(o.social,f.name,'eat',clock.day,nowAbs);}}
+          }
         }
         // BUILD 1058: door transitions (the player's Enter/Exit, one
         // tile through the door — never a path through walls, so the
@@ -5457,6 +5530,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                   constructionRef.current=res.construction;
                   founderStockpileRef.current=res.stockpileWood;
                   stockChanged=true;hutChanged=true;
+                  // BUILD 1060: a shared build step — the builder
+                  // plus every founder chopping for the hut (activity
+                  // work/build) built it together. The step is a
+                  // discrete moment, so it records once.
+                  for(const o of founders){if(o!==f&&(o.activity==='work'||o.activity==='build')){f.social=recordSharedEvent(f.social,o.name,'build',clock.day,nowAbs);o.social=recordSharedEvent(o.social,f.name,'build',clock.day,nowAbs);}}
                   if(res.completed){
                     // Stamp the hut through the same placement path
                     // the player uses. The rect may be occupied this

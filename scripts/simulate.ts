@@ -11534,10 +11534,10 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(F.deliverFounderWood(4, 2) === 6 && F.deliverFounderWood(6, 0) === 6, 'M1057: stockpile rises ONLY on delivery');
   assert(F.stockpileLogsFor(125, 120, 0, 0).length === 12 && F.stockpileLogsFor(125, 120, 0, 10).length === 72, 'M1057: log pile grows with wood (1 log at 0, 6 at 10)');
   const fresh = F.freshFoundersSave(1000);
-  assert(fresh.version === 2 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v2 save (1058: version bumped, construction rides along)');
+  assert(fresh.version === 3 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v3 save (1060: version bumped, social rides along)');
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh)))) === JSON.stringify(fresh), 'M1057: versioned save round-trips');
   const v0 = F.migrateFoundersSave({ founders: [{ name: 'Marlow', x: 130, y: 130 }] });
-  assert(v0 !== null && v0.version === 2 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v2 (missing founders restored, food defaults to 30)');
+  assert(v0 !== null && v0.version === 3 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v3 (missing founders restored, food defaults to 30)');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1057: unknown version / null → null (fresh defaults)');
   // The 1056 localStorage stand-in is still in place: the founders
   // save/load runs against it (the real persistence is proven by the
@@ -11616,9 +11616,9 @@ console.log('Testing 3D NPC construction — first hut (BUILD 1058)...');
   assert(C.reconcileConstruction(c, false) === c, 'M1058: ready hut (placement blocked) is NOT reset');
   assert(C.hutProgressLabel({ state: 'building', progress: 3, spentWood: 6 }) === '3/6' && C.hutProgressLabel(doneC) === 'done', 'M1058: progress labels');
   assert(C.constructionSiteTrisFor(0, 1).length === 12 && C.constructionSiteTrisFor(0, 2).length === 60 && C.constructionSiteTrisFor(0, 4).length === 84 && C.constructionSiteTrisFor(0, 5).length === 96 && C.constructionSiteTrisFor(0, 6).length === 0, 'M1058: build-site visual grows with progress, nothing at step 6');
-  assert(F.FOUNDER_SAVE_VERSION === 2, 'M1058: founders save is v2');
+  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1058: founders save is v3 in 1060 (social rides along; construction still rides too)');
   const v1 = F.migrateFoundersSave({ version: 1, founders: [], stockpileWood: 4, foodStock: 28 });
-  assert(v1 !== null && v1.version === 2 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v2 with a fresh construction, wood survives');
+  assert(v1 !== null && v1.version === 3 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v3 with a fresh construction, wood survives');
   const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 0));
   const saved = F.foundersSaveOf(states, 8, 25, { state: 'building', progress: 3, spentWood: 6 });
   const rt = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(saved)));
@@ -11694,8 +11694,8 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   // --- Needs decay treats building like work (social drains alone). ---
   const dBuild = F.decayFounderNeeds(fit, 60, 'build');
   assert(close(dBuild.social, 60 - 0.04 * 60) && close(dBuild.hunger, 71), 'M1059: building decays social like work (alone at the site)');
-  // --- Save is unchanged: still v2, 'build' activity round-trips. ---
-  assert(F.FOUNDER_SAVE_VERSION === 2, 'M1059: founders save stays v2 (scores are computed live, nothing stored)');
+  // --- Save is v3 now (social rides along); 'build' activity round-trips. ---
+  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1059: founders save is v3 in 1060 (social is stored, scores are still computed live)');
   const withBuild = F.freshFoundersSave(1000);
   withBuild.founders[0].activity = 'build';
   withBuild.founders[0].workState = 'building';
@@ -11722,6 +11722,98 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   assert(next1059 !== null && Math.abs(next1059.tx - F.FOUNDER_CAMP.x) + Math.abs(next1059.ty - F.FOUNDER_CAMP.y) === 31, 'M1059: after felling the 8 in-range trees the nearest is 31 away — inside the new radius');
   assert(F.nearestTreeTile(world1059, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, 30, felled1059) === null, 'M1059: at the old radius 30 the same search returns nothing (the rebuild stall)');
   assert(U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 0, nearestTreeDist: 31 })).activity === 'work', 'M1059: work still wins over rest at a 31-tile tree when the pile is dry and needs are fit');
+}
+
+console.log('Testing 3D NPC memory + relationships — founders remember each other (BUILD 1060)...');
+{
+  const M = await import('../src/game/engine3d/memory.js');
+  const U = await import('../src/game/engine3d/utility.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.001;
+  const doneC = { state: 'done', progress: 6, spentWood: 12 };
+  // --- Fresh social: neutral, no memories. ---
+  const fresh = M.freshFounderSocial(['Greta', 'Perrin']);
+  assert(fresh.affinity.Greta === 50 && fresh.affinity.Perrin === 50 && fresh.memories.length === 0, 'M1060: fresh social is neutral (50) with no memories');
+  assert(M.AFFINITY_NEUTRAL === 50 && M.MEMORY_CAP === 12 && M.MEMORY_MAX_AGE_DAYS === 30, 'M1060: memory constants (neutral 50, cap 12, 30-day staleness)');
+  // --- Affinity bumps per event type (earned, not seeded). ---
+  const b1 = M.recordSharedEvent(fresh, 'Greta', 'build', 1, 1500);
+  assert(b1.affinity.Greta === 54 && b1.memories.length === 1 && b1.memories[0].type === 'build', 'M1060: building together is +4');
+  const e1 = M.recordSharedEvent(fresh, 'Greta', 'eat', 1, 1500);
+  assert(e1.affinity.Greta === 52, 'M1060: a shared meal is +2');
+  const r1 = M.recordSharedEvent(fresh, 'Greta', 'rest', 1, 1500);
+  assert(r1.affinity.Greta === 53, 'M1060: resting together is +3');
+  const s1 = M.recordSharedEvent(fresh, 'Greta', 'sleep', 1, 1500);
+  assert(s1.affinity.Greta === 51, 'M1060: a night under the same roof is +1');
+  assert(fresh.affinity.Greta === 50 && fresh.memories.length === 0, 'M1060: recording returns a new state (the input is untouched)');
+  // --- Clamp at 100. ---
+  let high = M.freshFounderSocial(['Greta']);
+  for (let i = 0; i < 20; i++) high = M.recordSharedEvent(high, 'Greta', 'build', 1, 1500);
+  assert(high.affinity.Greta === 100, 'M1060: affinity clamps at 100 (20 builds do not overshoot)');
+  // --- Lazy decay toward neutral (1/day, never crossing 50). ---
+  assert(M.pullTowardNeutral(60, 5) === 55 && M.pullTowardNeutral(54, 10) === 50 && M.pullTowardNeutral(40, 3) === 43, 'M1060: decay pulls toward 50 by 1/day, never crossing it');
+  const decayed = M.recordSharedEvent(b1, 'Greta', 'eat', 6, 8000);
+  assert(decayed.affinity.Greta === 52, 'M1060: lazy decay first — build +4 on day 1, 5 days later the 54 has decayed to neutral 50 (4 days of drift, then clamped), then eat +2 → 52');
+  assert(M.effectiveAffinity(b1, 'Greta', 6) === 50, 'M1060: effective affinity is the stored value decayed to the day (54 after 5 days is neutral 50 — a read never rewrites)');
+  assert(M.effectiveAffinity(b1, 'Greta', 1) === 54, 'M1060: same-day effective affinity is the stored value');
+  // --- Memories: cap 12 (oldest first out) + 30-day prune. ---
+  let many = M.freshFounderSocial(['Greta']);
+  for (let i = 0; i < 15; i++) many = M.recordSharedEvent(many, 'Greta', 'rest', 1, 1500 + i);
+  assert(many.memories.length === 12 && many.memories[0].abs === 1503, 'M1060: memories cap at 12, oldest first out');
+  const old = M.recordSharedEvent(many, 'Greta', 'rest', 40, 60000);
+  assert(old.memories.every((m: { day: number }) => 40 - m.day <= 30) && old.memories.length === 1, 'M1060: memories older than 30 days are forgotten on record');
+  // --- Closest founder + counts (what the E report reads). ---
+  const two = M.recordSharedEvent(M.recordSharedEvent(fresh, 'Greta', 'build', 1, 1500), 'Perrin', 'eat', 1, 1600);
+  const cl = M.closestFounder(two, 1);
+  assert(cl !== null && cl.name === 'Greta' && cl.affinity === 54, 'M1060: closest founder is the highest effective affinity');
+  const counts = M.memoryCountsFor(two, 'Greta');
+  assert(counts.build === 1 && counts.eat === 0 && counts.rest === 0 && counts.sleep === 0, 'M1060: memory counts by type + other (the E report reads these)');
+  assert(M.closestFounder(M.freshFounderSocial([]), 1) === null, 'M1060: no others → no closest founder');
+  // --- Rest tile: beside the companion, taken tiles skipped, fallback. ---
+  const walkAll = () => true;
+  assert(JSON.stringify(M.restTileFor({ x: 124, y: 120 }, new Set(), walkAll, { x: 124, y: 120 })) === JSON.stringify({ x: 124, y: 119 }), 'M1060: rest tile is north of the companion first (fixed order N/W/E/S)');
+  const taken = new Set(['124,119', '123,120']);
+  assert(JSON.stringify(M.restTileFor({ x: 124, y: 120 }, taken, walkAll, { x: 124, y: 120 })) === JSON.stringify({ x: 125, y: 120 }), 'M1060: taken tiles are skipped (north + west taken → east)');
+  const walkNone = () => false;
+  assert(JSON.stringify(M.restTileFor({ x: 124, y: 120 }, new Set(), walkNone, { x: 124, y: 120 })) === JSON.stringify({ x: 124, y: 120 }), 'M1060: no walkable adjacent tile → the camp centre fallback');
+  // --- Scorer: the companionship premium (same needs, different affinity). ---
+  const base = { needs: { hunger: 80, energy: 90, social: 10 }, minutes: 600, foodStock: 30, stockpileWood: 24, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null };
+  const restNone = U.scoreFounderActivities({ ...base }).rest;
+  assert(close(restNone, 0.729), 'M1060: rest with no companion data is the 1059 value (0.729 at social 10)');
+  const restNeutral = U.scoreFounderActivities({ ...base, closestAffinity: 50, companionAtCamp: true }).rest;
+  assert(close(restNeutral, 0.729), 'M1060: a neutral (50) companion at camp adds nothing — the premium is the relationship effect over neutral');
+  const restClose = U.scoreFounderActivities({ ...base, closestAffinity: 90, companionAtCamp: true }).rest;
+  assert(close(restClose, 0.837), 'M1060: a close (90) companion at camp adds 0.15 x 0.8 x need (0.729 → 0.837)');
+  const restAway = U.scoreFounderActivities({ ...base, closestAffinity: 90, companionAtCamp: false }).rest;
+  assert(close(restAway, 0.729), 'M1060: a close friend out working adds nothing — the premium needs them at camp');
+  // --- The premium flips a choice: rest beats work where it did not. ---
+  // Social 40, empty pile, hut done: rest 0.324 vs work 0.37 without
+  // the premium; with a close (90) companion at camp rest is 0.396
+  // and wins — the same needs choose differently by who is at camp.
+  const flipCtx = { ...base, stockpileWood: 0, closestAffinity: 90, companionAtCamp: true, needs: { hunger: 80, energy: 90, social: 40 } };
+  const flip = U.chooseScoredActivity(flipCtx);
+  const noFlip = U.chooseScoredActivity({ ...flipCtx, closestAffinity: 50 });
+  assert(flip.activity === 'rest' && noFlip.activity === 'work', 'M1060: at social 40 the companion premium flips rest over work (0.396 > 0.37 vs 0.324 < 0.37)');
+  // --- Save v3: fresh, migration, round-trip, validation. ---
+  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1060: founders save is v3 (social rides along)');
+  const fresh3 = F.freshFoundersSave(1000);
+  assert(fresh3.version === 3 && fresh3.founders[0].socialState !== undefined && fresh3.founders[0].socialState.affinity.Greta === 50 && fresh3.founders[0].socialState.memories.length === 0, 'M1060: fresh v3 save carries fresh social (neutral, no memories)');
+  const rt3 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh3)));
+  assert(rt3 !== null && JSON.stringify(rt3) === JSON.stringify(fresh3), 'M1060: versioned save round-trips (v3)');
+  const v2 = F.migrateFoundersSave({ version: 2, founders: [{ name: 'Marlow', x: 130, y: 130 }], stockpileWood: 4, construction: { state: 'none', progress: 0, spentWood: 0 } });
+  assert(v2 !== null && v2.version === 3 && v2.founders[0].socialState.affinity.Greta === 50 && v2.founders[0].socialState.memories.length === 0, 'M1060: v2 migrates to v3 with fresh social (neutral, no memories)');
+  const v3bad = F.migrateFoundersSave({ version: 3, founders: [{ name: 'Marlow', socialState: { affinity: { Greta: 150, Perrin: -20, Marlow: 99, Stranger: 80 }, affinityDay: { Greta: -5 }, memories: [{ type: 'build', other: 'Greta', day: 1, abs: 1500 }, { type: 'dance', other: 'Greta', day: 1, abs: 1501 }, { type: 'eat', other: 'Marlow', day: 1, abs: 1502 }] } }] });
+  assert(v3bad !== null && v3bad.founders[0].socialState.affinity.Greta === 100 && v3bad.founders[0].socialState.affinity.Perrin === 0 && v3bad.founders[0].socialState.affinity.Marlow === undefined && v3bad.founders[0].socialState.affinity.Stranger === undefined && v3bad.founders[0].socialState.memories.length === 1, 'M1060: v3 validation clamps affinity, drops self/unknown names, drops bad memory types');
+  assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1060: unknown version / null → null (fresh defaults)');
+  // --- Runtime state carries social; the wait step re-chooses with it. ---
+  const w1060 = F.defaultFounderState('Marlow', 0, 1000);
+  assert(w1060.social.affinity.Greta === 50 && w1060.restTile === null, 'M1060: a fresh founder starts neutral with no rest tile');
+  const wSocial = F.defaultFounderState('Marlow', 0, 1000);
+  wSocial.social = M.recordSharedEvent(M.recordSharedEvent(wSocial.social, 'Greta', 'build', 1, 1500), 'Greta', 'build', 1, 1600);
+  wSocial.needs = { hunger: 80, energy: 90, social: 40 };
+  wSocial.activity = 'work';
+  const stepped1060 = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 90, companionAtCamp: true });
+  const stepped1060b = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 50, companionAtCamp: true });
+  assert(stepped1060.activity === 'rest' && stepped1060b.activity === 'work', 'M1060: a wait step re-chooses with the companionship premium too (social 40 + close friend at camp → rest; neutral friend → work)');
 }
 
 // ---- Results ----
