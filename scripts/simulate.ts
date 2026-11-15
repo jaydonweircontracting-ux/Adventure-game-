@@ -11710,6 +11710,18 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   const stepped1059 = F.applyFounderWaitStep(w1059, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null });
   assert(stepped1059.activity === 'sleep' && stepped1059.lastDecision !== undefined && stepped1059.lastDecision.top === 'sleep', 'M1059: a wait step re-chooses by the scorer too (divergence (a) holds across a wait)');
   assert(C.HUT_COST_WOOD === 12 && C.HUT_WOOD_PER_STEP === 2, 'M1059: hut cost constants unchanged (the scorer spends the same wood)');
+  // --- Work radius: the deforestation cliff (BUILD 1059 fix 3). ---
+  assert(F.FOUNDER_WORK_RADIUS === 60, 'M1059: work radius is 60 (was 30)');
+  const W1059 = await import('../src/game/iso/isoWorld.js');
+  const world1059 = W1059.defaultWorld();
+  const near1059 = world1059.trees.map((t: { tx: number; ty: number }) => Math.abs(t.tx - F.FOUNDER_CAMP.x) + Math.abs(t.ty - F.FOUNDER_CAMP.y)).sort((a: number, b: number) => a - b);
+  assert(near1059.filter((d: number) => d <= 30).length === 8, 'M1059: only 8 trees within 30 of camp (the cliff — the first hut fells ~7)');
+  assert(near1059.filter((d: number) => d <= 60).length === 46, 'M1059: 46 trees within 60 (headroom for ~7 huts)');
+  const felled1059 = new Set(world1059.trees.slice().sort((a: { tx: number; ty: number }, b: { tx: number; ty: number }) => (Math.abs(a.tx - F.FOUNDER_CAMP.x) + Math.abs(a.ty - F.FOUNDER_CAMP.y)) - (Math.abs(b.tx - F.FOUNDER_CAMP.x) + Math.abs(b.ty - F.FOUNDER_CAMP.y))).slice(0, 8).map((t: { tx: number; ty: number }) => t.tx + ',' + t.ty));
+  const next1059 = F.nearestTreeTile(world1059, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS, felled1059);
+  assert(next1059 !== null && Math.abs(next1059.tx - F.FOUNDER_CAMP.x) + Math.abs(next1059.ty - F.FOUNDER_CAMP.y) === 31, 'M1059: after felling the 8 in-range trees the nearest is 31 away — inside the new radius');
+  assert(F.nearestTreeTile(world1059, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, 30, felled1059) === null, 'M1059: at the old radius 30 the same search returns nothing (the rebuild stall)');
+  assert(U.chooseScoredActivity(ctx({ construction: pendC, stockpileWood: 0, nearestTreeDist: 31 })).activity === 'work', 'M1059: work still wins over rest at a 31-tile tree when the pile is dry and needs are fit');
 }
 
 // ---- Results ----

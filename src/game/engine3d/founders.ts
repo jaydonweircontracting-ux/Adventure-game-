@@ -113,8 +113,21 @@ export const FOUNDER_NAMES = ['Marlow', 'Greta', 'Perrin'];
 /** Meals the founders brought with them (3 founders × 3 meals/day
  *  ≈ 3 days of food; nothing replenishes it yet). */
 export const FOUNDER_START_FOOD = 30;
-/** Nearest-tree search radius around the camp, in tiles. */
-export const FOUNDER_WORK_RADIUS = 30;
+/** Nearest-tree search radius around the camp, in tiles. BUILD 1059:
+ *  30 → 60. Only 8 trees sit within 30 tiles of the camp (measured
+ *  from the deterministic default world: 4 within 12, 7 within 25,
+ *  8 within 30), and the first hut fells ~7 of them — so after the
+ *  first build + one rebuild delivery, the nearest tree is 31 away
+ *  and the founders can never chop again: work scores 0, the pile
+ *  stays 0, the rebuild stalls forever with a half-built hut (the
+ *  1059 probe observed exactly this: 1/6 for 240s, zero deliveries).
+ *  Within 60 there are 46 trees (~7 huts of headroom); the search
+ *  always takes the NEAREST tree, so the common case is unchanged
+ *  and the radius only matters once the near trees are gone. The
+ *  scan cost is unchanged (same 226-entry world.trees scan). A
+ *  sustainable supply (replanting/forestry) is a later build — this
+ *  only removes the cliff. */
+export const FOUNDER_WORK_RADIUS = 60;
 /** Ticks spent chopping at a tree before it falls. */
 export const FOUNDER_CHOP_TICKS = 3;
 /** Wood per felled tree — the same as the player's E-key chop. */
