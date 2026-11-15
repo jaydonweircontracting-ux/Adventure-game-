@@ -5340,6 +5340,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:founderFoodRef.current,stockpileWood:founderStockpileRef.current,construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob});
         f.activity=decision.activity;
         f.lastDecision=decision;
+        // BUILD 1059: a builder who stops building RELEASES the site.
+        // When the scorer sends a toSite/building founder to eat, rest,
+        // sleep, or chop (pile dry), they leave the site — workState
+        // back to 'toTree', partial buildTicks reset (banked progress
+        // stays) — so another founder can take the site when wood is
+        // available instead of the site sitting reserved-but-empty
+        // for 40s. (The 1059 probe's second run showed exactly that:
+        // Greta held the site while resting at camp, then the site
+        // sat empty for ~45s — 250s for the hut vs the 178s baseline.
+        // The 1058 doc already stated this rule — "a tired or hungry
+        // builder leaves the site and the step's partial ticks reset"
+        // — but the code never implemented it.) A builder whose
+        // activity is 'work' while the pile still holds wood keeps
+        // the site (the scorer flips them back to 'build' next tick).
+        if((f.workState==='toSite'||f.workState==='building')&&f.activity!=='build'){
+          const keepSite=f.activity==='work'&&canBuild(constructionRef.current,founderStockpileRef.current);
+          if(!keepSite){f.workState='toTree';f.buildTicks=0;f.treeTarget=null;f.workTile=null;}
+        }
         // Eat: at the eat tile, one meal from the shared camp stock.
         if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
           const res=eatFounderMeal(f.needs,founderFoodRef.current);
