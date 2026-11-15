@@ -1,8 +1,8 @@
 {
   "activeBuild": {
-    "build": 1060,
-    "commit": "392ed83f",
-    "description": "NPC memory + relationships (G26) — New pure module memory.ts: founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0-100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50). The scorer rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts. Save version 3 with migration. Landed: commit 392ed83f, deploy run 43768325984 success, phone probe PASS 0 page errors (togetherness observed: first build step Greta-Perrin 54; rest Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 tiles, max distance 1; sleep affinity up to 59; reload affinity + memories byte-identical).",
+    "build": 1061,
+    "commit": "f258cde8",
+    "description": "Forests — real tree clusters (G28, Phase 1 step 1.0): forest rule (groundNoise(x,y,24) > 0.55 marks forest, ~28% of tiles; trees 10× denser inside, 6% vs 0.6% meadow, same scatter hash so every old tree stays a tree); fresh world 226 → 830 trees; migration (migrateTreeDensity) adds 576 trees to a genuine old save (226 → 802, treeGen 2, idempotent, chopped trees never resurrect); ghost-town regrowth +87 (nearest tree to spawn 19 → 4); minimap paints forest #2a5a2a; E-key + founder chops record removedTrees. Landed: commit f258cde8, deploy run 43773794658 success, phone probe PASS 0 page errors (trees ±30: camp 73, forest edge 102, spawn 44; chop +2 wood persists across reload; collision blocks; trees visible day + night; minimap forest). Frame note: p50 100→117ms, steady max 367–417ms in 3 of 4 after-runs — single chop-rebuild frames, not steady cost; rebuild hitch predates this build, heavier with ~4× more trees (follow-up, not fixed).",
     "status": "verified"
   },
   "buildHistory": [
@@ -410,6 +410,15 @@
       "runId": "43768325984",
       "status": "verified",
       "verifiedAt": "2026-11-15T22:17:16.829Z"
+    },
+    {
+      "build": 1061,
+      "commit": "f258cde8",
+      "description": "Forests — real tree clusters (G28, Phase 1 step 1.0): forest rule (groundNoise(x,y,24) > 0.55 marks forest, ~28% of tiles; trees 10× denser inside, 6% vs 0.6% meadow, same scatter hash so every old tree stays a tree); fresh world 226 → 830 trees; migration (migrateTreeDensity) adds 576 trees to a genuine old save (226 → 802, treeGen 2, idempotent, chopped trees never resurrect); ghost-town regrowth +87 (nearest tree to spawn 19 → 4); minimap paints forest #2a5a2a; E-key + founder chops record removedTrees. Landed: commit f258cde8, deploy run 43773794658 success, phone probe PASS 0 page errors (trees ±30: camp 73, forest edge 102, spawn 44; chop +2 wood persists across reload; collision blocks; trees visible day + night; minimap forest). Frame note: p50 100→117ms, steady max 367–417ms in 3 of 4 after-runs — single chop-rebuild frames, not steady cost; rebuild hitch predates this build, heavier with ~4× more trees (follow-up, not fixed).",
+      "qualityGateLevel": 3,
+      "runId": "43773794658",
+      "status": "verified",
+      "verifiedAt": "2026-11-15T23:16:42.504Z"
     }
   ],
   "buildQueue": [],
@@ -541,13 +550,15 @@
       "status": "open"
     }
   ],
-  "lastUpdateTimestamp": "2026-11-15T15:22:17-07:00",
+  "lastUpdateTimestamp": "2026-11-15T23:23:08.899Z",
   "lastVerifiedCheckpoint": {
-    "build": 1060,
-    "commit": "392ed83f",
-    "description": "NPC memory + relationships (G26) — New pure module memory.ts: founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0-100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50). The scorer rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts. Save version 3 with migration. Landed: commit 392ed83f, deploy run 43768325984 success, phone probe PASS 0 page errors (togetherness observed: first build step Greta-Perrin 54; rest Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 tiles, max distance 1; sleep affinity up to 59; reload affinity + memories byte-identical).",
-    "runId": "43768325984",
-    "verifiedAt": "2026-11-15T22:17:16.829Z"
+    "build": 1061,
+    "commit": "f258cde8",
+    "description": "Forests — real tree clusters (G28, Phase 1 step 1.0): forest rule (groundNoise(x,y,24) > 0.55 marks forest, ~28% of tiles; trees 10× denser inside, 6% vs 0.6% meadow, same scatter hash so every old tree stays a tree); fresh world 226 → 830 trees; migration (migrateTreeDensity) adds 576 trees to a genuine old save (226 → 802, treeGen 2, idempotent, chopped trees never resurrect); ghost-town regrowth +87 (nearest tree to spawn 19 → 4); minimap paints forest #2a5a2a; E-key + founder chops record removedTrees. Landed: commit f258cde8, deploy run 43773794658 success, phone probe PASS 0 page errors (trees ±30: camp 73, forest edge 102, spawn 44; chop +2 wood persists across reload; collision blocks; trees visible day + night; minimap forest). Frame note: p50 100→117ms, steady max 367–417ms in 3 of 4 after-runs — single chop-rebuild frames, not steady cost; rebuild hitch predates this build, heavier with ~4× more trees (follow-up, not fixed).",
+    "qualityGateLevel": 3,
+    "runId": "43773794658",
+    "status": "verified",
+    "verifiedAt": "2026-11-15T23:16:42.504Z"
   },
   "measuredBaselines": [
     {
