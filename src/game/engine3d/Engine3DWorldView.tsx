@@ -5415,10 +5415,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // for exactly this reason — Marlow sat 'eat'+'building' for
         // ~90s. The 1058 fixed priority only flipped to eat at
         // hunger ≤30, so it rarely showed; the scorer flips earlier
-        // as the nearest tree recedes.) workState/buildTicks are
-        // preserved while they are away — they resume where they
-        // left off, and nobody else takes the site meanwhile
-        // (someoneBuilding stays true).
+        // as the nearest tree recedes.) The release block above frees
+        // the site while they are away (workState back to 'toTree',
+        // partial buildTicks reset, banked progress stays), so
+        // another founder can take the site when wood is available;
+        // the returning founder re-takes it if free.
         let dest=founderDestination(f);
         if((f.activity==='work'||f.activity==='build')&&(f.workState==='toSite'||f.workState==='building'))dest=HUT_APPROACH;
         else if(f.activity==='sleep'&&hutPlaced)dest=HUT_APPROACH;
