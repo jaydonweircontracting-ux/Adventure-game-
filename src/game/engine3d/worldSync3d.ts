@@ -1,0 +1,106 @@
+// worldSync3d.ts — NEURON HEX 0x0D area 8: the world synchronization
+// layer, extracted verbatim from Engine3DWorldView.tsx (BUILD 1078).
+// The one canonical "persist the world + mark it for rebuild" primitive
+// (commitWorld), the rebuild-flag setter (markWorldDirty), the initial
+// world load (loadInitialWorld), and the living-world coordinator sync
+// (syncLivingWorld). The refs themselves (stateRef, needsWorldRebuild)
+// stay declared in the view — they are passed by reference into the
+// renderer and the other extracted modules; what moved here is the
+// logic that operates on them. No gameplay, visual, or balance change.
+import type { MutableRefObject } from 'react';
+import { loadWorld, saveWorld, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { seedCampFarmPlot } from './farm';
+import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
+import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
+import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import type { DayClock } from './townsfolk3d';
+
+export interface WorldSyncContext {
+  needsWorldRebuild: MutableRefObject<boolean>;
+  setPlacedCount: (n: number) => void;
+}
+
+// The canonical persist + mark-dirty + placed-count primitive: every
+// world mutation in the view goes through this (it replaces the
+// saveWorld(world); needsWorldRebuild.current=true;
+// setPlacedCount(...) triple that used to be inlined at ~20 call
+// sites). The count update is always safe: sites that do not change
+// placements set the same value the count already holds.
+export function commitWorld(ctx: WorldSyncContext, world: IsoWorld): void {
+  saveWorld(world);
+  ctx.needsWorldRebuild.current = true;
+  ctx.setPlacedCount(world.placements?.length ?? 0);
+}
+
+// Mark the world dirty (rebuild on the next frame) without saving —
+// for position-only changes (car enter/exit, D-pad move, the setPlayer
+// test hook, the remove-stroke preview).
+export function markWorldDirty(ctx: WorldSyncContext): void {
+  ctx.needsWorldRebuild.current = true;
+}
+
+// The initial world load (the mount effect's world setup): load, stamp
+// the Mosslight town layout, ensure a placements array, seed the camp
+// farm plot (BUILD 1067 — idempotent; the world is saved when tiles
+// land, so the plot survives reload), and return the world with
+// placements guaranteed present.
+export function loadInitialWorld(
+  layout: (w: IsoWorld) => IsoWorld,
+  nowAbsMinutes: number,
+  walkable: (w: IsoWorld, x: number, y: number) => boolean,
+): IsoWorld & { placements: PlacedItem[] } {
+  const world = layout(loadWorld());
+  if (!world.placements) world.placements = [];
+  // BUILD 1067: the camp's farm plot — seed the 4 farm tiles
+  // south-west of the camp (planted now) when no farm land exists
+  // near it, so a fresh world can feed itself. Idempotent (the
+  // seed checks for existing farm land first); the world is saved
+  // when tiles land, so the plot survives reload.
+  if (seedCampFarmPlot(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbsMinutes, (x, y) => walkable(world, x, y)) > 0) saveWorld(world);
+  return world as IsoWorld & { placements: PlacedItem[] };
+}
+
+export interface LivingWorldSyncContext {
+  livingWorld: MutableRefObject<LivingWorld3DState | null>;
+  registry: MutableRefObject<ResourceRegistry>;
+  founders: MutableRefObject<FounderState[]>;
+  clock: MutableRefObject<DayClock>;
+  needsWorldRebuild: MutableRefObject<boolean>;
+  refreshResourceUi: () => void;
+  setMessage: (m: string) => void;
+}
+
+// BUILD 1062: advance the living world to the clock's day — called
+// from the 1s clock timer and the wait step, the two places the
+// clock moves. Idempotent (same-day calls are no-ops), so both
+// callers can never double-advance a day. Plants any regrown trees
+// into the world (saved + rebuilt, like a chop), persists the
+// adapter state, refreshes the Camp line, and reports a coordinator
+// event once when one fires. Returns true when anything changed.
+export function syncLivingWorld(ctx: LivingWorldSyncContext, world: IsoWorld): boolean {
+  if(!FOUNDERS_ENABLED||!ctx.livingWorld.current)return false;
+  // BUILD 1064 (R-1): the camp settlement's storage is a MIRROR
+  // of the registry's camp store, not a second pile — sync the
+  // real numbers in before advancing, so the coordinator sees the
+  // pile the founders actually filled.
+  const campSettlement=ctx.livingWorld.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
+  if(campSettlement)registryToSettlementStorage(ctx.registry.current,campSettlement,CAMP_STORE_ID);
+  const res=advanceLivingWorldDay({state:ctx.livingWorld.current,clock:ctx.clock.current,founders:ctx.founders.current,world});
+  if(res.advancedDays===0&&res.planted.length===0)return false;
+  ctx.livingWorld.current=res.state;
+  if(res.planted.length>0){
+    world.trees=[...world.trees,...res.planted];saveWorld(world);ctx.needsWorldRebuild.current=true;
+    // BUILD 1064: a regrown tree is a new deposit (2 wood, chop).
+    for(const t of res.planted)ctx.registry.current=addDeposit(ctx.registry.current,treeDeposit(t.tx,t.ty));
+  }
+  // BUILD 1064: any coordinator change to the camp settlement's
+  // storage lands back in the registry's camp store (the reverse
+  // sync — the coordinator's production/consumption for the camp
+  // is zero today, so this is a no-op until it is not).
+  const campAfter=ctx.livingWorld.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
+  if(campAfter)ctx.registry.current=syncCampStoreFromSettlement(ctx.registry.current,campAfter);
+  saveLivingWorldState(res.state);
+  ctx.refreshResourceUi();
+  if(res.events.length>0)ctx.setMessage(res.events[res.events.length-1].description);
+  return true;
+}

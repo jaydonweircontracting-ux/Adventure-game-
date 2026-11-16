@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, inBounds, isWalkableWorld, loadWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -19,7 +19,7 @@ import { nightFactor3dForMinutes, skyGradientForMinutes, starAlphaForMinutes, ST
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
-import { absMinutes, farmStageAt, readyFarmTiles, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
+import { absMinutes, farmStageAt, readyFarmTiles, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
@@ -132,6 +132,11 @@ import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
 import { createBuildingInteractions, type BuildingContext } from './buildingInteractions3d';
 import { AssetPreviewCanvas, Minimap3D, WorldMap3D, HudStrip, WaitSheet, WaitProgress, TopLeftButtons, BuildCluster, InteriorCarButtons } from './hudInterface3d';
+// BUILD 1078 (0x0D area 8): the world synchronization layer — the
+// persist + mark-dirty primitive, the initial world load, and the
+// living-world coordinator sync. The Build panel JSX stays in the
+// view (its ~40-identifier prop surface is a rewrite, not an extraction).
+import { commitWorld, markWorldDirty, loadInitialWorld, syncLivingWorld as syncLivingWorldImpl, type WorldSyncContext, type LivingWorldSyncContext } from './worldSync3d';
 // BUILD 1065 (J-1): the job scheduler — NPCs discover work, claim
 // jobs, gather, transport, and complete tasks through the registry.
 // The view owns the board ref (session-only — rebuilt from the
@@ -718,40 +723,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     founderGrainRef.current=campGrainInRegistry(reg);
     setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
   };
-  // BUILD 1062: advance the living world to the clock's day — called
-  // from the 1s clock timer and the wait step, the two places the
-  // clock moves. Idempotent (same-day calls are no-ops), so both
-  // callers can never double-advance a day. Plants any regrown trees
-  // into the world (saved + rebuilt, like a chop), persists the
-  // adapter state, refreshes the Camp line, and reports a coordinator
-  // event once when one fires. Returns true when anything changed.
-  const syncLivingWorld=(world:IsoWorld)=>{
-    if(!FOUNDERS_ENABLED||!livingWorldRef.current)return false;
-    // BUILD 1064 (R-1): the camp settlement's storage is a MIRROR
-    // of the registry's camp store, not a second pile — sync the
-    // real numbers in before advancing, so the coordinator sees the
-    // pile the founders actually filled.
-    const campSettlement=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
-    if(campSettlement)registryToSettlementStorage(registryRef.current,campSettlement,CAMP_STORE_ID);
-    const res=advanceLivingWorldDay({state:livingWorldRef.current,clock:clockRef.current,founders:foundersRef.current,world});
-    if(res.advancedDays===0&&res.planted.length===0)return false;
-    livingWorldRef.current=res.state;
-    if(res.planted.length>0){
-      world.trees=[...world.trees,...res.planted];saveWorld(world);needsWorldRebuild.current=true;
-      // BUILD 1064: a regrown tree is a new deposit (2 wood, chop).
-      for(const t of res.planted)registryRef.current=addDeposit(registryRef.current,treeDeposit(t.tx,t.ty));
-    }
-    // BUILD 1064: any coordinator change to the camp settlement's
-    // storage lands back in the registry's camp store (the reverse
-    // sync — the coordinator's production/consumption for the camp
-    // is zero today, so this is a no-op until it is not).
-    const campAfter=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
-    if(campAfter)registryRef.current=syncCampStoreFromSettlement(registryRef.current,campAfter);
-    saveLivingWorldState(res.state);
-    refreshResourceUi();
-    if(res.events.length>0)setMessage(res.events[res.events.length-1].description);
-    return true;
+  // BUILD 1078 (0x0D, area 8): the living-world sync lives in
+  // worldSync3d.ts now — the view builds the context once and calls
+  // in through the bound syncLivingWorld below (used by the 1s clock
+  // timer and the wait step via their contexts).
+  const livingWorldSyncCtx: LivingWorldSyncContext = {
+    livingWorld: livingWorldRef, registry: registryRef, founders: foundersRef,
+    clock: clockRef, needsWorldRebuild, refreshResourceUi, setMessage,
   };
+  const syncLivingWorld=(world:IsoWorld)=>syncLivingWorldImpl(livingWorldSyncCtx,world);
   const waitingRef=useRef(false);
   const waitTimerRef=useRef<number|null>(null);
   const waitStartHpRef=useRef(100);
@@ -811,6 +791,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [removeMode,setRemoveMode]=useState(false);
   const [moveMode,setMoveMode]=useState(false);
   const [placedCount,setPlacedCount]=useState(0);
+  // BUILD 1078 (0x0D, area 8): the world-sync primitive lives in
+  // worldSync3d.ts now — the view builds one context and calls in
+  // via commitWorld/markWorldDirty. The refs themselves stay here
+  // (passed by reference into the renderer and the other extracted
+  // modules); what moved is the logic that operates on them.
+  const worldSyncCtx: WorldSyncContext = { needsWorldRebuild, setPlacedCount };
   // BUILD 996: chunk tools. saveAreaMode arms the rectangle drag;
   // pasteName arms stamping (the template's name, or null). Both
   // mirror into buildRef like every other tool, because the pointer
@@ -1219,7 +1205,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const n=removed.length;
         setLibrary(customAssetsRef.current.filter(a=>a.id!==old.id));
         if(customSelection===old.id){setCustomSelection(null);buildRef.current={...buildRef.current,customAssetId:null};}
-        if(n>0){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
+        if(n>0){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
       }
       const addable=plan.toAdd.filter(a=>!blockedNames.has(a.name));
       if(addable.length>0){
@@ -1421,7 +1407,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const n=removed.length;
     setLibrary(customAssetsRef.current.filter(a=>a.id!==asset.id));
     if(customSelection===asset.id){setCustomSelection(null);buildRef.current={...buildRef.current,customAssetId:null};}
-    if(n>0){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
+    if(n>0){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'stroke',entries:removed.map(r=>({kind:'unplace' as const,item:r.item,index:r.index}))});}
     setMessage('Deleted upload \''+asset.name+'\''+(n>0?' (removed '+n+' placed cop'+(n===1?'y':'ies')+')':''));
   };
   // BUILD 995: scrollable asset catalog (Sims/Forge-style). Categories
@@ -1600,7 +1586,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     carYawRef.current=c.yaw;
     setDrivingBoth(true);
     try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
-    needsWorldRebuild.current=true;setMessage('Driving — 10x speed');
+    markWorldDirty(worldSyncCtx);setMessage('Driving — 10x speed');
   };
   // Exit the car: the car stays where it is (parked at the player
   // position with its current heading) and the player steps onto the
@@ -1615,7 +1601,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const next={x:tile.x,y:tile.y};
     stateRef.current.position=next;setPosition(next);
     try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
-    needsWorldRebuild.current=true;setMessage('Outside');
+    markWorldDirty(worldSyncCtx);setMessage('Outside');
   };
   // The car Enter button's condition: the parked car is within one
   // tile (Chebyshev, the door rule), while not driving and not inside
@@ -1641,14 +1627,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
-    const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
-    if(!world.placements)world.placements=[];
-    // BUILD 1067: the camp's farm plot — seed the 4 farm tiles
-    // south-west of the camp (planted now) when no farm land exists
-    // near it, so a fresh world can feed itself. Idempotent (the
-    // seed checks for existing farm land first); the world is saved
-    // when tiles land, so the plot survives reload.
-    if(seedCampFarmPlot(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,absMinutes(clockRef.current.day,clockRef.current.minutes),(x,y)=>npcWalkable(world,x,y))>0)saveWorld(world);
+    const world=loadInitialWorld(applyMosslightTownLayout,absMinutes(clockRef.current.day,clockRef.current.minutes),(w,x,y)=>npcWalkable(w,x,y));stateRef.current.world=world;
     setPlacedCount(world.placements.length);
     npcActorsRef.current=savedNpcActors(world);
     // BUILD 1057: founders load from the versioned founders save (or
@@ -1809,7 +1788,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];
       if(entries.length===0)return;
       const world=stateRef.current.world;
-      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+      commitWorld(worldSyncCtx,world);
       buildIx.pushHistory({kind:'stroke',entries});
       setMessage('Removed '+entries.length+(entries.length===1?' item':' items'));
     };
@@ -1861,7 +1840,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
         const same=res.item.x0===drag.item.x0&&res.item.y0===drag.item.y0&&res.item.x1===drag.item.x1&&res.item.y1===drag.item.y1;
         if(same)return; // dropped where it started: no change, no history
-        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        commitWorld(worldSyncCtx,world);
         buildIx.pushHistory({kind:'move',oldItem:drag.item,newItem:res.item,index:res.index});
         setMessage('Moved '+buildIx.placementLabel(res.item));
         return;
@@ -1873,20 +1852,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const res=moveGeneratedHut(world,drag.hut,dx,dy,playerTile,npcTiles);
         if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
         if(res.same)return;
-        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        commitWorld(worldSyncCtx,world);
         buildIx.pushHistory(res.entry);setMessage('Moved house');return;
       }
       if(drag.kind==='tree'){
         const res=moveGeneratedTree(world,drag.x,drag.y,dx,dy,playerTile,npcTiles);
         if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
         if(res.same)return;
-        saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+        commitWorld(worldSyncCtx,world);
         buildIx.pushHistory(res.entry);setMessage('Moved tree');return;
       }
       const res=moveGeneratedPath(world,drag.x,drag.y,dx,dy);
       if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
       if(res.same)return;
-      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+      commitWorld(worldSyncCtx,world);
       buildIx.pushHistory(res.entry);setMessage('Moved path');
     };
     // BUILD 996: save-area drag helpers (effect-local, like the
@@ -2060,7 +2039,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const res=moveArea(world,drag.sel,dx,dy,playerTile,npcTiles);
       if(!res.ok){setMessage('Cannot move here: '+res.reason);positionAreaSelectRect(drag.sel.rect,areaSelectionLabel(drag.sel));return;}
       if(!res.entry){positionAreaSelectRect(drag.sel.rect,areaSelectionLabel(drag.sel));return;}
-      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory(res.entry);
+      commitWorld(worldSyncCtx,world);buildIx.pushHistory(res.entry);
       const newRect={x0:drag.sel.rect.x0+dx,y0:drag.sel.rect.y0+dy,x1:drag.sel.rect.x1+dx,y1:drag.sel.rect.y1+dy};
       const newSel=selectArea(world,newRect);
       setAreaSelection(newSel);buildIx.setAreaMoveArmedBoth(false);setAreaDeleteArmed(false);
@@ -2082,7 +2061,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if(entry.kind==='unhouse')removeStrokeRects.push({x0:entry.rect.x0,y0:entry.rect.y0,x1:entry.rect.x1,y1:entry.rect.y1});
         else if(entry.kind==='unplace')removeStrokeRects.push({x0:entry.item.x0,y0:entry.item.y0,x1:entry.item.x1,y1:entry.item.y1});
       }
-      needsWorldRebuild.current=true;
+      markWorldDirty(worldSyncCtx);
       showRemovePreview(clientX,clientY);
     };
     const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;renderer.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(renderer.pointers.size===1){renderer.drag=true;renderer.gestureMoved=false;renderer.gestureStartX=e.clientX;renderer.gestureStartY=e.clientY;renderer.lx=e.clientX;renderer.ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const fx=Math.round(dest.x),fy=Math.round(dest.y);const areaSel=areaSelectionRef.current;const insideSel=!!(areaSel&&fx>=areaSel.rect.x0&&fx<=areaSel.rect.x1&&fy>=areaSel.rect.y0&&fy<=areaSel.rect.y1);if(areaSel&&(buildRef.current.areaMoveArmed||insideSel)){areaMoveDragging={start:{x:fx,y:fy},sel:areaSel};showAreaMovePreview(e.clientX,e.clientY);}else if(buildRef.current.areaSelectMode&&!buildRef.current.areaDuplicateArmed&&!buildRef.current.areaMoveArmed){areaSelectDragging={start:{x:fx,y:fy}};showAreaSelectPreview(areaSelectDragging.start,e.clientX,e.clientY);}}}if(!removeDragging&&!moveDragging&&!areaMoveDragging&&!areaSelectDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{renderer.drag=false;renderer.gestureMoved=true;renderer.pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}}canvas.setPointerCapture?.(e.pointerId)};
@@ -2185,7 +2164,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // BUILD 1041: a duplicated farm tile is a FRESH planting
               // (the copy does not inherit the original's growth stage).
               for(const it of res.landed)if(it.kind==='farm'&&it.farmPlantedAt===undefined)it.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);
-              saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory(res.entry);
+              commitWorld(worldSyncCtx,world);buildIx.pushHistory(res.entry);
               const w=sel.rect.x1-sel.rect.x0,h=sel.rect.y1-sel.rect.y0;
               const newRect={x0:ax,y0:ay,x1:ax+w,y1:ay+h};
               const newSel=selectArea(world,newRect);
@@ -2264,7 +2243,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 // BUILD 1041: a pasted farm tile is a FRESH planting
                 // (chunks carry no growth state) — stamp it now, like
                 // a fresh placement, so it grows from today.
-                else{for(const it of res.landed)if(it.kind==='farm'&&it.farmPlantedAt===undefined)it.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'paste',items:res.landed});setMessage('Pasted '+res.landed.length+' of '+template.items.length+' from \''+template.name+'\''+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':'')+' · tap again to paste more, or tap the chunk to stop');}
+                else{for(const it of res.landed)if(it.kind==='farm'&&it.farmPlantedAt===undefined)it.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'paste',items:res.landed});setMessage('Pasted '+res.landed.length+' of '+template.items.length+' from \''+template.name+'\''+(res.skipped.length?' ('+res.skipped.length+' skipped: '+res.skipped[0].reason+')':'')+' · tap again to paste more, or tap the chunk to stop');}
               }
             } else if(build.removeMode){
               // BUILD 989: full chain — placed > generated house (whole
@@ -2280,13 +2259,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               const snapped=findRemovableNear(world,destination.x,destination.y);
               const res=snapped?removeAt(world,snapped.tx,snapped.ty):null;
               if(!res){setMessage('Nothing to remove here');}
-              else if(res.kind==='placed'){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+buildIx.placementLabel(res.item));}
-              else if(res.kind==='house'){saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
-              else if(res.kind==='tree'){saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
-              else if(res.kind==='rock'){saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'unrock',x:res.x,y:res.y,rockIndex:res.rockIndex});setMessage('Removed rock');}
-              else if(res.kind==='water'){saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'unwater',x:res.x,y:res.y,wasStored:res.wasStored});setMessage('Removed water');}
-              else if(res.kind==='wall'){saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'unwall',x:res.x,y:res.y,wallIndex:res.wallIndex,h:res.h});setMessage('Removed wall');}
-              else{saveWorld(world);needsWorldRebuild.current=true;buildIx.pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
+              else if(res.kind==='placed'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unplace',item:res.item,index:res.index});setMessage('Removed '+buildIx.placementLabel(res.item));}
+              else if(res.kind==='house'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unhouse',rect:res.rect,index:res.index});setMessage('Removed house');}
+              else if(res.kind==='tree'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'untree',tree:res.tree,treeIndex:res.treeIndex,crate:res.crate,crateIndex:res.crateIndex});setMessage('Removed tree');}
+              else if(res.kind==='rock'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unrock',x:res.x,y:res.y,rockIndex:res.rockIndex});setMessage('Removed rock');}
+              else if(res.kind==='water'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unwater',x:res.x,y:res.y,wasStored:res.wasStored});setMessage('Removed water');}
+              else if(res.kind==='wall'){commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unwall',x:res.x,y:res.y,wallIndex:res.wallIndex,h:res.h});setMessage('Removed wall');}
+              else{commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'unpath',x:res.x,y:res.y});setMessage('Removed path');}
             } else if(build.customAssetId){
               // BUILD 997: an armed upload places with its mesh
               // footprint (min corner on the tapped tile) under the
@@ -2301,7 +2280,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];
                 const result=validateCustomPlacement(world,asset,tx,ty,playerTile,npcTiles,placementRotRef.current);
                 if(!result.ok){setMessage('Cannot place here: '+result.reason);}
-                else{addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'place',item:result.item});setMessage('Placed '+asset.name);}
+                else{addPlacement(world,result.item);commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'place',item:result.item});setMessage('Placed '+asset.name);}
               }
             } else if(build.palette){
               const player=stateRef.current.position;
@@ -2315,7 +2294,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // BUILD 1041: a fresh farm tile is planted NOW (the
               // growth clock starts at placement); move/undo carry
               // the stamp, paste/duplicate stamp their own copies.
-              else{if(result.item.kind==='farm')result.item.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);addPlacement(world,result.item);saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);buildIx.pushHistory({kind:'place',item:result.item});setMessage('Placed '+buildIx.placementLabel(result.item));}
+              else{if(result.item.kind==='farm')result.item.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);addPlacement(world,result.item);commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'place',item:result.item});setMessage('Placed '+buildIx.placementLabel(result.item));}
             }
           }
         } else if(!areaTapConsumed&&!waitingRef.current) {
@@ -2408,7 +2387,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setStreetView:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
       getFirstPerson:()=>firstPersonRef.current,
       getZoom:()=>renderer.zoom,
-      setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
+      setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});markWorldDirty(worldSyncCtx)},
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
@@ -2418,7 +2397,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // the placed item, or null when the tile refuses. The probe
       // uses it to prove a placed item gets a stable id at creation
       // and keeps it across a reload.
-      placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);saveWorld(w);needsWorldRebuild.current=true;setPlacedCount(w.placements?.length??0);return JSON.parse(JSON.stringify(result.item));},
+      placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(result.item));},
       // BUILD 1041 test hook (read-only): farm tiles with their live
       // growth stage (probes only — no gameplay effect).
       getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes))})),
@@ -2716,7 +2695,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
 
     return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;renderer.stop();stopNpcSim();window.clearInterval(founderTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',controls.keydown);window.removeEventListener('keyup',controls.keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',controls.action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',controls.wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;renderer.dispose();};
   },[]);
-  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
+  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);markWorldDirty(worldSyncCtx) }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
     // BUILD 1004: right-edge strip swipe to reopen the Build panel.
     // Gated hard so ordinary canvas drags never reopen it: only while
