@@ -162,6 +162,9 @@ export interface Minimap3dFrame {
   /** Terrain cells grouped by colour (one fill path per colour). */
   terrainByColor: { color: string; cells: { x: number; y: number }[] }[];
   buildings: Minimap3dBuilding[];
+  // BUILD 1081: live deposits in canvas px (only the ones inside
+  // the window are kept).
+  deposits: { x: number; y: number; color: string }[];
   /** NPC dots in canvas px. */
   npcs: { x: number; y: number }[];
   /** Car dot in canvas px, or null when there is no car. */
@@ -185,6 +188,9 @@ export interface Minimap3dFrameInput {
   /** Live NPC positions (already filtered to alive by the caller). */
   npcs: readonly { x: number; y: number }[];
   car: { x: number; y: number } | null;
+  // BUILD 1081: live mineral deposits (tile coords + mineral tint)
+  // — the deposits the minimap can point at.
+  deposits?: readonly { x: number; y: number; color: string }[];
 }
 
 function insideCircle(x: number, y: number): boolean {
@@ -245,6 +251,15 @@ export function buildMinimap3dFrame(input: Minimap3dFrameInput): Minimap3dFrame 
   }
   for (const l of input.landmarks) pushRect(l.x0, l.y0, l.x1, l.y1, MINIMAP3D_BUILDING_COLORS.landmark);
 
+  // BUILD 1081: live deposits inside the window, mineral-tinted.
+  const deposits: { x: number; y: number; color: string }[] = [];
+  for (const d of input.deposits ?? []) {
+    if (Math.abs(d.x - playerX) > MINIMAP3D_RANGE_TILES || Math.abs(d.y - playerY) > MINIMAP3D_RANGE_TILES) continue;
+    const p = minimap3dProject(d.x - playerX, d.y - playerY);
+    if (!insideCircle(p.x, p.y)) continue;
+    deposits.push({ x: p.x, y: p.y, color: d.color });
+  }
+
   const npcs: { x: number; y: number }[] = [];
   for (const n of input.npcs) {
     if (Math.abs(n.x - playerX) > MINIMAP3D_RANGE_TILES || Math.abs(n.y - playerY) > MINIMAP3D_RANGE_TILES) continue;
@@ -259,7 +274,7 @@ export function buildMinimap3dFrame(input: Minimap3dFrameInput): Minimap3dFrame 
       if (insideCircle(p.x, p.y)) car = p;
     }
   }
-  return { terrainByColor, buildings, npcs, car };
+  return { terrainByColor, buildings, deposits, npcs, car };
 }
 
 /** Minimal 2d-context surface the painter needs (mockable in tests). */
@@ -319,6 +334,12 @@ export function paintMinimap3d(g: Minimap3dDrawCtx, frame: Minimap3dFrame): void
     g.strokeStyle = MINIMAP3D_BUILDING_COLORS.outline;
     g.lineWidth = 1;
     g.strokeRect(b.x, b.y, b.w, b.h);
+  }
+  // BUILD 1081: live deposits — 3px mineral-tinted squares, under
+  // the NPC dots so a founder standing on a deposit still reads.
+  for (const d of frame.deposits) {
+    g.fillStyle = d.color;
+    g.fillRect(d.x - 1.5, d.y - 1.5, 3, 3);
   }
   // NPC dots (white, like the 2D radar).
   for (const n of frame.npcs) {

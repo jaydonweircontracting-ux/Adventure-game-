@@ -161,6 +161,11 @@ export interface WorldMap3dFrame {
   terrainByColor: { color: string; cells: { x: number; y: number }[] }[];
   /** Player dot in canvas px. */
   player: { x: number; y: number };
+  // BUILD 1081: live deposits in canvas px. Deposits are wild
+  // natural resources, not town content — the NOTE below (no
+  // buildings / NPCs / car / landmarks) still holds; a deposit dot
+  // draws a resource that is actually there, never a town.
+  deposits: { x: number; y: number; color: string }[];
   // NOTE: deliberately no buildings / NPCs / car / landmarks fields.
   // The wilderness world has none, and the frame type must make it
   // impossible to draw a town that is not there.
@@ -175,6 +180,9 @@ export interface WorldMap3dFrameInput {
   treeAt: (x: number, y: number) => boolean;
   playerX: number;
   playerY: number;
+  // BUILD 1081: live mineral deposits (tile coords + mineral tint)
+  // — the full deposit inventory at a glance.
+  deposits?: readonly { x: number; y: number; color: string }[];
 }
 
 /**
@@ -198,7 +206,10 @@ export function buildWorldMap3dFrame(input: WorldMap3dFrameInput): WorldMap3dFra
   }
   const terrainByColor = [...byColor.entries()].map(([color, cells]) => ({ color, cells }));
   const pp = worldmap3dProject(playerX + 0.5, playerY + 0.5);
-  return { terrainByColor, player: { x: pp.x, y: pp.y } };
+  // BUILD 1081: live deposits, mineral-tinted.
+  const deposits: WorldMap3dFrame['deposits'] = [];
+  for (const d of input.deposits ?? []) deposits.push({ ...worldmap3dProject(d.x, d.y), color: d.color });
+  return { terrainByColor, player: { x: pp.x, y: pp.y }, deposits };
 }
 
 /**
@@ -218,6 +229,11 @@ export function paintWorldMap3d(g: Minimap3dDrawCtx, frame: WorldMap3dFrame): vo
     g.beginPath();
     for (const c of group.cells) g.rect(c.x - 0.3, c.y - 0.3, WORLDMAP3D_PX_PER_TILE + 0.6, WORLDMAP3D_PX_PER_TILE + 0.6);
     g.fill();
+  }
+  // BUILD 1081: live deposits — 4px mineral-tinted squares.
+  for (const d of frame.deposits) {
+    g.fillStyle = d.color;
+    g.fillRect(d.x - 2, d.y - 2, 4, 4);
   }
   // Player: white dot with a dark ring, like the minimap.
   g.fillStyle = WORLDMAP3D_PLAYER_COLOR;

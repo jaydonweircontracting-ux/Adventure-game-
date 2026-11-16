@@ -181,6 +181,9 @@ export function blockedTiles(world: IsoWorld): Set<string> {
   for (const w of world.walls || []) blocked.add(key(w.x, w.y));
   for (const t of world.trees || []) blocked.add(key(t.tx, t.ty));
   for (const r of world.rocks || []) blocked.add(key(r.tx, r.ty));
+  // BUILD 1081: no tuft, flower, or pebble may poke through a
+  // mineral outcrop either.
+  for (const d of world.mineralDeposits ?? []) blocked.add(key(d.x, d.y));
   for (const c of world.crates || []) blocked.add(key(c.tx, c.ty));
   for (const s of world.stalls || []) for (let x = s.x0; x <= s.x1; x++) blocked.add(key(x, s.y0));
   for (const h of world.huts || []) {

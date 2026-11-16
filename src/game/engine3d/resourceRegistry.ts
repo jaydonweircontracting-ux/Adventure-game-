@@ -96,8 +96,11 @@ import type { IsoWorld } from '../iso/isoWorld';
  *  kinds, plus gold — the player's carried currency (civilization
  *  keeps gold as a kingdom treasury number, not a Resource, but the
  *  player loots and carries real gold, so the registry names it). */
-export type RegistryKind = Resource | 'gold';
-export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold'];
+// BUILD 1081: copper and silver join gold as registry kinds — the
+// 1.2 deposits are the first copper/silver in the game (gold's only
+// 3D source before this was looting dead NPCs).
+export type RegistryKind = Resource | 'gold' | 'copper' | 'silver';
+export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver'];
 
 /** The player's inventory key for a registry kind: wheat is grain
  *  (the 3D farm crop is the civilization grain kind — the HUD keeps

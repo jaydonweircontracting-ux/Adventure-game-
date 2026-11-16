@@ -46,6 +46,7 @@ import {
 } from './placements';
 import { absMinutes, farmStageAt, harvestFarmTile } from './farm';
 import { campGrainInRegistry } from './food';
+import { depositNear, examineDeposit } from './geology';
 import { wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
 import { isCarNear, carBlocksTile, type CarState } from './car';
 import {
@@ -595,6 +596,13 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
         }
       }
     }
+    // BUILD 1081 (1.2): a mineral deposit answers E with its Examine
+    // text (mineral + remaining) — mining it is Phase 2, so E only
+    // looks, never takes. The deposit is a rock outcrop: it blocks
+    // like a rock, so the player stands beside it, within the
+    // shared 1-tile reach.
+    const deposit=depositNear(world,Math.round(p.x),Math.round(p.y));
+    if(deposit){setMessage(examineDeposit(deposit));return}
     const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
     const crate=world.crates.find(c=>key(c.tx,c.ty));
     // BUILD 1064 (R-1): the crate's deposit is extracted (the

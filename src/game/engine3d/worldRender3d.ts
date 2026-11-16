@@ -36,6 +36,7 @@ import {
 import { gardenFencesFor, gardenPlantsFor } from './gardens';
 import { type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
+import { mineralRenderColor } from './geology';
 import { emitGroundDetail3d } from './groundDetail3d';
 import {
   treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile,
@@ -1098,6 +1099,25 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
     cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,r.tx+.5,r.ty+.5));
     if(ri%16===15)yield;
+  }
+  // BUILD 1081: mineral deposits — distinct rock outcrops (taller
+  // than a plain rock, tinted by mineral) so a player can tell an
+  // iron deposit from a plain rock at a glance. Mined-out deposits
+  // render as low dark rubble. The list lives on the world
+  // (world.mineralDeposits, stamped once on load); a mined-out
+  // deposit stays rendered as rubble because the stamp never
+  // re-derives it.
+  for (const d of world.mineralDeposits ?? []) {
+    if (effTerrain(d.x, d.y) === 'water') continue;
+    const by = surfaceElevation(effTerrain, d.x + .5, d.y + .5);
+    if (d.remaining <= 0) {
+      cube(d.x + .5, d.y + .5, .8, .3, .8, [.16, .15, .14], by);
+      continue;
+    }
+    const c = mineralRenderColor(d.mineral);
+    const s = .9 + hash2(d.x * 3.1 + 51, d.y * 7.7 + 51) * .2;
+    cube(d.x + .5, d.y + .5, .95 * s, 1.0, .95 * s, [c[0] * .75, c[1] * .75, c[2] * .75], by);
+    cube(d.x + .5, d.y + .5, .6 * s, .55, .6 * s, c, by + 1.0);
   }
   // BUILD 1040: placed bushes — low wide green blobs (four overlapping
   // full boxes in two foliage greens, seeded by tile so bushes differ

@@ -126,7 +126,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // came from. The view owns the ref; the E-key gather, the founder
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
-import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit, depositsFromWorld, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, extractDeposit, treeDeposit, depositsFromWorld, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
 // BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
 // the registry -> React mirror. No crafting system exists in 3D yet.
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
@@ -137,6 +137,7 @@ import { AssetPreviewCanvas, Minimap3D, WorldMap3D, HudStrip, WaitSheet, WaitPro
 // living-world coordinator sync. The Build panel JSX stays in the
 // view (its ~40-identifier prop surface is a rewrite, not an extraction).
 import { commitWorld, markWorldDirty, loadInitialWorld, syncLivingWorld as syncLivingWorldImpl, type WorldSyncContext, type LivingWorldSyncContext } from './worldSync3d';
+import { depositsFromGeology, applyDepletion, mineralDepositEntry, type MineralDeposit } from './geology';
 // BUILD 1065 (J-1): the job scheduler — NPCs discover work, claim
 // jobs, gather, transport, and complete tasks through the registry.
 // The view owns the board ref (session-only — rebuilt from the
@@ -1683,6 +1684,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // registry). The plain refs below are read mirrors, set by
       // refreshResourceUi — never written directly again.
       let reg=depositsFromWorld(createRegistry(),world);
+      // BUILD 1081 (1.2): the live mineral deposits join the registry
+      // (the accounting side of the deposit map) — mined-out deposits
+      // are skipped, so the registry never reports ore that no longer
+      // exists. The stamp in loadInitialWorld already ran above.
+      reg=depositsFromGeology(reg,world);
       reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0);
       for(const f of states)reg=seedCarrierStore(reg,f);
       reg=loadPlayerInventoryIntoRegistry(reg);
@@ -2571,6 +2577,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
       setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE}});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
       setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE}});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
+      // BUILD 1081 (1.2): mineral deposits (probes only) — the live
+      // deposit list, and a debug depletion path (Phase 2 owns real
+      // mining; this hook proves a mined-out deposit stays mined-out
+      // across reload). Depleting updates the world save, the
+      // registry entry, and the rebuild flag.
+      getDeposits:()=>JSON.parse(JSON.stringify(stateRef.current.world.mineralDeposits??[])),
+      depleteDeposit:(id:string,qty:number)=>{const w=stateRef.current.world;const res=applyDepletion((w.mineralDeposits??[]) as unknown as MineralDeposit[],id,qty);if(!res.depleted)return null;w.mineralDeposits=res.deposits;if(res.depleted.remaining<=0){registryRef.current=extractDeposit(registryRef.current,id).registry;}else{registryRef.current=addDeposit(registryRef.current,mineralDepositEntry(res.depleted));}commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(res.depleted));},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999

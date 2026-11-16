@@ -19,6 +19,7 @@ import { inBounds, type HutRect, type IsoWorld } from '../iso/isoWorld';
 import { effTerrainFor, renderTerrain, wildTreeAt } from './wildTerrain';
 import { buildMinimap3dFrame, paintMinimap3d, minimap3dTapToWorld, MINIMAP3D_SIZE, MINIMAP3D_REDRAW_MS } from './minimap3d';
 import { buildWorldMap3dFrame, paintWorldMap3d, worldmap3dCanvasToWorld, worldmap3dClampPan, worldmap3dPanForPlayer, worldmap3dTerrainLabel, WORLDMAP3D_SIZE, WORLDMAP3D_ZOOM_SCALES, WORLDMAP3D_DEFAULT_ZOOM } from './worldmap3d';
+import { mineralMapColor } from './geology';
 import { renderAssetPreview } from './assetLibrary';
 import { type CustomAsset } from './customAssets';
 import { formatDayClock, waitOptionsFor, waitRemainingLabel, WAIT_STEP_MINUTES } from './worldclock';
@@ -99,6 +100,10 @@ export function Minimap3D({ world, playerX, playerY, npcsRef, foundersRef, car, 
         playerX, playerY,
         huts: world.huts, stalls: world.stalls,
         placements: world.placements ?? [],
+        // BUILD 1081: live deposits on the minimap (mineral-tinted
+        // dots) — the deposits the map can point at. Mined-out
+        // deposits have nothing left to find, so they are not shown.
+        deposits: (world.mineralDeposits ?? []).filter((d) => d.remaining > 0).map((d) => ({ x: d.x, y: d.y, color: mineralMapColor(d.mineral) })),
         landmarks: world.landmarks ?? [],
         npcs: [...(npcsRef.current ?? []).filter((n) => n.alive).map((n) => ({ x: n.x, y: n.y })), ...(foundersRef.current ?? []).map((f) => ({ x: f.x, y: f.y }))],
         car,
@@ -186,6 +191,10 @@ export function WorldMap3D({ world, playerX, playerY, onClose, onTapTravel }: {
         return wildTreeAt(x, y) && !removedWild.has(x + ',' + y);
       },
       playerX, playerY,
+      // BUILD 1081: live deposits on the world map (same dots as
+      // the minimap, mineral-tinted) — the full deposit inventory
+      // at a glance, including deposits far from the player.
+      deposits: (world.mineralDeposits ?? []).filter((d) => d.remaining > 0).map((d) => ({ x: d.x, y: d.y, color: mineralMapColor(d.mineral) })),
     });
     paintWorldMap3d(g, frame);
   }, [world, zoom, tileX, tileY, playerX, playerY]);

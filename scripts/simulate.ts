@@ -12794,6 +12794,88 @@ console.log('Testing 3D inventory store (BUILD 1075)...');
   console.log('M1075: inventory store verified (readSaved, mirror, persist, keepsakes, load)');
 }
 
+
+console.log('Testing geology + mineral deposits (BUILD 1081)...');
+{
+  const G1081 = await import('../src/game/engine3d/geology.js');
+  const RR1081 = await import('../src/game/engine3d/resourceRegistry.js');
+  const { defaultWorld, terrainAt } = await import('../src/game/iso/isoWorld.js');
+  const { FOUNDER_CAMP } = await import('../src/game/engine3d/founders.js');
+  // Determinism: the same world yields the same deposits twice.
+  const wA1081 = defaultWorld();
+  const depsA1081 = G1081.generateMineralDeposits(wA1081);
+  const depsB1081 = G1081.generateMineralDeposits(defaultWorld());
+  assert(depsA1081.length === 18, 'M1081: the world holds 18 deposits (3 per mineral)');
+  assert(JSON.stringify(depsA1081) === JSON.stringify(depsB1081), 'M1081: deposit generation is deterministic (same world, same deposits)');
+  // One mineral per site, 3 of each, unique ids, amount in range.
+  for (const def of G1081.MINERALS) {
+    const mine = depsA1081.filter((d) => d.mineral === def.kind);
+    assert(mine.length === 3, 'M1081: exactly 3 ' + def.kind + ' deposits');
+    for (const d of mine) {
+      assert(d.amount >= Math.round(def.baseAmount * 0.75) && d.amount <= Math.round(def.baseAmount * 1.25), 'M1081: ' + def.kind + ' amount ' + d.amount + ' is within +/-25% of base ' + def.baseAmount);
+      assert(d.remaining === d.amount, 'M1081: a fresh deposit starts full');
+      assert(d.id === G1081.depositIdFor(def.kind, d.x, d.y), 'M1081: deposit id encodes mineral + tile');
+    }
+  }
+  assert(new Set(depsA1081.map((d) => d.id)).size === 18, 'M1081: all deposit ids are unique');
+  // Placement: on land, away from the camp and the huts, never on
+  // a tree/rock/crate tile, spread at least 8 tiles apart.
+  const occ1081 = new Set();
+  for (const t of wA1081.trees ?? []) occ1081.add(t.tx + ',' + t.ty);
+  for (const r of wA1081.rocks ?? []) occ1081.add(r.tx + ',' + r.ty);
+  for (const c of wA1081.crates ?? []) occ1081.add(c.tx + ',' + c.ty);
+  for (const d of depsA1081) {
+    const t = terrainAt(wA1081, d.x, d.y);
+    assert(t === 'grass' || t === 'dirt' || t === 'stone', 'M1081: deposit at ' + d.x + ',' + d.y + ' sits on ' + t + ', not water or sand');
+    assert(Math.hypot(d.x - FOUNDER_CAMP.x, d.y - FOUNDER_CAMP.y) >= 15, 'M1081: deposit at ' + d.x + ',' + d.y + ' is clear of the camp');
+    assert(!occ1081.has(d.x + ',' + d.y), 'M1081: deposit at ' + d.x + ',' + d.y + ' shares no tile with a tree, rock, or crate');
+    for (const h of wA1081.huts ?? []) {
+      assert(!(d.x >= h.x0 - 2 && d.x <= h.x1 + 2 && d.y >= h.y0 - 2 && d.y <= h.y1 + 2), 'M1081: deposit at ' + d.x + ',' + d.y + ' is clear of a hut');
+    }
+  }
+  for (let i = 0; i < depsA1081.length; i++) for (let j = i + 1; j < depsA1081.length; j++) {
+    assert(Math.hypot(depsA1081[i].x - depsA1081[j].x, depsA1081[i].y - depsA1081[j].y) >= 8, 'M1081: deposits ' + depsA1081[i].id + ' and ' + depsA1081[j].id + ' are at least 8 tiles apart');
+  }
+  // Examine naming: mineral + remaining, and the mined-out text.
+  const iron1081 = depsA1081.find((d) => d.mineral === 'iron')!;
+  assert(G1081.examineDeposit(iron1081) === 'Iron deposit — ' + iron1081.remaining + ' remaining', 'M1081: Examine names the mineral and the remaining amount');
+  assert(G1081.examineDeposit({ ...iron1081, remaining: 0 }) === 'Iron deposit — mined out', 'M1081: a mined-out deposit Examines as mined out');
+  // Stamp + persistence: stamping once assigns, stamping again is
+  // a no-op, and a JSON round-trip (the save shape) preserves the
+  // deposits exactly.
+  const wS1081 = defaultWorld();
+  assert(G1081.stampMineralDeposits(wS1081) === true, 'M1081: stamping a fresh world generates deposits');
+  assert((wS1081.mineralDeposits ?? []).length === 18, 'M1081: the stamped world holds 18 deposits');
+  assert(G1081.stampMineralDeposits(wS1081) === false, 'M1081: stamping a stamped world is a no-op');
+  const round1081 = JSON.parse(JSON.stringify(wS1081));
+  assert(JSON.stringify(round1081.mineralDeposits) === JSON.stringify(wS1081.mineralDeposits), 'M1081: the deposits survive a save/load round-trip unchanged');
+  // Depletion: remaining falls, floors at 0, and a mined-out
+  // deposit stays mined-out through another stamp.
+  const stamped1081 = wS1081.mineralDeposits ?? [];
+  const dep1081 = G1081.applyDepletion(stamped1081 as never, iron1081.id, 5);
+  assert(dep1081.depleted !== null && dep1081.depleted.remaining === iron1081.remaining - 5, 'M1081: depleting 5 lowers the remaining amount by 5');
+  const dep01081 = G1081.applyDepletion(dep1081.deposits, iron1081.id, 10000);
+  assert(dep01081.depleted !== null && dep01081.depleted.remaining === 0, 'M1081: depleting past the amount floors at 0');
+  const wM1081 = { ...wS1081, mineralDeposits: dep01081.deposits };
+  assert(G1081.stampMineralDeposits(wM1081) === false, 'M1081: a stamped world with a mined-out deposit is not re-derived');
+  const mined1081 = G1081.depositAt(wM1081, iron1081.x, iron1081.y);
+  assert(mined1081 !== null && mined1081.remaining === 0, 'M1081: a mined-out deposit stays mined-out');
+  assert(G1081.applyDepletion(stamped1081 as never, 'deposit:iron:0,0', 5).depleted === null, 'M1081: depleting an unknown id returns null');
+  // Registry integration: the registry lists the live deposits
+  // with their remaining amounts, and skips mined-out ones.
+  let reg1081 = RR1081.depositsFromWorld(RR1081.createRegistry(), wS1081);
+  reg1081 = G1081.depositsFromGeology(reg1081, wS1081);
+  assert(RR1081.depositsOfKind(reg1081, 'iron').length === 3, 'M1081: the registry lists 3 iron deposits');
+  assert(RR1081.depositsOfKind(reg1081, 'copper').length === 3, 'M1081: the registry lists 3 copper deposits');
+  assert(RR1081.depositsOfKind(reg1081, 'silver').length === 3, 'M1081: the registry lists 3 silver deposits');
+  const ironReg1081 = RR1081.depositsOfKind(reg1081, 'iron').find((e) => e.id === iron1081.id);
+  assert(ironReg1081 !== undefined && ironReg1081.qty === iron1081.remaining, 'M1081: the registry iron deposit carries the live remaining amount');
+  let regM1081 = RR1081.depositsFromWorld(RR1081.createRegistry(), wM1081);
+  regM1081 = G1081.depositsFromGeology(regM1081, wM1081);
+  assert(RR1081.depositsOfKind(regM1081, 'iron').length === 2, 'M1081: a mined-out iron deposit has no registry entry');
+  console.log('M1081: geology verified (determinism, placement, Examine, persistence, depletion, registry)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

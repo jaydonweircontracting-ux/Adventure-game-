@@ -10,6 +10,7 @@
 import type { MutableRefObject } from 'react';
 import { loadWorld, saveWorld, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { seedCampFarmPlot } from './farm';
+import { stampMineralDeposits } from './geology';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
@@ -57,6 +58,12 @@ export function loadInitialWorld(
   // seed checks for existing farm land first); the world is saved
   // when tiles land, so the plot survives reload.
   if (seedCampFarmPlot(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbsMinutes, (x, y) => walkable(world, x, y)) > 0) saveWorld(world);
+  // BUILD 1081 (1.2): stamp the mineral deposit map on a world
+  // that has none (the stamp never re-derives a stamped world, so
+  // a mined-out deposit stays mined-out). The layout is already
+  // applied by the time this runs, so the camp/hut/path exclusions
+  // see the real world.
+  if (stampMineralDeposits(world)) saveWorld(world);
   return world as IsoWorld & { placements: PlacedItem[] };
 }
 

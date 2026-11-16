@@ -175,6 +175,15 @@ export interface IsoWorld {
    *  with none. */
   removedWildTrees?: string[];
   removedWildRocks?: string[];
+  /** BUILD 1081 — mineral deposits (geology.ts): the deterministic
+   *  deposit map, stamped once by stampMineralDeposits on load and
+   *  saved wholesale with the world. Plain data (strings/numbers
+   *  only, like landmarks) so this base model stays free of engine3d
+   *  imports — the MineralKind union lives in geology.ts. `remaining`
+   *  is the live amount; a mined-out deposit (remaining 0) stays
+   *  mined-out because the stamp never re-derives it. Old saves load
+   *  with none (the stamp generates them on the same load). */
+  mineralDeposits?: Array<{ id: string; mineral: string; x: number; y: number; amount: number; remaining: number }>;
   /** BUILD 1061: tree-density generation of this world's stored tree
    *  list. 2 = the forest-cluster rule (scatterTreeAt). Absent = the
    *  old 0.6% uniform scatter (defaultWorld before 1061) — loadWorld
@@ -242,6 +251,10 @@ export function isWalkableWorld(w: IsoWorld, crates: TilePoint[], x: number, y: 
   for (const l of w.landmarks ?? []) for (const b of l.blocks) if (b.x === x && b.y === y) return false;
   for (const t of w.trees) if (t.tx === x && t.ty === y) return false;
   for (const r of w.rocks) if (r.tx === x && r.ty === y) return false;
+  // BUILD 1081: a mineral deposit blocks like a rock (it is a rock
+  // outcrop) — the player and the founders walk around it, and E
+  // is answered from beside it.
+  if ((w.mineralDeposits ?? []).some((d) => d.x === x && d.y === y)) return false;
   for (const c of crates) if (c.tx === x && c.ty === y) return false;
   return true;
 }
