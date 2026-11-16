@@ -12352,6 +12352,82 @@ console.log('Testing the Control Center — sim speeds, panel data, shortages (B
   assert(pausedData.clockRate === 0 && pausedData.founderRate === 0, 'M1068: paused runs nothing');
 }
 
+console.log('Testing the 24-simulated-hour settlement run — accelerated deterministic ticks (0x09)...');
+{
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const FM = await import('../src/game/engine3d/farm.js');
+  // --- A fresh settlement: 3 founders, 30 food, 0 wood, no huts. ---
+  const world1069 = W.defaultWorld();
+  const treesAtStart1069 = F.treesInRadius(world1069, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).length;
+  const sim1069 = SS.createSettlementSim(world1069);
+  assert(sim1069.founders.length === 3 && sim1069.founders.every((f: { activity: string }) => f.activity === 'work'), 'M1069: a fresh settlement has 3 founders, working');
+  assert(F.campFoodInRegistry(sim1069.registry) === 30 && F.campWoodInRegistry(sim1069.registry) === 0, 'M1069: the fresh camp holds 30 food, 0 wood');
+  assert(FM.readyFarmTiles(world1069, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, SS.SETTLEMENT_START_ABS).length === 0, 'M1069: the farm is planted, not ready, at hour 0');
+  assert(C.housingCapacity(sim1069.construction) === 0, 'M1069: no housing before any hut is done');
+  // --- 12 hours in: the settlement is working. ---
+  SS.advanceSettlement(sim1069, 800);
+  const midClock1069 = SS.settlementClock(sim1069);
+  assert(midClock1069.day === 1 && Math.abs(midClock1069.minutes - 1200) < 1, 'M1069: 800 ticks is 12 in-game hours (day 1, 20:00)');
+  assert(sim1069.ledger.ticks === 800, 'M1069: the ledger counts 800 ticks at hour 12');
+  assert(sim1069.ledger.jobsCompleted.chop > 0 && sim1069.ledger.jobsCompleted.deliver > 0, 'M1069: chop + deliver jobs completed by hour 12');
+  assert(sim1069.ledger.woodChopped > 0 && sim1069.ledger.woodDelivered > 0, 'M1069: wood was chopped and delivered by hour 12');
+  // --- Save/reload at hour 12: the state survives, the run continues. ---
+  const midWood1069 = F.campWoodInRegistry(sim1069.registry);
+  const midFood1069 = F.campFoodInRegistry(sim1069.registry);
+  const midGrain1069 = SS.settlementGrain(sim1069);
+  const midSites1069 = C.sitesOf(sim1069.construction).map((s: { state: string; progress: number; spentWood: number }) => s.state + ':' + s.progress + ':' + s.spentWood).join(',');
+  const midFounders1069 = sim1069.founders.map((f: { name: string; x: number; y: number; carrying: number; carryingGrain: number }) => [f.name, Math.round(f.x), Math.round(f.y), f.carrying, f.carryingGrain].join(',')).join(';');
+  const save1069 = SS.serializeSettlement(sim1069);
+  const restored1069 = SS.restoreSettlement(world1069, save1069, sim1069.abs, sim1069.ledger);
+  assert(restored1069.founders.length === sim1069.founders.length, 'M1069: the reload restores every founder');
+  assert(restored1069.founders.map((f: { name: string; x: number; y: number; carrying: number; carryingGrain: number }) => [f.name, Math.round(f.x), Math.round(f.y), f.carrying, f.carryingGrain].join(',')).join(';') === midFounders1069, 'M1069: the reload restores founder positions + carried wood/grain');
+  assert(C.sitesOf(restored1069.construction).map((s: { state: string; progress: number; spentWood: number }) => s.state + ':' + s.progress + ':' + s.spentWood).join(',') === midSites1069, 'M1069: the reload restores construction progress');
+  assert(F.campWoodInRegistry(restored1069.registry) === midWood1069 && F.campFoodInRegistry(restored1069.registry) === midFood1069, 'M1069: the reload restores the camp wood + food');
+  assert(SS.settlementGrain(restored1069) === midGrain1069, 'M1069: the reload restores the camp grain');
+  assert(restored1069.abs === sim1069.abs, 'M1069: the reload restores the clock');
+  // --- The remaining 12 hours: the run completes on day 2. ---
+  SS.advanceSettlement(restored1069, 800);
+  const L1069 = restored1069.ledger;
+  const endClock1069 = SS.settlementClock(restored1069);
+  assert(L1069.ticks === 1600, 'M1069: the ledger counts 1600 ticks after 24 in-game hours');
+  assert(endClock1069.day === 2 && Math.abs(endClock1069.minutes - 480) < 1, 'M1069: 24 in-game hours end on day 2, 08:00');
+  // --- Conservation: wood. ---
+  const carriedWood1069 = restored1069.founders.reduce((n: number, f: { carrying: number }) => n + f.carrying, 0);
+  const campWood1069 = F.campWoodInRegistry(restored1069.registry);
+  assert(L1069.woodChopped === L1069.woodDelivered + carriedWood1069, 'M1069: every chopped log is delivered or still carried');
+  assert(L1069.woodDelivered === L1069.woodSpent + campWood1069, 'M1069: every delivered log is spent on huts or still in the pile');
+  const treesNow1069 = F.treesInRadius(world1069, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).length;
+  assert(treesAtStart1069 - treesNow1069 === L1069.woodChopped / 2, 'M1069: one tree felled per 2 wood chopped');
+  // --- Conservation: food. ---
+  const carriedGrain1069 = restored1069.founders.reduce((n: number, f: { carryingGrain: number }) => n + f.carryingGrain, 0);
+  const grainNow1069 = SS.settlementGrain(restored1069);
+  const foodNow1069 = F.campFoodInRegistry(restored1069.registry);
+  assert(L1069.grainHarvested === L1069.grainDelivered + carriedGrain1069, 'M1069: every harvested grain is delivered or still carried');
+  assert(L1069.grainDelivered === grainNow1069 + L1069.grainMilled, 'M1069: every delivered grain is in the store or milled');
+  assert(L1069.mealsMilled === foodNow1069 + L1069.mealsEaten - 30, 'M1069: every milled meal is in the store or eaten');
+  // --- Progress: the settlement built, ate, and survived. ---
+  assert(L1069.hutsCompleted >= 1, 'M1069: at least the first hut is finished in 24 hours');
+  assert(L1069.mealsEaten > 0, 'M1069: the founders ate during the run');
+  assert(restored1069.founders.every((f: { needs: { health: number } }) => f.needs.health > 0), 'M1069: nobody starved to death');
+  assert(L1069.minHealth > 0, 'M1069: the lowest health stayed above 0');
+  assert(restored1069.founders.length >= 3, 'M1069: the population never shrank');
+  if (L1069.mealsMilled === 0) {
+    assert(foodNow1069 >= 20, 'M1069: the farm stayed idle because the starting food covered the run');
+  } else {
+    assert(L1069.grainHarvested > 0 && L1069.jobsCompleted.harvest > 0, 'M1069: the farm produced (harvest jobs completed, grain milled)');
+  }
+  // --- Population: arrivals are real residents when they happen. ---
+  for (const name of L1069.arrivals) {
+    const r = restored1069.founders.find((f: { name: string }) => f.name === name);
+    assert(r !== undefined && F.RESIDENT_NAMES.includes(name) && r!.bed !== undefined, 'M1069: an arrival is a real resident with a bed');
+  }
+  console.log('M1069 24h: ticks=' + L1069.ticks + ' wood chopped/delivered/spent=' + L1069.woodChopped + '/' + L1069.woodDelivered + '/' + L1069.woodSpent + ' grain harvested/delivered=' + L1069.grainHarvested + '/' + L1069.grainDelivered + ' meals milled/eaten=' + L1069.mealsMilled + '/' + L1069.mealsEaten + ' jobs chop/build/deliver/harvest=' + L1069.jobsCompleted.chop + '/' + L1069.jobsCompleted.build + '/' + L1069.jobsCompleted.deliver + '/' + L1069.jobsCompleted.harvest + ' huts=' + L1069.hutsCompleted + ' arrivals=' + (L1069.arrivals.join(',') || 'none') + ' starvedTicks=' + L1069.starvedTicks + ' minHealth=' + Math.round(L1069.minHealth) + ' final wood/food/grain=' + campWood1069 + '/' + foodNow1069 + '/' + grainNow1069 + ' population=' + restored1069.founders.length);
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
