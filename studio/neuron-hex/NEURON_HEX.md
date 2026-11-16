@@ -294,3 +294,91 @@ events asserts 10 passed.
   the dispatcher cron + the hook (both listed in Controls).
 - The 1-second target is NOT met and is not claimed: the hook floor is 5s.
   The immediate path (handoff) has no poll interval at all.
+
+## 12. EXECUTION POLICY — PERFORMANCE OVERHAUL (2026-11-15, user's order)
+
+The user watched the J-1 run and saw the same file edited over and over:
+`Engine3DWorldView.tsx`, six edit calls in one task. That is not a worker
+being lazy. It is a structural bottleneck, and the fix is in the
+orchestration, not in another instruction to reread.
+
+### Diagnosis (measured from the 1062–1065 runs, not guessed)
+
+- `Engine3DWorldView.tsx` is **6,638 lines** — the single integration point
+  for every 3D system. Every new system must touch it in five to ten places:
+  imports, refs, tick wiring, HUD, test hooks.
+- Builds 1062–1064 put **232 added / 38 deleted** lines into it
+  (1062: +68/−6, 1063: +10/−3, 1064: +163/−38).
+- The J-1 worker's uncommitted diff holds **14 separate hunks** in it
+  (line 134 imports; lines 2188–2365 setup; lines 5057–5841 tick/HUD/hooks),
+  made as **~6 separate edit calls**. The hunks are distinct integration
+  points, not rework — but one edit call per hunk re-opens the same giant
+  file every time.
+- Baseline task durations (events log, release → completion):
+  0x0C 472s, 0x02 1684s, 0x03 1316s, 0x04 1532s.
+  The three foundation builds average **~25 minutes** each.
+- A second, quieter defect found while building this: `scheduler.test.mjs`
+  asserted the LIVE queue state (approval false, done 2, bottleneck 0x02),
+  so it went stale the moment the merge landed and tasks completed. It is
+  fixed by freezing the 0x02-era queue as a synthetic snapshot in the test;
+  the live queue is now only checked structurally (validates, 12 tasks,
+  approval is a boolean). A test that goes stale on every completion is
+  wasted execution too.
+
+### The rules (enforced in the worker brief from the next spawn on)
+
+Every worker brief now carries these, in addition to the standard brief:
+
+- **Batch one file into the fewest edit calls.** All changes to one file
+  in one logical step go in a single edit call where the tool allows it.
+  Never reopen the same file for a minor adjustment that belongs in the
+  edit already planned.
+- **Test once per implementation batch.** Implement the full logical change
+  first, then run tsc / build / asserts once. Do not run a test after every
+  small edit, and do not fix one type error at a time across five edit
+  calls — collect them and fix them in one pass.
+- **Targeted edits only.** Modify only the files the task actually needs.
+  Do not rewrite a component to touch it; extend the module that owns the
+  behaviour. Reuse existing systems instead of recreating them.
+- **Execution limits.** If one file needs more than 4 edit calls in a task,
+  or the same edit → test → fix cycle repeats more than twice, STOP.
+  Diagnose, change approach, and report the blocker instead of looping.
+  A stuck task is reported, never silently ground through.
+- **Parallelize where safe, in separate worktrees.** Independent tasks run
+  concurrently only in separate worktrees (one code agent per working tree,
+  §62.1). Two agents never share a checkout. The dependency chain
+  (F-1 → R-1 → J-1 → chain) is sequential by nature and is not parallelized.
+- **Functionality over planning.** Inspect, implement, test, report actual
+  results. No planning document substitutes for a landed change.
+
+### Measurement (`execution.mjs`, 32 asserts)
+
+`execution.mjs` is pure (no I/O) and turns a task's git diff + run record
+into metrics: files changed, lines added/deleted, hunks per file, the top
+file and its share, edit calls per file, duration. Thresholds, grounded in
+the numbers above:
+
+- **Warn:** one file with ≥8 hunks in a task, or edited ≥4 times, or touched
+  in 3 consecutive builds (a hot file).
+- **Flag:** one file with ≥12 hunks in a task, or edited ≥8 times.
+  A flag means stop, diagnose, change approach before the next task.
+- The J-1 shape (14 hunks, 6 edits, hot file across 1062–1064) flags.
+  A balanced task (5 files, 2 hunks each) is ok.
+
+The parent records the verdict per task (commit + verification note) and
+measures the next build against the baseline above: duration, hunks in the
+top file, edit calls to the top file. The 25-minute foundation average is
+the number to beat. Tool-call counts are not in any file the parent controls
+(they live in the runtime's monitor notes); duration, files, hunks, and
+completions are the measured set.
+
+### What this does NOT do
+
+- It does not refactor `Engine3DWorldView.tsx`. Splitting a 6,638-line
+  god-component is a real fix but a big, risky one; it is a separate
+  decision for the user, not smuggled in here. The policy caps the cost of
+  working through it.
+- It does not auto-kill a stuck worker. A flag is reported to the parent;
+  stalled tasks are reported, never killed (§10).
+- It does not change the gates. Batching and speed never weaken a test,
+  a type check, a sim comparison, or a live verification.

@@ -24,36 +24,57 @@ function throws(fn, label) {
   if (!ok) throw new Error(`FAIL (expected throw): ${label}`);
   n += 1;
 }
-const byId = validate(tasks);
-const t02 = byId.get('0x02');
-const t03 = byId.get('0x03');
-const t0A = byId.get('0x0A');
+validate(tasks); // live queue must validate (structural check only)
 const GREEN = { ciPass: true, approvals: { 'pr61-merge': true } };
 const NO_CI = { ciPass: false, approvals: { 'pr61-merge': true } };
 const NO_APPROVAL = { ciPass: true, approvals: {} };
 
-// --- real queue, CI failing (current monitor state) ---
+// --- live queue: structural checks only (state-independent; the queue moves) ---
 check(tasks.length === 12, 'queue has 12 tasks');
-check(queue.approvals && queue.approvals['pr61-merge'] === false, 'pr61-merge approval starts false');
-check(!gatesPass(t02, NO_CI), '0x02 gates fail closed when CI fails');
-check(!gatesPass(t02, NO_APPROVAL), '0x02 gates fail closed when the merge is not approved');
-check(gatesPass(t02, GREEN), '0x02 gates pass when CI passes AND the merge is approved');
-check(!isEligible(t02, byId, NO_CI), '0x02 not eligible while CI fails');
-check(!isEligible(t02, byId, NO_APPROVAL), '0x02 not eligible while the merge is unapproved');
-check(isEligible(t02, byId, GREEN), '0x02 eligible once 0x0C is done and both gates pass');
-check(nextTask(tasks, NO_CI) === null, 'nothing eligible while CI fails');
-check(nextTask(tasks, NO_APPROVAL) === null, 'nothing eligible while the merge is unapproved');
-check(nextTask(tasks, GREEN).id === '0x02', 'next is 0x02 once 0x0C is done and both gates pass');
-check(!isEligible(t03, byId, GREEN), '0x03 not eligible until 0x02 is done');
-check(!isEligible(t0A, byId, GREEN), '0x0A (blocked on user word) never eligible');
-check(eligibleTasks(tasks, GREEN).map((t) => t.id).join(',') === '0x02', 'only 0x02 eligible once 0x0C is done and both gates pass');
+check(typeof queue.approvals['pr61-merge'] === 'boolean', 'pr61-merge approval is a boolean in tasks.json (the dispatcher never grants one; gates enforce it)');
 
-// --- real queue metrics + bottleneck ---
-const m = metrics(tasks);
+// --- frozen queue: the 0x02-era state (2026-11-15 ~16:30 MST), so the
+// gate / eligibility / metrics assertions do not go stale every time a task
+// completes. The live queue has moved on (0x02-0x04 done, approval true);
+// this snapshot preserves the coverage. ---
+const ERA = '2026-11-15T00:00:00.000Z';
+const era02 = [
+  { id: '0x01', title: 'quest fix', status: 'done', priority: 1, dependsOn: [], gates: [], startedAt: ERA, completedAt: new Date(Date.parse(ERA) + 212000).toISOString() },
+  { id: '0x02', title: 'wiring', status: 'pending', priority: 1, dependsOn: ['0x01', '0x0C'], gates: [{ type: 'ci' }, { type: 'approval', key: 'pr61-merge' }] },
+  { id: '0x03', title: 'F-1', status: 'pending', priority: 2, dependsOn: ['0x02'], gates: [] },
+  { id: '0x04', title: 'R-1', status: 'pending', priority: 2, dependsOn: ['0x03'], gates: [] },
+  { id: '0x05', title: 'J-1', status: 'pending', priority: 2, dependsOn: ['0x04'], gates: [] },
+  { id: '0x06', title: 'chain', status: 'pending', priority: 2, dependsOn: ['0x05'], gates: [] },
+  { id: '0x07', title: 'food', status: 'pending', priority: 2, dependsOn: ['0x06'], gates: [] },
+  { id: '0x08', title: 'control', status: 'pending', priority: 2, dependsOn: ['0x07'], gates: [] },
+  { id: '0x09', title: '24h', status: 'pending', priority: 2, dependsOn: ['0x08'], gates: [] },
+  { id: '0x0A', title: 'Tamsin', status: 'blocked', priority: 2, dependsOn: [], gates: [] },
+  { id: '0x0B', title: 'hitch', status: 'pending', priority: 9, dependsOn: ['0x06'], gates: [] },
+  { id: '0x0C', title: 'step-26', status: 'done', priority: 1, dependsOn: [], gates: [], startedAt: ERA, completedAt: new Date(Date.parse(ERA) + 472000).toISOString() },
+];
+const eraById = validate(era02);
+const eraT02 = eraById.get('0x02');
+const eraT03 = eraById.get('0x03');
+const eraT0A = eraById.get('0x0A');
+check(!gatesPass(eraT02, NO_CI), '0x02 gates fail closed when CI fails');
+check(!gatesPass(eraT02, NO_APPROVAL), '0x02 gates fail closed when the merge is not approved');
+check(gatesPass(eraT02, GREEN), '0x02 gates pass when CI passes AND the merge is approved');
+check(!isEligible(eraT02, eraById, NO_CI), '0x02 not eligible while CI fails');
+check(!isEligible(eraT02, eraById, NO_APPROVAL), '0x02 not eligible while the merge is unapproved');
+check(isEligible(eraT02, eraById, GREEN), '0x02 eligible once 0x0C is done and both gates pass');
+check(nextTask(era02, NO_CI) === null, 'nothing eligible while CI fails');
+check(nextTask(era02, NO_APPROVAL) === null, 'nothing eligible while the merge is unapproved');
+check(nextTask(era02, GREEN).id === '0x02', 'next is 0x02 once 0x0C is done and both gates pass');
+check(!isEligible(eraT03, eraById, GREEN), '0x03 not eligible until 0x02 is done');
+check(!isEligible(eraT0A, eraById, GREEN), '0x0A (blocked on user word) never eligible');
+check(eligibleTasks(era02, GREEN).map((t) => t.id).join(',') === '0x02', 'only 0x02 eligible once 0x0C is done and both gates pass');
+
+// --- frozen queue metrics + bottleneck ---
+const m = metrics(era02);
 check(m.total === 12 && m.counts.done === 2 && m.counts.pending === 9 && m.counts.blocked === 1 && m.counts.in_progress === 0,
   `counts are done 2 / pending 9 / blocked 1 / in_progress 0 (got ${JSON.stringify(m.counts)})`);
 check(m.avgCompletionMs === 342000, `avg completion is 342000ms for 0x01 (212s) + 0x0C (472s) (got ${m.avgCompletionMs})`);
-check(bottleneck(tasks).id === '0x02' && bottleneck(tasks).waitingOnIt === 8, 'bottleneck is 0x02 with 8 tasks waiting on it');
+check(bottleneck(era02).id === '0x02' && bottleneck(era02).waitingOnIt === 8, 'bottleneck is 0x02 with 8 tasks waiting on it');
 
 // --- conditions read from the real monitor state file (values change per run; assert the mapping, not one run) ---
 const rawState = JSON.parse(readFileSync('/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json', 'utf8'));
