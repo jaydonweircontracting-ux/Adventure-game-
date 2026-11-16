@@ -287,7 +287,12 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // BUILD 1064 (R-1): the meal is withdrawn from the
         // registry's camp store — only a whole meal taken restores
         // hunger, and the pile drops by exactly that meal.
-        if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
+        // BUILD 1079 (0x0E): only eat when actually hungry. Without
+        // the hunger guard a founder with nothing to do idles in 'eat'
+        // (the scorer picks it at epsilon when all scores are ~0) and
+        // consumes a meal EVERY tick at hunger 93-100, draining the
+        // camp food to 0. Legitimate eating (hunger < 50) is untouched.
+        if(f.activity==='eat'&&f.needs.hunger<90&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
           const res=eatFounderMealFromRegistry(registryRef.current,f.needs);
           if(res.ate){registryRef.current=res.registry;f.needs=res.needs;stockChanged=true;
             // BUILD 1060: a shared meal — record 'eat' with every
@@ -392,7 +397,40 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         }
         if(atDest||(Math.round(f.x)===dest.x&&Math.round(f.y)===dest.y)){
           // Arrived: act on the destination.
-          if(f.activity==='sleep'&&hutPlaced&&!insideHut){
+          // BUILD 1079 (0x0E): the delivery runs by workState, not
+          // activity. A founder who flips to rest/eat/sleep while
+          // carrying must still deliver when they reach their
+          // destination — the delivery is a physical fact (they are
+          // carrying wood), not an activity. Before this fix the
+          // delivery branch sat inside the work/build chain below,
+          // so a carrier at camp with activity rest/eat stood
+          // carrying wood until the scorer picked work again
+          // (Greta + Perrin, 115+s). The empty-carrier reset rides
+          // along: a 'toStockpile' founder with nothing to carry
+          // goes back to 'toTree' on arrival, whatever the activity.
+          if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0)){
+            // BUILD 1065 (J-1): the delivery runs only on a held
+            // deliver job — the transfer IS the job's completion.
+            // Without the job (claimed next tick) the founder
+            // waits at camp; the wood never moves without a job.
+            if(myJob&&myJob.kind==='deliver'){
+              // BUILD 1064 (R-1): the delivery is a real transfer
+              // (carrier store → camp store) — the wood the tree
+              // held is the wood the pile gains, conserved.
+              // BUILD 1067: the delivery moves wood AND grain.
+              const res=deliverFounderCarryToRegistry(registryRef.current,f);
+              registryRef.current=res.registry;
+              f.carrying-=res.movedWood;f.carryingGrain-=res.movedGrain;stockChanged=true;
+              if(f.carrying<=0&&f.carryingGrain<=0){
+                f.carrying=0;f.carryingGrain=0;f.workState='toTree';
+                jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;
+                const what=res.movedWood>0&&res.movedGrain>0?'wood and grain':res.movedGrain>0?'grain':'wood';
+                setMessage(f.name+' delivered '+what+' to the camp stockpile');
+              }
+            }
+          }else if(f.workState==='toStockpile'){
+            f.workState='toTree';
+          }else if(f.activity==='sleep'&&hutPlaced&&!insideHut){
             // Through the door to their bed (their hut sleep tile —
             // the north row, door lane kept clear).
             const bed=f.bed;
@@ -522,28 +560,6 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                 f.farmTarget=null;f.harvestTicks=0;
                 f.workState='toStockpile';
               }
-            }else if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0)){
-              // BUILD 1065 (J-1): the delivery runs only on a held
-              // deliver job — the transfer IS the job's completion.
-              // Without the job (claimed next tick) the founder
-              // waits at camp; the wood never moves without a job.
-              if(myJob&&myJob.kind==='deliver'){
-                // BUILD 1064 (R-1): the delivery is a real transfer
-                // (carrier store → camp store) — the wood the tree
-                // held is the wood the pile gains, conserved.
-                // BUILD 1067: the delivery moves wood AND grain.
-                const res=deliverFounderCarryToRegistry(registryRef.current,f);
-                registryRef.current=res.registry;
-                f.carrying-=res.movedWood;f.carryingGrain-=res.movedGrain;stockChanged=true;
-                if(f.carrying<=0&&f.carryingGrain<=0){
-                  f.carrying=0;f.carryingGrain=0;f.workState='toTree';
-                  jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;
-                  const what=res.movedWood>0&&res.movedGrain>0?'wood and grain':res.movedGrain>0?'grain':'wood';
-                  setMessage(f.name+' delivered '+what+' to the camp stockpile');
-                }
-              }
-            }else if(f.workState==='toStockpile'){
-              f.workState='toTree';
             }
           }
           // Sleep/rest at camp need no arrival action — the needs

@@ -197,7 +197,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1078';
+const BUILD_NUMBER = '1079';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -280,6 +280,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1075': 'Under the hood, the player inventory — your wood, stone, gold, and wheat — was moved into its own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same inventory, the same world, the same everything. Everything else works exactly as before.',
   '1076': 'Under the hood, the building interactions — Build mode, placing items, entering and leaving huts, undo/redo, and the area-select tools — were moved into their own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same Build panel, the same doors, the same everything. Everything else works exactly as before.',
   '1078': 'Under the hood, the world synchronization — saving and loading the world, rebuilding it when it changes, and keeping the living-world settlement in step with the game — was moved into its own tidy section of the code, finishing the break-up of the giant view file into focused pieces so future updates are easier to build. The game looks and plays exactly the same: the same world, the same saving, the same everything. Everything else works exactly as before.',
+  '1079': 'Founders no longer get stuck carrying wood — when one needs to rest or eat while hauling a load, they finish the delivery first instead of standing around holding it, and a founder who is already full no longer snacks through the whole camp food stock. Everything else works exactly as before.',
   '1077': 'Under the hood, the HUD and interface — the status strip, the minimap and world map, the wait sheet, the control buttons, and the Build cluster — were moved into their own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same HUD, the same buttons, the same everything. Everything else works exactly as before.',
   '1072': 'Under the hood, the 3D renderer — the camera, the drawing of the world, and the frame-by-frame picture — was moved into its own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same world, the same settlers, the same everything. Everything else works exactly as before.',
   '1070': 'Under the hood, the 3D world simulation — the settlers, the clock, and waiting — was moved into its own tidy section of the code so future updates are easier to build. The game plays exactly the same: the settlers chop, build, farm, and rest just as before. Everything else works exactly as before.',

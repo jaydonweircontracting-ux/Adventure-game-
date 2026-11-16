@@ -20,11 +20,11 @@
  * only input is the world, which defaultWorld fixes).
  *
  * Fidelity note: the driver reproduces the view's mechanics faithfully,
- * including its known rough edges — a founder who flips to eat/rest while
- * carrying does NOT deliver that tick (the delivery branch is gated on
- * activity work/build, the 0x0E strand), and a completed hut whose rect
- * is occupied retries its placement next cycle. If the test shows a
- * founder stranded, that is the game speaking, not the driver.
+ * including its known rough edges — a completed hut whose rect is
+ * occupied retries its placement next cycle. BUILD 1079 (0x0E): the
+ * delivery strand is FIXED — the delivery runs by workState, not
+ * activity, so a founder who flips to eat/rest/sleep while carrying
+ * still delivers on arrival (the driver mirrors the view's fix).
  */
 import {
   FOUNDER_CAMP,
@@ -384,7 +384,11 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     }
 
     // Eat: at the eat tile, one meal from the shared camp stock.
-    if (f.activity === 'eat' && Math.round(f.x) === FOUNDER_EAT_TILE.x && Math.round(f.y) === FOUNDER_EAT_TILE.y) {
+    // BUILD 1079 (0x0E): only eat when actually hungry — see
+    // worldSimulation3d.ts. Without the guard a founder with nothing
+    // to do idles in 'eat' and consumes a meal every tick at hunger
+    // 93-100, draining the camp food to 0 (measured ticks 1400-1600).
+    if (f.activity === 'eat' && f.needs.hunger < 90 && Math.round(f.x) === FOUNDER_EAT_TILE.x && Math.round(f.y) === FOUNDER_EAT_TILE.y) {
       const res = eatFounderMealFromRegistry(sim.registry, f.needs);
       if (res.ate) {
         sim.registry = res.registry;
@@ -490,7 +494,33 @@ export function advanceSettlementTick(sim: SettlementSim): void {
 
     if (atDest || (Math.round(f.x) === dest.x && Math.round(f.y) === dest.y)) {
       // Arrived: act on the destination.
-      if (f.activity === 'sleep' && hutPlaced && !insideHut) {
+      // BUILD 1079 (0x0E): the delivery runs by workState, not
+      // activity — the driver mirrors the view's fix. A founder who
+      // flips to rest/eat/sleep while carrying must still deliver
+      // when they reach their destination (see worldSimulation3d.ts).
+      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0)) {
+        // The delivery runs only on a held deliver job — the transfer
+        // IS the job's completion. Without the job (claimed next tick)
+        // the founder waits at camp; the wood never moves without a job.
+        if (myJob && myJob.kind === 'deliver') {
+          const res = deliverFounderCarryToRegistry(sim.registry, f);
+          sim.registry = res.registry;
+          f.carrying -= res.movedWood;
+          f.carryingGrain -= res.movedGrain;
+          ledger.woodDelivered += res.movedWood;
+          ledger.grainDelivered += res.movedGrain;
+          if (f.carrying <= 0 && f.carryingGrain <= 0) {
+            f.carrying = 0;
+            f.carryingGrain = 0;
+            f.workState = 'toTree';
+            ledger.jobsCompleted.deliver++;
+            sim.board = completeJob(sim.board, myJob.id);
+            myJob = undefined;
+          }
+        }
+      } else if (f.workState === 'toStockpile') {
+        f.workState = 'toTree';
+      } else if (f.activity === 'sleep' && hutPlaced && !insideHut) {
         // Through the door to their bed (their hut sleep tile).
         const bed = f.bed;
         f.x = bed.x;
@@ -624,28 +654,6 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             f.harvestTicks = 0;
             f.workState = 'toStockpile';
           }
-        } else if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0)) {
-          // The delivery runs only on a held deliver job — the transfer
-          // IS the job's completion. Without the job (claimed next tick)
-          // the founder waits at camp; the wood never moves without a job.
-          if (myJob && myJob.kind === 'deliver') {
-            const res = deliverFounderCarryToRegistry(sim.registry, f);
-            sim.registry = res.registry;
-            f.carrying -= res.movedWood;
-            f.carryingGrain -= res.movedGrain;
-            ledger.woodDelivered += res.movedWood;
-            ledger.grainDelivered += res.movedGrain;
-            if (f.carrying <= 0 && f.carryingGrain <= 0) {
-              f.carrying = 0;
-              f.carryingGrain = 0;
-              f.workState = 'toTree';
-              ledger.jobsCompleted.deliver++;
-              sim.board = completeJob(sim.board, myJob.id);
-              myJob = undefined;
-            }
-          }
-        } else if (f.workState === 'toStockpile') {
-          f.workState = 'toTree';
         }
       }
       // Sleep/rest at camp need no arrival action — the needs decay
