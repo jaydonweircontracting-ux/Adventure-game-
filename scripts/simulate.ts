@@ -12751,6 +12751,49 @@ console.log('Testing the player controls module — movement, input, and interac
   console.log('M1074: player controls verified (walkable, occupied tiles, replan determinism, follow, tryMove, wheel, keys, sprint)');
 }
 
+console.log('Testing 3D inventory store (BUILD 1075)...');
+{
+  const IC1075 = await import('../src/game/engine3d/inventoryCrafting3d.js');
+  const RR1075 = await import('../src/game/engine3d/resourceRegistry.js');
+  // The 1056 localStorage stand-in is still in place (an in-memory Map on
+  // globalThis); the inventory module reads/writes it at call time.
+  const ls1075 = (globalThis as unknown as { localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } }).localStorage;
+  assert(IC1075.INVENTORY_KEY === 'ag-3d-inventory-v1', 'M1075: the inventory save key is ag-3d-inventory-v1');
+  // readSaved / initialInventory: fallback, merge, corrupt.
+  ls1075.setItem(IC1075.INVENTORY_KEY, '{corrupt');
+  assert(JSON.stringify(IC1075.initialInventory()) === '{}', 'M1075: a corrupt inventory save falls back to empty');
+  ls1075.setItem(IC1075.INVENTORY_KEY, JSON.stringify({ wood: 3, gold: 1 }));
+  assert(JSON.stringify(IC1075.initialInventory()) === JSON.stringify({ wood: 3, gold: 1 }), 'M1075: initialInventory returns the saved inventory');
+  assert(JSON.stringify(IC1075.readSaved('missing-key-1075', { a: 1 })) === JSON.stringify({ a: 1 }), 'M1075: readSaved returns the fallback for a missing key');
+  // refreshPlayerInventory: mirror + persist + no-op when unchanged.
+  let reg1075 = RR1075.createRegistry();
+  reg1075 = RR1075.playerInventoryToRegistry(reg1075, { wood: 4, stone: 2, wheat: 1 });
+  const ref1075 = { current: {} as Record<string, number> };
+  let setCalls1075 = 0;
+  const ctx1075 = { registry: () => reg1075, inventoryRef: ref1075, setInventory: () => { setCalls1075++; } };
+  IC1075.refreshPlayerInventory(ctx1075);
+  assert(JSON.stringify(ref1075.current) === JSON.stringify({ wood: 4, stone: 2, wheat: 1 }), 'M1075: refresh mirrors the registry player store into the ref');
+  assert(setCalls1075 === 1, 'M1075: refresh calls setInventory once when the record changed');
+  assert(ls1075.getItem(IC1075.INVENTORY_KEY) === JSON.stringify({ wood: 4, stone: 2, wheat: 1 }), 'M1075: refresh persists the player record');
+  setCalls1075 = 0;
+  IC1075.refreshPlayerInventory(ctx1075);
+  assert(setCalls1075 === 0, 'M1075: refresh does not call setInventory when the record is unchanged');
+  // Keepsakes pass through; an empty player store empties the record.
+  ref1075.current = { heirloom: 1, wood: 9 };
+  IC1075.refreshPlayerInventory(ctx1075);
+  assert(JSON.stringify(ref1075.current) === JSON.stringify({ heirloom: 1, wood: 4, stone: 2, wheat: 1 }), 'M1075: refresh preserves keepsakes and takes resources from the registry');
+  const emptyReg1075 = RR1075.createRegistry();
+  const emptyCtx1075 = { registry: () => emptyReg1075, inventoryRef: { current: { wood: 3 } as Record<string, number> }, setInventory: () => {} };
+  IC1075.refreshPlayerInventory(emptyCtx1075);
+  assert(JSON.stringify(emptyCtx1075.inventoryRef.current) === '{}', 'M1075: refresh empties the record when the player store is empty');
+  // loadPlayerInventoryIntoRegistry: the saved record rides into the player store (wheat -> grain).
+  ls1075.setItem(IC1075.INVENTORY_KEY, JSON.stringify({ wood: 6, stone: 3, wheat: 2 }));
+  const loaded1075 = IC1075.loadPlayerInventoryIntoRegistry(RR1075.createRegistry());
+  assert(RR1075.storeQty(loaded1075, RR1075.PLAYER_STORE_ID, 'wood') === 6, 'M1075: load puts saved wood in the player store');
+  assert(RR1075.storeQty(loaded1075, RR1075.PLAYER_STORE_ID, 'grain') === 2, 'M1075: load maps the wheat key to the grain kind');
+  console.log('M1075: inventory store verified (readSaved, mirror, persist, keepsakes, load)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

@@ -142,7 +142,10 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // came from. The view owns the ref; the E-key gather, the founder
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
-import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit, depositsFromWorld, keepsakesOf, playerInventoryToRegistry, registryToPlayerInventory, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit, depositsFromWorld, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+// BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
+// the registry -> React mirror. No crafting system exists in 3D yet.
+import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
 // BUILD 1065 (J-1): the job scheduler — NPCs discover work, claim
 // jobs, gather, transport, and complete tasks through the registry.
 // The view owns the board ref (session-only — rebuilt from the
@@ -167,13 +170,8 @@ import { classifySwipe, SWIPE_HANDLE_MIN_PX, EDGE_STRIP_PX } from './swipe';
 
 const SAVE_KEY = 'ag-3d-player-v1';
 const NPC_SAVE_KEY = 'ag-3d-npcs-v1';
-const INVENTORY_KEY = 'ag-3d-inventory-v1';
 const HEALTH_KEY = 'ag-3d-health-v1';
 type NpcActor3D = { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean; looted?: boolean };
-type Inventory3D = Record<string, number>;
-function readSaved<T>(key: string, fallback: T): T {
-  try { const value = localStorage.getItem(key); return value ? { ...fallback, ...JSON.parse(value) } : fallback; } catch { return fallback; }
-}
 // BUILD 988: one camera FOV for both cameras + the ground picker. Was
 // 60 degrees (Math.PI/3) for both; 66 widens the view ~12% linearly
 // (tan33/tan30) without fisheye distortion (half-angle 33 < 45). 72 was
@@ -770,7 +768,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // from the last world rebuild). Placed after the position declaration:
   // the effect reads position, so it cannot sit above it.
   useEffect(()=>{const next={...diagRef.current,x:Math.round(position.x),y:Math.round(position.y)};diagRef.current=next;onDiagnosticsRef.current?.(next);},[position]);
-  const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
+  const [inventory,setInventory]=useState<Inventory3D>(()=>initialInventory());
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
   // BUILD 1003: stamina UI state (throttled publish from draw(); the
   // authoritative value lives in staminaRef, session-only, never saved).
@@ -950,18 +948,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const forestPct=(trees:number)=>{const s=livingWorldRef.current;return s?String(Math.round(forestDensity(trees,s.baselineTrees)*100)):'—';};
   // BUILD 1064 (R-1): mirror the registry into the React states
   // (inventory + camp line) and the plain read-mirror refs. The
-  // inventory state is set only when the player record actually
-  // changed (a founder delivery must not re-render the HUD); the
   // camp line is set on every call (its callers already gate on
-  // stockChanged/hutChanged). The player record is persisted to
-  // INVENTORY_KEY in its old shape (resource keys from the
-  // registry, keepsakes passed through) — the save shape does not
-  // move in this build.
+  // stockChanged/hutChanged). BUILD 1075 (0x0D area 5): the inventory
+  // mirror itself lives in inventoryCrafting3d.ts (refreshPlayerInventory)
+  // — the state is set only when the player record actually changed
+  // (a founder delivery must not re-render the HUD), and the player
+  // record is persisted to INVENTORY_KEY in its old shape (resource
+  // keys from the registry, keepsakes passed through).
+  // The inventory context — built once, the view calls
+  // refreshPlayerInventory through it. The registry getter reads the
+  // live ref (the registry is rebuilt on load).
+  const inventoryCtx: InventoryContext = { registry: () => registryRef.current, inventoryRef, setInventory };
   const refreshResourceUi=()=>{
+    refreshPlayerInventory(inventoryCtx);
     const reg=registryRef.current;
-    const nextInv=registryToPlayerInventory(reg,keepsakesOf(inventoryRef.current));
-    if(JSON.stringify(nextInv)!==JSON.stringify(inventoryRef.current)){inventoryRef.current=nextInv;setInventory(nextInv);}
-    try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(nextInv));}catch{}
     founderStockpileRef.current=campWoodInRegistry(reg);
     founderFoodRef.current=campFoodInRegistry(reg);
     founderGrainRef.current=campGrainInRegistry(reg);
@@ -2030,7 +2030,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       let reg=depositsFromWorld(createRegistry(),world);
       reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0);
       for(const f of states)reg=seedCarrierStore(reg,f);
-      reg=playerInventoryToRegistry(reg,readSaved<Inventory3D>(INVENTORY_KEY,{}));
+      reg=loadPlayerInventoryIntoRegistry(reg);
       registryRef.current=reg;
       // BUILD 1058: construction loads from the v2 founders save
       // (v1 saves migrate to a fresh one). If the save says 'done'
