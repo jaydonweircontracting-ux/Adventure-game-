@@ -34,6 +34,8 @@ export interface BuildingContext {
   stateRef: MutableRefObject<{ position: { x: number; y: number }; world: IsoWorld }>;
   historyRef: MutableRefObject<BuildHistory>;
   needsWorldRebuild: MutableRefObject<boolean>;
+  // BUILD 1080 (0x0B): urgent-rebuild flag — set only by enter/exit.
+  rebuildUrgent: MutableRefObject<boolean>;
   buildRef: MutableRefObject<{ palette: PaletteKind | null; removeMode: boolean; moveMode: boolean; saveAreaMode: boolean; pasteName: string | null; customAssetId: string | null; areaSelectMode: boolean; areaMoveArmed: boolean; areaDuplicateArmed: boolean }>;
   areaSelectionRef: MutableRefObject<AreaSelection | null>;
   npcActorsRef: MutableRefObject<Array<{ x: number; y: number; alive: boolean }>>;
@@ -258,14 +260,14 @@ export function enterHut(ctx: BuildingContext, hut: HutRect): void {
   const next={x:door.x,y:door.y};
   ctx.stateRef.current.position=next;ctx.setPosition(next);setInside(ctx, hut);
   try{localStorage.setItem(ctx.saveKey,JSON.stringify(next));}catch{}
-  ctx.needsWorldRebuild.current=true;ctx.setMessage('Inside — tap Exit to leave');
+  ctx.rebuildUrgent.current=true;ctx.needsWorldRebuild.current=true;ctx.setMessage('Inside — tap Exit to leave');
 }
 export function exitHut(ctx: BuildingContext): void {
   const hut=ctx.insideHutRef.current;if(!hut)return;
   const next=hutExitPoint(hut);
   ctx.stateRef.current.position=next;ctx.setPosition(next);setInside(ctx, null);
   try{localStorage.setItem(ctx.saveKey,JSON.stringify(next));}catch{}
-  ctx.needsWorldRebuild.current=true;ctx.setMessage('Outside');
+  ctx.rebuildUrgent.current=true;ctx.needsWorldRebuild.current=true;ctx.setMessage('Outside');
 }
 
 // The Enter button's hut: the nearest door within one tile of the

@@ -597,17 +597,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const staminaPublishCountRef=useRef(0);
   // BUILD 1035: time-sliced rebuild driver state (see the draw loop).
   // worldBuilderRef = the in-progress builder (null when idle);
-  // prevPlayerRef = the player position last frame, for the adaptive
-  // budget (moving → 10ms/frame, stationary → run to completion);
-  // buildFramesRef/buildMsRef = the frames/ms the current build has
-  // taken; rebuildStepStatsRef = the probe-visible step statistics
-  // (count, worst single step, worst single step WHILE MOVING, total
-  // step time, last build's frames and ms — read-only via __ag3dTest
-  // getRebuildStats). maxStepMsMoving is the invariant that matters:
-  // a stationary build is ALLOWED to run to completion in one step
-  // (the load build does, ~200ms on a phone, ~500ms cold under
-  // SwiftShader), so the raw maxStepMs is not the hitch signal — a
-  // step while the player is moving is.
+  // prevPlayerRef = the player position last frame, for the moving
+  // step-stat (maxStepMsMoving); buildFramesRef/buildMsRef = the
+  // frames/ms the current build has taken; rebuildStepStatsRef = the
+  // probe-visible step statistics (count, worst single step, worst
+  // single step WHILE MOVING, total step time, last build's frames
+  // and ms — read-only via __ag3dTest getRebuildStats).
+  // BUILD 1080 (0x0B): the budget rule changed — it is no longer
+  // "moving → 10ms/frame, stationary → run to completion". A chop
+  // while standing still ran the whole ~200-400ms rebuild in one
+  // frame (the 367-417ms hitch), so now only an URGENT rebuild
+  // (enter/exit a hut, flagged by buildingInteractions3d) runs to
+  // completion; every other rebuild gets the 10ms step budget,
+  // moving or not. maxStepMs is now the hitch signal for a chop:
+  // after a chop it must stay small (~10-40ms); the only large
+  // single step allowed is an urgent enter/exit.
   const worldBuilderRef=useRef<WorldBuilder|null>(null);
   const prevPlayerRef=useRef<{x:number;y:number}|null>(null);
   const buildFramesRef=useRef(0);
@@ -633,6 +637,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const handleSwipeRef=useRef<{id:number;x:number;y:number}|null>(null);
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
+  // BUILD 1080 (0x0B): urgent-rebuild flag — set only by enter/exit
+  // (buildingInteractions3d), read by the renderer driver. A rebuild
+  // flagged urgent runs to completion in one frame (the shell-hide
+  // interior must appear immediately); every other rebuild is
+  // time-sliced at 10ms/frame, moving or not, so a chop no longer
+  // hitches the frame.
+  const rebuildUrgent=useRef(false);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
   // BUILD 1057: founder settlers (the NPC-built-towns vision's first
   // residents). A SEPARATE array + save key from npcActorsRef on
@@ -1509,7 +1520,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // the Build tool toggles, undo/redo, and the area actions moved
   // verbatim; the React state itself stays here.
   const buildCtx: BuildingContext = {
-    stateRef, historyRef, needsWorldRebuild, buildRef, areaSelectionRef,
+    stateRef, historyRef, needsWorldRebuild, rebuildUrgent, buildRef, areaSelectionRef,
     npcActorsRef, transientActorsRef, customAssetsRef, areaSelectPreviewRef,
     placePreviewRef, placeHoverRef, insideHutRef, walkRef,
     setPosition, setMessage, setPlacedCount, setInsideHut,
@@ -2367,7 +2378,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, saveKey: SAVE_KEY,
       isAreaSelectDragging: () => areaSelectDragging !== null,
       isAreaMoveDragging: () => areaMoveDragging !== null,
-      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, animalActorsRef, registryRef, constructionRef, staminaPublishCountRef, areaSelectionRef, buildRef,
+      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, animalActorsRef, registryRef, constructionRef, staminaPublishCountRef, areaSelectionRef, buildRef,
       setPosition, setMessage, setStaminaUi, setSprintingUi, setSprintLatchedUi, setSprintRearmUi, setFirstPersonOn,
       walkableAt: controls.walkableAt, replanPlayerPath: controls.replanPlayerPath, followPlayerPath: controls.followPlayerPath, positionAreaSelectRect, areaSelectionLabel,
     });

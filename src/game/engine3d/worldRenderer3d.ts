@@ -135,6 +135,10 @@ export interface WorldRendererDeps {
   carRef: { current: CarState | null };
   prevPlayerRef: { current: { x: number; y: number } | null };
   needsWorldRebuild: { current: boolean };
+  // BUILD 1080 (0x0B): urgent-rebuild flag — set only by enter/exit
+  // (buildingInteractions3d). An urgent rebuild runs to completion in
+  // one frame; every other rebuild is time-sliced at the step budget.
+  rebuildUrgent: { current: boolean };
   worldBuilderRef: { current: WorldBuilder | null };
   buildFramesRef: { current: number };
   buildMsRef: { current: number };
@@ -484,6 +488,7 @@ export class WorldRenderer {
     const carRef = this.deps.carRef;
     const prevPlayerRef = this.deps.prevPlayerRef;
     const needsWorldRebuild = this.deps.needsWorldRebuild;
+    const rebuildUrgent = this.deps.rebuildUrgent;
     const worldBuilderRef = this.deps.worldBuilderRef;
     const buildFramesRef = this.deps.buildFramesRef;
     const buildMsRef = this.deps.buildMsRef;
@@ -725,7 +730,17 @@ export class WorldRenderer {
     const b0=worldBuilderRef.current;
     if(b0&&(b0.enteredHut!==insideHutRef.current||b0.customAssets!==customAssetsRef.current))worldBuilderRef.current=null;
     if(!worldBuilderRef.current){worldBuilderRef.current=createWorldBuilder(world,player,insideHutRef.current,customAssetsRef.current);buildFramesRef.current=0;buildMsRef.current=0;}
-    const budget=playerMoved?REBUILD_STEP_BUDGET_MS:Infinity;
+    // BUILD 1080 (0x0B): the budget is no longer "Infinity while
+    // stationary". A chop/mine/collect while standing still used to
+    // run the whole ~200-400ms rebuild in ONE frame (the 367-417ms
+    // chop-rebuild hitch) — the stationary Infinity was only ever
+    // needed for enter/exit, where the shell-hide interior must
+    // appear in the same frame. Now only an urgent rebuild (enter/
+    // exit, flagged by buildingInteractions3d) runs to completion;
+    // everything else gets the 10ms step budget, moving or not, so a
+    // chop finishes over ~15 frames with no frame over ~20ms. The
+    // buffer is bit-identical either way (worldRender3d).
+    const budget=rebuildUrgent.current?Infinity:REBUILD_STEP_BUDGET_MS;
     const t0=performance.now();
     const done=worldBuilderRef.current.step(budget);
     const stepMs=performance.now()-t0;
@@ -738,7 +753,7 @@ export class WorldRenderer {
     const built=b.result();
     if(built.length===0){const snap:Diagnostics3D={verts:0,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}
     else{this.upload(worldBuffer,built);this.worldVertCount=built.length/6;const snap:Diagnostics3D={verts:this.worldVertCount,mapW:world.w,mapH:world.h,x:Math.round(player.x),y:Math.round(player.y)};diagRef.current=snap;onDiagnosticsRef.current?.(snap);}
-    needsWorldRebuild.current=false;this.lastBuildX=b.center.x;this.lastBuildY=b.center.y;rebuildCountRef.current++;
+    needsWorldRebuild.current=false;rebuildUrgent.current=false;this.lastBuildX=b.center.x;this.lastBuildY=b.center.y;rebuildCountRef.current++;
     st.count=rebuildCountRef.current;st.lastBuildFrames=buildFramesRef.current;st.lastBuildMs=buildMsRef.current;
     }
     }
