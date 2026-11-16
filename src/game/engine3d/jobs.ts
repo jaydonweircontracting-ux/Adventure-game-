@@ -206,6 +206,10 @@ export type JobDiscoveryInput = {
   construction: ConstructionState;
   founders: readonly { id: string; carrying: number; carryingGrain?: number }[];
   nowAbs: number;
+  /** BUILD 1083 (1.4): the farm growth factor per tile, from the
+   *  1.1 adapter (livingWorld.soilFactorAt) — harvest discovery
+   *  reads soil through it, never by importing landforms.ts. */
+  soilFactorAt?: (tx: number, ty: number) => number;
 };
 
 /**
@@ -305,7 +309,7 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   // removed (open) or failed (claimed — 'target-gone'). Farm tiles
   // are walk-through ground cover, so the tile itself is the work
   // tile — the founder stands on it to harvest.
-  const ready = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS);
+  const ready = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS, input.soilFactorAt);
   const liveHarvestIds = new Set<string>();
   for (const t of ready) {
     const id = harvestJobIdFor(t.tx, t.ty);

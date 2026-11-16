@@ -85,6 +85,7 @@ import {
   treeBlockedKeys,
   type IsoWorld,
 } from '../iso/isoWorld';
+import { soilAt as landformSoilAt, soilFactorAt as landformSoilFactorAt, type Soil } from './landforms';
 
 /** Persisted living-world save (versioned, strict on load). */
 export const LIVING_WORLD_SAVE_KEY = 'ag-3d-living-world-v1';
@@ -229,6 +230,21 @@ export function forestBaselineTrees(world: IsoWorld): number {
 export function forestDensity(liveTrees: number, baselineTrees: number): number {
   if (!Number.isFinite(baselineTrees) || baselineTrees <= 0) return 0;
   return Math.max(0, Math.min(1, liveTrees / baselineTrees));
+}
+
+/** BUILD 1083 (1.4) — the soil map, exposed through the 1.1
+ *  adapter: the farm reads soil here, never by importing
+ *  landforms.ts into the farm tick. The soil is a pure function
+ *  of position + the (persisted) river map, so it is identical
+ *  across reloads by construction. */
+export function soilAt(world: IsoWorld, x: number, y: number): Soil {
+  return landformSoilAt(world, x, y);
+}
+
+/** The farm growth factor for a tile (rich 1.5, neutral 1.0,
+ *  poor 0.6) — what farmStageAt scales its thresholds by. */
+export function soilFactorAt(world: IsoWorld, x: number, y: number): number {
+  return landformSoilFactorAt(world, x, y);
 }
 
 /** The adapter's persisted state: its own version + the coordinator's. */

@@ -12,6 +12,7 @@ import { loadWorld, saveWorld, type IsoWorld, type PlacedItem } from '../iso/iso
 import { seedCampFarmPlot } from './farm';
 import { stampMineralDeposits } from './geology';
 import { stampRivers } from './rivers';
+import { stampLandforms } from './landforms';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
@@ -70,6 +71,12 @@ export function loadInitialWorld(
   // moves or vanishes on reload). After the deposits stamp, so the
   // river routing sees the real deposit tiles and routes around them.
   if (stampRivers(world)) saveWorld(world);
+  // BUILD 1083 (1.4): stamp the landform map on a world that has
+  // none (the stamp never re-derives a stamped world, so a mountain
+  // never moves or vanishes on reload). After the rivers stamp, so
+  // the band routing sees the real river tiles and flows around
+  // them (the rivers cut gorges through the range).
+  if (stampLandforms(world)) saveWorld(world);
   return world as IsoWorld & { placements: PlacedItem[] };
 }
 

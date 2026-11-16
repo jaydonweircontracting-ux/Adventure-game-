@@ -447,9 +447,10 @@ export function harvestFarmTileToCarrier(
   tx: number,
   ty: number,
   nowAbs: number,
+  soilFactor = 1,
 ): { registry: ResourceRegistry; yield: number; sourceId: string | null } {
   const sourceId = farmTileId(tx, ty);
-  const res = harvestFarmTile(world, tx, ty, nowAbs);
+  const res = harvestFarmTile(world, tx, ty, nowAbs, soilFactor);
   if (!res.ok) return { registry, yield: 0, sourceId: null };
   const deposited = depositInto(
     registry,

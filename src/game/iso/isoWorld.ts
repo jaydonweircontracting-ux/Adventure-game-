@@ -194,6 +194,15 @@ export interface IsoWorld {
    *  read them as water through the existing water path. Old saves
    *  load with none (the stamp generates them on the same load). */
   rivers?: Array<{ id: string; tiles: Array<{ x: number; y: number; dx: number; dy: number }>; mouth: { x: number; y: number } }>;
+  /** BUILD 1083 — landforms (landforms.ts): the deterministic
+   *  mountain/hill/valley/cliff map, stamped once by
+   *  stampLandforms on load and saved wholesale with the world.
+   *  Plain data (strings/numbers only). Mountains are also stamped
+   *  as 'stone' terrain entries; cliffs are the blocking subset
+   *  of the mountains (isWalkableWorld refuses them while their
+   *  terrain is still stone). Old saves load with none (the stamp
+   *  generates them on the same load). */
+  landforms?: { mountains: Array<{ x: number; y: number }>; hills: Array<{ x: number; y: number }>; valleys: Array<{ x: number; y: number }>; cliffs: Array<{ x: number; y: number }> };
   /** BUILD 1061: tree-density generation of this world's stored tree
    *  list. 2 = the forest-cluster rule (scatterTreeAt). Absent = the
    *  old 0.6% uniform scatter (defaultWorld before 1061) — loadWorld
@@ -265,6 +274,11 @@ export function isWalkableWorld(w: IsoWorld, crates: TilePoint[], x: number, y: 
   // outcrop) — the player and the founders walk around it, and E
   // is answered from beside it.
   if ((w.mineralDeposits ?? []).some((d) => d.x === x && d.y === y)) return false;
+  // BUILD 1083: a cliff blocks like a rock face (it is the sheer
+  // part of the 1.4 mountain band) — the player and the founders
+  // walk around it. Only while its terrain is still stone (a
+  // Removed cliff reads as gone, like a removed river tile).
+  if ((w.landforms?.cliffs ?? []).some((c) => c.x === x && c.y === y) && terrainAt(w, x, y) === 'stone') return false;
   for (const c of crates) if (c.tx === x && c.ty === y) return false;
   return true;
 }

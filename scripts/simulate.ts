@@ -12956,6 +12956,160 @@ console.log('Testing rivers + flowing water (BUILD 1082)...');
   console.log('M1082: rivers verified (determinism, courses, mouths, placement, water blocking, bridge, persistence, Examine)');
 }
 
+console.log('Testing landforms + soil (BUILD 1083)...');
+{
+  const L1083 = await import('../src/game/engine3d/landforms.js');
+  const { defaultWorld, terrainAt, isWalkableWorld, oceanAt } = await import('../src/game/iso/isoWorld.js');
+  const { groundElevation } = await import('../src/game/engine3d/townLook.js');
+  const { FOUNDER_CAMP } = await import('../src/game/engine3d/founders.js');
+  const { walkableWithPlacements, placedFarmTiles } = await import('../src/game/engine3d/placements.js');
+  const { stampMineralDeposits } = await import('../src/game/engine3d/geology.js');
+  const { stampRivers, isWaterTile } = await import('../src/game/engine3d/rivers.js');
+  const { seedCampFarmPlot, farmStageAt } = await import('../src/game/engine3d/farm.js');
+  const { soilFactorAt } = await import('../src/game/engine3d/livingWorld.js');
+  const { effTerrainFor, surfaceElevation } = await import('../src/game/engine3d/wildTerrain.js');
+  // The laid-out world (farm + deposits + rivers), matching
+  // loadInitialWorld's order — landforms stamp onto this, never
+  // onto a bare defaultWorld.
+  function setup1083() {
+    const w = defaultWorld();
+    seedCampFarmPlot(w, FOUNDER_CAMP.x, FOUNDER_CAMP.y, 1920, (x, y) => isWalkableWorld(w, w.crates, x, y));
+    stampMineralDeposits(w);
+    stampRivers(w);
+    return w;
+  }
+  // Determinism: identically prepared worlds yield identical landforms.
+  const wA1083 = setup1083();
+  const lfA1083 = L1083.generateLandforms(wA1083);
+  const wB1083 = setup1083();
+  const lfB1083 = L1083.generateLandforms(wB1083);
+  assert(JSON.stringify(lfA1083) === JSON.stringify(lfB1083), 'M1083: landform generation is deterministic (same world, same landforms)');
+  // The mountain band: a real massif in the eastern high ground.
+  assert(lfA1083.mountains.length > 1000, 'M1083: the mountain band holds thousands of tiles (got ' + lfA1083.mountains.length + ')');
+  const depTiles1083 = new Set((wA1083.mineralDeposits ?? []).map((d) => d.x + ',' + d.y));
+  const farmTiles1083 = new Set(placedFarmTiles(wA1083).map((t) => t.tx + ',' + t.ty));
+  for (const m of lfA1083.mountains) {
+    assert(m.x >= L1083.MOUNTAIN_MIN_X, 'M1083: mountain tile (' + m.x + ',' + m.y + ') is in the eastern high ground');
+    assert(groundElevation(m.x, m.y) > L1083.MOUNTAIN_ELEV, 'M1083: mountain tile (' + m.x + ',' + m.y + ') stands on high ground');
+    assert(Math.hypot(m.x - FOUNDER_CAMP.x, m.y - FOUNDER_CAMP.y) >= L1083.LANDFORM_CAMP_EXCLUSION, 'M1083: mountain tile (' + m.x + ',' + m.y + ') stays clear of the camp');
+    assert(!wA1083.huts.some((h) => m.x >= h.x0 - 2 && m.x <= h.x1 + 2 && m.y >= h.y0 - 2 && m.y <= h.y1 + 2), 'M1083: mountain tile (' + m.x + ',' + m.y + ') stays clear of the huts');
+    assert(!isWaterTile(wA1083, m.x, m.y), 'M1083: mountain tile (' + m.x + ',' + m.y + ') is not water');
+    assert(!depTiles1083.has(m.x + ',' + m.y), 'M1083: mountain tile (' + m.x + ',' + m.y + ') is not on a mineral deposit');
+    assert(!farmTiles1083.has(m.x + ',' + m.y), 'M1083: mountain tile (' + m.x + ',' + m.y + ') is not on a farm tile');
+  }
+  // The band spans a real north-south range (it is a band, not a speck).
+  const mYs1083 = lfA1083.mountains.map((m) => m.y);
+  assert(Math.max(...mYs1083) - Math.min(...mYs1083) > 80, 'M1083: the mountain band spans north-south (got ' + (Math.max(...mYs1083) - Math.min(...mYs1083)) + ' tiles)');
+  // Hills + valleys exist.
+  assert(lfA1083.hills.length > 500, 'M1083: the foothills hold hundreds of tiles (got ' + lfA1083.hills.length + ')');
+  assert(lfA1083.valleys.length > 1000, 'M1083: the valleys hold thousands of tiles (got ' + lfA1083.valleys.length + ')');
+  for (const v of lfA1083.valleys) {
+    assert(v.x >= L1083.VALLEY_MIN_X, 'M1083: valley tile (' + v.x + ',' + v.y + ') is in the east');
+    assert(groundElevation(v.x, v.y) < L1083.VALLEY_ELEV, 'M1083: valley tile (' + v.x + ',' + v.y + ') is deep low ground');
+  }
+  // Cliffs: the sheer peaks — a real subset of the mountains, and they block.
+  assert(lfA1083.cliffs.length > 100, 'M1083: the range holds hundreds of cliff tiles (got ' + lfA1083.cliffs.length + ')');
+  assert(lfA1083.cliffs.length < lfA1083.mountains.length / 2, 'M1083: cliffs are a minority of the mountains (the range stays climbable)');
+  const mSet1083 = new Set(lfA1083.mountains.map((m) => m.x + ',' + m.y));
+  for (const c of lfA1083.cliffs) {
+    assert(mSet1083.has(c.x + ',' + c.y), 'M1083: cliff tile (' + c.x + ',' + c.y + ') is a mountain tile');
+    assert(groundElevation(c.x, c.y) > L1083.CLIFF_ELEV, 'M1083: cliff tile (' + c.x + ',' + c.y + ') is a peak');
+  }
+  // Stamping: tiles become stone, cliffs block, gentle slopes stay walkable.
+  const wS1083 = setup1083();
+  assert(L1083.stampLandforms(wS1083) === true, 'M1083: stampLandforms generates on a fresh world');
+  assert(L1083.stampLandforms(wS1083) === false, 'M1083: stampLandforms never re-derives a stamped world');
+  assert(JSON.stringify(wS1083.landforms) === JSON.stringify(lfA1083), 'M1083: the stamp stores exactly what generateLandforms produces');
+  const mt1083 = wS1083.landforms.mountains[0];
+  assert(terrainAt(wS1083, mt1083.x, mt1083.y) === 'stone', 'M1083: a stamped mountain tile reads as stone');
+  const cl1083 = wS1083.landforms.cliffs[0];
+  assert(isWalkableWorld(wS1083, wS1083.crates, cl1083.x, cl1083.y) === false, 'M1083: a cliff tile blocks movement');
+  assert(walkableWithPlacements(wS1083, wS1083.crates, cl1083.x, cl1083.y) === false, 'M1083: walkableWithPlacements blocks a cliff tile');
+  // A gentle mountain slope (not a cliff) stays walkable.
+  const slope1083 = wS1083.landforms.mountains.find((m) => !wS1083.landforms.cliffs.some((c) => c.x === m.x && c.y === m.y));
+  assert(slope1083 !== undefined && isWalkableWorld(wS1083, wS1083.crates, slope1083.x, slope1083.y) === true, 'M1083: a gentle mountain slope stays walkable');
+  // Every cliff has a walkable neighbour (no cliff is a wall by itself).
+  for (const c of wS1083.landforms.cliffs) {
+    let hasWalkable = false;
+    for (let dy = -1; dy <= 1 && !hasWalkable; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      if (isWalkableWorld(wS1083, wS1083.crates, c.x + dx, c.y + dy)) { hasWalkable = true; break; }
+    }
+    assert(hasWalkable, 'M1083: cliff tile (' + c.x + ',' + c.y + ') has a walkable neighbour');
+  }
+  // The range stays traversable: a flood-fill from the camp reaches
+  // the eastern edge (x=199) walking around cliffs + water.
+  const seen1083 = new Set();
+  const queue1083 = [[FOUNDER_CAMP.x, FOUNDER_CAMP.y]];
+  seen1083.add(FOUNDER_CAMP.x + ',' + FOUNDER_CAMP.y);
+  let reachedEast1083 = false;
+  while (queue1083.length > 0) {
+    const [cx, cy] = queue1083.pop();
+    if (cx >= 199) { reachedEast1083 = true; break; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= 200 || ny >= 200) continue;
+      if (seen1083.has(nx + ',' + ny)) continue;
+      if (!isWalkableWorld(wS1083, wS1083.crates, nx, ny)) continue;
+      seen1083.add(nx + ',' + ny);
+      queue1083.push([nx, ny]);
+    }
+  }
+  assert(reachedEast1083, 'M1083: the mountain range stays traversable (a walkable path reaches the eastern edge around cliffs + water)');
+  // The heightfield: a mountain tile deep in the range (all four
+  // corners land, so the blend is 1) stands MOUNTAIN_BOOST taller
+  // than the noise field alone; a grass tile does not.
+  const eff1083 = effTerrainFor(wS1083);
+  let deep1083 = null;
+  for (const m of wS1083.landforms.mountains) {
+    if (!isWaterTile(wS1083, m.x, m.y) && !isWaterTile(wS1083, m.x + 1, m.y) && !isWaterTile(wS1083, m.x, m.y + 1) && !isWaterTile(wS1083, m.x + 1, m.y + 1)) { deep1083 = m; break; }
+  }
+  assert(deep1083 !== null, 'M1083: the range holds a mountain tile deep inside it');
+  const mH1083 = surfaceElevation(eff1083, deep1083.x + 0.5, deep1083.y + 0.5) - groundElevation(deep1083.x + 0.5, deep1083.y + 0.5);
+  assert(Math.abs(mH1083 - 0.6) < 0.01, 'M1083: a mountain tile stands MOUNTAIN_BOOST taller (got ' + mH1083.toFixed(3) + ')');
+  const gH1083 = surfaceElevation(eff1083, FOUNDER_CAMP.x + 0.5, FOUNDER_CAMP.y + 0.5) - groundElevation(FOUNDER_CAMP.x + 0.5, FOUNDER_CAMP.y + 0.5);
+  assert(Math.abs(gH1083) < 0.01, 'M1083: a grass tile gets no mountain boost');
+  // Soil: the camp farm is neutral (factor 1.0 — the M1069 numbers
+  // stay byte-identical), rich soil exists in the river valleys,
+  // poor soil exists on the mountains.
+  for (const t of placedFarmTiles(wS1083)) {
+    assert(L1083.soilAt(wS1083, t.tx, t.ty) === 'neutral', 'M1083: the camp farm tile (' + t.tx + ',' + t.ty + ') is neutral soil');
+    assert(L1083.soilFactorAt(wS1083, t.tx, t.ty) === 1, 'M1083: the camp farm grows at factor 1.0');
+  }
+  // A rich tile and a poor tile, found outside the camp disc.
+  let rich1083 = null;
+  let poor1083 = null;
+  for (let y = 0; y < 200 && (!rich1083 || !poor1083); y++) for (let x = 0; x < 200; x++) {
+    if (Math.hypot(x - FOUNDER_CAMP.x, y - FOUNDER_CAMP.y) < L1083.SOIL_CAMP_RADIUS) continue;
+    const s = L1083.soilAt(wS1083, x, y);
+    if (!rich1083 && s === 'rich') rich1083 = { x, y };
+    if (!poor1083 && s === 'poor') poor1083 = { x, y };
+    if (rich1083 && poor1083) break;
+  }
+  assert(rich1083 !== null, 'M1083: rich soil exists outside the camp disc');
+  assert(poor1083 !== null, 'M1083: poor soil exists outside the camp disc');
+  assert(L1083.soilFactorAt(wS1083, rich1083.x, rich1083.y) === 1.5, 'M1083: rich soil grows at factor 1.5');
+  assert(L1083.soilFactorAt(wS1083, poor1083.x, poor1083.y) === 0.6, 'M1083: poor soil grows at factor 0.6');
+  // The adapter exposes the same soil (the farm reads it here).
+  assert(soilFactorAt(wS1083, rich1083.x, rich1083.y) === 1.5, 'M1083: the 1.1 adapter exposes rich soil at factor 1.5');
+  assert(soilFactorAt(wS1083, poor1083.x, poor1083.y) === 0.6, 'M1083: the 1.1 adapter exposes poor soil at factor 0.6');
+  // Farm growth, measured in game-minutes: rich ready in 120,
+  // neutral in 180, poor in 300.
+  assert(farmStageAt(0, 119, 1.5) === 'growing' && farmStageAt(0, 120, 1.5) === 'ready', 'M1083: rich soil reaches ready in 120 game-minutes');
+  assert(farmStageAt(0, 179, 1) === 'growing' && farmStageAt(0, 180, 1) === 'ready', 'M1083: neutral soil reaches ready in 180 game-minutes');
+  assert(farmStageAt(0, 299, 0.6) === 'growing' && farmStageAt(0, 300, 0.6) === 'ready', 'M1083: poor soil reaches ready in 300 game-minutes');
+  assert(farmStageAt(0, 59, 1) === 'planted' && farmStageAt(0, 60, 1) === 'growing', 'M1083: the planted->growing threshold is unchanged at factor 1');
+  // Persistence: a JSON round-trip (the save) keeps the landforms
+  // and the soil, and the stamp still refuses to re-derive them.
+  const reloaded1083 = JSON.parse(JSON.stringify(wS1083));
+  assert(L1083.stampLandforms(reloaded1083) === false, 'M1083: a reloaded world is not re-stamped');
+  assert(JSON.stringify(reloaded1083.landforms) === JSON.stringify(wS1083.landforms), 'M1083: the landforms survive a save/reload round-trip');
+  assert(terrainAt(reloaded1083, mt1083.x, mt1083.y) === 'stone', 'M1083: a reloaded mountain tile is still stone');
+  assert(L1083.soilAt(reloaded1083, rich1083.x, rich1083.y) === 'rich' && L1083.soilAt(reloaded1083, poor1083.x, poor1083.y) === 'poor', 'M1083: the soil is identical after a save/reload round-trip');
+  assert(oceanAt(0, 100) === true && oceanAt(100, 100) === false, 'M1083: the ocean is west (sanity)');
+  console.log('M1083: landforms verified (determinism, band, cliffs, traversability, height, soil, farm growth, persistence)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

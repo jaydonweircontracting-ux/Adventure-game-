@@ -29,6 +29,7 @@ import {
   type ConstructionState,
 } from './construction';
 import { readyFarmTiles, FARM_VILLAGER_RADIUS } from './farm';
+import { soilFactorAt } from './livingWorld';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import { advanceClock } from './worldclock';
 import { chooseScoredActivity, founderDistToSite } from './utility';
@@ -153,11 +154,11 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // hut is unfinished, deliver jobs for carrying founders.
       // Jobs whose target is gone are removed (open) or failed
       // (claimed — the holder re-targets below).
-      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs});
+      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs,soilFactorAt:(tx:number,ty:number)=>soilFactorAt(world,tx,ty)});
       // BUILD 1069: the ready farm tiles this tick — computed once
       // (the scan is over placed farm tiles only, a handful) and
       // fed to every founder's scorer, so food drives work.
-      const readyFarmCount=readyFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS).length;
+      const readyFarmCount=readyFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS,(tx:number,ty:number)=>soilFactorAt(world,tx,ty)).length;
       // BUILD 1066 (0x06): the chain's closing loop — a newcomer
       // arrives when a finished hut leaves a free bed, the camp holds
       // food, and the settlement is old enough. One at a time (the
@@ -539,7 +540,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                 // — the tile resets to planted (it regrows) and the
                 // yield lands in the founder's carrier store
                 // (capacity 2), with the farm tile as its source.
-                const harv=harvestFarmTileToCarrier(registryRef.current,world,f,f.farmTarget.x,f.farmTarget.y,nowAbs);
+                const harv=harvestFarmTileToCarrier(registryRef.current,world,f,f.farmTarget.x,f.farmTarget.y,nowAbs,soilFactorAt(world,f.farmTarget.x,f.farmTarget.y));
                 registryRef.current=harv.registry;
                 if(harv.yield>0){
                   f.carryingGrain=harv.yield;worldDirty=true;
@@ -643,11 +644,11 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // scorer needs a populated board). No jobs are claimed or
         // executed during a wait (no physical work fast-forwards);
         // the board is frozen, and the re-choice reads it.
-        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs});
+        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs,soilFactorAt:(tx:number,ty:number)=>soilFactorAt(world,tx,ty)});
         // BUILD 1069: the ready farm tiles this wait step — the
         // same feed as the real-time tick, so a wait never
         // re-chooses by a different rule.
-        const wReadyFarm=readyFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS).length;
+        const wReadyFarm=readyFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS,(tx:number,ty:number)=>soilFactorAt(world,tx,ty)).length;
         for(let i=0;i<foundersRef.current.length;i++){
           const wf=foundersRef.current[i];
           // BUILD 1060: the wait-step re-choice is the SAME scorer

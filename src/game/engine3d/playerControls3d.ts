@@ -30,7 +30,7 @@ import {
 } from './founders';
 import { closestFounder, memoryCountsFor } from './memory';
 import { jobForFounder, type JobBoard } from './jobs';
-import { livingWorldSummary, type LivingWorld3DState } from './livingWorld';
+import { livingWorldSummary, soilFactorAt, type LivingWorld3DState } from './livingWorld';
 import {
   HUT_SITES, HUT_WORK_STEPS, sitesOf, hutSitePlacementExists,
   type ConstructionState,
@@ -656,8 +656,8 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // per-frame fx, so the field updates next frame on its own.
     // A growing tile answers plainly instead of harvesting.
     const farmNowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
-    const farmReady=placedFarmTiles(world).find(t=>key(t.tx,t.ty)&&farmStageAt(t.plantedAt,farmNowAbs)==='ready');
-    if(farmReady){const res=harvestFarmTile(world,farmReady.tx,farmReady.ty,farmNowAbs);if(res.ok){saveWorld(world);depositPlayer('grain',res.wheat,'farm:'+farmReady.tx+','+farmReady.ty);setMessage('Harvested wheat · +'+res.wheat+' wheat');return}}
+    const farmReady=placedFarmTiles(world).find(t=>key(t.tx,t.ty)&&farmStageAt(t.plantedAt,farmNowAbs,soilFactorAt(world,t.tx,t.ty))==='ready');
+    if(farmReady){const res=harvestFarmTile(world,farmReady.tx,farmReady.ty,farmNowAbs,soilFactorAt(world,farmReady.tx,farmReady.ty));if(res.ok){saveWorld(world);depositPlayer('grain',res.wheat,'farm:'+farmReady.tx+','+farmReady.ty);setMessage('Harvested wheat · +'+res.wheat+' wheat');return}}
     const farmNear=placedFarmTiles(world).find(t=>key(t.tx,t.ty));
     if(farmNear){setMessage('Wheat is still growing — it is ready in a few in-game hours');return}
     setMessage('Nothing close enough to interact with');return

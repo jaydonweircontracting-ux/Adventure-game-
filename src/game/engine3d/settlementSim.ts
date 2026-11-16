@@ -96,6 +96,8 @@ import {
 import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './food';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot } from './farm';
 import { stampRivers } from './rivers';
+import { stampLandforms } from './landforms';
+import { soilFactorAt } from './livingWorld';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
@@ -192,6 +194,14 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
   // routing keeps the work sites clear (a rivers system that only
   // ADDS water must not change them).
   stampRivers(world);
+  // BUILD 1083 (1.4): stamp the landforms into the sim world too,
+  // so the 24h run exercises founder paths around real mountains
+  // and cliffs — the M1069 numbers staying identical WITH
+  // landforms present is the proof the band keeps the work sites
+  // clear (a landforms system that only ADDS terrain must not
+  // change them). The camp farm is neutral soil (factor 1.0), so
+  // the farm grows at exactly the old rate.
+  stampLandforms(world);
   return {
     world,
     founders,
@@ -254,11 +264,11 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   const hutDone = !hasUnfinishedSite(construction);
 
   // Rebuild the job board from the world.
-  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs });
+  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty) });
 
   // BUILD 1069: the ready farm tiles this tick — computed once and
   // fed to every founder's scorer, so food drives work.
-  const readyFarmCount = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS).length;
+  const readyFarmCount = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS, (tx, ty) => soilFactorAt(world, tx, ty)).length;
 
   // A newcomer arrives when a finished hut leaves a free bed, the camp
   // holds food, and the settlement is old enough. One at a time.
@@ -639,7 +649,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         } else if (f.workState === 'harvesting' && f.farmTarget) {
           f.harvestTicks++;
           if (f.harvestTicks >= FOUNDER_HARVEST_TICKS) {
-            const harv = harvestFarmTileToCarrier(sim.registry, world, f, f.farmTarget.x, f.farmTarget.y, nowAbs);
+            const harv = harvestFarmTileToCarrier(sim.registry, world, f, f.farmTarget.x, f.farmTarget.y, nowAbs, soilFactorAt(world, f.farmTarget.x, f.farmTarget.y));
             sim.registry = harv.registry;
             if (harv.yield > 0) {
               f.carryingGrain = harv.yield;

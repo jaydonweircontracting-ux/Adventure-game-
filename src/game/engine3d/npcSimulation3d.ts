@@ -18,8 +18,9 @@ import {
   ROSTER_3D, buildAnchors, scheduleTileFor, planPathNpc, pathHasUnwalkableTile,
   sidestepTile, rosterArchetype, type DayClock, type StaticAnchors3D,
 } from './townsfolk3d';
-import { absMinutes, harvestFarmTile, nearestReadyFarmTile } from './farm';
+import { absMinutes, harvestFarmTile, nearestReadyFarmTile, FARM_VILLAGER_RADIUS } from './farm';
 import { blockedAction } from './npcMotion';
+import { soilFactorAt } from './livingWorld';
 import {
   spawnTransient, stepTransient, barkLineFor, barkDayEligible,
   MAX_TRAVELERS, MAX_ADVENTURERS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS,
@@ -116,7 +117,7 @@ export function stepRosterNpcs(ctx: NpcSimContext, state: NpcSimState): void {
     // after harvesting (or if the wheat is gone when they arrive
     // — harvested by the player or another farmer first).
     const farmNowAbs = absMinutes(clock.day, clock.minutes);
-    const farmDest = rosterArchetype(actor.name) === 'farmer' ? nearestReadyFarmTile(world, cx, cy, farmNowAbs) : null;
+    const farmDest = rosterArchetype(actor.name) === 'farmer' ? nearestReadyFarmTile(world, cx, cy, farmNowAbs, FARM_VILLAGER_RADIUS, (tx, ty) => soilFactorAt(world, tx, ty)) : null;
     const dest = farmDest ?? { tx: sched.tx, ty: sched.ty };
     if (cx === dest.tx && cy === dest.ty) {
       if (farmDest) {

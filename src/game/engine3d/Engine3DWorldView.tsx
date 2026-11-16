@@ -108,7 +108,7 @@ import type { SharedEventType } from './memory';
 // reads real 3D state (founders, trees, clock) and writes back real
 // trees + a persisted camp ledger. The view owns the ref; the 1s
 // clock timer and the wait step call the sync on the day boundary.
-import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
+import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, soilAt, soilFactorAt, type LivingWorld3DState } from './livingWorld';
 // BUILD 1068 (0x08): World Simulation Control Center — the panel data +
 // sim-speed model (pure) and the panel component. The view owns the refs;
 // the module formats them, the panel renders them.
@@ -2417,7 +2417,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(result.item));},
       // BUILD 1041 test hook (read-only): farm tiles with their live
       // growth stage (probes only — no gameplay effect).
-      getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes))})),
+      getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes),soilFactorAt(stateRef.current.world,t.tx,t.ty))})),
+      // BUILD 1083 test hook (read-only): the soil + growth factor at
+      // any tile (probes only — no gameplay effect).
+      getSoilAt:(x:number,y:number)=>({soil:soilAt(stateRef.current.world,x,y),factor:soilFactorAt(stateRef.current.world,x,y)}),
       // BUILD 996 test hooks: chunk library, save selection, armed
       // paste template (probes only — no gameplay effect).
       getTemplates:()=>JSON.parse(JSON.stringify(templatesRef.current)),
@@ -2785,7 +2788,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,stateRef.current.world.trees.length,clock.day):null;
         const farmTiles=placedFarmTiles(stateRef.current.world);
         const farm={planted:0,growing:0,ready:0};
-        for(const t of farmTiles){const s=farmStageAt(t.plantedAt,nowAbs);farm[s]++;}
+        for(const t of farmTiles){const s=farmStageAt(t.plantedAt,nowAbs,soilFactorAt(stateRef.current.world,t.tx,t.ty));farm[s]++;}
         return formatControlCenterData({
           speed:getSimSpeed(),day:clock.day,minutes:clock.minutes,
           founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain};}),

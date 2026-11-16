@@ -288,8 +288,18 @@ export function landBlendAt(effTerrain: (x: number, y: number) => Terrain, x: nu
  *  water. The ground corners, every object's base y, the camera and the
  *  picker all sample this one function — agreement is by construction,
  *  not by four separate copies of the math. */
+/** BUILD 1083 (1.4): mountain rock stands taller — a stamped
+ *  'stone' tile (the 1.4 mountain band) rises MOUNTAIN_BOOST above
+ *  the noise field, so the range reads as mountains, not just grey
+ *  paint. Only stamped stone gets the boost: the display-stone
+ *  from renderTerrain's STONE_ELEV rule is grass underneath, so
+ *  it is unaffected, and nothing else stamps 'stone' into the
+ *  terrain record. */
+export const MOUNTAIN_BOOST = 0.6;
 export function surfaceElevation(effTerrain: (x: number, y: number) => Terrain, x: number, z: number): number {
-  return groundElevation(x, z) * landBlendAt(effTerrain, x, z);
+  const base = groundElevation(x, z) * landBlendAt(effTerrain, x, z);
+  if (effTerrain(Math.floor(x), Math.floor(z)) === 'stone') return base + MOUNTAIN_BOOST;
+  return base;
 }
 
 /** The authored 5x5 pond (1027): tiles (119-123, 81-85). A documented
