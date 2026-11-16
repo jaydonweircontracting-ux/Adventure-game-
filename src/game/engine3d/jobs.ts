@@ -101,6 +101,7 @@
  */
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
+import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles } from './farm';
@@ -108,7 +109,7 @@ import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -204,7 +205,7 @@ export function harvestJobIdFor(tx: number, ty: number): string {
 export type JobDiscoveryInput = {
   world: IsoWorld;
   construction: ConstructionState;
-  founders: readonly { id: string; carrying: number; carryingGrain?: number }[];
+  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number }[];
   nowAbs: number;
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
@@ -213,6 +214,11 @@ export type JobDiscoveryInput = {
    *  climate.ts. */
   growthFactorAt?: (tx: number, ty: number) => number;
 };
+
+/** The board id for a quarry job on a target (a deposit or a rock). */
+export function quarryJobIdFor(targetId: string): string {
+  return jobIdFor('quarry', targetId);
+}
 
 /**
  * Rebuild the board from the world: add jobs for work that exists
@@ -226,12 +232,20 @@ export type JobDiscoveryInput = {
  * - harvest (BUILD 1067): one job per READY farm tile within the
  *   farmer radius of the camp; completing it when the tile is
  *   harvested (the grain is in the carrier).
+ * - quarry (BUILD 1086): one job per live stone deposit + one per
+ *   rock in work radius WITH a walkable work tile (a formation
+ *   nobody can stand beside is not work). Completing it when the
+ *   stone is in the carrier (the deposit depletes / the rock is
+ *   consumed). A mined-out deposit leaves the board (open) or
+ *   fails (claimed — 'target-gone').
  * - deliver: one job per founder carrying wood; completing it
  *   when the carrier empties (the work is done — the wood is
  *   in the camp store). BUILD 1067: a founder carrying GRAIN
  *   (harvested wheat) also gets a deliver job — the carrier
  *   holds wood or grain, and the job completes when BOTH are
- *   empty.
+ *   empty. BUILD 1086: a founder carrying STONE (mined) also
+ *   gets a deliver job — the carrier holds wood, grain, or
+ *   stone, and the job completes when ALL are empty.
  * A claimed job whose target vanished FAILS (failedReason
  * 'target-gone', the failed counter rises) — the holder's tree
  * was felled by the player first, and the holder must re-target.
@@ -338,10 +352,58 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     changed = true;
   }
 
-  // --- Deliver jobs: one per founder carrying wood OR grain. ---
+  // --- Quarry jobs: one per live stone deposit + one per rock in
+  // work radius WITH a walkable work tile (BUILD 1086). A deposit
+  // with no walkable tile beside it is not work (the chop rule).
+  const liveQuarryIds = new Set<string>();
+  for (const d of stoneDepositsInRadius(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS)) {
+    const targetId = quarryTargetIdFor('deposit', d.x, d.y);
+    const id = quarryJobIdFor(targetId);
+    liveQuarryIds.add(id);
+    if (next.jobs[id]) continue;
+    if (!quarryWorkTile(world, d.x, d.y)) continue;
+    next.jobs[id] = {
+      id,
+      kind: 'quarry',
+      targetId,
+      tile: { x: d.x, y: d.y },
+      state: 'open',
+      claimedBy: null,
+      createdAbs: nowAbs,
+    };
+    changed = true;
+  }
+  for (const r of rocksInRadius(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS)) {
+    const targetId = quarryTargetIdFor('rock', r.tx, r.ty);
+    const id = quarryJobIdFor(targetId);
+    liveQuarryIds.add(id);
+    if (next.jobs[id]) continue;
+    if (!quarryWorkTile(world, r.tx, r.ty)) continue;
+    next.jobs[id] = {
+      id,
+      kind: 'quarry',
+      targetId,
+      tile: { x: r.tx, y: r.ty },
+      state: 'open',
+      claimedBy: null,
+      createdAbs: nowAbs,
+    };
+    changed = true;
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'quarry' || liveQuarryIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
+  // --- Deliver jobs: one per founder carrying wood, grain, OR stone. ---
   const carryingIds = new Set<string>();
   for (const f of founders) {
-    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) <= 0) continue;
+    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) <= 0) continue;
     carryingIds.add(f.id);
     const id = deliverJobIdFor(f.id);
     if (!next.jobs[id]) {
@@ -546,6 +608,20 @@ export function scorerTreeDist(board: JobBoard, founderId: string, campX: number
   return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
 }
 
+/** BUILD 1086: the Manhattan distance camp → the founder's own
+ *  claimed quarry job, or the nearest OPEN quarry job — null when
+ *  every quarry site in range is claimed (the stone term scores 0,
+ *  the founder does not score stone work for a site someone else
+ *  is already mining). The same function feeds the real-time tick
+ *  and the wait step, so the two never disagree. Pure. */
+export function scorerQuarryDist(board: JobBoard, founderId: string, campX: number, campY: number, maxDist: number): number | null {
+  const mine = jobForFounder(board, founderId);
+  if (mine && mine.kind === 'quarry') return Math.abs(mine.tile.x - campX) + Math.abs(mine.tile.y - campY);
+  const open = nearestOpenJob(board, 'quarry', campX, campY, maxDist);
+  if (!open) return null;
+  return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
+}
+
 /** The founder holding a build job (the builder), or null when no
  *  build job is claimed. With a site id, the builder of THAT
  *  site's job (one builder per site); without one, the builder of
@@ -577,6 +653,8 @@ export function jobSummary(board: JobBoard): {
   deliverClaimed: number;
   harvestOpen: number;
   harvestClaimed: number;
+  quarryOpen: number;
+  quarryClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -591,20 +669,24 @@ export function jobSummary(board: JobBoard): {
   let deliverClaimed = 0;
   let harvestOpen = 0;
   let harvestClaimed = 0;
+  let quarryOpen = 0;
+  let quarryClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
       if (job.kind === 'chop') chopOpen++;
       else if (job.kind === 'build') buildOpen++;
       else if (job.kind === 'harvest') harvestOpen++;
+      else if (job.kind === 'quarry') quarryOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
       if (job.kind === 'chop') chopClaimed++;
       else if (job.kind === 'build') buildClaimed++;
       else if (job.kind === 'harvest') harvestClaimed++;
+      else if (job.kind === 'quarry') quarryClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

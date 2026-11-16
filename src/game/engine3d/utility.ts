@@ -55,6 +55,20 @@
  *     pile still works for food — the 0x09 24h test proved the old
  *     scorer starved it (food 30 → 0, farm never ran). The term
  *     never beats night sleep (0.81) or a hungry founder's eat.
+ *   - BUILD 1086 stone term: work = max(..., 0.45 x (1 - stone/12))
+ *     when the WOOD pile is full (>= 24) and a quarry job is open
+ *     and stone < 12 (stone 0 → 0.45, stone 6 → 0.225, stone 12+
+ *     → 0). The gate is chopWork == 0, not the pile alone: a
+ *     pile-full hut-pending chopWork (0.17) is below rest, so a
+ *     stone term gated only on the pile would pull a founder off
+ *     to a long quarry trip while the build drains the pile — the
+ *     wood numbers moved (50/50/24, meals 8/23). Gating on
+ *     chopWork == 0 means stone only diverts a founder who has no
+ *     wood work to do, so the wood and food loops keep their 24h
+ *     numbers. The work KIND (chop / harvest / quarry) is the STRICT
+ *     argmax of the three terms — stone wins only outright, food
+ *     wins ties over chop, chop wins ties over stone — so stone
+ *     never steals a chop or a harvest on a tie.
  * - build = 0 unless construction is pending (state !== 'done') AND
  *   the pile holds a step's wood (≥ 2) AND nobody else is building
  *   (one builder — the site has one work tile). Then 0.80 - 0.02 x
@@ -85,6 +99,7 @@
 import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
 import { FARM_FOOD_THRESHOLD, healthWorkFactor } from './food';
+import { QUARRY_STONE_TARGET } from './quarry';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, nearestUnfinishedSite } from './construction';
 import type { ConstructionState } from './construction';
 
@@ -124,6 +139,23 @@ export type UtilityWorldContext = {
    *  1059/1067 callers) and the food term is 0, so old scores are
    *  unchanged. */
   readyFarmTiles?: number;
+  /** BUILD 1086: stone in the camp store — the stone term only
+   *  fires while the pile is below the quarry target. Optional:
+   *  absent means no stone data (the 1059/1067/1069 callers) and
+   *  the stone term is 0, so old scores are unchanged. */
+  stoneStock?: number;
+  /** BUILD 1086: open quarry jobs on the board — the stone term
+   *  only fires when there is a deposit or rock to mine. Optional:
+   *  absent means no quarry data and the stone term is 0. */
+  readyQuarryJobs?: number;
+  /** BUILD 1086: another founder is already quarrying (walking to
+   *  a rock, mining, or carrying stone back) — the stone term is 0
+   *  for this founder, so only one founder ever has stone-driven
+   *  'work' and the rest rest (an idle founder in 'work' stands on
+   *  the camp centre and blocks every carrier's delivery, and never
+   *  recovers the social that lets them chop again). Optional:
+   *  absent means the slot is free. */
+  quarryTaken?: boolean;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -145,6 +177,15 @@ export type ScoredDecision = {
   runnerUp: ScoredActivity;
   topScore: number;
   runnerUpScore: number;
+  /** BUILD 1086: which work the founder should do when the
+   *  activity is 'work' — the argmax of the chop / food / stone
+   *  terms (null when no work is worth doing). */
+  workKind: 'chop' | 'harvest' | 'quarry' | null;
+  /** BUILD 1086: the chop term itself — the assignment gates the
+   *  chop fallback on it, so a founder whose activity is 'work'
+   *  (stone or food) but who cannot claim a harvest/quarry job
+   *  does not fall through to chopping a full pile. */
+  chopWork: number;
 };
 
 /** Fixed tie-break order: sleep > eat > build > work > rest. */
@@ -172,6 +213,15 @@ export const UTILITY_COMPANION_BONUS = 0.15;
  *  alone (food 0 with a ready farm tile). Below night sleep (0.81)
  *  and a hungry founder's eat (up to 1.2), above idle rest. */
 export const UTILITY_FOOD_TERM_MAX = 0.65;
+/** BUILD 1086: the stone term — the most work is worth for stone
+ *  alone (stone 0 with an open quarry job and a full wood pile).
+ *  IDLE-TIME ONLY (0.03): below every mild need — eat is 0.048 at
+ *  hunger 80, rest ~0.14 at social 60, sleep 0.01 at energy 90 — so
+ *  stone only wins when the founder is nearly satisfied (all needs
+ *  high, pile full, food fine). A founder who still needs to eat,
+ *  rest, or sleep does that first; stone never steals from the
+ *  wood/food loop, so the 24h numbers stay byte-identical. */
+export const UTILITY_STONE_TERM_MAX = 0.03;
 
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
@@ -184,24 +234,28 @@ export function utilityNeed(value: number): number {
  * work with no tree in range, build when the hut is done / the pile
  * is short / another founder is building).
  */
-export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
-  const { needs, minutes, foodStock, stockpileWood, construction, nearestTreeDist, distToSite, builderTaken, currentJob } = ctx;
+/**
+ * BUILD 1086: the three work terms + which work wins. Chop (the hut
+ * / the pile), food (a ready farm tile while the camp is short),
+ * stone (an open quarry job while the pile is below target AND
+ * there is no chop work at all — chopWork == 0, the M1069 guard).
+ * The work kind is the STRICT argmax: stone wins only when it beats
+ * both chop and food outright, food wins ties over chop, chop wins
+ * ties over stone — so stone never steals a chop or a harvest on a
+ * tie, and the M1069 numbers stay put. One helper — the scorer and
+ * the decision both read it, so they never disagree about which
+ * work wins.
+ */
+function workTermsFor(ctx: UtilityContext): {
+  chopWork: number;
+  foodTerm: number;
+  stoneTerm: number;
+  work: number;
+  workKind: 'chop' | 'harvest' | 'quarry' | null;
+} {
+  const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
   const distPenalty = (d: number): number => UTILITY_DIST_PENALTY * Math.min(8, Math.max(0, d));
-
-  const sleep = clamp01(utilityNeed(needs.energy) ** 2 + (isFounderNight(minutes) ? UTILITY_NIGHT_BONUS : 0));
-  const eat = foodStock > 0 ? clamp01(utilityNeed(needs.hunger) ** 2 * UTILITY_EAT_WEIGHT) : 0;
-  // BUILD 1060: the companionship premium — a lonely founder rests
-  // more eagerly when their closest founder is at camp. The premium
-  // scales with affinity ABOVE neutral (50): a neutral 50 adds
-  // nothing, a close 90 adds 0.15 x 0.8 x need(social). Absent
-  // relationship data (the 1059 callers) the premium is 0.
-  const companionBonus =
-    ctx.companionAtCamp && ctx.closestAffinity !== undefined
-      ? UTILITY_COMPANION_BONUS * Math.max(0, (ctx.closestAffinity - 50) / 50) * utilityNeed(needs.social)
-      : 0;
-  const rest = clamp01(utilityNeed(needs.social) ** 2 * UTILITY_REST_WEIGHT + companionBonus);
-
   let chopWork = 0;
   if (nearestTreeDist !== null) {
     if (construction.state !== 'done') {
@@ -227,7 +281,56 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
     readyTiles > 0 && foodStock < FARM_FOOD_THRESHOLD
       ? UTILITY_FOOD_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
       : 0;
-  let work = Math.max(chopWork, foodTerm);
+  // BUILD 1086: the stone term — when the camp is short of stone
+  // (below QUARRY_STONE_TARGET) and a quarry job is open AND there
+  // is NO chop work at all (chopWork is exactly 0 — the pile is
+  // full and the hut is done, or no tree is in range), work is worth
+  // doing for the stone alone. Same shape as the food term (max, not
+  // addition). The chopWork gate is the M1069 guard: a pile-full
+  // hut-pending chopWork (0.17) is BELOW rest, so a stone term gated
+  // only on the pile would pull a founder off to a long quarry trip
+  // while the build drains the pile — the wood numbers moved
+  // (50/50/24, meals 8/23). Gating on chopWork == 0 means stone
+  // only diverts a founder who has no wood work to do, so the wood
+  // and food loops keep their 24h numbers. It never beats night
+  // sleep or a hungry founder's eat, and it never steals a chop or
+  // a harvest on a tie (the work kind below is the STRICT argmax).
+  const stoneStock = ctx.stoneStock ?? 0;
+  const readyQuarry = ctx.readyQuarryJobs ?? 0;
+  const quarryTaken = ctx.quarryTaken ?? false;
+  const stoneTerm =
+    readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && chopWork === 0
+      ? UTILITY_STONE_TERM_MAX * Math.max(0, 1 - stoneStock / QUARRY_STONE_TARGET)
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | null = null;
+  if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm) workKind = 'quarry';
+  else if (foodTerm > 0 && foodTerm >= chopWork) workKind = 'harvest';
+  else if (chopWork > 0) workKind = 'chop';
+  return { chopWork, foodTerm, stoneTerm, work, workKind };
+}
+
+export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
+  const { needs, minutes, foodStock, stockpileWood, construction, nearestTreeDist, distToSite, builderTaken, currentJob } = ctx;
+  const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
+  const distPenalty = (d: number): number => UTILITY_DIST_PENALTY * Math.min(8, Math.max(0, d));
+
+  const sleep = clamp01(utilityNeed(needs.energy) ** 2 + (isFounderNight(minutes) ? UTILITY_NIGHT_BONUS : 0));
+  const eat = foodStock > 0 ? clamp01(utilityNeed(needs.hunger) ** 2 * UTILITY_EAT_WEIGHT) : 0;
+  // BUILD 1060: the companionship premium — a lonely founder rests
+  // more eagerly when their closest founder is at camp. The premium
+  // scales with affinity ABOVE neutral (50): a neutral 50 adds
+  // nothing, a close 90 adds 0.15 x 0.8 x need(social). Absent
+  // relationship data (the 1059 callers) the premium is 0.
+  const companionBonus =
+    ctx.companionAtCamp && ctx.closestAffinity !== undefined
+      ? UTILITY_COMPANION_BONUS * Math.max(0, (ctx.closestAffinity - 50) / 50) * utilityNeed(needs.social)
+      : 0;
+  const rest = clamp01(utilityNeed(needs.social) ** 2 * UTILITY_REST_WEIGHT + companionBonus);
+
+  // The work terms (chop / food / stone) live in workTermsFor —
+  // the scorer and the decision both read the one helper.
+  let work = workTermsFor(ctx).work;
 
   let build = 0;
   if (construction.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP && !builderTaken) {
@@ -270,7 +373,8 @@ export function chooseScoredActivity(ctx: UtilityContext): ScoredDecision {
   for (const a of UTILITY_TIE_ORDER) {
     if (a !== top && scores[a] > scores[runnerUp]) runnerUp = a;
   }
-  return { activity: top, scores, top, runnerUp, topScore: scores[top], runnerUpScore: scores[runnerUp] };
+  const terms = workTermsFor(ctx);
+  return { activity: top, scores, top, runnerUp, topScore: scores[top], runnerUpScore: scores[runnerUp], workKind: terms.workKind, chopWork: terms.chopWork };
 }
 
 /** Manhattan distance between two tiles (the scorer's distance). */

@@ -136,11 +136,15 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  0x0F): the camp's stored GRAIN (grainStock — the mill's
  *  buffer; the 0x09 24h test proved a reload lost it, so the
  *  food loop leaked grain on every save). v6 saves migrate with
- *  grainStock 0. NOTE: the parked Tamsin stash (BUILD 1061,
- *  stash@{0}) ALSO claims v4 for the newcomer — when it resumes
- *  it must rebase its migration to v8 (this v7 means "has camp
- *  grain"). */
-export const FOUNDER_SAVE_VERSION = 7;
+ *  grainStock 0. v8 (BUILD 1086, 0x15): the camp's stored STONE
+ *  (stoneStock — the quarry loop's stockpile leg) and each
+ *  founder's carried STONE (carryingStone — the mine leg, like
+ *  carryingGrain for the harvest). v7 saves migrate with
+ *  stoneStock 0 and carryingStone 0. NOTE: the parked Tamsin
+ *  stash (BUILD 1061, stash@{0}) ALSO claims v4 for the
+ *  newcomer — when it resumes it must rebase its migration to
+ *  v9 (this v8 means "has camp stone"). */
+export const FOUNDER_SAVE_VERSION = 8;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -200,6 +204,10 @@ export const FOUNDER_CHOP_TICKS = 3;
 /** Ticks spent harvesting at a farm tile before the wheat is in
  *  the carrier (BUILD 1067 — wheat is quicker than a tree). */
 export const FOUNDER_HARVEST_TICKS = 2;
+/** Ticks spent mining at a quarry site before the stone is in
+ *  the carrier (BUILD 1086 — the same as chopping: the 2.5D
+ *  quarry loop mines 2 stone per 3000ms at 1 tick/900ms). */
+export const FOUNDER_MINE_TICKS = 3;
 /** Wood per felled tree — the same as the player's E-key chop. */
 export const FOUNDER_WOOD_PER_TREE = 2;
 
@@ -310,10 +318,11 @@ export function deliverFounderWood(stockpileWood: number, carrying: number): num
  * does not record where a unit came from), uncapped — the same
  * as the plain refs today. Pure.
  */
-export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number, grainStock: number): ResourceRegistry {
+export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number, grainStock: number, stoneStock = 0): ResourceRegistry {
   let next = setStoreQty(registry, CAMP_STORE_ID, 'wood', stockpileWood, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
   next = setStoreQty(next, CAMP_STORE_ID, 'food', foodStock, { type: 'loaded' }, { location: { ...FOUNDER_EAT_TILE } });
   next = setStoreQty(next, CAMP_STORE_ID, 'grain', grainStock, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
+  next = setStoreQty(next, CAMP_STORE_ID, 'stone', stoneStock, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
   return next;
 }
 
@@ -323,13 +332,16 @@ export function seedCampStore(registry: ResourceRegistry, stockpileWood: number,
  * tile, owner the founder's id, source 'loaded'. A founder reloaded
  * mid-carry still holds what the save says they hold — wood AND
  * grain (BUILD 1067: a founder reloaded mid-harvest keeps the
- * grain in their carrier, and re-claims a deliver job for it).
+ * grain in their carrier, and re-claims a deliver job for it)
+ * — and stone (BUILD 1086: the same for a founder reloaded
+ * mid-mine).
  * Pure.
  */
 export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): ResourceRegistry {
   const carrying = Math.max(0, Math.floor(f.carrying));
   const carryingGrain = Math.max(0, Math.floor(f.carryingGrain));
-  if (carrying <= 0 && carryingGrain <= 0) return registry;
+  const carryingStone = Math.max(0, Math.floor(f.carryingStone));
+  if (carrying <= 0 && carryingGrain <= 0 && carryingStone <= 0) return registry;
   let next = registry;
   if (carrying > 0) {
     next = setStoreQty(
@@ -347,6 +359,16 @@ export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): R
       carrierStoreId(f.id),
       'grain',
       carryingGrain,
+      { type: 'loaded' },
+      { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
+    );
+  }
+  if (carryingStone > 0) {
+    next = setStoreQty(
+      next,
+      carrierStoreId(f.id),
+      'stone',
+      carryingStone,
       { type: 'loaded' },
       { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
     );
@@ -475,20 +497,26 @@ export function harvestFarmTileToCarrier(
 export function deliverFounderCarryToRegistry(
   registry: ResourceRegistry,
   f: FounderState,
-): { registry: ResourceRegistry; movedWood: number; movedGrain: number } {
+): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number } {
   const wood = deliverFounderWoodToRegistry(registry, f);
   const grain = Math.max(0, Math.floor(f.carryingGrain));
-  if (grain <= 0) return { registry: wood.registry, movedWood: wood.moved, movedGrain: 0 };
-  const res = transfer(
-    wood.registry,
-    carrierStoreId(f.id),
-    CAMP_STORE_ID,
-    'grain',
-    grain,
-    { type: 'entity', id: f.id },
-    { location: { ...FOUNDER_CAMP_CENTRE } },
-  );
-  return { registry: res.registry, movedWood: wood.moved, movedGrain: res.moved };
+  const stone = Math.max(0, Math.floor(f.carryingStone));
+  let reg = wood.registry;
+  let movedGrain = 0;
+  if (grain > 0) {
+    const res = transfer(reg, carrierStoreId(f.id), CAMP_STORE_ID, 'grain', grain, { type: 'entity', id: f.id }, { location: { ...FOUNDER_CAMP_CENTRE } });
+    reg = res.registry;
+    movedGrain = res.moved;
+  }
+  // BUILD 1086: the stone leg — the mined stone moves from the
+  // carrier store to the camp store, like the grain above.
+  let movedStone = 0;
+  if (stone > 0) {
+    const res = transfer(reg, carrierStoreId(f.id), CAMP_STORE_ID, 'stone', stone, { type: 'entity', id: f.id }, { location: { ...FOUNDER_CAMP_CENTRE } });
+    reg = res.registry;
+    movedStone = res.moved;
+  }
+  return { registry: reg, movedWood: wood.moved, movedGrain, movedStone };
 }
 
 /** Units of wood in the camp store (the registry's answer to the
@@ -503,9 +531,15 @@ export function campFoodInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, CAMP_STORE_ID, 'food');
 }
 
+/** Stone in the camp store (BUILD 1086 — the quarry loop's
+ *  stockpile leg). Pure. */
+export function campStoneInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, CAMP_STORE_ID, 'stone');
+}
+
 // --- Founder state ---
 
-export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting';
+export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting' | 'toQuarry' | 'mining';
 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
@@ -533,6 +567,14 @@ export type FounderState = {
   buildTicks: number;
   /** Harvest ticks spent on the current farm tile (BUILD 1067). */
   harvestTicks: number;
+  /** Stone currently carried (0..2 — the mine leg, BUILD 1086,
+   *  like carryingGrain for the harvest). */
+  carryingStone: number;
+  /** Mine ticks spent on the current quarry site (BUILD 1086). */
+  mineTicks: number;
+  /** Quarry site being worked, if any (session-only — the job's
+   *  target id + tile; the kind is the id's prefix). */
+  quarryTarget: { id: string; x: number; y: number } | null;
   /** Tree being worked, if any (session-only). */
   treeTarget: { x: number; y: number } | null;
   /** Farm tile being harvested, if any (session-only). */
@@ -615,11 +657,14 @@ export function spawnResident(
     workState: 'arriving',
     carrying: 0,
     carryingGrain: 0,
+    carryingStone: 0,
     chopTicks: 0,
     buildTicks: 0,
     harvestTicks: 0,
+    mineTicks: 0,
     treeTarget: null,
     farmTarget: null,
+    quarryTarget: null,
     workTile: null,
     lastAbs: clockAbs,
     social: freshFounderSocial(others.map((o) => o.name).filter((n) => n !== name)),
@@ -647,11 +692,14 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     workState: 'toTree',
     carrying: 0,
     carryingGrain: 0,
+    carryingStone: 0,
     chopTicks: 0,
     buildTicks: 0,
     harvestTicks: 0,
+    mineTicks: 0,
     treeTarget: null,
     farmTarget: null,
+    quarryTarget: null,
     workTile: null,
     lastAbs: clockAbs,
     social: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
@@ -679,7 +727,8 @@ export function founderDestination(f: FounderState): { x: number; y: number } {
   // adjacent to the tree — the tree tile itself blocks movement), or
   // the camp when no tree is targeted (idle at camp, visible, honest).
   // BUILD 1067: carried grain goes to the camp store too.
-  if (f.carrying > 0 || f.carryingGrain > 0) return FOUNDER_CAMP_CENTRE;
+  // BUILD 1086: carried stone goes to the camp store too.
+  if (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0) return FOUNDER_CAMP_CENTRE;
   if (f.workState === 'toStockpile') return FOUNDER_CAMP_CENTRE;
   if (f.workTile) return f.workTile;
   return FOUNDER_CAMP_CENTRE;
@@ -920,6 +969,9 @@ export type FounderSave = {
   /** BUILD 1067: grain carried (v6; v5 saves have none and
    *  migrate to 0). */
   carryingGrain?: number;
+  /** BUILD 1086: stone carried (v8; v7 saves have none and
+   *  migrate to 0). */
+  carryingStone?: number;
   hunger: number;
   energy: number;
   social: number;
@@ -954,6 +1006,10 @@ export type FoundersSaveState = {
    *  buffer. v6 saves have none and migrate to 0 (the 0x09 24h
    *  test proved a reload lost it). */
   grainStock: number;
+  /** BUILD 1086 (0x15, v8): the camp's stored stone — the
+   *  quarry loop's stockpile leg. v7 saves have none and migrate
+   *  to 0. */
+  stoneStock: number;
   /** BUILD 1058: the first hut's construction (v2; v1 saves have
    *  none and migrate to a fresh one). */
   construction: ConstructionState;
@@ -971,6 +1027,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
       y: FOUNDER_SLEEP_TILES[i].y,
       carrying: 0,
       carryingGrain: 0,
+      carryingStone: 0,
       hunger: 80,
       energy: 90,
       social: 60,
@@ -987,6 +1044,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     stockpileWood: 0,
     foodStock: FOUNDER_START_FOOD,
     grainStock: 0,
+    stoneStock: 0,
     construction: freshConstruction(),
   };
 }
@@ -1079,7 +1137,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== 7 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1066 (v5): construction from the save — a v5 save has the
   // per-site list (`sites`); a v4-or-earlier save has the single-hut
@@ -1145,6 +1203,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       y: Math.round(num('y', FOUNDER_SLEEP_TILES[i].y)),
       carrying: Math.max(0, Math.round(num('carrying', 0))),
       carryingGrain: Math.max(0, Math.round(num('carryingGrain', 0))),
+      carryingStone: Math.max(0, Math.round(num('carryingStone', 0))),
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1211,6 +1270,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       y: Math.round(num('y', FOUNDER_CAMP.y)),
       carrying: Math.max(0, Math.round(num('carrying', 0))),
       carryingGrain: Math.max(0, Math.round(num('carryingGrain', 0))),
+      carryingStone: Math.max(0, Math.round(num('carryingStone', 0))),
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1239,7 +1299,13 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
     v.grainStock == null || !Number.isFinite(Number(v.grainStock))
       ? 0
       : Math.max(0, Math.round(Number(v.grainStock)));
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, construction };
+  // BUILD 1086 (v8): the camp's stored stone — v7 saves have none
+  // and migrate to 0 (no data — assume the pile holds no stone).
+  const stoneStock =
+    v.stoneStock == null || !Number.isFinite(Number(v.stoneStock))
+      ? 0
+      : Math.max(0, Math.round(Number(v.stoneStock)));
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, stoneStock, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -1272,7 +1338,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, construction: ConstructionState): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -1282,6 +1348,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       y: Math.round(f.y),
       carrying: f.carrying,
       carryingGrain: f.carryingGrain,
+      carryingStone: f.carryingStone,
       hunger: Math.round(f.needs.hunger),
       energy: Math.round(f.needs.energy),
       social: Math.round(f.needs.social),
@@ -1302,6 +1369,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     stockpileWood,
     foodStock,
     grainStock,
+    stoneStock,
     construction: constructionFromSites(sitesOf(construction)),
   };
 }
@@ -1336,11 +1404,14 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
       workState: s.workState,
       carrying: s.carrying,
       carryingGrain: s.carryingGrain ?? 0,
+      carryingStone: s.carryingStone ?? 0,
       chopTicks: s.chopTicks,
       buildTicks: s.buildTicks ?? 0,
       harvestTicks: s.harvestTicks ?? 0,
+      mineTicks: 0,
       treeTarget: null,
       farmTarget: null,
+      quarryTarget: null,
       workTile: null,
       lastAbs: s.lastAbs,
       social: validateFounderSocial(s.socialState, s.name),

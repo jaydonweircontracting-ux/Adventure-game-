@@ -126,7 +126,7 @@ export function animalId(kind: string, slotId: number): string {
  * site, one carrier per founder), so a job id never collides with
  * another live job of the same kind.
  */
-export function jobIdFor(kind: 'chop' | 'build' | 'deliver' | 'harvest', targetId: string): string {
+export function jobIdFor(kind: 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry', targetId: string): string {
   return 'job:' + kind + ':' + targetId;
 }
 

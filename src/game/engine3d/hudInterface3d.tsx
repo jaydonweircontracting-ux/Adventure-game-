@@ -296,7 +296,7 @@ export function WorldMap3D({ world, playerX, playerY, day, onClose, onTapTravel 
   );
 }
 
-export interface HudCampUi { wood: number; food: number; grain: number; hut: string; forest: string; }
+export interface HudCampUi { wood: number; stone: number; food: number; grain: number; hut: string; forest: string; }
 
 export interface HudStripProps {
   message: string;
@@ -340,7 +340,7 @@ export function HudStrip(props: HudStripProps) {
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Grain {campUi.grain} · Hut {campUi.hut} · Forest {campUi.forest}%</span></div>
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Stone {campUi.stone} · Food {campUi.food} · Grain {campUi.grain} · Hut {campUi.hut} · Forest {campUi.forest}%</span></div>
     </div>
   );
 }

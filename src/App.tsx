@@ -197,7 +197,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1085';
+const BUILD_NUMBER = '1086';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -286,6 +286,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1083': 'Hills and a mountain band now rise from the eastern high ground, with valleys between them, and the soil under a farm matters — rich soil grows wheat faster than poor soil; cliffs block the way where the slope is too steep. Everything else works exactly as before.',
   '1084': 'The world now has seasons — spring, summer, autumn, winter, each about 90 days — and the season changes how fast wheat grows and trees regrow; winter slows them, summer speeds them; the HUD shows the season; rain is now a real amount, not just a visual. Everything else works exactly as before.',
   '1085': 'The forest now regrows — a cleared patch of trees grows saplings over days, faster in summer than winter, until they stand as real trees again — and the animals live real lives: deer numbers recover after hunting stops and fall while it continues, with wolves pressing on them, and the counts survive a reload. Everything else works exactly as before.',
+  '1086': 'The founders now gather stone too — a founder walks to a rock formation, mines it, and carries the stone back to the camp stockpile, which now holds wood and stone; the HUD shows the stone rising. A mined-out deposit stays mined out, and the stone counts survive a reload. Everything else works exactly as before.',
   '1081': 'The world now holds real mineral deposits — iron, copper, coal, gold, silver, and stone — scattered through the wilds beyond the camp. Each one is a distinct tinted rock outcrop you can find on the map, and pressing E beside one tells you the mineral and how much is left. The deposits persist after reload, and a mined-out one stays mined out. Mining them comes next. Everything else works exactly as before.',
   '1077': 'Under the hood, the HUD and interface — the status strip, the minimap and world map, the wait sheet, the control buttons, and the Build cluster — were moved into their own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same HUD, the same buttons, the same everything. Everything else works exactly as before.',
   '1072': 'Under the hood, the 3D renderer — the camera, the drawing of the world, and the frame-by-frame picture — was moved into its own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same world, the same settlers, the same everything. Everything else works exactly as before.',

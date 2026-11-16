@@ -100,7 +100,7 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, npcWalkable, quantizeTile,
 import { formatDayClock, waitOptionsFor, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
-import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, deliverFounderCarryToRegistry, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, deliverFounderCarryToRegistry, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
 import type { SharedEventType } from './memory';
@@ -663,6 +663,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1067: the camp grain store mirror (the grain the founders
   // harvested, waiting to be milled into meals) — same pattern.
   const founderGrainRef=useRef(0);
+  // BUILD 1086: the camp stone store mirror — the same pattern.
+  const founderStoneRef=useRef(0);
   // BUILD 1064 (R-1): the unified resource registry — the one
   // authoritative record (player store, camp store, carrier stores,
   // world deposits). Built from the world + the saves on load (the
@@ -711,7 +713,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1058: + the hut progress ('—' / '3/6' / 'done').
   // BUILD 1062: + the forest density % from the living-world adapter
   // (live stored trees / baseline) — '—' until the adapter loads.
-  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,grain:0,hut:'—',forest:'—'});
+  const [campUi,setCampUi]=useState({wood:0,stone:0,food:FOUNDER_START_FOOD,grain:0,hut:'—',forest:'—'});
   // BUILD 1062: the forest % for the Camp line, from the live tree
   // count and the adapter's fixed baseline. '—' when the adapter has
   // not loaded yet (first render, before the mount effect).
@@ -735,7 +737,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     founderStockpileRef.current=campWoodInRegistry(reg);
     founderFoodRef.current=campFoodInRegistry(reg);
     founderGrainRef.current=campGrainInRegistry(reg);
-    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
+    founderStoneRef.current=campStoneInRegistry(reg);
+    setCampUi({wood:founderStockpileRef.current,stone:founderStoneRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
   };
   // BUILD 1078 (0x0D, area 8): the living-world sync lives in
   // worldSync3d.ts now — the view builds the context once and calls
@@ -1691,7 +1694,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // are skipped, so the registry never reports ore that no longer
       // exists. The stamp in loadInitialWorld already ran above.
       reg=depositsFromGeology(reg,world);
-      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0);
+      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0,saved?saved.stoneStock??0:0);
       for(const f of states)reg=seedCarrierStore(reg,f);
       reg=loadPlayerInventoryIntoRegistry(reg);
       registryRef.current=reg;
@@ -2546,7 +2549,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
+      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,mineTicks:f.mineTicks,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),stoneStock:campStoneInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
       // BUILD 1065 (J-1): the job board for the probe — the summary
       // counts plus every live job (id, kind, target, tile, state,
       // claim). Read-only.
@@ -2578,10 +2581,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1064 (R-1): the registry read (probes only) — the
       // player store, the camp store, the carrier stores, the world
       // deposits still standing, and the totals a scheduler asks.
-      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current)},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood'),grain:storeQty(registryRef.current,'carrier:'+f.id,'grain')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
+      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current),stone:campStoneInRegistry(registryRef.current)},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood'),grain:storeQty(registryRef.current,'carrier:'+f.id,'grain'),stone:storeQty(registryRef.current,'carrier:'+f.id,'stone')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
       setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
       setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE}});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
       setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE}});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
+      setCampStone:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'stone',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campStoneInRegistry(registryRef.current);},
       // BUILD 1081 (1.2): mineral deposits (probes only) — the live
       // deposit list, and a debug depletion path (Phase 2 owns real
       // mining; this hook proves a mined-out deposit stays mined-out
@@ -2806,12 +2810,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         for(const t of farmTiles){const s=farmStageAt(t.plantedAt,nowAbs,growthFactorAt(stateRef.current.world,clock.day,t.tx,t.ty));farm[s]++;}
         return formatControlCenterData({
           speed:getSimSpeed(),day:clock.day,minutes:clock.minutes,
-          founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain};}),
+          founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone};}),
           sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),
           hutDone:!hasUnfinishedSite(constructionRef.current),
-          camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg)},
+          camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg),stone:campStoneInRegistry(reg)},
           player:{wood:storeQty(reg,PLAYER_STORE_ID,'wood'),stone:storeQty(reg,PLAYER_STORE_ID,'stone'),gold:storeQty(reg,PLAYER_STORE_ID,'gold'),grain:storeQty(reg,PLAYER_STORE_ID,'grain')},
-          carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain')})),
+          carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain'),stone:storeQty(reg,'carrier:'+f.id,'stone')})),
           deposits:{wood:depositsOfKind(reg,'wood').length,stone:depositsOfKind(reg,'stone').length},
           totalWoodAvailable:totalAvailable(reg,'wood'),totalStoneAvailable:totalAvailable(reg,'stone'),
           jobs:jobSummary(board),livingWorld:lw,farm,

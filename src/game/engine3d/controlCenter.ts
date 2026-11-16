@@ -77,6 +77,7 @@ export type ControlCenterFounderRow = {
   jobTarget: string | null;
   carrying: number;
   carryingGrain: number;
+  carryingStone: number;
 };
 
 export type ControlCenterSiteRow = {
@@ -99,6 +100,8 @@ export type ControlCenterJobs = {
   deliverClaimed: number;
   harvestOpen: number;
   harvestClaimed: number;
+  quarryOpen: number;
+  quarryClaimed: number;
   lastFailedId: string | null;
   lastFailedReason: string | null;
 };
@@ -110,9 +113,9 @@ export type ControlCenterInput = {
   founders: ControlCenterFounderRow[];
   sites: ControlCenterSiteRow[];
   hutDone: boolean;
-  camp: { wood: number; food: number; grain: number };
+  camp: { wood: number; food: number; grain: number; stone: number };
   player: { wood: number; stone: number; gold: number; grain: number };
-  carried: { id: string; wood: number; grain: number }[];
+  carried: { id: string; wood: number; grain: number; stone: number }[];
   deposits: { wood: number; stone: number };
   totalWoodAvailable: number;
   totalStoneAvailable: number;
@@ -136,12 +139,14 @@ export type ControlCenterData = {
     campWood: number;
     campFood: number;
     campGrain: number;
+    campStone: number;
     playerWood: number;
     playerStone: number;
     playerGold: number;
     playerGrain: number;
     carriedWood: number;
     carriedGrain: number;
+    carriedStone: number;
     depositsWood: number;
     depositsStone: number;
     totalWoodAvailable: number;
@@ -227,12 +232,14 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       campWood: input.camp.wood,
       campFood: input.camp.food,
       campGrain: input.camp.grain,
+      campStone: input.camp.stone,
       playerWood: input.player.wood,
       playerStone: input.player.stone,
       playerGold: input.player.gold,
       playerGrain: input.player.grain,
       carriedWood: input.carried.reduce((s, c) => s + c.wood, 0),
       carriedGrain: input.carried.reduce((s, c) => s + c.grain, 0),
+      carriedStone: input.carried.reduce((s, c) => s + c.stone, 0),
       depositsWood: input.deposits.wood,
       depositsStone: input.deposits.stone,
       totalWoodAvailable: input.totalWoodAvailable,
