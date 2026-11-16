@@ -470,6 +470,45 @@ export function founderDestination(f: FounderState): { x: number; y: number } {
 // --- Trees: find + chop (the player's E-key mechanism, reused) ---
 
 /**
+ * BUILD 1065 (J-1): every tree within `maxDist` (Manhattan) of
+ * (x, y), in the SAME scan order nearestTreeTile used (seeded trees
+ * in world order, then wild trees row-major past the map edge) —
+ * the scheduler's discovery needs the whole list, not just the
+ * nearest, and the two must never disagree about which trees
+ * exist. `exclude` skips trees already proven unworkable. Pure read
+ * (never mutates the world).
+ */
+export function treesInRadius(
+  world: IsoWorld,
+  x: number,
+  y: number,
+  maxDist: number,
+  exclude?: ReadonlySet<string>,
+): { tx: number; ty: number }[] {
+  const out: { tx: number; ty: number }[] = [];
+  for (const t of world.trees ?? []) {
+    if (exclude?.has(t.tx + ',' + t.ty)) continue;
+    if (Math.abs(t.tx - x) + Math.abs(t.ty - y) > maxDist) continue;
+    out.push({ tx: t.tx, ty: t.ty });
+  }
+  // Wild trees only exist past the map edge — skip the out-of-map
+  // scan entirely when the whole search box is in-map (the camp is
+  // deep in-map, so this is the common case: the per-tick tree
+  // search stays a ~226-entry seeded scan, not a 61x61 wild loop).
+  if (x - maxDist < 0 || y - maxDist < 0 || x + maxDist >= world.w || y + maxDist >= world.h) {
+    for (let ty = y - maxDist; ty <= y + maxDist; ty++) {
+      for (let tx = x - maxDist; tx <= x + maxDist; tx++) {
+        if (tx >= 0 && ty >= 0 && tx < world.w && ty < world.h) continue;
+        if (Math.abs(tx - x) + Math.abs(ty - y) > maxDist) continue;
+        if (exclude?.has(tx + ',' + ty)) continue;
+        if (wildTreeAt(tx, ty) && !(world.removedWildTrees ?? []).includes(tx + ',' + ty)) out.push({ tx, ty });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Nearest tree within `maxDist` (Manhattan) of (x, y): seeded trees
  * in world.trees, plus wild trees past the map edge. `exclude` skips
  * trees already proven unworkable (no walkable tile beside them).
@@ -486,32 +525,13 @@ export function nearestTreeTile(
 ): { tx: number; ty: number } | null {
   let best: { tx: number; ty: number } | null = null;
   let bestD = Infinity;
-  // First in scan order wins ties (seeded trees in world order, then
-  // wild trees row-major) — the order is fixed, so the choice is
-  // deterministic.
-  const consider = (tx: number, ty: number) => {
-    const d = Math.abs(tx - x) + Math.abs(ty - y);
-    if (d > maxDist || d >= bestD) return;
+  // First in scan order wins ties (strict <, so the earliest of a
+  // tie keeps the lead — the same rule the old inline scan had).
+  for (const t of treesInRadius(world, x, y, maxDist, exclude)) {
+    const d = Math.abs(t.tx - x) + Math.abs(t.ty - y);
+    if (d >= bestD) continue;
     bestD = d;
-    best = { tx, ty };
-  };
-  for (const t of world.trees ?? []) {
-    if (exclude?.has(t.tx + ',' + t.ty)) continue;
-    consider(t.tx, t.ty);
-  }
-  // Wild trees only exist past the map edge — skip the out-of-map
-  // scan entirely when the whole search box is in-map (the camp is
-  // deep in-map, so this is the common case: the per-tick tree
-  // search stays a ~226-entry seeded scan, not a 61x61 wild loop).
-  if (x - maxDist < 0 || y - maxDist < 0 || x + maxDist >= world.w || y + maxDist >= world.h) {
-    for (let ty = y - maxDist; ty <= y + maxDist; ty++) {
-      for (let tx = x - maxDist; tx <= x + maxDist; tx++) {
-        if (tx >= 0 && ty >= 0 && tx < world.w && ty < world.h) continue;
-        if (Math.abs(tx - x) + Math.abs(ty - y) > maxDist) continue;
-        if (exclude?.has(tx + ',' + ty)) continue;
-        if (wildTreeAt(tx, ty) && !(world.removedWildTrees ?? []).includes(tx + ',' + ty)) consider(tx, ty);
-      }
-    }
+    best = t;
   }
   return best;
 }

@@ -134,6 +134,13 @@ import { treeId, wildTreeId, rockId, crateId, npcSpawnIdFor } from './entityIds'
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
 import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit, depositInto, depositsFromWorld, extractDeposit, keepsakesOf, playerInventoryToRegistry, registryToPlayerInventory, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry, type RegistryKind } from './resourceRegistry';
+// BUILD 1065 (J-1): the job scheduler — NPCs discover work, claim
+// jobs, gather, transport, and complete tasks through the registry.
+// The view owns the board ref (session-only — rebuilt from the
+// world on load, claims re-established on re-target); the founder
+// tick discovers + claims + executes, the wait step feeds the
+// scorer from the frozen board, and the E report / probe read it.
+import { createJobBoard, discoverJobs, claimJob, claimNearestJob, claimDeliverJobFor, releaseJob, completeJob, failJob, jobForFounder, scorerTreeDist, buildJobClaimedBy, jobSummary, HUT_SITE_JOB_ID, type JobBoard } from './jobs';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -2188,6 +2195,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // React states (inventory, campUi) and the plain refs above mirror
   // it via refreshResourceUi — never a second count.
   const registryRef=useRef<ResourceRegistry>(createRegistry());
+  // BUILD 1065 (J-1): the job board (session-only — discovery
+  // rebuilds it from the world every founder tick; claims live on
+  // the board, not in the save, so no save version moves).
+  const jobBoardRef=useRef<JobBoard>(createJobBoard());
   // BUILD 1062: the living-world coordinator state (the adapter's
   // persisted state — null until the mount effect loads it, like the
   // founders save). The 1s clock timer and the wait step advance it.
@@ -2332,9 +2343,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // wait never re-chooses by a different rule.
       if(FOUNDERS_ENABLED){
         const nowAbs=founderAbsMinutes(clockRef.current.day,clockRef.current.minutes);
-        const wWorld=stateRef.current.world;
-        const wTree=nearestTreeTile(wWorld,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
-        const wTreeDist=wTree?Math.abs(wTree.tx-FOUNDER_CAMP.x)+Math.abs(wTree.ty-FOUNDER_CAMP.y):null;
+        // BUILD 1065 (J-1): the board is rebuilt for the wait (a
+        // fresh boot may not have run a founder tick yet — the
+        // scorer needs a populated board). No jobs are claimed or
+        // executed during a wait (no physical work fast-forwards);
+        // the board is frozen, and the re-choice reads it.
+        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:stateRef.current.world,construction:constructionRef.current,founders:foundersRef.current,nowAbs});
         for(let i=0;i<foundersRef.current.length;i++){
           const wf=foundersRef.current[i];
           // BUILD 1060: the wait-step re-choice is the SAME scorer
@@ -2351,10 +2365,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             foodStock:campFoodInRegistry(registryRef.current),
             stockpileWood:campWoodInRegistry(registryRef.current),
             construction:constructionRef.current,
-            nearestTreeDist:wTreeDist,
+            // BUILD 1065 (J-1): the SAME board feed as the
+            // real-time tick (scorerTreeDist) — a wait never
+            // re-chooses by a different rule. The held job (if
+            // any) names the current work; a founder holding
+            // nothing has no current job.
+            nearestTreeDist:scorerTreeDist(jobBoardRef.current,wf.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),
             distToSite:founderDistToSite({x:Math.round(wf.x),y:Math.round(wf.y)}),
-            builderTaken:foundersRef.current.some(o=>o!==wf&&(o.workState==='toSite'||o.workState==='building')),
-            currentJob:wf.workState==='toSite'||wf.workState==='building'?'build':(wf.workState==='chopping'||wf.workState==='toStockpile'||(wf.workState==='toTree'&&!!wf.treeTarget)?'chop':null),
+            builderTaken:(()=>{const b=buildJobClaimedBy(jobBoardRef.current);return b!==null&&b!==wf.id;})(),
+            currentJob:(()=>{const j=jobForFounder(jobBoardRef.current,wf.id);return j?(j.kind==='build'?'build':'chop'):null;})(),
             closestAffinity:wClosest?wClosest.affinity:50,
             companionAtCamp:wCompanionAtCamp,
           });
@@ -5057,7 +5076,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // founder's actual memories, so the player never sees a
         // count the founder does not remember. Only non-zero counts
         // are shown.
-        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+rel);return}
+        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}const nj=jobForFounder(jobBoardRef.current,nearFounder.id);const job=nj?` · job ${nj.kind} ${nj.targetId}`:' · job —';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+rel+job);return}
         if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){
           // BUILD 1062: the stockpile tile is the camp's status board —
           // the living-world numbers ride along (forest density from
@@ -5293,7 +5312,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>({id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current)})),
+      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
+      // BUILD 1065 (J-1): the job board for the probe — the summary
+      // counts plus every live job (id, kind, target, tile, state,
+      // claim). Read-only.
+      getJobs:()=>{const s=jobSummary(jobBoardRef.current);return {...s,jobs:Object.values(jobBoardRef.current.jobs).map(j=>({id:j.id,kind:j.kind,targetId:j.targetId,tile:j.tile,state:j.state,claimedBy:j.claimedBy}))};},
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
       setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
       // BUILD 1060 test hooks (probes only — no gameplay effect):
@@ -5522,7 +5545,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // founders save to ag-3d-founders-v1, and the old roster is
     // never read or written.
     const founderPath=new Map<string,FounderPathState>();
-    const founderSkippedTrees=new Map<string,Set<string>>();
     const founderTimer=window.setInterval(()=>{
       if(!FOUNDERS_ENABLED||waitingRef.current)return;
       const clock=clockRef.current;
@@ -5541,22 +5563,49 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const reconciled=reconcileConstruction(constructionRef.current,hutPlaced);
       if(reconciled!==constructionRef.current){constructionRef.current=reconciled;hutChanged=true;}
       const hutDone=constructionRef.current.state==='done';
-      // BUILD 1059: nearest-tree distance, once per tick (shared by
-      // all three founders' scores — the tree set does not change
-      // inside a tick).
-      const tickTree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
-      const tickTreeDist=tickTree?Math.abs(tickTree.tx-FOUNDER_CAMP.x)+Math.abs(tickTree.ty-FOUNDER_CAMP.y):null;
+      // BUILD 1065 (J-1): rebuild the job board from the world —
+      // chop jobs for the trees in radius, the build job while the
+      // hut is unfinished, deliver jobs for carrying founders.
+      // Jobs whose target is gone are removed (open) or failed
+      // (claimed — the holder re-targets below).
+      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs});
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);
         f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
         f.lastAbs=nowAbs;
+        // BUILD 1065 (J-1): the founder's held job (or none). A job
+        // that vanished — failed by discovery, or completed — leaves
+        // stale work state behind: clear it so the founder
+        // re-targets instead of walking to a tree nobody owns. A
+        // carrier in 'toStockpile' re-claims their deliver job
+        // (discovery creates it from the carried wood — including
+        // after a reload, where the claim did not survive but the
+        // wood did).
+        let myJob=jobForFounder(jobBoardRef.current,f.id);
+        if(!myJob){
+          if(f.workState==='toSite'||f.workState==='building'||f.workState==='chopping'){f.workState='toTree';f.buildTicks=0;f.chopTicks=0;f.treeTarget=null;f.workTile=null;}
+          else if(f.workState==='toTree'){f.treeTarget=null;f.workTile=null;}
+          if(f.workState==='toStockpile'&&f.carrying>0){
+            const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying,nowAbs);
+            jobBoardRef.current=dc.board;
+            if(dc.job)myJob=dc.job;
+          }
+        }
         // BUILD 1059: the activity is the utility scorer's choice —
         // needs + context (time, food, pile, construction, distances,
         // who is building, current job). The 1057 fixed priority is
         // gone. The decision is stored on the founder (session-only)
         // so E can report WHY.
-        const builderTaken=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
-        const currentJob=f.workState==='toSite'||f.workState==='building'?'build':(f.workState==='chopping'||f.workState==='toStockpile'||(f.workState==='toTree'&&!!f.treeTarget)?'chop':null);
+        // BUILD 1065 (J-1): the scorer reads the BOARD, not the
+        // world. builderTaken is the build job claimed by someone
+        // else; currentJob is the held job (a delivering founder is
+        // still 'chop' — the delivery is the tail of the chop); and
+        // the nearest-tree distance is the founder's own claimed
+        // tree, or the nearest OPEN chop job — null when every tree
+        // in range is claimed, so work scores 0 for the founder
+        // with nothing left to chop.
+        const builderTaken=(()=>{const b=buildJobClaimedBy(jobBoardRef.current);return b!==null&&b!==f.id;})();
+        const currentJob=myJob?(myJob.kind==='build'?'build':'chop'):null;
         // BUILD 1060: the companion context for the scorer — the
         // founder's closest founder (highest effective affinity)
         // and whether they are at camp (within 3 tiles of the camp
@@ -5566,7 +5615,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const tClosest=closestFounder(f.social,clock.day);
         const tCompanion=tClosest?founders.find(o=>o.name===tClosest.name):undefined;
         const tCompanionAtCamp=!!tCompanion&&Math.abs(Math.round(tCompanion.x)-FOUNDER_CAMP.x)+Math.abs(Math.round(tCompanion.y)-FOUNDER_CAMP.y)<=3;
-        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
+        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
         f.activity=decision.activity;
         f.lastDecision=decision;
         // BUILD 1060: activity transitions record shared events
@@ -5616,7 +5665,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the site (the scorer flips them back to 'build' next tick).
         if((f.workState==='toSite'||f.workState==='building')&&f.activity!=='build'){
           const keepSite=f.activity==='work'&&canBuild(constructionRef.current,campWoodInRegistry(registryRef.current));
-          if(!keepSite){f.workState='toTree';f.buildTicks=0;f.treeTarget=null;f.workTile=null;}
+          if(!keepSite){
+            // BUILD 1065 (J-1): leaving the site releases the build
+            // job — another founder can take it when wood is
+            // available, instead of the site sitting reserved.
+            if(myJob&&myJob.kind==='build'){jobBoardRef.current=releaseJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+            f.workState='toTree';f.buildTicks=0;f.treeTarget=null;f.workTile=null;
+          }
         }
         // Eat: at the eat tile, one meal from the shared camp stock.
         // BUILD 1064 (R-1): the meal is withdrawn from the
@@ -5653,18 +5708,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // mid-chop (tree targeted) finishes the tree first: the
         // work-state machine carries them, so a scorer flip never
         // strands wood on a tree.
+        // BUILD 1065 (J-1): work assignment CLAIMS a job. The build
+        // job first (one builder — the claim IS the site; the pile
+        // check is canBuild, the same gate as before), else the
+        // nearest open chop job on the board. A founder with no
+        // claimable job idles at camp: no NPC works without an
+        // actual job. A claimed tree with no walkable work tile
+        // (blocked since discovery) fails the job — the tree is
+        // unworkable for everyone, not just this founder.
         if((f.activity==='work'||f.activity==='build')&&f.workState==='toTree'&&!f.treeTarget){
-          const someoneBuilding=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
-          if(!hutDone&&!someoneBuilding&&canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))){
-            f.workState='toSite';
-          }else{
-            let skipped=founderSkippedTrees.get(f.name);
-            if(!skipped){skipped=new Set();founderSkippedTrees.set(f.name,skipped);}
-            const tree=nearestTreeTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS,skipped);
-            if(tree){
-              const wt=treeWorkTile(world,tree.tx,tree.ty);
-              if(wt){f.treeTarget={x:tree.tx,y:tree.ty};f.workTile=wt;}
-              else skipped.add(tree.tx+','+tree.ty);
+          if(!hutDone&&!builderTaken&&canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))){
+            const bc=claimJob(jobBoardRef.current,f.id,HUT_SITE_JOB_ID);
+            jobBoardRef.current=bc.board;
+            if(bc.job){f.workState='toSite';myJob=bc.job;}
+          }
+          if(f.workState==='toTree'&&!f.treeTarget){
+            const cc=claimNearestJob(jobBoardRef.current,f.id,'chop',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
+            jobBoardRef.current=cc.board;
+            if(cc.job){
+              const wt=treeWorkTile(world,cc.job.tile.x,cc.job.tile.y);
+              if(wt){f.treeTarget={x:cc.job.tile.x,y:cc.job.tile.y};f.workTile=wt;myJob=cc.job;}
+              else jobBoardRef.current=failJob(jobBoardRef.current,cc.job.id,'no-work-tile');
             }
             if(!f.treeTarget)f.workState='idle';
           }
@@ -5746,6 +5810,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                       addPlacement(world,placed.item);
                       saveWorld(world);worldDirty=true;
                       constructionRef.current=finishConstruction(constructionRef.current);
+                      // BUILD 1065 (J-1): the hut is done — the
+                      // build job completes with it.
+                      if(myJob&&myJob.kind==='build'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
                       f.workState='toTree';
                       setMessage('The founders finished their first hut!');
                     }else if(res.spent){
@@ -5753,7 +5820,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                     }
                   }
                 }else{
-                  // Pile ran dry mid-build: back to chopping.
+                  // Pile ran dry mid-build: back to chopping — and
+                  // the site is released (BUILD 1065), so another
+                  // founder can take it when wood returns.
+                  if(myJob&&myJob.kind==='build'){jobBoardRef.current=releaseJob(jobBoardRef.current,myJob.id);myJob=undefined;}
                   f.workState='toTree';f.treeTarget=null;f.workTile=null;
                 }
               }
@@ -5771,18 +5841,42 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 // (capacity 2), with the tree as its source.
                 const fell=fellTreeToCarrier(registryRef.current,world,f,f.treeTarget.x,f.treeTarget.y);
                 registryRef.current=fell.registry;
-                if(fell.yield>0){f.carrying=fell.yield;worldDirty=true;}
+                if(fell.yield>0){
+                  f.carrying=fell.yield;worldDirty=true;
+                  // BUILD 1065 (J-1): the chop job completes on the
+                  // fell (the yield is in the carrier); the delivery
+                  // is a deliver job, claimed now so the founder
+                  // holds it from the fell onward.
+                  if(myJob&&myJob.kind==='chop'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+                  const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying,nowAbs);
+                  jobBoardRef.current=dc.board;
+                  if(dc.job)myJob=dc.job;
+                }else if(myJob&&myJob.kind==='chop'){
+                  // The tree is gone (chopped by the player first)
+                  // — the job failed; walk home empty and re-target.
+                  jobBoardRef.current=failJob(jobBoardRef.current,myJob.id,'target-gone');myJob=undefined;
+                }
                 f.treeTarget=null;f.workTile=null;f.chopTicks=0;
                 f.workState='toStockpile';
               }
             }else if(f.workState==='toStockpile'&&f.carrying>0){
-              // BUILD 1064 (R-1): the delivery is a real transfer
-              // (carrier store → camp store) — the wood the tree
-              // held is the wood the pile gains, conserved.
-              const res=deliverFounderWoodToRegistry(registryRef.current,f);
-              registryRef.current=res.registry;
-              f.carrying-=res.moved;f.workState='toTree';stockChanged=true;
-              setMessage(f.name+' delivered wood to the camp stockpile');
+              // BUILD 1065 (J-1): the delivery runs only on a held
+              // deliver job — the transfer IS the job's completion.
+              // Without the job (claimed next tick) the founder
+              // waits at camp; the wood never moves without a job.
+              if(myJob&&myJob.kind==='deliver'){
+                // BUILD 1064 (R-1): the delivery is a real transfer
+                // (carrier store → camp store) — the wood the tree
+                // held is the wood the pile gains, conserved.
+                const res=deliverFounderWoodToRegistry(registryRef.current,f);
+                registryRef.current=res.registry;
+                f.carrying-=res.moved;stockChanged=true;
+                if(f.carrying<=0){
+                  f.carrying=0;f.workState='toTree';
+                  jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;
+                  setMessage(f.name+' delivered wood to the camp stockpile');
+                }
+              }
             }else if(f.workState==='toStockpile'){
               f.workState='toTree';
             }

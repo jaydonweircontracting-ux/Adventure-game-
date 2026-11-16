@@ -61,7 +61,7 @@
  */
 
 /** The entity kinds an id can name. */
-export type EntityKind = 'founder' | 'npc' | 'tree' | 'wild-tree' | 'rock' | 'crate' | 'animal' | 'placed';
+export type EntityKind = 'founder' | 'npc' | 'tree' | 'wild-tree' | 'rock' | 'crate' | 'animal' | 'placed' | 'job';
 
 /** A founder's stable id: 'founder-' + name (the same string the
  *  1062 coordinator derived on every advance — now stored in the
@@ -105,6 +105,21 @@ export function animalId(kind: string, slotId: number): string {
   return kind + '-' + Math.floor(slotId);
 }
 
+/**
+ * BUILD 1065 (J-1): a job's stable id — 'job:' + kind + ':' +
+ * target id ("job:chop:tree:122,122", "job:build:hut-site",
+ * "job:deliver:founder-Marlow"). The id is derived from the job's
+ * kind and target, never stored — a job is re-discovered from the
+ * world on load, and the same work gets the same id, so a claim
+ * can be re-established after a reload without a save change. A
+ * job's target is unique per kind (one tree per tile, one hut
+ * site, one carrier per founder), so a job id never collides with
+ * another live job of the same kind.
+ */
+export function jobIdFor(kind: 'chop' | 'build' | 'deliver', targetId: string): string {
+  return 'job:' + kind + ':' + targetId;
+}
+
 /** The kind an id names, from its prefix — or null when the string
  *  is not an id this module (or the older animal/founder rules)
  *  produces. R-1/J-1 dispatch on this. */
@@ -117,6 +132,7 @@ export function entityKindOf(id: string): EntityKind | null {
   if (id.startsWith('rock:')) return 'rock';
   if (id.startsWith('crate:')) return 'crate';
   if (id.startsWith('placed:')) return 'placed';
+  if (id.startsWith('job:')) return 'job';
   // Animals are kind + '-' + slotId (bird-0, goat-2, ...): a bare
   // word, a dash, and a non-negative integer — and nothing else
   // this module produces looks like that.

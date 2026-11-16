@@ -12022,6 +12022,115 @@ console.log('Testing unified resource registry — one authoritative record (BUI
   assert(F.FOUNDER_SAVE_VERSION === 4, 'M1064: the founders save is still v4 in R-1 (the registry rebuilds from it, the shape does not move)');
 }
 
+console.log('Testing job scheduler — NPCs claim jobs through the registry (BUILD 1065, J-1)...');
+{
+  const J = await import('../src/game/engine3d/jobs.js');
+  const E = await import('../src/game/engine3d/entityIds.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const U = await import('../src/game/engine3d/utility.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  // --- Job ids derive from kind + target (entityIds.ts owns the rule). ---
+  assert(J.chopJobIdFor(W.defaultWorld(), 122, 122) === 'job:chop:tree:122,122' && E.jobIdFor('build', 'hut-site') === 'job:build:hut-site' && E.jobIdFor('deliver', 'founder-Marlow') === 'job:deliver:founder-Marlow', 'M1065: job ids are job:<kind>:<target>');
+  assert(E.entityKindOf('job:chop:tree:1,2') === 'job' && E.entityKindOf('job:build:hut-site') === 'job', 'M1065: job ids parse back to the job kind');
+  // --- treesInRadius agrees with nearestTreeTile (the refactor). ---
+  const w1065 = W.defaultWorld();
+  const list1065 = F.treesInRadius(w1065, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  const near1065 = F.nearestTreeTile(w1065, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(list1065.length > 0 && list1065.every((t: { tx: number; ty: number }) => Math.abs(t.tx - F.FOUNDER_CAMP.x) + Math.abs(t.ty - F.FOUNDER_CAMP.y) <= F.FOUNDER_WORK_RADIUS), 'M1065: treesInRadius lists only trees in radius');
+  assert(near1065 !== null && list1065.some((t: { tx: number; ty: number }) => t.tx === near1065.tx && t.ty === near1065.ty) && list1065.every((t: { tx: number; ty: number }) => Math.abs(t.tx - F.FOUNDER_CAMP.x) + Math.abs(t.ty - F.FOUNDER_CAMP.y) >= Math.abs(near1065.tx - F.FOUNDER_CAMP.x) + Math.abs(near1065.ty - F.FOUNDER_CAMP.y)), 'M1065: nearestTreeTile is the closest tree in the radius list');
+  // --- Discovery: chop jobs for the workable trees, the build job, no deliver jobs. ---
+  const marlow1065 = F.defaultFounderState('Marlow', 0, 1000);
+  const greta1065 = F.defaultFounderState('Greta', 1, 1000);
+  const perrin1065 = F.defaultFounderState('Perrin', 2, 1000);
+  const founders1065 = [marlow1065, greta1065, perrin1065];
+  let board1065 = J.discoverJobs(J.createJobBoard(), { world: w1065, construction: C.freshConstruction(), founders: founders1065, nowAbs: 1000 });
+  const chopJobs1065 = J.openJobs(board1065, 'chop');
+  assert(chopJobs1065.length > 0, 'M1065: discovery finds chop jobs in work radius');
+  assert(chopJobs1065.every((j: { tile: { x: number; y: number } }) => F.treeWorkTile(w1065, j.tile.x, j.tile.y) !== null), 'M1065: every discovered chop job has a walkable work tile');
+  assert(list1065.filter((t: { tx: number; ty: number }) => F.treeWorkTile(w1065, t.tx, t.ty) !== null).every((t: { tx: number; ty: number }) => board1065.jobs[J.chopJobIdFor(w1065, t.tx, t.ty)] !== undefined), 'M1065: every workable tree in radius has a chop job');
+  assert(board1065.jobs[J.HUT_SITE_JOB_ID] !== undefined && board1065.jobs[J.HUT_SITE_JOB_ID].state === 'open' && board1065.jobs[J.HUT_SITE_JOB_ID].tile.x === C.HUT_APPROACH.x, 'M1065: the build job exists while the hut is unfinished, at the approach tile');
+  assert(J.openJobs(board1065, 'deliver').length === 0, 'M1065: no deliver jobs when nobody carries wood');
+  const board1065b = J.discoverJobs(board1065, { world: w1065, construction: C.freshConstruction(), founders: founders1065, nowAbs: 1001 });
+  assert(Object.keys(board1065b.jobs).length === Object.keys(board1065.jobs).length && board1065b.jobs[J.HUT_SITE_JOB_ID].createdAbs === board1065.jobs[J.HUT_SITE_JOB_ID].createdAbs, 'M1065: discovering twice changes nothing (idempotent)');
+  // --- Claims are exclusive: one founder per job. ---
+  const firstChop1065 = chopJobs1065[0];
+  const claimM = J.claimJob(board1065, 'founder-Marlow', firstChop1065.id);
+  assert(claimM.job !== null && claimM.job.state === 'claimed' && claimM.job.claimedBy === 'founder-Marlow', 'M1065: Marlow claims a chop job');
+  const claimG = J.claimJob(claimM.board, 'founder-Greta', firstChop1065.id);
+  assert(claimG.job === null, 'M1065: a claimed job cannot be claimed again');
+  const claimNear = J.claimNearestJob(claimM.board, 'founder-Greta', 'chop', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(claimNear.job !== null && claimNear.job.id !== firstChop1065.id && claimNear.job.claimedBy === 'founder-Greta', 'M1065: Greta claims a DIFFERENT nearest chop job');
+  assert(J.jobForFounder(claimNear.board, 'founder-Marlow')?.id === firstChop1065.id, 'M1065: jobForFounder returns the job a founder holds');
+  // --- The scorer feeds from the board: a founder scores their own tree; nothing open scores 0. ---
+  const distM = J.scorerTreeDist(claimNear.board, 'founder-Marlow', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(distM === Math.abs(firstChop1065.tile.x - F.FOUNDER_CAMP.x) + Math.abs(firstChop1065.tile.y - F.FOUNDER_CAMP.y), 'M1065: a founder holding a chop job scores by their own tree');
+  const soloJob: { id: string; kind: 'chop'; targetId: string; tile: { x: number; y: number }; state: 'open'; claimedBy: null; createdAbs: number } = { id: 'job:chop:tree:1,2', kind: 'chop', targetId: 'tree:1,2', tile: { x: 1, y: 2 }, state: 'open', claimedBy: null, createdAbs: 0 };
+  const soloBoard = { ...J.createJobBoard(), jobs: { [soloJob.id]: soloJob } };
+  const soloClaim = J.claimJob(soloBoard, 'founder-Marlow', soloJob.id);
+  assert(J.scorerTreeDist(soloClaim.board, 'founder-Greta', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS) === null, 'M1065: with every tree claimed, the nearest open distance is null');
+  const scoresNull = U.scoreFounderActivities({ needs: { hunger: 80, energy: 90, social: 60 }, minutes: 600, foodStock: 30, stockpileWood: 0, construction: C.freshConstruction(), nearestTreeDist: null, distToSite: 4, builderTaken: false, currentJob: null });
+  assert(scoresNull.work === 0, 'M1065: the scorer gives work 0 when no tree is available (the claimed-tree case feeds null)');
+  // --- The build job: one builder; release frees the site. ---
+  const buildClaim = J.claimJob(claimNear.board, 'founder-Marlow', J.HUT_SITE_JOB_ID);
+  assert(buildClaim.job !== null && J.buildJobClaimedBy(buildClaim.board) === 'founder-Marlow', 'M1065: Marlow claims the build job (one builder)');
+  assert(J.claimJob(buildClaim.board, 'founder-Greta', J.HUT_SITE_JOB_ID).job === null, 'M1065: a second founder cannot claim the build job');
+  const released = J.releaseJob(buildClaim.board, J.HUT_SITE_JOB_ID);
+  assert(released.jobs[J.HUT_SITE_JOB_ID].state === 'open' && J.buildJobClaimedBy(released) === null, 'M1065: releasing the build job frees the site');
+  assert(J.claimJob(released, 'founder-Greta', J.HUT_SITE_JOB_ID).job?.claimedBy === 'founder-Greta', 'M1065: another founder can claim the released build job');
+  // --- The full chain through the registry, now through jobs. ---
+  const wChain = W.defaultWorld();
+  let rChain = R.depositsFromWorld(R.createRegistry(), wChain);
+  rChain = F.seedCampStore(rChain, 0, F.FOUNDER_START_FOOD);
+  const totalChain = R.totalAvailable(rChain, 'wood');
+  let bChain = J.discoverJobs(J.createJobBoard(), { world: wChain, construction: C.freshConstruction(), founders: founders1065, nowAbs: 1000 });
+  const cChain = J.claimNearestJob(bChain, 'founder-Marlow', 'chop', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(cChain.job !== null, 'M1065: Marlow claims a chop job for the chain');
+  bChain = cChain.board;
+  const fellChain = F.fellTreeToCarrier(rChain, wChain, marlow1065, cChain.job!.tile.x, cChain.job!.tile.y);
+  assert(fellChain.yield === 2 && R.storeQty(fellChain.registry, R.carrierStoreId('founder-Marlow'), 'wood') === 2, 'M1065: the claimed chop fells the tree into the carrier (2 wood)');
+  assert(R.totalAvailable(fellChain.registry, 'wood') === totalChain, 'M1065: the chop conserves the total wood');
+  bChain = J.completeJob(bChain, cChain.job!.id);
+  assert(bChain.completed === 1 && bChain.lastCompletedId === cChain.job!.id && bChain.jobs[cChain.job!.id] === undefined, 'M1065: completing the chop job removes it and records it');
+  marlow1065.carrying = fellChain.yield;
+  const dChain = J.claimDeliverJobFor(bChain, 'founder-Marlow', marlow1065.carrying, 1000);
+  assert(dChain.job !== null && dChain.job.kind === 'deliver' && dChain.job.claimedBy === 'founder-Marlow', 'M1065: the carrier claims a deliver job');
+  assert(J.claimJob(dChain.board, 'founder-Greta', dChain.job!.id).job === null, 'M1065: Greta cannot claim Marlow\'s deliver job');
+  const delChain = F.deliverFounderWoodToRegistry(fellChain.registry, marlow1065);
+  assert(delChain.moved === 2 && F.campWoodInRegistry(delChain.registry) === 2, 'M1065: the delivery moves the carried wood into the camp store');
+  assert(R.totalAvailable(delChain.registry, 'wood') === totalChain, 'M1065: the delivery conserves the total wood');
+  bChain = J.completeJob(dChain.board, dChain.job!.id);
+  assert(bChain.completed === 2 && bChain.lastCompletedId === dChain.job!.id, 'M1065: completing the deliver job records it');
+  // --- Failure: a claimed tree felled by the player first fails the job. ---
+  const wFail = W.defaultWorld();
+  let bFail = J.discoverJobs(J.createJobBoard(), { world: wFail, construction: C.freshConstruction(), founders: founders1065, nowAbs: 1000 });
+  const fClaim = J.claimNearestJob(bFail, 'founder-Marlow', 'chop', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS);
+  assert(fClaim.job !== null, 'M1065: Marlow claims a chop job for the failure case');
+  bFail = fClaim.board;
+  assert(F.chopTreeAt(wFail, fClaim.job!.tile.x, fClaim.job!.tile.y), 'M1065: the player fells the claimed tree first');
+  bFail = J.discoverJobs(bFail, { world: wFail, construction: C.freshConstruction(), founders: founders1065, nowAbs: 1001 });
+  assert(bFail.failed === 1 && bFail.lastFailedId === fClaim.job!.id && bFail.lastFailedReason === 'target-gone' && J.jobForFounder(bFail, 'founder-Marlow') === undefined, 'M1065: discovery fails the claimed job whose tree is gone');
+  // --- The build job completes with the hut (discovery path). ---
+  let bBuild = J.discoverJobs(J.createJobBoard(), { world: W.defaultWorld(), construction: C.freshConstruction(), founders: founders1065, nowAbs: 1000 });
+  const bcBuild = J.claimJob(bBuild, 'founder-Greta', J.HUT_SITE_JOB_ID);
+  assert(bcBuild.job !== null, 'M1065: Greta claims the build job');
+  bBuild = bcBuild.board;
+  let rBuild = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 12, { type: 'loaded' });
+  let cBuild = C.freshConstruction();
+  for (let i = 0; i < 6; i++) { const s = C.spendBuildStepFromRegistry(rBuild, cBuild); rBuild = s.registry; cBuild = s.construction; }
+  assert(cBuild.progress === 6 && F.campWoodInRegistry(rBuild) === 0, 'M1065: 6 build steps spend the 12 wood');
+  const doneBuild = C.finishConstruction(cBuild);
+  bBuild = J.discoverJobs(bBuild, { world: W.defaultWorld(), construction: doneBuild, founders: founders1065, nowAbs: 1001 });
+  assert(bBuild.jobs[J.HUT_SITE_JOB_ID] === undefined && bBuild.completed === 1 && bBuild.lastCompletedId === J.HUT_SITE_JOB_ID, 'M1065: discovery completes the build job when the hut is done');
+  // --- No work without a job; the founders save is still v4. ---
+  assert(J.claimNearestJob(J.createJobBoard(), 'founder-Marlow', 'chop', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).job === null, 'M1065: no open job means no claim');
+  assert(J.openJobs(J.createJobBoard()).length === 0, 'M1065: a fresh board has no open jobs');
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1065: the founders save is still v4 in J-1 (the board is session-only, the shape does not move)');
+  const sum1065 = J.jobSummary(board1065);
+  assert(sum1065.chopOpen === J.openJobs(board1065, 'chop').length && sum1065.buildOpen === 1 && sum1065.completed === 0 && sum1065.failed === 0, 'M1065: the job summary counts match the board');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
