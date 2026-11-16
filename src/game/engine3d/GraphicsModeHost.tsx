@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import App from '../../App';
 import Engine3DWorldView from './Engine3DWorldView';
-import type { Diagnostics3D } from './Engine3DWorldView';
+import type { Diagnostics3D } from './worldRenderer3d';
 import type { GraphicsMode } from './engine3d';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
