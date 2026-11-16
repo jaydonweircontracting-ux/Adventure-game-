@@ -23,6 +23,9 @@
  *    init (live + removedTrees — the generated count). Chopping lowers
  *    the density at once; each advanced day regrows it (logistic,
  *    resources.ts) and the adapter plants the gain as REAL trees.
+ *    BUILD 1063 (F-1): a tree's identity is its tile (entityIds.ts
+ *    treeId) — the coordinator never needed a stored tree id, and
+ *    the forest population still keys on the stored list.
  * 4. CIVILIZATION — createCivilization's 27 settlements are the 2.5D
  *    Aldoria/Thalara map. Advancing THAT in 3D would be a second,
  *    disconnected simulation — exactly what this build must not do.
@@ -136,14 +139,18 @@ export function dayClockToWorldClock(clock: DayClock): WorldClockState {
  * A founder as the townsfolk the coordinator takes. The coordinator's
  * production reads only archetype + seed (townProduction.ts), so the
  * adapter supplies exactly those, plus a stable id/name — the cast is
- * the honest boundary, not a fake roster. Founders hold no 2.5D
- * profession yet, so they enter as 'commoner' (zero production);
- * when F-1 gives them real jobs the archetype comes from the job and
- * production flows with no re-wiring here.
+ * the honest boundary, not a fake roster. BUILD 1063 (F-1): the id
+ * is the founder's STORED id (founders save v4) instead of being
+ * re-derived from the name on every advance — the string is the
+ * same ('founder-' + name), so the coordinator's view of founder
+ * identity does not change; it just stops being recomputed.
+ * Founders hold no 2.5D profession yet, so they enter as 'commoner'
+ * (zero production); when F-1 gives them real jobs the archetype
+ * comes from the job and production flows with no re-wiring here.
  */
 export function founderTownsfolk(f: FounderState): Townsperson {
   return {
-    id: 'founder-' + f.name,
+    id: f.id,
     name: f.name,
     archetype: 'commoner',
     seed: founderSeed(f.name),

@@ -93,6 +93,7 @@ import { blockedAction } from './npcMotion';
 import { emitBox, hashStr } from './villagers';
 import { SUN_SHADE, shadeRgb, type Rgb } from './townLook';
 import { doorForRect, hutFace, placedHutRects } from './placements';
+import { animalId } from './entityIds';
 
 // ---------------------------------------------------------------- constants
 
@@ -424,7 +425,10 @@ export function spawnAnimal(
   if (!tile) return null;
   const seed = hashStr(kind + ':' + slotId + ':' + tile.x + ',' + tile.y);
   return {
-    id: kind + '-' + slotId,
+    // BUILD 1063 (F-1): the id rule lives in entityIds.ts now
+    // (kind + '-' + slotId, the fixed GPU slot) — the string is
+    // unchanged, it just stops being re-derived by hand here.
+    id: animalId(kind, slotId),
     kind,
     x: tile.x,
     y: tile.y,

@@ -59,7 +59,9 @@
  *   migrate to a fresh construction (no hut started). BUILD 1060:
  *   v3 adds each founder's social state (affinity + memories,
  *   memory.ts); v2 saves migrate with fresh social (neutral, no
- *   memories).
+ *   memories). BUILD 1063 (F-1): v4 adds each founder's stable
+ *   id (entityIds.ts); v3 saves migrate with the id derived from
+ *   the name.
  * - FOUNDERS flag: `FOUNDERS_ENABLED` here, scoped separately from
  *   WILDERNESS_ONLY — the old town stays gated off.
  *
@@ -77,6 +79,7 @@ import { chooseScoredActivity } from './utility';
 import type { ScoredDecision, UtilityWorldContext } from './utility';
 import { freshFounderSocial } from './memory';
 import type { FounderSocial } from './memory';
+import { founderIdFor } from './entityIds';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
@@ -91,8 +94,15 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  adds the construction state (the first hut) + buildTicks. v3
  *  (BUILD 1060) adds each founder's social state (affinity +
  *  memories, memory.ts) — v2 saves migrate with fresh social
- *  (neutral toward each other, no memories). */
-export const FOUNDER_SAVE_VERSION = 3;
+ *  (neutral toward each other, no memories). v4 (BUILD 1063, F-1)
+ *  adds each founder's stable id (entityIds.ts founderIdFor) — v3
+ *  saves migrate with the id derived from the name, which is the
+ *  same string the 1062 coordinator derived on every advance, so
+ *  the coordinator's view of founder identity does not change.
+ *  NOTE: the parked Tamsin stash (BUILD 1061, stash@{0}) ALSO
+ *  claims v4 for the newcomer — when it resumes it must rebase
+ *  its migration to v5 (this v4 means "has stable ids"). */
+export const FOUNDER_SAVE_VERSION = 4;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -231,6 +241,12 @@ export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
 export type FounderState = {
+  /** BUILD 1063 (F-1): the founder's stable identity
+   *  ('founder-' + name, entityIds.ts) — stored in the save (v4),
+   *  never re-derived at runtime, so the coordinator, the registry,
+   *  and the scheduler all name the same founder across ticks,
+   *  saves, and reloads. */
+  id: string;
   name: string;
   x: number;
   y: number;
@@ -274,6 +290,7 @@ export function founderAbsMinutes(day: number, minutes: number): number {
 export function defaultFounderState(name: string, index: number, clockAbs: number): FounderState {
   const sleep = FOUNDER_SLEEP_TILES[index % FOUNDER_SLEEP_TILES.length];
   return {
+    id: founderIdFor(name),
     name,
     x: sleep.x,
     y: sleep.y,
@@ -512,6 +529,9 @@ export function applyFounderWaitStep(f: FounderState, stepMinutes: number, minut
 // --- Save: versioned founders state (G16) ---
 
 export type FounderSave = {
+  /** BUILD 1063 (F-1): the founder's stable id (v4; v3 saves have
+   *  none and migrate with the id derived from the name). */
+  id: string;
   name: string;
   x: number;
   y: number;
@@ -541,12 +561,13 @@ export type FoundersSaveState = {
   construction: ConstructionState;
 };
 
-/** Fresh v3 save: founders at their sleep tiles, empty stockpile,
+/** Fresh v4 save: founders at their sleep tiles, empty stockpile,
  *  full starting food, no hut started, neutral toward each other. */
 export function freshFoundersSave(clockAbs: number): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: FOUNDER_NAMES.map((name, i) => ({
+      id: founderIdFor(name),
       name,
       x: FOUNDER_SLEEP_TILES[i].x,
       y: FOUNDER_SLEEP_TILES[i].y,
@@ -618,21 +639,29 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 }
 
 /**
- * Migrate an unknown founders save to v3. Missing version field =
+ * Migrate an unknown founders save to v4. Missing version field =
  * v0 (defaults filled); version 1 = validated + clamped (unknown
  * founder names dropped, missing founders restored at camp,
  * 'chopping' resets to 'toTree' — the tree target is session-only),
  * construction defaults to fresh (v1 predates the hut); version 2 =
  * validated + clamped the same way, social defaults to fresh
  * (v2 predates memory); version 3 = validated + clamped, social
- * validated by validateFounderSocial; any other version, or a
+ * validated by validateFounderSocial, ids derived from the names
+ * (v3 predates stable ids — the derived id is the same string the
+ * 1062 coordinator derived on every advance); version 4 =
+ * validated + clamped, social validated, stored ids kept (a stored
+ * id is authoritative — migration never re-derives it, so a rename
+ * keeps the identity); a stored id that is missing, empty, or
+ * already taken by an earlier founder in this save is replaced by
+ * the derived id (with a :2/:3 suffix on the pathological case
+ * where even the derived id is taken). Any other version, or a
  * non-object, returns null (fresh defaults — never guess at an
  * unknown future format). Pure.
  */
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1058: construction from the save (v2), else fresh. A
   // 'done' construction with a founder still marked building/toSite
@@ -648,6 +677,12 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
     construction.progress = 6;
     construction.spentWood = 12;
   }
+  // BUILD 1063 (F-1): stable ids — a stored id is authoritative
+  // and kept; a missing/empty/colliding one is replaced by the
+  // derived id (suffixed on the pathological case where even the
+  // derived id is already taken). The set lives outside the map so
+  // two saved founders can never keep the same id.
+  const takenIds = new Set<string>();
   const founders: FounderSave[] = FOUNDER_NAMES.map((name, i) => {
     const s = rawFounders.find(
       (f: unknown) => f && typeof f === 'object' && (f as Record<string, unknown>).name === name,
@@ -656,6 +691,16 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       const n = s ? Number(s[k]) : NaN;
       return Number.isFinite(n) ? n : d;
     };
+    let id = typeof s?.id === 'string' && s.id.length > 0 ? (s.id as string) : founderIdFor(name);
+    if (takenIds.has(id)) {
+      id = founderIdFor(name);
+      let n = 2;
+      while (takenIds.has(id)) {
+        id = founderIdFor(name) + ':' + n;
+        n++;
+      }
+    }
+    takenIds.add(id);
     const activity =
       s?.activity === 'sleep' || s?.activity === 'eat' || s?.activity === 'rest' || s?.activity === 'work' || s?.activity === 'build'
         ? (s.activity as FounderActivity)
@@ -666,6 +711,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         : 'toTree';
     if (construction.state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
     return {
+      id,
       name,
       x: Math.round(num('x', FOUNDER_SLEEP_TILES[i].x)),
       y: Math.round(num('y', FOUNDER_SLEEP_TILES[i].y)),
@@ -728,6 +774,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
+      id: f.id,
       name: f.name,
       x: Math.round(f.x),
       y: Math.round(f.y),
@@ -756,6 +803,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
  *  against the live world; tree targets re-found on demand). Pure. */
 export function foundersStateOf(save: FoundersSaveState): FounderState[] {
   return save.founders.map((s) => ({
+    id: typeof s.id === 'string' && s.id.length > 0 ? s.id : founderIdFor(s.name),
     name: s.name,
     x: s.x,
     y: s.y,

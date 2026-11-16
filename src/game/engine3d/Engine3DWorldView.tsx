@@ -126,7 +126,7 @@ import type { SharedEventType } from './memory';
 // clock timer and the wait step call the sync on the day boundary.
 import { advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
-import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
+import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -5058,6 +5058,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
+      // BUILD 1063 test hook (probes only — no gameplay effect):
+      // place one palette item through the REAL path
+      // (validatePlacement + addPlacement + saveWorld) and return
+      // the placed item, or null when the tile refuses. The probe
+      // uses it to prove a placed item gets a stable id at creation
+      // and keeps it across a reload.
+      placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);saveWorld(w);needsWorldRebuild.current=true;setPlacedCount(w.placements?.length??0);return JSON.parse(JSON.stringify(result.item));},
       // BUILD 1041 test hook (read-only): farm tiles with their live
       // growth stage (probes only — no gameplay effect).
       getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes))})),
@@ -5184,7 +5191,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>({name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
+      getFounders:()=>foundersRef.current.map(f=>({id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
       setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
       // BUILD 1060 test hooks (probes only — no gameplay effect):
@@ -5200,7 +5207,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // whether the hut placement exists), and seed the stockpile
       // (probe setup only — the game itself only ever changes the
       // pile by delivery or by a build step).
-      getConstruction:()=>({...constructionRef.current,hutPlaced:hutPlacementExists(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
+      getConstruction:()=>({...constructionRef.current,hutPlaced:hutPlacementExists(world),hutId:hutPlacementId(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
       // BUILD 1062 test hooks (probes only — no gameplay effect): the
       // living-world coordinator state (day advanced, forest density
       // from the real tree count, trees regrown, camp ledger, latest

@@ -21,6 +21,7 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
+import { ensurePlacementId } from './entityIds';
 import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
@@ -94,6 +95,14 @@ export function placementsOf(w: IsoWorld): PlacedItem[] {
 
 export function addPlacement(w: IsoWorld, item: PlacedItem): void {
   if (!w.placements) w.placements = [];
+  // BUILD 1063 (F-1): every placed item gets a stable id at
+  // creation — the single choke point, so template stamps, layout
+  // helpers, area selects, the hut stamp, and the view's place all
+  // assign through here. A stored id is kept (an undo restore
+  // re-adds the SAME item, so its identity survives the undo); a
+  // missing or colliding id (a paste that copied the original's
+  // id) gets a fresh derived one.
+  ensurePlacementId(item, w.placements);
   w.placements.push(item);
 }
 
@@ -1203,7 +1212,7 @@ export function movePlacement(
     // BUILD 1048: a moved custom keeps its rotation — dropping rot
     //  would render the mesh unrotated inside its (already swapped)
     //  rect, so the model would stick out of its own footprint.
-    const customItem: PlacedItem = { kind: 'custom', assetId: item.assetId, x0: destTx, y0: destTy, x1: destTx + wTiles - 1, y1: destTy + hTiles - 1, ...(item.rot !== undefined && item.rot !== 0 ? { rot: item.rot } : {}) };
+    const customItem: PlacedItem = { kind: 'custom', assetId: item.assetId, x0: destTx, y0: destTy, x1: destTx + wTiles - 1, y1: destTy + hTiles - 1, ...(item.id ? { id: item.id } : {}), ...(item.rot !== undefined && item.rot !== 0 ? { rot: item.rot } : {}) };
     const at = Math.min(index, list.length);
     list.splice(at, 0, customItem);
     return { ok: true, item: customItem, index: at };
@@ -1225,6 +1234,12 @@ export function movePlacement(
   // must not flip what the thing is (validatePlacement would
   // re-orient it to its new neighbours).
   if (item.kind === 'wall' && item.h !== undefined) result.item.h = item.h;
+  // BUILD 1063 (F-1): a moved item keeps its stable id — a move
+  // must not re-identify what is the same building (validatePlacement
+  // builds a fresh item with no id, like the farm stamp and the
+  // house seed above). An old-save item with no id keeps none here;
+  // the load migration assigns it before any move can happen.
+  if (item.id) result.item.id = item.id;
   // BUILD 1041: a moved farm tile keeps its growth clock — a move
   // must not re-plant what is nearly wheat (validatePlacement builds
   // a fresh item with no stamp).

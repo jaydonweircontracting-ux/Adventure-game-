@@ -11534,10 +11534,10 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(F.deliverFounderWood(4, 2) === 6 && F.deliverFounderWood(6, 0) === 6, 'M1057: stockpile rises ONLY on delivery');
   assert(F.stockpileLogsFor(125, 120, 0, 0).length === 12 && F.stockpileLogsFor(125, 120, 0, 10).length === 72, 'M1057: log pile grows with wood (1 log at 0, 6 at 10)');
   const fresh = F.freshFoundersSave(1000);
-  assert(fresh.version === 3 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v3 save (1060: version bumped, social rides along)');
+  assert(fresh.version === 4 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v4 save (1063: version bumped, stable ids ride along)');
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh)))) === JSON.stringify(fresh), 'M1057: versioned save round-trips');
   const v0 = F.migrateFoundersSave({ founders: [{ name: 'Marlow', x: 130, y: 130 }] });
-  assert(v0 !== null && v0.version === 3 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v3 (missing founders restored, food defaults to 30)');
+  assert(v0 !== null && v0.version === 4 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v4 (missing founders restored, food defaults to 30)');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1057: unknown version / null → null (fresh defaults)');
   // The 1056 localStorage stand-in is still in place: the founders
   // save/load runs against it (the real persistence is proven by the
@@ -11616,9 +11616,9 @@ console.log('Testing 3D NPC construction — first hut (BUILD 1058)...');
   assert(C.reconcileConstruction(c, false) === c, 'M1058: ready hut (placement blocked) is NOT reset');
   assert(C.hutProgressLabel({ state: 'building', progress: 3, spentWood: 6 }) === '3/6' && C.hutProgressLabel(doneC) === 'done', 'M1058: progress labels');
   assert(C.constructionSiteTrisFor(0, 1).length === 12 && C.constructionSiteTrisFor(0, 2).length === 60 && C.constructionSiteTrisFor(0, 4).length === 84 && C.constructionSiteTrisFor(0, 5).length === 96 && C.constructionSiteTrisFor(0, 6).length === 0, 'M1058: build-site visual grows with progress, nothing at step 6');
-  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1058: founders save is v3 in 1060 (social rides along; construction still rides too)');
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1058: founders save is v4 in 1063 (stable ids ride along; social + construction still ride too)');
   const v1 = F.migrateFoundersSave({ version: 1, founders: [], stockpileWood: 4, foodStock: 28 });
-  assert(v1 !== null && v1.version === 3 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v3 with a fresh construction, wood survives');
+  assert(v1 !== null && v1.version === 4 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v4 with a fresh construction, wood survives');
   const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 0));
   const saved = F.foundersSaveOf(states, 8, 25, { state: 'building', progress: 3, spentWood: 6 });
   const rt = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(saved)));
@@ -11695,7 +11695,7 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   const dBuild = F.decayFounderNeeds(fit, 60, 'build');
   assert(close(dBuild.social, 60 - 0.04 * 60) && close(dBuild.hunger, 71), 'M1059: building decays social like work (alone at the site)');
   // --- Save is v3 now (social rides along); 'build' activity round-trips. ---
-  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1059: founders save is v3 in 1060 (social is stored, scores are still computed live)');
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1059: founders save is v4 in 1063 (stable ids are stored, scores are still computed live)');
   const withBuild = F.freshFoundersSave(1000);
   withBuild.founders[0].activity = 'build';
   withBuild.founders[0].workState = 'building';
@@ -11794,13 +11794,13 @@ console.log('Testing 3D NPC memory + relationships — founders remember each ot
   const noFlip = U.chooseScoredActivity({ ...flipCtx, closestAffinity: 50 });
   assert(flip.activity === 'rest' && noFlip.activity === 'work', 'M1060: at social 40 the companion premium flips rest over work (0.396 > 0.37 vs 0.324 < 0.37)');
   // --- Save v3: fresh, migration, round-trip, validation. ---
-  assert(F.FOUNDER_SAVE_VERSION === 3, 'M1060: founders save is v3 (social rides along)');
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1060: founders save is v4 in 1063 (stable ids ride along; social still rides too)');
   const fresh3 = F.freshFoundersSave(1000);
-  assert(fresh3.version === 3 && fresh3.founders[0].socialState !== undefined && fresh3.founders[0].socialState.affinity.Greta === 50 && fresh3.founders[0].socialState.memories.length === 0, 'M1060: fresh v3 save carries fresh social (neutral, no memories)');
+  assert(fresh3.version === 4 && fresh3.founders[0].socialState !== undefined && fresh3.founders[0].socialState.affinity.Greta === 50 && fresh3.founders[0].socialState.memories.length === 0, 'M1060: fresh v4 save carries fresh social (neutral, no memories)');
   const rt3 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh3)));
   assert(rt3 !== null && JSON.stringify(rt3) === JSON.stringify(fresh3), 'M1060: versioned save round-trips (v3)');
   const v2 = F.migrateFoundersSave({ version: 2, founders: [{ name: 'Marlow', x: 130, y: 130 }], stockpileWood: 4, construction: { state: 'none', progress: 0, spentWood: 0 } });
-  assert(v2 !== null && v2.version === 3 && v2.founders[0].socialState.affinity.Greta === 50 && v2.founders[0].socialState.memories.length === 0, 'M1060: v2 migrates to v3 with fresh social (neutral, no memories)');
+  assert(v2 !== null && v2.version === 4 && v2.founders[0].socialState.affinity.Greta === 50 && v2.founders[0].socialState.memories.length === 0, 'M1060: v2 migrates to v4 with fresh social (neutral, no memories)');
   const v3bad = F.migrateFoundersSave({ version: 3, founders: [{ name: 'Marlow', socialState: { affinity: { Greta: 150, Perrin: -20, Marlow: 99, Stranger: 80 }, affinityDay: { Greta: -5 }, memories: [{ type: 'build', other: 'Greta', day: 1, abs: 1500 }, { type: 'dance', other: 'Greta', day: 1, abs: 1501 }, { type: 'eat', other: 'Marlow', day: 1, abs: 1502 }] } }] });
   assert(v3bad !== null && v3bad.founders[0].socialState.affinity.Greta === 100 && v3bad.founders[0].socialState.affinity.Perrin === 0 && v3bad.founders[0].socialState.affinity.Marlow === undefined && v3bad.founders[0].socialState.affinity.Stranger === undefined && v3bad.founders[0].socialState.memories.length === 1, 'M1060: v3 validation clamps affinity, drops self/unknown names, drops bad memory types');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1060: unknown version / null → null (fresh defaults)');
@@ -11814,6 +11814,66 @@ console.log('Testing 3D NPC memory + relationships — founders remember each ot
   const stepped1060 = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 90, companionAtCamp: true });
   const stepped1060b = F.applyFounderWaitStep(wSocial, 10, 600, 30, 1010, { foodStock: 30, stockpileWood: 0, construction: doneC, nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, closestAffinity: 50, companionAtCamp: true });
   assert(stepped1060.activity === 'rest' && stepped1060b.activity === 'work', 'M1060: a wait step re-chooses with the companionship premium too (social 40 + close friend at camp → rest; neutral friend → work)');
+}
+
+console.log('Testing entity identity — stable ids (BUILD 1063, F-1)...');
+{
+  const E = await import('../src/game/engine3d/entityIds.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const L = await import('../src/game/engine3d/livingWorld.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const P = await import('../src/game/engine3d/placements.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  // --- The id rules: derived for stationary things, stored for actors. ---
+  assert(E.founderIdFor('Marlow') === 'founder-Marlow', 'M1063: founder id is founder-<name>');
+  assert(E.treeId(122, 122) === 'tree:122,122' && E.rockId(10, 20) === 'rock:10,20' && E.wildTreeId(-3, 205) === 'wild-tree:-3,205', 'M1063: tree/rock/wild-tree ids are their tiles');
+  assert(E.animalId('goat', 2) === 'goat-2', 'M1063: animal id is kind-slotId');
+  assert(E.entityKindOf('founder-Marlow') === 'founder' && E.entityKindOf('tree:1,2') === 'tree' && E.entityKindOf('placed:house:126,119') === 'placed' && E.entityKindOf('goat-2') === 'animal' && E.entityKindOf('nope') === null, 'M1063: ids parse back to their kinds');
+  // --- Founders v4: stored ids, migration fills them, round-trip keeps them. ---
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1063: founders save is v4');
+  const fresh4 = F.freshFoundersSave(1000);
+  assert(fresh4.founders.map((f: { id: string }) => f.id).join(',') === 'founder-Marlow,founder-Greta,founder-Perrin', 'M1063: a fresh v4 save carries founder ids');
+  const rt4 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh4)));
+  assert(rt4 !== null && JSON.stringify(rt4) === JSON.stringify(fresh4), 'M1063: a v4 save round-trips with ids');
+  const m3 = F.migrateFoundersSave({ version: 3, founders: F.FOUNDER_NAMES.map((n: string) => ({ name: n, x: 130, y: 130 })), stockpileWood: 4, foodStock: 28, construction: { state: 'none', progress: 0, spentWood: 0 } });
+  assert(m3 !== null && m3.version === 4 && m3.founders[0].id === 'founder-Marlow', 'M1063: v3 migrates to v4 with ids derived from the names');
+  const kept = F.migrateFoundersSave({ version: 4, founders: [{ name: 'Marlow', id: 'founder-Marlow-renamed', x: 130, y: 130 }], stockpileWood: 0, foodStock: 30, construction: { state: 'none', progress: 0, spentWood: 0 } });
+  assert(kept !== null && kept.founders[0].id === 'founder-Marlow-renamed', 'M1063: a stored id is authoritative (a rename keeps the identity)');
+  const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 1000));
+  assert(L.founderTownsfolk(states[0]).id === 'founder-Marlow' && L.founderTownsfolk(states[0]).id === states[0].id, 'M1063: the coordinator reads the stored founder id');
+  // --- Placements: assigned at creation, carried on move, migrated on load. ---
+  const w1063 = W.defaultWorld();
+  assert(w1063.trees.length > 800 && !('id' in w1063.trees[0]), 'M1063: stored trees carry no id field (the save does not grow)');
+  assert(C.hutPlacementId(w1063) === null, 'M1063: a fresh world has no hut placement, so its id is null');
+  const mig = [
+    { kind: 'house', x0: 126, y0: 119, x1: 129, y1: 121 },
+    { kind: 'path', x0: 100, y0: 100, x1: 100, y1: 100 },
+    { kind: 'ore', x0: 100, y0: 120, x1: 100, y1: 120 },
+    { kind: 'path', x0: 100, y0: 100, x1: 100, y1: 100 },
+  ];
+  assert(E.assignPlacementIds(mig) === 4, 'M1063: migration assigns 4 missing placement ids');
+  assert(mig[0].id === 'placed:house:126,119' && mig[2].id === 'placed:ore:100,120' && mig[3].id === 'placed:path:100,100:2', 'M1063: migrated ids derive from kind + origin, deduped');
+  assert(E.assignPlacementIds(mig) === 0, 'M1063: migration is idempotent');
+  let spot1063: { x: number; y: number } | null = null;
+  let dest1063: { x: number; y: number } | null = null;
+  outer1063: for (let y = 100; y <= 112; y++) {
+    for (let x = 95; x <= 105; x++) {
+      if (P.validatePlacement(w1063, 'path', x, y, { x: 99, y: 105 }, []).ok) {
+        if (!spot1063) { spot1063 = { x, y }; continue; }
+        dest1063 = { x, y };
+        break outer1063;
+      }
+    }
+  }
+  assert(spot1063 !== null && dest1063 !== null, 'M1063: found two free tiles for the place/move proof');
+  const placed1063 = P.validatePlacement(w1063, 'path', spot1063!.x, spot1063!.y, { x: 99, y: 105 }, []);
+  assert(placed1063.ok, 'M1063: a path validates on the free tile');
+  if (placed1063.ok) {
+    P.addPlacement(w1063, placed1063.item);
+    assert(placed1063.item.id === `placed:path:${spot1063!.x},${spot1063!.y}`, 'M1063: addPlacement assigns the id at creation');
+    const moved1063 = P.movePlacement(w1063, placed1063.item, dest1063!.x, dest1063!.y, { x: 99, y: 105 }, []);
+    assert(moved1063.ok && moved1063.item.id === placed1063.item.id && moved1063.item.x0 === dest1063!.x, 'M1063: a move keeps the id and changes the rect');
+  }
 }
 
 console.log('Testing tree density — forests, not speckles (BUILD 1061)...');

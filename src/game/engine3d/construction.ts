@@ -134,6 +134,22 @@ export function hutPlacementExists(world: IsoWorld): boolean {
 }
 
 /**
+ * BUILD 1063 (F-1): the hut's stable id — the id of the 'house'
+ * PlacedItem on the hut rect, or null when no hut placement exists
+ * yet (the hut is not built, or the player removed it). The
+ * scheduler's construction jobs name the hut by this id; a rebuild
+ * after a removal stamps a NEW placement with a NEW id (a different
+ * hut, honestly). Null is also what an old save returns before its
+ * first load migration assigns the id.
+ */
+export function hutPlacementId(world: IsoWorld): string | null {
+  const p = (world.placements ?? []).find(
+    (q) => q.kind === 'house' && q.x0 === HUT_RECT.x0 && q.y0 === HUT_RECT.y0 && q.x1 === HUT_RECT.x1 && q.y1 === HUT_RECT.y1,
+  );
+  return p && typeof p.id === 'string' && p.id.length > 0 ? p.id : null;
+}
+
+/**
  * Survey the site against the live world: every rect tile must be
  * walkable grass (no water, no tree, no rock) and none of the camp's
  * own tiles may fall inside the rect. Returns the problems (empty =
