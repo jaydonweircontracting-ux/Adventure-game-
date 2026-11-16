@@ -12294,6 +12294,64 @@ console.log('Testing food and survival — farming, milling, health, save v6 (BU
   assert(m51067 !== null && m51067.version === 6 && m51067.founders.every((f: { health: number; carryingGrain: number }) => f.health === 100 && f.carryingGrain === 0), 'M1067: v5 migrates to v6 (health 100, carryingGrain 0, the beds and sites survive)');
 }
 
+console.log('Testing the Control Center — sim speeds, panel data, shortages (BUILD 1068, 0x08)...');
+{
+  const CC = await import('../src/game/engine3d/controlCenter.js');
+  // --- Sim speeds: the cap is the point (never 100 ticks per second). ---
+  assert(CC.SIM_SPEEDS.join(',') === '0,1,5,10,50,100', 'M1068: sim speeds are pause/1/5/10/50/100');
+  assert(CC.founderStepsForSpeed(0) === 0 && CC.founderStepsForSpeed(1) === 1 && CC.founderStepsForSpeed(5) === 5, 'M1068: founder steps are 0/1/5 at 0x/1x/5x');
+  assert(CC.founderStepsForSpeed(50) === 10 && CC.founderStepsForSpeed(100) === 10, 'M1068: founder steps cap at 10 (50x/100x do not run 100 ticks/sec)');
+  assert(CC.founderStepsForSpeed(7) === 0, 'M1068: an invalid speed runs 0 founder steps');
+  assert(CC.clockMinutesPerSecond(100) === 100 && CC.clockMinutesPerSecond(0) === 0, 'M1068: the clock runs 100 min/s at 100x, 0 when paused');
+  assert(CC.founderRateForSpeed(100) === 10, 'M1068: the founder rate at 100x is 10 (capped)');
+  assert(CC.setSimSpeed(5) === 5 && CC.getSimSpeed() === 5, 'M1068: the speed setting reads back');
+  assert(CC.setSimSpeed(7) === 1 && CC.getSimSpeed() === 1, 'M1068: an invalid speed resets to 1x');
+  assert(CC.simSpeedLabel(0) === 'Paused' && CC.simSpeedLabel(100) === '100×', 'M1068: speed labels are Paused/100×');
+  CC.setSimSpeed(1);
+  // --- Panel data: a healthy camp, then a hungry one. ---
+  const input1068 = {
+    speed: 1, day: 3, minutes: 480,
+    founders: [
+      { id: 'founder-Marlow', name: 'Marlow', activity: 'work', workState: 'chopping', health: 80, hunger: 70, energy: 60, social: 55, jobKind: 'chop', jobTarget: 'tree:133,120', carrying: 0, carryingGrain: 0 },
+      { id: 'founder-Greta', name: 'Greta', activity: 'build', workState: 'building', health: 60, hunger: 65, energy: 50, social: 58, jobKind: 'build', jobTarget: 'hut-site-0', carrying: 0, carryingGrain: 0 },
+      { id: 'founder-Perrin', name: 'Perrin', activity: 'work', workState: 'toStockpile', health: 40, hunger: 80, energy: 70, social: 52, jobKind: 'deliver', jobTarget: 'deliver:founder-Perrin', carrying: 2, carryingGrain: 0 },
+    ],
+    sites: [{ id: 'hut-site-0', state: 'building', progress: 4, spentWood: 8 }],
+    hutDone: false,
+    camp: { wood: 4, food: 30, grain: 6 },
+    player: { wood: 2, stone: 1, gold: 0, grain: 0 },
+    carried: [{ id: 'founder-Marlow', wood: 0, grain: 0 }, { id: 'founder-Greta', wood: 0, grain: 0 }, { id: 'founder-Perrin', wood: 2, grain: 0 }],
+    deposits: { wood: 800, stone: 40 },
+    totalWoodAvailable: 1834, totalStoneAvailable: 41,
+    jobs: { open: 220, claimed: 3, completed: 17, failed: 0, chopOpen: 219, chopClaimed: 2, buildOpen: 0, buildClaimed: 1, deliverOpen: 0, deliverClaimed: 1, harvestOpen: 1, harvestClaimed: 0, lastFailedId: null, lastFailedReason: null },
+    livingWorld: { day: 3, lastAdvancedDay: 3, forestDensityPct: 99, liveTrees: 820, baselineTrees: 830, plantedTotal: 12, campPopulation: 3, lastEvent: 'Bandits harry travelers on Founders\' Camp' },
+    farm: { planted: 2, growing: 1, ready: 1 },
+    perf: { rebuilds: 4, maxStepMsMoving: 120, lastBuildMs: 210, lastBuildFrames: 18 },
+  };
+  const d1068 = CC.formatControlCenterData(input1068);
+  assert(d1068.population.count === 3 && d1068.settlements[0].population === 3, 'M1068: population reads the founders + coordinator');
+  assert(d1068.resources.campWood === 4 && d1068.resources.carriedWood === 2, 'M1068: resources read the registry (camp + carried)');
+  assert(d1068.shortages.length === 1 && d1068.shortages[0].includes('Wood short: 4/12'), 'M1068: one shortage when the hut needs wood and the pile holds 4/12');
+  assert(d1068.employment.open === 220 && d1068.employment.perFounder[0].jobKind === 'chop', 'M1068: employment reads the board + held jobs');
+  assert(d1068.food.healthAvg === 60 && d1068.food.weakCount === 0 && d1068.food.farmReady === 1, 'M1068: food reads health + farm stages');
+  assert(d1068.construction.totalProgress === 4 && d1068.construction.hutDone === false, 'M1068: construction sums site progress');
+  assert(d1068.trade.routes.length === 0 && d1068.trade.note.includes('No trade routes yet'), 'M1068: trade is honest about no routes');
+  assert(d1068.environment.forestDensityPct === 99 && d1068.environment.dayLag === 0, 'M1068: environment reads the coordinator');
+  assert(d1068.performance.simErrors.length === 0, 'M1068: no sim errors in the healthy camp');
+  const hungry1068 = { ...input1068, camp: { wood: 12, food: 6, grain: 0 } };
+  const hungryData = CC.formatControlCenterData(hungry1068);
+  assert(hungryData.shortages.length === 2 && hungryData.shortages.some((s: string) => s.includes('Food low: 6')) && hungryData.shortages.some((s: string) => s.includes('No grain to mill')), 'M1068: food + mill shortages fire when food is 6 and grain is 0');
+  const lagging1068 = { ...input1068, day: 5, livingWorld: { ...input1068.livingWorld, lastAdvancedDay: 2 } };
+  const lagData = CC.formatControlCenterData(lagging1068);
+  assert(lagData.environment.dayLag === 3 && lagData.performance.simErrors.length === 1 && lagData.performance.simErrors[0].includes('3 days behind'), 'M1068: a 3-day coordinator lag is a sim error');
+  const fast1068 = { ...input1068, speed: 100 };
+  const fastData = CC.formatControlCenterData(fast1068);
+  assert(fastData.clockRate === 100 && fastData.founderRate === 10, 'M1068: at 100x the clock runs 100 and the founders run 10 (capped, shown honestly)');
+  const paused1068 = { ...input1068, speed: 0 };
+  const pausedData = CC.formatControlCenterData(paused1068);
+  assert(pausedData.clockRate === 0 && pausedData.founderRate === 0, 'M1068: paused runs nothing');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

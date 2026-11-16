@@ -126,6 +126,11 @@ import type { SharedEventType } from './memory';
 // trees + a persisted camp ledger. The view owns the ref; the 1s
 // clock timer and the wait step call the sync on the day boundary.
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
+// BUILD 1068 (0x08): World Simulation Control Center — the panel data +
+// sim-speed model (pure) and the panel component. The view owns the refs;
+// the module formats them, the panel renders them.
+import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond, formatControlCenterData } from './controlCenter';
+import { ControlCenterPanel } from './ControlCenterPanel';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, reconcileExtraSites, hutPlacementExists, hutSitePlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite, sitesOf, type ConstructionState } from './construction';
 import { treeId, wildTreeId, rockId, crateId, npcSpawnIdFor } from './entityIds';
@@ -2046,6 +2051,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // control button (always visible, like Build/Exit 3D); the overlay
   // hides the minimap while it is open (the 2D precedent, BUILD 691).
   const [mapOpen,setMapOpen]=useState(false);
+  // BUILD 1068 (0x08): Control Center overlay state — same pattern as
+  // the Map overlay (a control button, always visible).
+  const [controlOpen,setControlOpen]=useState(false);
   // BUILD 992: first person (was the 983 street view, now engaged by
   // zooming all the way in). The ref is what the render loop reads;
   // the state drives the first-person hint text. fpAuto comes from the
@@ -5433,8 +5441,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1056: paused while a wait runs — the wait's own timer
       // advances the clock, so the live tick must not double-advance it.
       if(waitingRef.current)return;
-      const c=clockRef.current;let minutes=c.minutes+1,day=c.day;
-      if(minutes>=1440){minutes-=1440;day+=1;}
+      // BUILD 1068 (0x08): the sim speed (Control Center) — paused
+      // freezes the clock; otherwise it advances `speed` game-minutes
+      // per real second (the while loop rolls the day at any speed).
+      const speed=clockMinutesPerSecond(getSimSpeed());
+      if(speed===0)return;
+      const c=clockRef.current;let minutes=c.minutes+speed,day=c.day;
+      while(minutes>=1440){minutes-=1440;day+=1;}
       clockRef.current={minutes,day};saveClock(clockRef.current);setClockUi(clockRef.current);
       // BUILD 1062: the living-world coordinator advances on the real
       // day boundary (this tick rolls the day at midnight). The sync
@@ -5562,7 +5575,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // founders save to ag-3d-founders-v1, and the old roster is
     // never read or written.
     const founderPath=new Map<string,FounderPathState>();
-    const founderTimer=window.setInterval(()=>{
+    // BUILD 1068 (0x08): the founder tick body, extracted so the
+    // sim-speed control can run it N times per 900ms interval (the sim
+    // advances in larger steps per tick at high speeds — it does not
+    // run 100 ticks per second). Needs decay is clock-driven (elapsed
+    // from nowAbs), so extra sub-steps do not double-decay it;
+    // movement/progress advance per sub-step. The founders save is
+    // written once per interval, after all sub-steps (not per sub-step).
+    const runFounderTick=()=>{
       if(!FOUNDERS_ENABLED||waitingRef.current)return;
       const clock=clockRef.current;
       const nowAbs=founderAbsMinutes(clock.day,clock.minutes);
@@ -5988,6 +6008,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(milled.milled>0){registryRef.current=milled.registry;stockChanged=true;}
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
       if(stockChanged||hutChanged)refreshResourceUi();
+      // BUILD 1068: the founders save is written by the interval,
+      // once per 900ms, after all sub-steps (not per sub-step).
+    };
+    const founderTimer=window.setInterval(()=>{
+      if(!FOUNDERS_ENABLED||waitingRef.current)return;
+      const steps=founderStepsForSpeed(getSimSpeed());
+      for(let i=0;i<steps;i++)runFounderTick();
       // BUILD 1064 (R-1): the founders save is written back from
       // the registry (the camp store's numbers), not from the plain
       // refs — the registry is the authority, the save is its
@@ -6216,6 +6243,36 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     <button type="button" data-testid="world-map-open" aria-label="Open world map" onClick={()=>setMapOpen(v=>!v)} style={{position:'absolute',left:12,top:140,zIndex:4,padding:'10px 16px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700,fontSize:15}}>🗺 Map</button>
     {mapOpen && (
       <WorldMap3D world={stateRef.current.world} playerX={position.x} playerY={position.y} onClose={()=>setMapOpen(false)} onTapTravel={(dest) => { travelRequestRef.current?.(dest); }} />
+    )}
+    {/* BUILD 1068 (0x08): Control Center button — below the Map button
+        (top:188: Map top 140 + ~40px + 8 gap), same control-button
+        pattern. Opens the World Simulation Control Center panel, which
+        reads the live coordinator + registry state. */}
+    <button type="button" data-testid="control-center-open" aria-label="Open Control Center" onClick={()=>setControlOpen(v=>!v)} style={{position:'absolute',left:12,top:188,zIndex:4,padding:'10px 16px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700,fontSize:15}}>🎛 Control</button>
+    {controlOpen && (
+      <ControlCenterPanel onClose={()=>setControlOpen(false)} getData={()=>{
+        const clock=clockRef.current;
+        const nowAbs=founderAbsMinutes(clock.day,clock.minutes);
+        const board=jobBoardRef.current;
+        const reg=registryRef.current;
+        const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,stateRef.current.world.trees.length,clock.day):null;
+        const farmTiles=placedFarmTiles(stateRef.current.world);
+        const farm={planted:0,growing:0,ready:0};
+        for(const t of farmTiles){const s=farmStageAt(t.plantedAt,nowAbs);farm[s]++;}
+        return formatControlCenterData({
+          speed:getSimSpeed(),day:clock.day,minutes:clock.minutes,
+          founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain};}),
+          sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),
+          hutDone:!hasUnfinishedSite(constructionRef.current),
+          camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg)},
+          player:{wood:storeQty(reg,PLAYER_STORE_ID,'wood'),stone:storeQty(reg,PLAYER_STORE_ID,'stone'),gold:storeQty(reg,PLAYER_STORE_ID,'gold'),grain:storeQty(reg,PLAYER_STORE_ID,'grain')},
+          carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain')})),
+          deposits:{wood:depositsOfKind(reg,'wood').length,stone:depositsOfKind(reg,'stone').length},
+          totalWoodAvailable:totalAvailable(reg,'wood'),totalStoneAvailable:totalAvailable(reg,'stone'),
+          jobs:jobSummary(board),livingWorld:lw,farm,
+          perf:{rebuilds:rebuildCountRef.current,maxStepMsMoving:rebuildStepStatsRef.current.maxStepMsMoving,lastBuildMs:rebuildStepStatsRef.current.lastBuildMs,lastBuildFrames:rebuildStepStatsRef.current.lastBuildFrames},
+        });
+      }} />
     )}
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
