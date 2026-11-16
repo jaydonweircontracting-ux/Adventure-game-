@@ -21,7 +21,8 @@
 export const WARN_FILE_HUNKS = 8; // one file with >=8 hunks in one task
 export const FLAG_FILE_HUNKS = 12; // one file with >=12 hunks in one task
 export const HOT_FILE_BUILDS = 3; // same file touched in >=3 consecutive builds
-export const REPEAT_EDIT_CALLS = 4; // one file edited >=4 times in one task
+export const WARN_EDIT_CALLS = 3; // one file edited >=3 times: warn (one below the hard stop)
+export const REPEAT_EDIT_CALLS = 4; // one file edited >=4 times: HARD STOP (flag). The four-edit limit is a hard stop, not a warning — the worker stops, the parent diagnoses, the task is reassigned with a different strategy.
 
 // Parse `git show --numstat` / `git diff --numstat` output.
 // Lines: "<added>\t<deleted>\t<file>" (binary files show "-").
@@ -107,10 +108,10 @@ export function bottleneckFile(metrics, priorBuilds = []) {
     level = 'warn';
     reasons.push(`${file}: ${metrics.topHunks} hunks in one task (>= ${WARN_FILE_HUNKS})`);
   }
-  if (metrics.topEditFile && metrics.topEditCalls >= REPEAT_EDIT_CALLS) {
-    const r = `${metrics.topEditFile}: edited ${metrics.topEditCalls} times in one task (>= ${REPEAT_EDIT_CALLS})`;
+  if (metrics.topEditFile && metrics.topEditCalls >= WARN_EDIT_CALLS) {
+    const r = `${metrics.topEditFile}: edited ${metrics.topEditCalls} times in one task (hard stop at ${REPEAT_EDIT_CALLS})`;
     reasons.push(r);
-    if (metrics.topEditCalls >= REPEAT_EDIT_CALLS * 2) level = 'flag';
+    if (metrics.topEditCalls >= REPEAT_EDIT_CALLS) level = 'flag';
     else if (level !== 'flag') level = 'warn';
   }
   if (priorBuilds.length >= HOT_FILE_BUILDS) {
@@ -136,4 +137,60 @@ export function executionVerdict(metrics, priorBuilds = []) {
   const b = bottleneckFile(metrics, priorBuilds);
   if (!b) return { level: 'ok', reasons: [] };
   return { level: b.level, reasons: b.reasons };
+}
+
+// --- productivity: more than speed. ---
+// A faster build that delivers less functionality is not an improvement.
+// The record is assembled from the parent's verification (duration from the
+// events log, tests from the re-run asserts, regressions from the sim
+// comparison, functionality from the probe). Speed is one of seven numbers.
+export const FOUNDATION_BASELINE = {
+  // Average of the three foundation builds 0x02-0x04 (events log):
+  // 1684s, 1316s, 1532s -> 1511s. The number 0x06 is measured against.
+  avgDurationMs: 1511000,
+  builds: 3,
+};
+
+// Assemble one build's productivity record. featuresCompleted counts the
+// task's completed outcomes (the brief's deliverables), not the files
+// touched. functionality is what the player can actually do now, verified
+// in the probe — free text, not a count.
+export function productivityRecord({ taskId, durationMs, featuresCompleted, testsPassed, regressions, filesChanged, topHunks, topEditCalls, functionality = '' }) {
+  return { taskId, durationMs, featuresCompleted, testsPassed, regressions, filesChanged, topHunks, topEditCalls, functionality };
+}
+
+// Compare one build against a baseline (FOUNDATION_BASELINE by default).
+// Faster is only a win when regressions are 0 and features did not drop.
+export function compareToBaseline(record, baseline = FOUNDATION_BASELINE) {
+  const durationDeltaMs = record.durationMs - baseline.avgDurationMs;
+  const faster = durationDeltaMs < 0;
+  const regressionFree = record.regressions === 0;
+  return {
+    durationDeltaMs,
+    durationPct: baseline.avgDurationMs ? Math.round((durationDeltaMs / baseline.avgDurationMs) * 100) : null,
+    faster,
+    regressionFree,
+    improvement: faster && regressionFree,
+  };
+}
+
+// --- intervention: what happens on a flag. ---
+// A flag is a hard stop, not a report. The parent pauses the worker, the
+// worker's uncommitted work stays in the worktree (closing a worker does
+// not revert the filesystem), the parent diagnoses from the diff + metrics,
+// and a new worker is spawned with a revised brief that names the bottleneck
+// and a different strategy. Returns null when the verdict is not a flag.
+// (The automatic trigger — a monitor that watches the worktree diff and
+// flags the parent without a turn — is the next machinery step; today the
+// parent intervenes on the flag from the run's monitor notes and the diff.)
+export function interventionPlan(metrics, priorBuilds = []) {
+  const v = executionVerdict(metrics, priorBuilds);
+  if (v.level !== 'flag') return null;
+  const file = metrics.topFile || metrics.topEditFile;
+  return {
+    action: 'pause',
+    preserve: 'Close the worker; its uncommitted work stays in the worktree. Do not revert it.',
+    diagnose: v.reasons,
+    reassign: `Spawn a new worker on the same worktree with a revised brief: name the bottleneck file (${file}), batch all of its changes into the fewest edit calls, and use a different implementation strategy (extract a helper module, or split the change across two smaller tasks).`,
+  };
 }

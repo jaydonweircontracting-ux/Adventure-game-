@@ -340,10 +340,11 @@ Every worker brief now carries these, in addition to the standard brief:
 - **Targeted edits only.** Modify only the files the task actually needs.
   Do not rewrite a component to touch it; extend the module that owns the
   behaviour. Reuse existing systems instead of recreating them.
-- **Execution limits.** If one file needs more than 4 edit calls in a task,
-  or the same edit → test → fix cycle repeats more than twice, STOP.
-  Diagnose, change approach, and report the blocker instead of looping.
-  A stuck task is reported, never silently ground through.
+- **Execution limits (hard stop).** If one file reaches 4 edit calls in a
+  task, or the same edit → test → fix cycle repeats more than twice, STOP.
+  That is the hard stop, not a warning. Diagnose, change approach, and
+  report the blocker instead of looping. A stuck task is reported, never
+  silently ground through.
 - **Parallelize where safe, in separate worktrees.** Independent tasks run
   concurrently only in separate worktrees (one code agent per working tree,
   §62.1). Two agents never share a checkout. The dependency chain
@@ -358,10 +359,12 @@ into metrics: files changed, lines added/deleted, hunks per file, the top
 file and its share, edit calls per file, duration. Thresholds, grounded in
 the numbers above:
 
-- **Warn:** one file with ≥8 hunks in a task, or edited ≥4 times, or touched
+- **Warn:** one file with ≥8 hunks in a task, or edited ≥3 times, or touched
   in 3 consecutive builds (a hot file).
-- **Flag:** one file with ≥12 hunks in a task, or edited ≥8 times.
-  A flag means stop, diagnose, change approach before the next task.
+- **Flag (hard stop):** one file with ≥12 hunks in a task, or edited ≥4
+  times. Four edits is the hard stop — the worker stops, the parent
+  diagnoses, the task is reassigned with a different strategy. It is not a
+  warning that waits until eight edits.
 - The J-1 shape (14 hunks, 6 edits, hot file across 1062–1064) flags.
   A balanced task (5 files, 2 hunks each) is ok.
 
@@ -372,13 +375,77 @@ the number to beat. Tool-call counts are not in any file the parent controls
 (they live in the runtime's monitor notes); duration, files, hunks, and
 completions are the measured set.
 
+### Intervention (on a flag — the hard stop)
+
+A flag is not a report. It is a pause, and the machinery is
+`interventionPlan()` in execution.mjs:
+
+1. **Detect** — the verdict is `flag` (≥12 hunks in one file, or ≥4 edits
+   to one file).
+2. **Pause** — the parent closes the worker. Closing a worker does not
+   revert the filesystem, so its uncommitted work stays in the worktree.
+3. **Preserve** — the parent inspects the diff and commits the good parts
+   (or leaves them uncommitted for the next worker to continue from).
+4. **Diagnose** — the parent names the bottleneck from the diff + metrics
+   and records it.
+5. **Reassign** — a new worker is spawned on the same worktree with a
+   revised brief that names the bottleneck file and a different strategy
+   (extract a helper module, or split the change across two smaller tasks).
+
+The automatic trigger — a monitor that watches the worktree diff and flags
+the parent without a turn — is the next machinery step. Today the parent
+intervenes on the flag from the run's monitor notes and the diff. The
+dispatcher cron is the natural home for that monitor; it is proposed as
+part of the dispatcher prompt update, not smuggled in here.
+
+### Productivity (more than speed)
+
+A faster build that delivers less functionality is not an improvement.
+`productivityRecord()` assembles one build's seven numbers from the
+parent's verification, and `compareToBaseline()` judges it against the
+foundation baseline (avg 1511s):
+
+- Build completion time (events log, release → completion).
+- Features completed per build (the brief's deliverables, not files touched).
+- Regression rate (new sim failures vs pristine — 0 is the bar).
+- Files modified (git diff).
+- Repeated edit count (edits to the top file).
+- Tests passed (standalone asserts, parent re-run).
+- Actual functionality delivered (what the player can do now, verified in
+  the probe — free text, not a count).
+
+Faster is only a win when regressions are 0 and features did not drop.
+`compareToBaseline()` returns `improvement: true` only on that condition.
+
+### Breaking up Engine3DWorldView.tsx (queued as 0x0D)
+
+6,638 lines is too much responsibility for one component. The extraction
+program, gradual, one area at a time, the game working throughout:
+
+1. 3D world simulation. 2. Rendering and terrain. 3. NPC simulation.
+4. Player controls. 5. Inventory and crafting. 6. Building interactions.
+7. HUD and interface. 8. World synchronization.
+
+Each extraction is its own build with the full gates. The program is queued
+as 0x0D (after the chain, 0x06) so it does not collide with the chain's
+integration work in the same file. It is not started now.
+
+### 0x06 — the first performance benchmark
+
+0x06 (forest-to-resident chain) is the first build measured against the
+baseline. Success criteria, recorded in its brief:
+
+- Complete the forest-to-resident chain.
+- Record all execution metrics (duration, files, hunks, edit calls, tests
+  passed, regressions, functionality).
+- Verify the actual game functionality in the probe.
+- Compare against the previous three builds (0x02–0x04, avg ~25 min).
+- Confirm the J-1 rebase and push succeed.
+
 ### What this does NOT do
 
-- It does not refactor `Engine3DWorldView.tsx`. Splitting a 6,638-line
-  god-component is a real fix but a big, risky one; it is a separate
-  decision for the user, not smuggled in here. The policy caps the cost of
-  working through it.
-- It does not auto-kill a stuck worker. A flag is reported to the parent;
-  stalled tasks are reported, never killed (§10).
+- It does not refactor `Engine3DWorldView.tsx` in this change. The
+  extraction is queued as 0x0D (above); the policy caps the cost of working
+  through the file until then.
 - It does not change the gates. Batching and speed never weaken a test,
   a type check, a sim comparison, or a live verification.

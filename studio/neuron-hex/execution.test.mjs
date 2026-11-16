@@ -6,8 +6,10 @@
 // made as ~6 edit calls.
 
 import {
-  WARN_FILE_HUNKS, FLAG_FILE_HUNKS, HOT_FILE_BUILDS, REPEAT_EDIT_CALLS,
+  WARN_FILE_HUNKS, FLAG_FILE_HUNKS, HOT_FILE_BUILDS, WARN_EDIT_CALLS, REPEAT_EDIT_CALLS,
+  FOUNDATION_BASELINE,
   parseNumstat, parseHunks, executionMetrics, bottleneckFile, executionVerdict,
+  productivityRecord, compareToBaseline, interventionPlan,
 } from './execution.mjs';
 
 let passed = 0;
@@ -82,13 +84,13 @@ eq(bottleneckFile(flagShape).level, 'flag', `${FLAG_FILE_HUNKS} hunks flags`);
 const belowFlag = executionMetrics({ hunks: { 'src/a.ts': FLAG_FILE_HUNKS - 1 } });
 eq(bottleneckFile(belowFlag).level, 'warn', `${FLAG_FILE_HUNKS - 1} hunks warns, not flags`);
 
-// --- edit-call thresholds ---
-const editsWarn = executionMetrics({ editCalls: { 'src/a.ts': REPEAT_EDIT_CALLS } });
-eq(bottleneckFile(editsWarn).level, 'warn', `${REPEAT_EDIT_CALLS} edits warns`);
-const editsFlag = executionMetrics({ editCalls: { 'src/a.ts': REPEAT_EDIT_CALLS * 2 } });
-eq(bottleneckFile(editsFlag).level, 'flag', `${REPEAT_EDIT_CALLS * 2} edits flags`);
-const editsOk = executionMetrics({ editCalls: { 'src/a.ts': REPEAT_EDIT_CALLS - 1 } });
-eq(bottleneckFile(editsOk), null, `${REPEAT_EDIT_CALLS - 1} edits is ok`);
+// --- edit-call thresholds: 4 edits is a HARD STOP (flag), 3 warns ---
+const editsWarn = executionMetrics({ editCalls: { 'src/a.ts': WARN_EDIT_CALLS } });
+eq(bottleneckFile(editsWarn).level, 'warn', `${WARN_EDIT_CALLS} edits warns (one below the hard stop)`);
+const editsFlag = executionMetrics({ editCalls: { 'src/a.ts': REPEAT_EDIT_CALLS } });
+eq(bottleneckFile(editsFlag).level, 'flag', `${REPEAT_EDIT_CALLS} edits is the hard stop (flag)`);
+const editsOk = executionMetrics({ editCalls: { 'src/a.ts': WARN_EDIT_CALLS - 1 } });
+eq(bottleneckFile(editsOk), null, `${WARN_EDIT_CALLS - 1} edits is ok`);
 
 // --- hot file across builds: 1062, 1063, 1064 all touched Engine3DWorldView.tsx ---
 const hot = executionMetrics({ hunks: { 'src/other.ts': 2 } });
@@ -117,5 +119,27 @@ eq(executionVerdict(balanced).reasons, [], 'balanced task has no reasons');
 // --- verdict passes the bottleneck through ---
 eq(executionVerdict(j1).level, 'flag', 'verdict flags the J-1 shape');
 eq(executionVerdict(executionMetrics({})).level, 'ok', 'empty metrics is ok');
+
+// --- productivity: a faster build that delivers less is not an improvement ---
+const rec = productivityRecord({ taskId: '0x06', durationMs: 1200000, featuresCompleted: 3, testsPassed: 110, regressions: 0, filesChanged: 6, topHunks: 5, topEditCalls: 2, functionality: 'lumberjack carries logs to storage; builder builds a hut; a resident arrives' });
+eq(rec.taskId, '0x06', 'productivity record keeps the task id');
+eq(rec.featuresCompleted, 3, 'productivity record keeps the feature count');
+const cmp = compareToBaseline(rec);
+ok(cmp.faster === true && cmp.durationDeltaMs === 1200000 - FOUNDATION_BASELINE.avgDurationMs, 'faster build is faster by the baseline delta');
+eq(cmp.durationPct, Math.round(((1200000 - 1511000) / 1511000) * 100), 'duration percent is computed from the baseline');
+ok(cmp.regressionFree === true && cmp.improvement === true, 'faster + regression-free is an improvement');
+const slow = productivityRecord({ taskId: '0x06', durationMs: 1800000, featuresCompleted: 3, testsPassed: 110, regressions: 0, filesChanged: 6, topHunks: 5, topEditCalls: 2 });
+ok(compareToBaseline(slow).faster === false && compareToBaseline(slow).improvement === false, 'slower build is not an improvement');
+const regressed = productivityRecord({ taskId: '0x06', durationMs: 1200000, featuresCompleted: 3, testsPassed: 110, regressions: 1, filesChanged: 6, topHunks: 5, topEditCalls: 2 });
+ok(compareToBaseline(regressed).faster === true && compareToBaseline(regressed).regressionFree === false && compareToBaseline(regressed).improvement === false, 'faster but regressed is NOT an improvement');
+
+// --- intervention: a flag pauses, preserves, diagnoses, reassigns ---
+eq(interventionPlan(executionMetrics({})), null, 'no intervention when the verdict is ok');
+eq(interventionPlan(executionMetrics({ hunks: { 'src/a.ts': WARN_FILE_HUNKS } })), null, 'no intervention on a warn');
+const plan = interventionPlan(j1);
+ok(plan !== null && plan.action === 'pause', 'a flag produces a pause plan');
+ok(plan.preserve.includes('uncommitted work stays in the worktree'), 'the plan preserves uncommitted work');
+ok(plan.diagnose.some((r) => r.includes('14 hunks')), 'the plan carries the diagnosis');
+ok(plan.reassign.includes('Engine3DWorldView.tsx') && plan.reassign.includes('different implementation strategy'), 'the plan reassigns with a different strategy naming the bottleneck');
 
 console.log(`EXECUTION ASSERTS: ${passed} passed`);

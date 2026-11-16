@@ -30,7 +30,7 @@ const NO_CI = { ciPass: false, approvals: { 'pr61-merge': true } };
 const NO_APPROVAL = { ciPass: true, approvals: {} };
 
 // --- live queue: structural checks only (state-independent; the queue moves) ---
-check(tasks.length === 12, 'queue has 12 tasks');
+check(tasks.length >= 12, 'queue has at least the 12 original tasks (it grows; the exact count is not a scheduler property)');
 check(typeof queue.approvals['pr61-merge'] === 'boolean', 'pr61-merge approval is a boolean in tasks.json (the dispatcher never grants one; gates enforce it)');
 
 // --- frozen queue: the 0x02-era state (2026-11-15 ~16:30 MST), so the
