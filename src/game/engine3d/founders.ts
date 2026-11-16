@@ -80,6 +80,7 @@ import type { ScoredDecision, UtilityWorldContext } from './utility';
 import { freshFounderSocial } from './memory';
 import type { FounderSocial } from './memory';
 import { founderIdFor, treeId, farmTileId } from './entityIds';
+import { plantSapling } from './ecosystems';
 import { decayFounderHealth } from './food';
 import {
   CAMP_STORE_ID,
@@ -780,6 +781,11 @@ export function chopTreeAt(world: IsoWorld, tx: number, ty: number): boolean {
     if (!world.removedTrees) world.removedTrees = [];
     const k = tx + ',' + ty;
     if (!world.removedTrees.includes(k)) world.removedTrees.push(k);
+    // BUILD 1085 (1.6): the chopped tile regrows — a sapling is
+    // planted here, maturing into a real tree over days at the season
+    // rate. Never an instant resurrection: the tree stays chopped
+    // until the sapling matures (the 1061 rule, reconciled).
+    plantSapling(world, tx, ty);
     return true;
   }
   if ((tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) && wildTreeAt(tx, ty)) {

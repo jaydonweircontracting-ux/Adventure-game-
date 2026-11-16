@@ -97,7 +97,8 @@ import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './fo
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot } from './farm';
 import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
-import { growthFactorAt } from './livingWorld';
+import { forestBaselineTrees, forestDensity, growthFactorAt } from './livingWorld';
+import { advanceEcosystemDay, applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
@@ -202,6 +203,12 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
   // change them). The camp farm is neutral soil (factor 1.0), so
   // the farm grows at exactly the old rate.
   stampLandforms(world);
+  // BUILD 1085 (1.6): stamp the animal populations into the sim world
+  // too, so the 24h run exercises the ecosystem day step — the M1069
+  // numbers staying identical WITH populations present is the proof the
+  // day step never touches the founders (a forest regrows over days,
+  // not hours; no sapling matures in 24h).
+  stampAnimalPopulations(world);
   return {
     world,
     founders,
@@ -250,9 +257,21 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
 /** One founder tick — a mirror of the view's runFounderTick. */
 export function advanceSettlementTick(sim: SettlementSim): void {
   const { world } = sim;
+  const dayBefore = settlementClock(sim).day;
   sim.abs += SETTLEMENT_TICK_MIN;
   const nowAbs = sim.abs;
   const { day, minutes } = settlementClock(sim);
+  // BUILD 1085 (1.6): the ecosystem advances on the day boundary —
+  // saplings grow at the season rate (none matures in 24h: 7 points
+  // at 1.0/day in spring), animal populations run their day step.
+  // Neither touches the founders, so the M1069 numbers cannot move.
+  if (day > dayBefore) {
+    const eco = advanceEcosystemDay(world, day, { forestDensity: forestDensity(world.trees.length, forestBaselineTrees(world)) });
+    world.saplings = eco.saplings;
+    world.animalPopulations = eco.populations;
+    world.animalKills = eco.kills;
+    applyMaturedTrees(world, eco.matured);
+  }
   const ledger = sim.ledger;
   ledger.ticks++;
 

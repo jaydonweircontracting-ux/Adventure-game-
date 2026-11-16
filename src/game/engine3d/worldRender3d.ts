@@ -37,6 +37,7 @@ import { gardenFencesFor, gardenPlantsFor } from './gardens';
 import { type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { mineralRenderColor } from './geology';
+import { SAPLING_MATURE_GROWTH } from './ecosystems';
 import { emitGroundDetail3d } from './groundDetail3d';
 import {
   treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile,
@@ -506,6 +507,16 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // all go through this one renderer.
   const treeAt=(tx:number,ty:number,baseY=0,shape=treeShapeForTile(tx,ty))=>{
     for(const t of TREE_SHAPES[shape]) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0+baseY,t.color);
+  };
+  // BUILD 1085 (1.6): a sapling — a short trunk and one small foliage
+  // tier, growing with it (narrow at planting, near tree-sized at
+  // maturity). The same houseBox vocabulary as treeAt, so a sapling
+  // reads as a young tree, never a second tree system.
+  const saplingAt=(tx:number,ty:number,baseY=0,growth=0)=>{
+    const f=Math.max(0,Math.min(1,growth/SAPLING_MATURE_GROWTH));
+    const w=0.25+0.45*f, h=0.35+0.55*f;
+    houseBox(tx+.5,ty+.5,0.12,0.5,0.12,baseY,[.4,.28,.14]);
+    houseBox(tx+.5,ty+.5,w,h,w,baseY+0.5,[.25,.55,.2]);
   };
   // BUILD 1049: a generated/authored market stall renders as a stall,
   // not a tree (the 986 placeholder). Counter + two back posts + a
@@ -1054,6 +1065,16 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // stands on the heightfield.
     treeAt(t.tx,t.ty,surfaceElevation(effTerrain,t.tx+.5,t.ty+.5));
     if(ti%16===15)yield;
+  }
+  // BUILD 1085 (1.6): saplings render as young trees where a chopped
+  // tree is regrowing — the visible half of the regrowth, so a cleared
+  // patch reads as regrowing before any tree matures.
+  const saplings=world.saplings??[];
+  for(let si=0;si<saplings.length;si++){
+    const s=saplings[si];
+    if(effTerrain(s.x,s.y)==='water')continue;
+    saplingAt(s.x,s.y,surfaceElevation(effTerrain,s.x+.5,s.y+.5),s.growth);
+    if(si%16===15)yield;
   }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
   // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x

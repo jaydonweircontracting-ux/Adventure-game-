@@ -13,6 +13,7 @@ import { seedCampFarmPlot } from './farm';
 import { stampMineralDeposits } from './geology';
 import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
+import { applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { seasonArrivalMessage, seasonForDay } from './climate';
@@ -78,6 +79,11 @@ export function loadInitialWorld(
   // the band routing sees the real river tiles and flows around
   // them (the rivers cut gorges through the range).
   if (stampLandforms(world)) saveWorld(world);
+  // BUILD 1085 (1.6): stamp the animal populations on a world that
+  // has none (the stamp never re-derives a stamped world, so the
+  // counts persist across reloads). After the landforms stamp, so
+  // the forest density the populations read is the real one.
+  if (stampAnimalPopulations(world)) saveWorld(world);
   return world as IsoWorld & { placements: PlacedItem[] };
 }
 
@@ -109,11 +115,22 @@ export function syncLivingWorld(ctx: LivingWorldSyncContext, world: IsoWorld): b
   const res=advanceLivingWorldDay({state:ctx.livingWorld.current,clock:ctx.clock.current,founders:ctx.founders.current,world});
   if(res.advancedDays===0&&res.planted.length===0)return false;
   ctx.livingWorld.current=res.state;
+  // BUILD 1085 (1.6): the ecosystem advance rides on the world save —
+  // saplings, populations and kills persist; a matured sapling becomes
+  // a real tree (with a registry deposit, like a regrown tree), so the
+  // founders can chop it and the player can too.
+  world.saplings=res.saplings;world.animalPopulations=res.populations;world.animalKills=res.kills;
+  if(res.matured.length>0){applyMaturedTrees(world,res.matured);for(const t of res.matured)ctx.registry.current=addDeposit(ctx.registry.current,treeDeposit(t.x,t.y));}
   if(res.planted.length>0){
-    world.trees=[...world.trees,...res.planted];saveWorld(world);ctx.needsWorldRebuild.current=true;
+    world.trees=[...world.trees,...res.planted];
     // BUILD 1064: a regrown tree is a new deposit (2 wood, chop).
     for(const t of res.planted)ctx.registry.current=addDeposit(ctx.registry.current,treeDeposit(t.tx,t.ty));
   }
+  // The world changed on this advance (saplings grew, populations
+  // moved, trees may have planted/matured) — save it, and rebuild
+  // when a tree appeared.
+  saveWorld(world);
+  if(res.planted.length>0||res.matured.length>0)ctx.needsWorldRebuild.current=true;
   // BUILD 1064: any coordinator change to the camp settlement's
   // storage lands back in the registry's camp store (the reverse
   // sync — the coordinator's production/consumption for the camp

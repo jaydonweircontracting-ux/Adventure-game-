@@ -13201,6 +13201,139 @@ console.log('Testing climate + seasons (BUILD 1084)...');
   console.log('M1084: climate verified (seasons, growth, temperature, rainfall, regrowth, animals, persistence)');
 }
 
+console.log('Testing regrowth + ecosystems (BUILD 1085)...');
+{
+  const ECO = await import('../src/game/engine3d/ecosystems.js');
+  const P = await import('../src/game/populations.js');
+  const FW = await import('../src/game/foodWeb.js');
+  const WC = await import('../src/game/worldCore.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const A = await import('../src/game/engine3d/animals.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const close1085 = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  function freshWorld1085() {
+    const w = W.defaultWorld();
+    ECO.stampAnimalPopulations(w);
+    return w;
+  }
+  function popOf1085(w: any, kind: string): number {
+    return w.animalPopulations.find((p: any) => p.speciesId === kind).population;
+  }
+  function setPop1085(w: any, kind: string, pop: number, food?: number) {
+    const p = w.animalPopulations.find((x: any) => x.speciesId === kind);
+    p.population = pop;
+    if (food !== undefined) p.foodAvailability = food;
+  }
+  function advanceDays1085(w: any, fromDay: number, toDay: number, density = 1) {
+    for (let d = fromDay; d <= toDay; d++) {
+      const r = ECO.advanceEcosystemDay(w, d, { forestDensity: density });
+      w.saplings = r.saplings;
+      w.animalPopulations = r.populations;
+      w.animalKills = r.kills;
+      ECO.applyMaturedTrees(w, r.matured);
+    }
+  }
+  // Determinism + port fidelity.
+  const dwA1085 = freshWorld1085();
+  const dwB1085 = freshWorld1085();
+  assert(JSON.stringify(dwA1085.animalPopulations) === JSON.stringify(dwB1085.animalPopulations), 'M1085: two stamped worlds hold identical populations');
+  for (const kind of ['deer', 'wolf']) {
+    const p25 = P.initPopulation(kind, 0, 0, WC.DEFAULT_WORLD_SEED)!;
+    const p3d = dwA1085.animalPopulations.find((p: any) => p.speciesId === kind);
+    assert(p3d.population === p25.population && close1085(p3d.foodAvailability, p25.foodAvailability), 'M1085: ' + kind + ' initializes exactly like the 2.5D model');
+  }
+  assert(ECO.stampAnimalPopulations(dwA1085) === false, 'M1085: a stamped world is not re-stamped');
+  // Regrowth by season.
+  const rates1085: Array<[number, number]> = [[1, 1.0], [91, 1.25], [181, 0.8], [271, 0.5]];
+  for (const [day, rate] of rates1085) {
+    const s = freshWorld1085();
+    const tt = s.trees[15];
+    F.chopTreeAt(s, tt.tx, tt.ty);
+    const r = ECO.advanceEcosystemDay(s, day, { forestDensity: 1 });
+    assert(close1085(r.saplings[0].growth, rate), 'M1085: one ' + WC.seasonForDay(day) + ' day grows a sapling by ' + rate);
+  }
+  const mature1085: Array<[number, number, number]> = [[91, 5, 6], [1, 6, 7], [181, 8, 9], [271, 13, 14]];
+  for (const [startDay, notYet, done] of mature1085) {
+    const s = freshWorld1085();
+    const tt = s.trees[16];
+    F.chopTreeAt(s, tt.tx, tt.ty);
+    advanceDays1085(s, startDay, startDay + notYet - 1);
+    assert(s.saplings.length === 1 && !s.trees.some((x: any) => x.tx === tt.tx && x.ty === tt.ty), 'M1085: after ' + notYet + ' ' + WC.seasonForDay(startDay) + ' days the sapling is still growing');
+    advanceDays1085(s, startDay + notYet, startDay + done - 1);
+    assert(s.saplings.length === 0 && s.trees.some((x: any) => x.tx === tt.tx && x.ty === tt.ty), 'M1085: after ' + done + ' ' + WC.seasonForDay(startDay) + ' days the sapling matured');
+    assert(!(s.removedTrees ?? []).includes(tt.tx + ',' + tt.ty), 'M1085: the matured tile leaves removedTrees');
+  }
+  // Populations: hunting fall, recovery, wolf pressure.
+  const hw1085 = freshWorld1085();
+  const d01085 = popOf1085(hw1085, 'deer');
+  const kills1085 = Math.floor(d01085 * 0.7);
+  for (let i = 0; i < kills1085; i++) ECO.recordAnimalKill(hw1085, 'deer');
+  const hr1085 = ECO.advanceEcosystemDay(hw1085, 1, { forestDensity: 1 });
+  hw1085.animalPopulations = hr1085.populations;
+  hw1085.animalKills = hr1085.kills;
+  const hunted1085 = popOf1085(hw1085, 'deer');
+  assert(hunted1085 < d01085 - (kills1085 - 2), 'M1085: deer fall while hunting continues');
+  assert(((hw1085.animalKills ?? {}).deer ?? 0) === 0, 'M1085: the kills are consumed by the day advance');
+  advanceDays1085(hw1085, 2, 31);
+  assert(popOf1085(hw1085, 'deer') > hunted1085 + 0.5, 'M1085: deer recover after hunting stops (30 spring days)');
+  assert(close1085(FW.predatorPressureFor('deer', { wolf: 8 }), 0.32), 'M1085: wolf pressure on deer is 0.32 at 8 wolves');
+  const withW1085 = freshWorld1085();
+  const noW1085 = freshWorld1085();
+  setPop1085(withW1085, 'deer', 20, 0.9);
+  setPop1085(noW1085, 'deer', 20, 0.9);
+  setPop1085(withW1085, 'wolf', 10, 0.9);
+  setPop1085(noW1085, 'wolf', 0, 0.9);
+  advanceDays1085(withW1085, 1, 10);
+  advanceDays1085(noW1085, 1, 10);
+  assert(popOf1085(noW1085, 'deer') > popOf1085(withW1085, 'deer') + 3, 'M1085: deer decline faster with wolves pressing');
+  // Habitat: deer need trees within 12; food tracks the forest.
+  const hab1085 = W.defaultWorld();
+  hab1085.trees = [{ tx: 180, ty: 100 }];
+  const plaza1085 = { x: 102, y: 102 };
+  assert(A.habitatTile(hab1085, 'deer', 180, 112, plaza1085) === true, 'M1085: a deer tile with a tree within 12 is habitat');
+  hab1085.trees = [];
+  assert(A.habitatTile(hab1085, 'deer', 180, 112, plaza1085) === false, 'M1085: the same deer tile with no tree within 12 is not habitat');
+  assert(A.spawnAnimal(hab1085, 'deer', new Set(), new Set(), { x: 102, y: 102 }, plaza1085, false) === null, 'M1085: no deer spawns on a treeless world');
+  const dense1085 = freshWorld1085();
+  const cleared1085 = freshWorld1085();
+  advanceDays1085(dense1085, 1, 5, 1.0);
+  advanceDays1085(cleared1085, 1, 5, 0.2);
+  const foodDense1085 = dense1085.animalPopulations.find((p: any) => p.speciesId === 'deer').foodAvailability;
+  const foodCleared1085 = cleared1085.animalPopulations.find((p: any) => p.speciesId === 'deer').foodAvailability;
+  assert(foodDense1085 > foodCleared1085 + 0.3, 'M1085: deer food is higher in a full forest');
+  assert(popOf1085(dense1085, 'deer') > popOf1085(cleared1085, 'deer') + 1, 'M1085: deer births follow the food');
+  const capW1085 = freshWorld1085();
+  assert(ECO.liveAnimalCap(capW1085, 'deer', 3) >= 1 && ECO.liveAnimalCap(capW1085, 'deer', 3) <= 3, 'M1085: the live deer cap follows the population');
+  setPop1085(capW1085, 'deer', 0);
+  assert(ECO.liveAnimalCap(capW1085, 'deer', 3) === 0, 'M1085: extinct deer send no live deer into view');
+  // Persistence: a reload keeps the counts.
+  const per1085 = freshWorld1085();
+  F.chopTreeAt(per1085, per1085.trees[40].tx, per1085.trees[40].ty);
+  advanceDays1085(per1085, 1, 3);
+  ECO.recordAnimalKill(per1085, 'wolf');
+  const rel1085 = JSON.parse(JSON.stringify(per1085));
+  assert(JSON.stringify(rel1085.saplings) === JSON.stringify(per1085.saplings) && JSON.stringify(rel1085.animalPopulations) === JSON.stringify(per1085.animalPopulations), 'M1085: saplings + counts survive a save/reload round-trip');
+  assert(ECO.stampAnimalPopulations(rel1085) === false, 'M1085: a reloaded world is not re-stamped');
+  assert(JSON.stringify(ECO.advanceEcosystemDay(per1085, 4, { forestDensity: 1 })) === JSON.stringify(ECO.advanceEcosystemDay(rel1085, 4, { forestDensity: 1 })), 'M1085: the reloaded world advances exactly like the original');
+  // The 24h run: M1069 numbers identical, saplings planted, none matured.
+  const sim1085 = SS.createSettlementSim(W.defaultWorld());
+  SS.advanceSettlement(sim1085, 1600);
+  const L1085 = sim1085.ledger;
+  assert(L1085.woodChopped === 48 && L1085.woodDelivered === 48 && L1085.woodSpent === 24, 'M1085: wood chopped/delivered/spent 48/48/24');
+  assert(L1085.grainHarvested === 16 && L1085.grainDelivered === 16, 'M1085: grain harvested/delivered 16/16');
+  assert(L1085.mealsMilled === 8 && L1085.mealsEaten === 27, 'M1085: meals milled/eaten 8/27');
+  assert(L1085.jobsCompleted.chop === 24 && L1085.jobsCompleted.build === 2 && L1085.jobsCompleted.deliver === 32 && L1085.jobsCompleted.harvest === 8, 'M1085: jobs chop/build/deliver/harvest 24/2/32/8');
+  assert(L1085.hutsCompleted === 2 && L1085.arrivals.join(',') === 'Bram,Fern,Silas', 'M1085: 2 huts, arrivals Bram, Fern, Silas');
+  assert(L1085.starvedTicks === 0 && L1085.minHealth === 100, 'M1085: starvedTicks 0, minHealth 100');
+  assert(F.campWoodInRegistry(sim1085.registry) === 24 && F.campFoodInRegistry(sim1085.registry) === 11 && SS.settlementGrain(sim1085) === 0, 'M1085: final wood/food/grain 24/11/0');
+  assert(sim1085.founders.length === 6, 'M1085: population 6');
+  assert((sim1085.world.saplings ?? []).length === L1085.woodChopped / 2, 'M1085: every felled tree left a sapling');
+  assert((sim1085.world.saplings ?? []).every((s: any) => s.growth === 0 || s.growth === 1.0), 'M1085: no sapling matured in 24h');
+  assert(sim1085.world.animalPopulations!.find((p: any) => p.speciesId === 'deer')!.lastSimDay === 2, 'M1085: the deer population advanced one day');
+  console.log('M1085: regrowth + ecosystems verified (determinism, season rates, maturation, hunting/recovery, wolf pressure, habitat, persistence, 24h)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

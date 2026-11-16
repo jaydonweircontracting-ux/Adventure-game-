@@ -31,6 +31,7 @@ import {
 import { closestFounder, memoryCountsFor } from './memory';
 import { jobForFounder, type JobBoard } from './jobs';
 import { growthFactorAt, livingWorldSummary, type LivingWorld3DState } from './livingWorld';
+import { ecosystemSummaryText, plantSapling, recordAnimalKill } from './ecosystems';
 import {
   HUT_SITES, HUT_WORK_STEPS, sitesOf, hutSitePlacementExists,
   type ConstructionState,
@@ -513,7 +514,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
         animalActorsRef.current=animalActorsRef.current.filter(a=>a!==wolfTarget);
         renderer.animalRender.delete(wolfTarget.id);
         renderer.slotUploaded.delete(renderer.animalSlotBase+wolfTarget.slotId);
-        setMessage('Wolf slain.');
+        recordAnimalKill(world,'wolf');setMessage('Wolf slain.');
       } else setMessage('Wolf hit · '+wolfTarget.hp+' HP remaining');
       return;
     }
@@ -574,7 +575,10 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       // the real tree count, trees regrown, the day the sim has
       // advanced through). All numbers are live, never invented.
       const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,world.trees.length,clockRef.current.day):null;
-      setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campFoodInRegistry(registryRef.current)+' food · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
+      // BUILD 1085 (1.6): the ecosystem counts ride on the stockpile
+      // board too (deer/wolves/saplings, live from the world save).
+      const eco=ecosystemSummaryText(world);
+      setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campFoodInRegistry(registryRef.current)+' food · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:'')+(eco?' · '+eco:''));
       return;
     }
     // BUILD 1058: E at the founders' hut reports its state:
@@ -629,7 +633,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // reason) — the tree-density migration in loadWorld re-stamps
     // trees from the rule, and without the record a chopped tree
     // would resurrect on the next load.
-    if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);saveWorld(world);const ex=extractDeposit(registryRef.current,treeId(tree.tx,tree.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:2,treeId(tree.tx,tree.ty));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+    if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);plantSapling(world,tree.tx,tree.ty);saveWorld(world);const ex=extractDeposit(registryRef.current,treeId(tree.tx,tree.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:2,treeId(tree.tx,tree.ty));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
     // BUILD 1024: wild trees/rocks past the old edge harvest the
     // same way (2 wood / 1 stone) and stay gone via the
     // removedWildTrees / removedWildRocks sets. Same 1-tile reach

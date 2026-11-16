@@ -87,6 +87,7 @@ import {
 } from '../iso/isoWorld';
 import { soilAt as landformSoilAt, soilFactorAt as landformSoilFactorAt, type Soil } from './landforms';
 import { rainfallFor, seasonGrowthFactor, seasonRegrowthFactor, temperatureFor } from './climate';
+import { advanceEcosystemDay, type AnimalPopulation, type MaturedTree, type Sapling } from './ecosystems';
 import { groundElevation } from './townLook';
 
 /** Persisted living-world save (versioned, strict on load). */
@@ -433,6 +434,16 @@ export type LivingWorldDayResult = {
   state: LivingWorld3DState;
   /** Trees this advance planted (the caller appends them to world.trees and saves the world). */
   planted: TilePoint[];
+  /** Saplings this advance matured into real trees (the caller appends
+   *  them to world.trees — they are NOT in 'planted' — and clears their
+   *  chop record, via applyMaturedTrees). */
+  matured: MaturedTree[];
+  /** The world's saplings after this advance (the caller writes them back). */
+  saplings: Sapling[];
+  /** The world's animal populations after this advance (the caller writes them back). */
+  populations: AnimalPopulation[];
+  /** The world's hunting-kill record after this advance (consumed kills cleared; the caller writes it back). */
+  kills: Record<string, number>;
   advancedDays: number;
   /** Coordinator events fired for the camp this advance (for the view to report). */
   events: WorldEvent[];
@@ -460,13 +471,13 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
   const { state, clock, founders, world } = input;
   const day = Math.max(1, Math.floor(clock.day));
   if (day <= state.livingWorld.lastAdvancedDay) {
-    return { state, planted: [], advancedDays: 0, events: [] };
+    return { state, planted: [], matured: [], saplings: world.saplings ?? [], populations: world.animalPopulations ?? [], kills: world.animalKills ?? {}, advancedDays: 0, events: [] };
   }
   // Defensive: a state whose coordinator schema is not v1 can never
   // advance (the load validation guarantees v1; the timer must never
   // throw every second on a corrupt state).
   if (state.livingWorld.schemaVersion !== 1) {
-    return { state, planted: [], advancedDays: 0, events: [] };
+    return { state, planted: [], matured: [], saplings: world.saplings ?? [], populations: world.animalPopulations ?? [], kills: world.animalKills ?? {}, advancedDays: 0, events: [] };
   }
   // The coordinator mutates the civilization object it is handed, so
   // sync on a copy: the input state stays untouched on every path.
@@ -504,6 +515,24 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
   const forest = livingWorld.resources[FOREST_POPULATION_ID];
   const liveTrees = (world.trees ?? []).length;
   if (forest) forest.density = forestDensity(liveTrees, state.baselineTrees);
+  // BUILD 1085 (1.6): the ecosystem advances one day at a time for
+  // every day the clock jumped — saplings grow at the day's season
+  // rate and mature, animal populations run their day step (births,
+  // deaths, wolf pressure, hunting consumed). The forest density is
+  // the fresh one synced above (the herbivores' food). The matured
+  // trees are returned separately from 'planted' — the caller
+  // appends them to world.trees and clears their chop record.
+  let ecoSaplings = world.saplings ?? [];
+  let ecoPops = world.animalPopulations ?? [];
+  let ecoKills = world.animalKills ?? {};
+  const matured: MaturedTree[] = [];
+  for (let d = state.livingWorld.lastAdvancedDay + 1; d <= day; d++) {
+    const eco = advanceEcosystemDay({ ...world, saplings: ecoSaplings, animalPopulations: ecoPops, animalKills: ecoKills }, d, { forestDensity: forest ? forest.density : 1, seed: LIVING_WORLD_SEED });
+    ecoSaplings = eco.saplings;
+    ecoPops = eco.populations;
+    ecoKills = eco.kills;
+    matured.push(...eco.matured);
+  }
   const eventsBefore = livingWorld.civilization.events.length;
   const result = advanceLivingWorld(
     livingWorld,
@@ -515,7 +544,9 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
   const after = result.state.resources[FOREST_POPULATION_ID];
   if (after) {
     const targetLive = Math.round(after.density * state.baselineTrees);
-    const toPlant = Math.max(0, targetLive - liveTrees);
+    // BUILD 1085: the matured saplings already rejoin the live count
+    // (the caller appends them), so the near-miss planting owes fewer.
+    const toPlant = Math.max(0, targetLive - liveTrees - matured.length);
     if (toPlant > 0) planted.push(...pickRegrowthTiles(world, toPlant, day));
   }
   // BUILD 1084 (1.5): restore the forest's base growthRate — the
@@ -533,6 +564,10 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
   return {
     state: next,
     planted,
+    matured,
+    saplings: ecoSaplings,
+    populations: ecoPops,
+    kills: ecoKills,
     advancedDays: result.advancedDays,
     events: result.state.civilization.events.slice(eventsBefore),
   };

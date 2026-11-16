@@ -203,6 +203,28 @@ export interface IsoWorld {
    *  terrain is still stone). Old saves load with none (the stamp
    *  generates them on the same load). */
   landforms?: { mountains: Array<{ x: number; y: number }>; hills: Array<{ x: number; y: number }>; valleys: Array<{ x: number; y: number }>; cliffs: Array<{ x: number; y: number }> };
+  /** BUILD 1085 — regrowth + ecosystems (ecosystems.ts): saplings
+   *  growing where a tree was chopped (a chopped tile regrows a
+   *  sapling; the sapling matures into a real tree after ~7 growth
+   *  points, at the 1.5 season rate). Plain data (numbers only).
+   *  Saved wholesale with the world; a reload shows the same
+   *  saplings at the same growth. Old saves load with none (the first
+   *  chop plants the first sapling). */
+  saplings?: Array<{ x: number; y: number; growth: number }>;
+  /** BUILD 1085 — animal populations (ecosystems.ts): the regional
+   *  population per 3D animal kind (bird/goat/deer/wolf/chicken),
+   *  ported from the 2.5D population model — fractional, so births
+   *  accumulate and a hunted population can recover. Plain data.
+   *  Stamped once by stampAnimalPopulations on load and saved
+   *  wholesale; a reload keeps the counts. Old saves load with none
+   *  (the stamp generates them on the same load). */
+  animalPopulations?: Array<{ speciesId: string; population: number; foodAvailability: number; predatorPressure: number; lastSimDay: number }>;
+  /** BUILD 1085 — hunting kills recorded since the last day advance,
+   *  per species (a wolf the player slew, a deer a probe recorded).
+   *  Consumed by the next day advance (one kill = one animal gone)
+   *  and cleared, so the counts survive a reload but never
+   *  double-apply. Plain data. */
+  animalKills?: Record<string, number>;
   /** BUILD 1061: tree-density generation of this world's stored tree
    *  list. 2 = the forest-cluster rule (scatterTreeAt). Absent = the
    *  old 0.6% uniform scatter (defaultWorld before 1061) — loadWorld

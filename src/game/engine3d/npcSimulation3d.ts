@@ -22,6 +22,7 @@ import { absMinutes, harvestFarmTile, nearestReadyFarmTile, FARM_VILLAGER_RADIUS
 import { blockedAction } from './npcMotion';
 import { growthFactorAt } from './livingWorld';
 import { animalActivityFactor, animalStepPeriod, seasonForDay } from './climate';
+import { liveAnimalCap } from './ecosystems';
 import {
   spawnTransient, stepTransient, barkLineFor, barkDayEligible,
   MAX_TRAVELERS, MAX_ADVENTURERS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS,
@@ -203,7 +204,11 @@ function mountSpawnTransient(ctx: NpcSimContext, kind: 'traveler' | 'adventurer'
 
 function mountSpawnAnimal(ctx: NpcSimContext, kind: 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken'): void {
   const live = ctx.animalActors.current;
-  const cap = kind === 'bird' ? MAX_BIRDS : kind === 'goat' ? MAX_GOATS : kind === 'deer' ? MAX_DEER : kind === 'wolf' ? MAX_WOLVES : MAX_CHICKENS;
+  const maxCap = kind === 'bird' ? MAX_BIRDS : kind === 'goat' ? MAX_GOATS : kind === 'deer' ? MAX_DEER : kind === 'wolf' ? MAX_WOLVES : MAX_CHICKENS;
+  // BUILD 1085 (1.6): the live cap follows the regional population —
+  // a crashed deer population stops sending new deer into view
+  // (existing live animals are never culled — no pop-outs).
+  const cap = liveAnimalCap(ctx.world, kind, maxCap);
   if (live.filter((a) => a.kind === kind).length >= cap) return;
   const s = spawnAnimal(ctx.world, kind, new Set(live.map((a) => a.slotId)), new Set(live.map((a) => a.x + ',' + a.y)), ctx.getPlayerPos(), ctx.staticAnchors.plaza, true);
   if (s) ctx.animalActors.current = [...live, s];

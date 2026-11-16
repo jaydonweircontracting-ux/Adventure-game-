@@ -109,6 +109,7 @@ import type { SharedEventType } from './memory';
 // trees + a persisted camp ledger. The view owns the ref; the 1s
 // clock timer and the wait step call the sync on the day boundary.
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, growthFactorAt, livingWorldSummary, loadLivingWorldState, rainfallAt, saveLivingWorldState, soilAt, soilFactorAt, temperatureAt, type LivingWorld3DState } from './livingWorld';
+import { recordAnimalKill } from './ecosystems';
 import { animalActivityFactor, seasonForDay, seasonGrowthFactor, seasonLabel } from './climate';
 // BUILD 1068 (0x08): World Simulation Control Center — the panel data +
 // sim-speed model (pure) and the panel component. The view owns the refs;
@@ -2593,6 +2594,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // and activity factors.
       getClimate:()=>{const w=stateRef.current.world;const day=clockRef.current.day;const s=seasonForDay(day);return {season:s,label:seasonLabel(s),day,temperatureC:temperatureAt(w,day,FOUNDER_CAMP.x,FOUNDER_CAMP.y),rainfallMm:rainfallAt(w,day,FOUNDER_CAMP.x,FOUNDER_CAMP.y),growthFactor:seasonGrowthFactor(s),activityFactor:animalActivityFactor(s)};},
       depleteDeposit:(id:string,qty:number)=>{const w=stateRef.current.world;const res=applyDepletion((w.mineralDeposits??[]) as unknown as MineralDeposit[],id,qty);if(!res.depleted)return null;w.mineralDeposits=res.deposits;if(res.depleted.remaining<=0){registryRef.current=extractDeposit(registryRef.current,id).registry;}else{registryRef.current=addDeposit(registryRef.current,mineralDepositEntry(res.depleted));}commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(res.depleted));},
+      // BUILD 1085 (1.6) test hooks (probes only — no gameplay effect):
+      // the ecosystem state (saplings + animal populations + recorded
+      // kills — the numbers the acceptance test asserts on) and a way
+      // to record a hunting kill for a species. Deer are not
+      // player-killable yet (hunting as a profession is Phase 4), so
+      // the probe drives the deer-hunting leg through this hook — the
+      // same record a Phase 4 hunt will write.
+      getEcosystem:()=>({saplings:JSON.parse(JSON.stringify(stateRef.current.world.saplings??[])),populations:JSON.parse(JSON.stringify(stateRef.current.world.animalPopulations??[])),kills:{...(stateRef.current.world.animalKills??{})}}),
+      recordHuntingKill:(kind:string)=>{const w=stateRef.current.world;recordAnimalKill(w,kind);commitWorld(worldSyncCtx,w);return w.animalKills?.[kind]??0;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
