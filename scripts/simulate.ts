@@ -12602,6 +12602,155 @@ console.log('Testing the NPC simulation module — the roster/transient/animal t
   console.log('M1073: npc sim ticks + barks + mount spawns verified (animals=' + ctx1073.animalActors.current.length + ')');
 }
 
+console.log('Testing the player controls module — movement, input, and interaction extracted from the view (BUILD 1074, 0x0D area 4)...');
+{
+  const PC1074 = await import('../src/game/engine3d/playerControls3d.js');
+  const W1074 = await import('../src/game/iso/isoWorld.js');
+  const world1074 = W1074.defaultWorld();
+  const messages1074: string[] = [];
+  const zoomCalls1074: number[] = [];
+  const fakeRenderer1074 = {
+    npcRender: new Map<string, { x: number; y: number }>(),
+    animalRender: new Map<string, { x: number; y: number }>(),
+    moveTarget: null as { x: number; y: number } | null,
+    applyZoom: (f: number) => { zoomCalls1074.push(f); },
+    keys: new Set<string>(),
+  };
+  const state1074 = { current: { position: { x: 100, y: 100 }, world: world1074 } };
+  const ctx1074 = {
+    world: world1074,
+    renderer: fakeRenderer1074,
+    state: state1074,
+    setPosition: (p: { x: number; y: number }) => { state1074.current.position = p; },
+    setMessage: (m: string) => { messages1074.push(m); },
+    setHealth: (_n: number) => {},
+    refreshResourceUi: () => {},
+    insideHut: { current: null },
+    car: { current: null as { x: number; y: number } | null },
+    driving: { current: false },
+    npcActors: { current: [] as { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean }[] },
+    transientActors: { current: [] as { id: string; x: number; y: number }[] },
+    animalActors: { current: [] as { id: string; x: number; y: number }[] },
+    founders: { current: [] as never[] },
+    registry: { current: null as never },
+    jobBoard: { current: null as never },
+    construction: { current: null as never },
+    livingWorld: { current: null as never },
+    clock: { current: { minutes: 480, day: 1 } },
+    health: { current: 100 },
+    inventory: { current: {} as Record<string, number> },
+    playerPath: { current: null as never },
+    playerPathReplan: { current: -100000 },
+    playerPathWait: { current: null as never },
+    playerPathStuck: { current: null as never },
+    needsWorldRebuild: { current: false },
+    build: { current: { palette: null, removeMode: false, moveMode: false, saveAreaMode: false, pasteName: null, customAssetId: null, areaSelectMode: false, areaMoveArmed: false, areaDuplicateArmed: false } },
+    placementRot: { current: 0 as never },
+    placeHover: { current: null as never },
+    placePreviewFn: { current: null as never },
+    sprint: {
+      pointerId: { current: null as number | null },
+      down: { current: null as { t: number; x: number; y: number } | null },
+      held: { current: false },
+      latch: { current: false },
+      stamina: { current: { exhausted: false } },
+      setLatched: (_v: boolean) => {},
+    },
+    doUndo: () => {}, doRedo: () => {}, cancelPlacement: () => {},
+    setAreaMoveArmedBoth: (_v: boolean) => {}, setAreaDuplicateArmedBoth: (_v: boolean) => {}, setAreaDeleteArmed: (_v: boolean) => {},
+    setPlacementRotBoth: (_r: never) => {},
+    enterCar: () => {}, exitCar: () => {},
+    enterHut: (_h: never) => {}, exitHut: () => {},
+    saveKey: 'ag-3d-pos-test-1074', npcSaveKey: 'ag-3d-npcs-test-1074', healthKey: 'ag-3d-health-test-1074',
+  };
+  const c1074 = PC1074.createPlayerControls(ctx1074 as never);
+  assert(typeof c1074.walkableAt === 'function' && typeof c1074.figureOccupiedTiles === 'function' && typeof c1074.replanPlayerPath === 'function' && typeof c1074.followPlayerPath === 'function' && typeof c1074.wheel === 'function' && typeof c1074.keydown === 'function' && typeof c1074.keyup === 'function' && typeof c1074.tryMove === 'function' && typeof c1074.action === 'function', 'M1074: createPlayerControls binds all nine controls');
+  // Find an open tile near (100,100) and a tree tile for the walkable tests.
+  let open1074 = { x: 100, y: 100 };
+  let found1074 = false;
+  for (let y = 100; y < 112 && !found1074; y++) for (let x = 100; x < 112 && !found1074; x++) {
+    if (PC1074.walkableAt(ctx1074 as never, x, y)) { open1074 = { x, y }; found1074 = true; }
+  }
+  assert(found1074, 'M1074: an open tile exists near (100,100)');
+  state1074.current.position = { x: open1074.x, y: open1074.y };
+  assert(PC1074.walkableAt(ctx1074 as never, open1074.x, open1074.y), 'M1074: the open tile is walkable');
+  const tree1074 = world1074.trees[0];
+  assert(tree1074 && !PC1074.walkableAt(ctx1074 as never, tree1074.tx, tree1074.ty), 'M1074: a tree tile is blocked');
+  // NPC proximity: a live figure on the tile blocks it; a dead one does not.
+  (ctx1074.npcActors.current as never[]).push({ name: 'Nia', x: open1074.x, y: open1074.y, waypoint: 0, hp: 10, alive: true });
+  assert(!PC1074.walkableAt(ctx1074 as never, open1074.x, open1074.y), 'M1074: a live NPC on the tile blocks it');
+  (ctx1074.npcActors.current[0] as { alive: boolean }).alive = false;
+  assert(PC1074.walkableAt(ctx1074 as never, open1074.x, open1074.y), 'M1074: a dead NPC does not block it');
+  ctx1074.npcActors.current = [];
+  // figureOccupiedTiles: live figures + the parked car, never the dead or the driven car.
+  (ctx1074.npcActors.current as never[]).push({ name: 'Nia', x: open1074.x + 2, y: open1074.y, waypoint: 0, hp: 10, alive: true });
+  (ctx1074.npcActors.current as never[]).push({ name: 'Ghost', x: open1074.x + 3, y: open1074.y, waypoint: 0, hp: 0, alive: false });
+  const occ1074 = PC1074.figureOccupiedTiles(ctx1074 as never);
+  assert(occ1074.has((open1074.x + 2) + ',' + open1074.y) && !occ1074.has((open1074.x + 3) + ',' + open1074.y), 'M1074: occupied tiles hold the live NPC, not the dead one');
+  ctx1074.car.current = { x: open1074.x + 5, y: open1074.y };
+  const occCar1074 = PC1074.figureOccupiedTiles(ctx1074 as never);
+  assert(occCar1074.has((open1074.x + 5) + ',' + open1074.y), 'M1074: the parked car blocks tap-to-move paths');
+  ctx1074.driving.current = true;
+  assert(!PC1074.figureOccupiedTiles(ctx1074 as never).has((open1074.x + 5) + ',' + open1074.y), 'M1074: the driven car is the player, not an obstacle');
+  ctx1074.driving.current = false;
+  ctx1074.car.current = null;
+  ctx1074.npcActors.current = [];
+  // replanPlayerPath: no target fails, a target plans, an immediate replan throttles, and the plan is deterministic.
+  assert(PC1074.replanPlayerPath(ctx1074 as never) === 'failed', 'M1074: no moveTarget means no path');
+  const dest1074 = { x: open1074.x + 4, y: open1074.y };
+  assert(PC1074.walkableAt(ctx1074 as never, dest1074.x, dest1074.y), 'M1074: the replan destination is walkable');
+  fakeRenderer1074.moveTarget = dest1074;
+  ctx1074.playerPathReplan.current = -100000;
+  assert(PC1074.replanPlayerPath(ctx1074 as never) === 'ok', 'M1074: a nearby target plans ok');
+  const pathA1074 = JSON.stringify((ctx1074.playerPath.current as { waypoints: { x: number; y: number }[] }).waypoints);
+  assert(PC1074.replanPlayerPath(ctx1074 as never) === 'throttled', 'M1074: an immediate replan is throttled');
+  ctx1074.playerPathReplan.current = -100000;
+  assert(PC1074.replanPlayerPath(ctx1074 as never) === 'ok', 'M1074: the replan succeeds once the throttle elapses');
+  const pathB1074 = JSON.stringify((ctx1074.playerPath.current as { waypoints: { x: number; y: number }[] }).waypoints);
+  assert(pathA1074 === pathB1074, 'M1074: the replan is deterministic (same waypoints)');
+  // followPlayerPath: a push toward the waypoint, and null once arrived.
+  const push1074 = PC1074.followPlayerPath(ctx1074 as never, performance.now());
+  assert(push1074 !== null && (Math.abs(push1074.dx) > 0 || Math.abs(push1074.dy) > 0), 'M1074: the follower pushes toward the waypoint');
+  state1074.current.position = { x: dest1074.x, y: dest1074.y };
+  const arrived1074 = PC1074.followPlayerPath(ctx1074 as never, performance.now());
+  assert(arrived1074 === null && fakeRenderer1074.moveTarget === null, 'M1074: arriving clears the journey');
+  // tryMove: one open step moves, an NPC on the target tile blocks.
+  state1074.current.position = { x: open1074.x, y: open1074.y };
+  PC1074.tryMove(ctx1074 as never, 1, 0);
+  assert(state1074.current.position.x === open1074.x + 1 && state1074.current.position.y === open1074.y, 'M1074: tryMove steps onto open ground');
+  (ctx1074.npcActors.current as never[]).push({ name: 'Nia', x: open1074.x + 2, y: open1074.y, waypoint: 0, hp: 10, alive: true });
+  PC1074.tryMove(ctx1074 as never, 1, 0);
+  assert(state1074.current.position.x === open1074.x + 1, 'M1074: tryMove is blocked by an NPC on the target tile');
+  ctx1074.npcActors.current = [];
+  // wheel: the delta reaches the renderer as a zoom factor.
+  PC1074.wheel(ctx1074 as never, { preventDefault: () => {}, deltaY: 100 } as unknown as WheelEvent);
+  assert(zoomCalls1074.length === 1 && Math.abs(zoomCalls1074[0] - 1.2) < 1e-9, 'M1074: the wheel calls applyZoom with deltaY * 0.012');
+  // keydown/keyup: a movement key lands in the renderer's key set and leaves on release.
+  (globalThis as unknown as { document: unknown }).document = { activeElement: null };
+  const keyEvent1074 = (key: string) => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, preventDefault: () => {} }) as unknown as KeyboardEvent;
+  PC1074.keydown(ctx1074 as never, keyEvent1074('w'));
+  assert(fakeRenderer1074.keys.has('w'), 'M1074: keydown records a movement key');
+  PC1074.keyup(ctx1074 as never, keyEvent1074('w'));
+  assert(!fakeRenderer1074.keys.has('w'), 'M1074: keyup releases the key');
+  PC1074.keydown(ctx1074 as never, keyEvent1074('Escape'));
+  assert(fakeRenderer1074.keys.size === 0, 'M1074: Escape with nothing armed is a no-op');
+  // Sprint hold: a wrong pointer is ignored, the right one clears, and a quick tap flips the latch.
+  const sprint1074 = ctx1074.sprint;
+  PC1074.releaseSprintPointer(sprint1074 as never, 999, 0, 0, true);
+  assert(sprint1074.pointerId.current === null && sprint1074.latch.current === false, 'M1074: a foreign pointer cannot end a sprint hold');
+  sprint1074.pointerId.current = 7;
+  sprint1074.down.current = { t: performance.now(), x: 100, y: 100 };
+  sprint1074.held.current = true;
+  PC1074.releaseSprintPointer(sprint1074 as never, 7, 100, 100, true);
+  assert(sprint1074.pointerId.current === null && sprint1074.held.current === false && sprint1074.latch.current === true, 'M1074: a quick tap on the sprint button flips the latch');
+  sprint1074.pointerId.current = 8;
+  sprint1074.held.current = true;
+  sprint1074.down.current = { t: performance.now(), x: 100, y: 100 };
+  PC1074.clearSprintHold(sprint1074 as never);
+  assert(sprint1074.pointerId.current === null && sprint1074.held.current === false && sprint1074.down.current === null, 'M1074: clearSprintHold releases the hold');
+  console.log('M1074: player controls verified (walkable, occupied tiles, replan determinism, follow, tryMove, wheel, keys, sprint)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
