@@ -11968,6 +11968,60 @@ console.log('Testing tree density — forests, not speckles (BUILD 1061)...');
   assert(!stripTownContent(choppedAdapted).trees.some((t: { tx: number; ty: number }) => t.tx === reVictim.tx && t.ty === reVictim.ty), 'M1061: a chopped re-forested tree stays chopped after a re-strip');
 }
 
+console.log('Testing unified resource registry — one authoritative record (BUILD 1064, R-1)...');
+{
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const L = await import('../src/game/engine3d/livingWorld.js');
+  // --- Kinds + player keys: wheat is grain, keepsakes are not resources. ---
+  assert(R.playerKeyFor('grain') === 'wheat' && R.kindForPlayerKey('wheat') === 'grain', 'M1064: wheat is grain (the 3D farm crop is the civilization grain kind)');
+  assert(R.kindForPlayerKey('Marlow loot') === null, 'M1064: a keepsake is not a resource kind');
+  assert(R.storeKindOf('carrier:founder-Marlow') === 'carrier' && R.storeKindOf('settlement:camp') === 'settlement', 'M1064: store ids parse back to their kinds');
+  // --- No fake resources: a deposit without a valid source adds nothing. ---
+  const noSrc = R.depositInto(R.createRegistry(), R.PLAYER_STORE_ID, 'wood', 2, { type: 'entity', id: '' });
+  assert(noSrc.added === 0, 'M1064: a deposit with no valid source adds nothing');
+  // --- Capacity: a carrier holds 2, a settlement 50 + population. ---
+  const carrier = R.depositInto(R.createRegistry(), R.carrierStoreId('founder-Marlow'), 'wood', 3, { type: 'entity', id: 'tree:1,2' });
+  assert(carrier.added === 2 && carrier.overflow === 1, 'M1064: a carrier holds at most 2 wood; the overflow is reported');
+  const camp = L.campSettlement(3);
+  assert(R.settlementStorageCap(camp) === 53, 'M1064: a settlement of 3 caps each resource at 53');
+  // --- Transfers conserve; the founder chain is tree → carrier → camp. ---
+  const world = W.defaultWorld();
+  const tree = world.trees[0];
+  const marlow = F.defaultFounderState('Marlow', 0, 1000);
+  let r = R.depositsFromWorld(R.createRegistry(), world);
+  r = F.seedCampStore(r, 0, F.FOUNDER_START_FOOD);
+  const before = R.totalAvailable(r, 'wood');
+  const fell = F.fellTreeToCarrier(r, world, marlow, tree.tx, tree.ty);
+  assert(fell.yield === 2 && R.storeQty(fell.registry, R.carrierStoreId('founder-Marlow'), 'wood') === 2, 'M1064: felling a tree yields 2 wood into the carrier store');
+  assert(R.totalAvailable(fell.registry, 'wood') === before, 'M1064: chop conserves the total wood');
+  marlow.carrying = fell.yield;
+  const del = F.deliverFounderWoodToRegistry(fell.registry, marlow);
+  assert(del.moved === 2 && F.campWoodInRegistry(del.registry) === 2, 'M1064: the delivery moves the carried wood into the camp store');
+  assert(R.totalAvailable(del.registry, 'wood') === before, 'M1064: deliver conserves the total wood');
+  // --- Eating and building go through the camp store. ---
+  const meal = F.eatFounderMealFromRegistry(del.registry, { hunger: 20, energy: 90, social: 60 });
+  assert(meal.ate && meal.needs.hunger === 100 && F.campFoodInRegistry(meal.registry) === F.FOUNDER_START_FOOD - 1, 'M1064: one meal restores hunger and drops the food by 1');
+  let br = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 12, { type: 'loaded' });
+  let c = C.freshConstruction();
+  for (let i = 0; i < 6; i++) { const s = C.spendBuildStepFromRegistry(br, c); br = s.registry; c = s.construction; }
+  assert(c.progress === 6 && c.spentWood === 12 && F.campWoodInRegistry(br) === 0, 'M1064: 12 wood builds the hut (6 steps × 2) and empties the pile');
+  // --- The camp settlement storage mirrors the camp store. ---
+  let cr = F.seedCampStore(R.createRegistry(), 12, 30);
+  const camp2 = L.campSettlement(3);
+  R.registryToSettlementStorage(cr, camp2, R.CAMP_STORE_ID);
+  assert(camp2.storage.wood === 12 && camp2.storage.food === 30, 'M1064: the camp store mirrors into the camp settlement storage');
+  camp2.storage.wood = 0;
+  cr = R.syncCampStoreFromSettlement(cr, camp2);
+  assert(F.campWoodInRegistry(cr) === 0, 'M1064: a coordinator change to the settlement lands back in the camp store — including to 0');
+  // --- The registry round-trips; the founders save is still v4. ---
+  const rt = R.migrateRegistry(JSON.parse(R.serializeRegistry(cr)));
+  assert(rt !== null && JSON.stringify(rt) === JSON.stringify(cr), 'M1064: a registry round-trips');
+  assert(F.FOUNDER_SAVE_VERSION === 4, 'M1064: the founders save is still v4 in R-1 (the registry rebuilds from it, the shape does not move)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

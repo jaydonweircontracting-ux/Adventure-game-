@@ -116,7 +116,7 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathN
 import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
-import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, eatFounderMeal, deliverFounderWood, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, type FounderState, type FounderPathState } from './founders';
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, deliverFounderWoodToRegistry, campWoodInRegistry, campFoodInRegistry, type FounderState, type FounderPathState } from './founders';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, memoryCountsFor, recordSharedEvent, restTileFor } from './memory';
 import type { SharedEventType } from './memory';
@@ -124,9 +124,16 @@ import type { SharedEventType } from './memory';
 // reads real 3D state (founders, trees, clock) and writes back real
 // trees + a persisted camp ledger. The view owns the ref; the 1s
 // clock timer and the wait step call the sync on the day boundary.
-import { advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
+import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
-import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
+import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
+import { treeId, wildTreeId, rockId, crateId, npcSpawnIdFor } from './entityIds';
+// BUILD 1064 (R-1): the unified resource registry — the one
+// authoritative record of what exists, where it is, and where it
+// came from. The view owns the ref; the E-key gather, the founder
+// tick, and the living-world sync all write through it, and the
+// HUD/camp line mirror it (never a second count).
+import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, treeDeposit, depositInto, depositsFromWorld, extractDeposit, keepsakesOf, playerInventoryToRegistry, registryToPlayerInventory, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry, type RegistryKind } from './resourceRegistry';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
 import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
@@ -2167,10 +2174,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // purpose: the old 47-roster stays preserved untouched in
   // ag-3d-npcs-v1 while the founders live in ag-3d-founders-v1.
   // Stockpile + food are refs (the tick owns them); campUi mirrors
-  // them for the HUD.
+  // them for the HUD. BUILD 1064 (R-1): the refs are READ mirrors
+  // only — the registry (below) is the authority, and every write
+  // goes through it. The mirrors exist because the founder tick's
+  // hot paths read numbers, like inventoryRef mirrors inventory.
   const foundersRef=useRef<FounderState[]>([]);
   const founderStockpileRef=useRef(0);
   const founderFoodRef=useRef(FOUNDER_START_FOOD);
+  // BUILD 1064 (R-1): the unified resource registry — the one
+  // authoritative record (player store, camp store, carrier stores,
+  // world deposits). Built from the world + the saves on load (the
+  // mount effect below); the saves are written back from it. The
+  // React states (inventory, campUi) and the plain refs above mirror
+  // it via refreshResourceUi — never a second count.
+  const registryRef=useRef<ResourceRegistry>(createRegistry());
   // BUILD 1062: the living-world coordinator state (the adapter's
   // persisted state — null until the mount effect loads it, like the
   // founders save). The 1s clock timer and the wait step advance it.
@@ -2213,6 +2230,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // count and the adapter's fixed baseline. '—' when the adapter has
   // not loaded yet (first render, before the mount effect).
   const forestPct=(trees:number)=>{const s=livingWorldRef.current;return s?String(Math.round(forestDensity(trees,s.baselineTrees)*100)):'—';};
+  // BUILD 1064 (R-1): mirror the registry into the React states
+  // (inventory + camp line) and the plain read-mirror refs. The
+  // inventory state is set only when the player record actually
+  // changed (a founder delivery must not re-render the HUD); the
+  // camp line is set on every call (its callers already gate on
+  // stockChanged/hutChanged). The player record is persisted to
+  // INVENTORY_KEY in its old shape (resource keys from the
+  // registry, keepsakes passed through) — the save shape does not
+  // move in this build.
+  const refreshResourceUi=()=>{
+    const reg=registryRef.current;
+    const nextInv=registryToPlayerInventory(reg,keepsakesOf(inventoryRef.current));
+    if(JSON.stringify(nextInv)!==JSON.stringify(inventoryRef.current)){inventoryRef.current=nextInv;setInventory(nextInv);}
+    try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(nextInv));}catch{}
+    founderStockpileRef.current=campWoodInRegistry(reg);
+    founderFoodRef.current=campFoodInRegistry(reg);
+    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
+  };
   // BUILD 1062: advance the living world to the clock's day — called
   // from the 1s clock timer and the wait step, the two places the
   // clock moves. Idempotent (same-day calls are no-ops), so both
@@ -2222,12 +2257,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // event once when one fires. Returns true when anything changed.
   const syncLivingWorld=(world:IsoWorld)=>{
     if(!FOUNDERS_ENABLED||!livingWorldRef.current)return false;
+    // BUILD 1064 (R-1): the camp settlement's storage is a MIRROR
+    // of the registry's camp store, not a second pile — sync the
+    // real numbers in before advancing, so the coordinator sees the
+    // pile the founders actually filled.
+    const campSettlement=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
+    if(campSettlement)registryToSettlementStorage(registryRef.current,campSettlement,CAMP_STORE_ID);
     const res=advanceLivingWorldDay({state:livingWorldRef.current,clock:clockRef.current,founders:foundersRef.current,world});
     if(res.advancedDays===0&&res.planted.length===0)return false;
     livingWorldRef.current=res.state;
-    if(res.planted.length>0){world.trees=[...world.trees,...res.planted];saveWorld(world);needsWorldRebuild.current=true;}
+    if(res.planted.length>0){
+      world.trees=[...world.trees,...res.planted];saveWorld(world);needsWorldRebuild.current=true;
+      // BUILD 1064: a regrown tree is a new deposit (2 wood, chop).
+      for(const t of res.planted)registryRef.current=addDeposit(registryRef.current,treeDeposit(t.tx,t.ty));
+    }
+    // BUILD 1064: any coordinator change to the camp settlement's
+    // storage lands back in the registry's camp store (the reverse
+    // sync — the coordinator's production/consumption for the camp
+    // is zero today, so this is a no-op until it is not).
+    const campAfter=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
+    if(campAfter)registryRef.current=syncCampStoreFromSettlement(registryRef.current,campAfter);
     saveLivingWorldState(res.state);
-    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
+    refreshResourceUi();
     if(res.events.length>0)setMessage(res.events[res.events.length-1].description);
     return true;
   };
@@ -2296,9 +2347,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           const wClosest=closestFounder(wf.social,clockRef.current.day);
           const wCompanion=wClosest?foundersRef.current.find(o=>o.name===wClosest.name):undefined;
           const wCompanionAtCamp=!!wCompanion&&Math.abs(Math.round(wCompanion.x)-FOUNDER_CAMP.x)+Math.abs(Math.round(wCompanion.y)-FOUNDER_CAMP.y)<=3;
-          foundersRef.current[i]=applyFounderWaitStep(wf,step,clockRef.current.minutes,founderFoodRef.current,nowAbs,{
-            foodStock:founderFoodRef.current,
-            stockpileWood:founderStockpileRef.current,
+          foundersRef.current[i]=applyFounderWaitStep(wf,step,clockRef.current.minutes,campFoodInRegistry(registryRef.current),nowAbs,{
+            foodStock:campFoodInRegistry(registryRef.current),
+            stockpileWood:campWoodInRegistry(registryRef.current),
             construction:constructionRef.current,
             nearestTreeDist:wTreeDist,
             distToSite:founderDistToSite({x:Math.round(wf.x),y:Math.round(wf.y)}),
@@ -2311,7 +2362,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // BUILD 1058: construction does NOT advance during a wait
         // (positions, chopping, deliveries, and building all pause);
         // the saved construction rides along unchanged.
-        saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current,constructionRef.current));
+        // BUILD 1064 (R-1): the founders save is written back from
+        // the registry (the camp store's numbers), not from the
+        // plain refs — the registry is the authority, the save is
+        // its serialization (v4 shape preserved).
+        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),constructionRef.current));
       }
       remaining-=step;
       if(remaining<=0){cancelWait('done');return;}
@@ -3282,8 +3337,19 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         f.lastAbs=clockAbs;
       }
       foundersRef.current=states;
-      founderStockpileRef.current=saved?saved.stockpileWood:0;
-      founderFoodRef.current=saved?saved.foodStock:FOUNDER_START_FOOD;
+      // BUILD 1064 (R-1): build the registry — the runtime authority.
+      // Deposits from the live world (trees/rocks/crates), the camp
+      // store from the founders save (v4 shape preserved — the
+      // numbers ride in, the registry owns them from here), each
+      // founder's carrier from their saved carrying, and the player
+      // store from INVENTORY_KEY (keepsakes stay out of the
+      // registry). The plain refs below are read mirrors, set by
+      // refreshResourceUi — never written directly again.
+      let reg=depositsFromWorld(createRegistry(),world);
+      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD);
+      for(const f of states)reg=seedCarrierStore(reg,f);
+      reg=playerInventoryToRegistry(reg,readSaved<Inventory3D>(INVENTORY_KEY,{}));
+      registryRef.current=reg;
       // BUILD 1058: construction loads from the v2 founders save
       // (v1 saves migrate to a fresh one). If the save says 'done'
       // but the world has no hut placement, reconcile: the founders
@@ -3297,7 +3363,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // founders, real day). A corrupt/unknown save starts fresh; the
       // coordinator never advances a disconnected sim.
       livingWorldRef.current=loadLivingWorldState()??freshLivingWorldState(world,foundersRef.current,clockRef.current);
-      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
+      // BUILD 1064 (R-1): the camp settlement's storage is a MIRROR
+      // of the registry's camp store — write the real numbers in at
+      // load, so the coordinator's first advance sees the pile the
+      // founders actually filled, not a second (empty) ledger.
+      const campSettlement=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
+      if(campSettlement)registryToSettlementStorage(registryRef.current,campSettlement,CAMP_STORE_ID);
+      refreshResourceUi();
     }
     // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
     // are built once per world load; hut-derived anchors resolve live per
@@ -4661,7 +4733,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // deliveries), so it needs no world rebuild. The input is the
       // pile tile + the real stockpile count; 0 wood still shows 1
       // log (the camp has a pile).
-      const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:founderStockpileRef.current}]:[];
+      const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:campWoodInRegistry(registryRef.current)}]:[];
       // BUILD 1058: the first hut's build site rides the same fx call
       // as the pile — per-frame fx (foundation + frame grow with the
       // real construction progress), so it needs no world rebuild.
@@ -4906,6 +4978,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
     const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();const p=stateRef.current.position;
+      // BUILD 1064 (R-1): gathered goods go into the player store
+      // (source: the entity id they came from, location: the tile
+      // the player stands on, owner: the player) and the HUD is
+      // refreshed from the registry. Returns how many units landed.
+      const depositPlayer=(kind:RegistryKind,qty:number,sourceId:string)=>{
+        const dep=depositInto(registryRef.current,PLAYER_STORE_ID,kind,qty,{type:'entity',id:sourceId},{location:{x:Math.round(p.x),y:Math.round(p.y)},ownerId:'player'});
+        registryRef.current=dep.registry;
+        refreshResourceUi();
+        return dep.added;
+      };
       if(k==='f'||k===' '){
         const npcTarget=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
         // BUILD 1013: wolves are F/Space targets too (25/swing, the
@@ -4951,7 +5033,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const doorHut=nearestDoorHut([...world.huts,...placedHutRects(world)],Math.round(p.x),Math.round(p.y));
         if(doorHut){enterHut(doorHut);return;}
         const dead=npcActorsRef.current.find(n=>!n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
-        if(dead){const currentInventory=inventoryRef.current;const next={...currentInventory,gold:(currentInventory.gold||0)+5,[dead.name+' loot']:(currentInventory[dead.name+' loot']||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}dead.looted=true;try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
+        if(dead){
+          // BUILD 1064 (R-1): loot goes through the registry — gold
+          // into the player store (source: the dead NPC's id), the
+          // keepsake stays in the inventory record (memorabilia, not
+          // a resource). The keepsake is added first, then the
+          // deposit's refresh merges it with the gold in one pass.
+          inventoryRef.current={...inventoryRef.current,[dead.name+' loot']:(inventoryRef.current[dead.name+' loot']||0)+1};
+          depositPlayer('gold',5,npcSpawnIdFor(dead.name));
+          dead.looted=true;try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
         const near=npcActorsRef.current.find(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
         // BUILD 1057: founders answer E with their state (name,
@@ -4974,7 +5064,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           // the real tree count, trees regrown, the day the sim has
           // advanced through). All numbers are live, never invented.
           const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,world.trees.length,clockRef.current.day):null;
-          setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
+          setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campFoodInRegistry(registryRef.current)+' food'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
           return;
         }
         // BUILD 1058: E at the founders' hut reports its state:
@@ -4999,16 +5089,24 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         }
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
-        if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
+        // BUILD 1064 (R-1): the crate's deposit is extracted (the
+        // crate holds 1 wood; a missing deposit falls back to 1 —
+        // the world's truth, e.g. a crate placed after load) and
+        // the yield lands in the player store with the crate as
+        // its source.
+        if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const ex=extractDeposit(registryRef.current,crateId(crate.tx,crate.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:1,crateId(crate.tx,crate.ty));needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
-        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        // BUILD 1064 (R-1): the rock's deposit is extracted (1 stone;
+        // a missing deposit falls back to 1) and the yield lands in
+        // the player store with the rock as its source.
+        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const ex=extractDeposit(registryRef.current,rockId(rock.tx,rock.ty));registryRef.current=ex.registry;depositPlayer('stone',ex.qty>0?ex.qty:1,rockId(rock.tx,rock.ty));needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
         // BUILD 1061: a chopped tree is recorded in removedTrees (the
         // rock branch above has done this since 987 for the same
         // reason) — the tree-density migration in loadWorld re-stamps
         // trees from the rule, and without the record a chopped tree
         // would resurrect on the next load.
-        if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);saveWorld(world);const ex=extractDeposit(registryRef.current,treeId(tree.tx,tree.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:2,treeId(tree.tx,tree.ty));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         // BUILD 1024: wild trees/rocks past the old edge harvest the
         // same way (2 wood / 1 stone) and stay gone via the
         // removedWildTrees / removedWildRocks sets. Same 1-tile reach
@@ -5021,8 +5119,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           if(wildTreeAt(wx,wy)&&!(world.removedWildTrees??[]).includes(k)){wildFound='tree';wildKey=k;break;}
           if(wildRockAt(wx,wy)&&!(world.removedWildRocks??[]).includes(k)){wildFound='rock';wildKey=k;break;}
         }
-        if(wildFound==='tree'){if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
-        if(wildFound==='rock'){if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        // BUILD 1064 (R-1): wild trees/rocks are SOURCES, not
+        // deposits (a hash rule, not a stored list — the F-1
+        // treatment) — the yield lands in the player store with
+        // the wild id as its source, no deposit to extract.
+        if(wildFound==='tree'){if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);const [wx,wy]=wildKey.split(',').map(Number);depositPlayer('wood',2,wildTreeId(wx,wy));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        if(wildFound==='rock'){if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);const [wx,wy]=wildKey.split(',').map(Number);depositPlayer('stone',1,rockId(wx,wy));needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         // BUILD 1041: farm land — E harvests a ready wheat tile
         // within the shared 1-tile reach (the same key() test as
         // crates/trees/rocks). The tile resets to planted and
@@ -5032,7 +5134,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // A growing tile answers plainly instead of harvesting.
         const farmNowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
         const farmReady=placedFarmTiles(world).find(t=>key(t.tx,t.ty)&&farmStageAt(t.plantedAt,farmNowAbs)==='ready');
-        if(farmReady){const res=harvestFarmTile(world,farmReady.tx,farmReady.ty,farmNowAbs);if(res.ok){saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wheat:(currentInventory.wheat||0)+res.wheat};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}setMessage('Harvested wheat · +'+res.wheat+' wheat');return}}
+        if(farmReady){const res=harvestFarmTile(world,farmReady.tx,farmReady.ty,farmNowAbs);if(res.ok){saveWorld(world);depositPlayer('grain',res.wheat,'farm:'+farmReady.tx+','+farmReady.ty);setMessage('Harvested wheat · +'+res.wheat+' wheat');return}}
         const farmNear=placedFarmTiles(world).find(t=>key(t.tx,t.ty));
         if(farmNear){setMessage('Wheat is still growing — it is ready in a few in-game hours');return}
         setMessage('Nothing close enough to interact with');return
@@ -5191,7 +5293,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>({id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:founderStockpileRef.current,foodStock:founderFoodRef.current})),
+      getFounders:()=>foundersRef.current.map(f=>({id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current)})),
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
       setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
       // BUILD 1060 test hooks (probes only — no gameplay effect):
@@ -5216,7 +5318,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getLivingWorld:()=>{const s=livingWorldRef.current;return s?livingWorldSummary(s,stateRef.current.world.trees.length,clockRef.current.day):null;},
       getTreeCount:()=>stateRef.current.world.trees.length,
       getNearestTree:(x:number,y:number)=>nearestTreeTile(stateRef.current.world,Math.round(x),Math.round(y),FOUNDER_WORK_RADIUS),
-      setStockpileWood:(n:number)=>{founderStockpileRef.current=Math.max(0,Math.round(n));setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});return founderStockpileRef.current;},
+      // BUILD 1064 (R-1): the registry read (probes only) — the
+      // player store, the camp store, the carrier stores, the world
+      // deposits still standing, and the totals a scheduler asks.
+      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current)},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
+      setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -5460,7 +5566,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const tClosest=closestFounder(f.social,clock.day);
         const tCompanion=tClosest?founders.find(o=>o.name===tClosest.name):undefined;
         const tCompanionAtCamp=!!tCompanion&&Math.abs(Math.round(tCompanion.x)-FOUNDER_CAMP.x)+Math.abs(Math.round(tCompanion.y)-FOUNDER_CAMP.y)<=3;
-        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:founderFoodRef.current,stockpileWood:founderStockpileRef.current,construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
+        const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:tickTreeDist,distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)}),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
         f.activity=decision.activity;
         f.lastDecision=decision;
         // BUILD 1060: activity transitions record shared events
@@ -5509,13 +5615,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // activity is 'work' while the pile still holds wood keeps
         // the site (the scorer flips them back to 'build' next tick).
         if((f.workState==='toSite'||f.workState==='building')&&f.activity!=='build'){
-          const keepSite=f.activity==='work'&&canBuild(constructionRef.current,founderStockpileRef.current);
+          const keepSite=f.activity==='work'&&canBuild(constructionRef.current,campWoodInRegistry(registryRef.current));
           if(!keepSite){f.workState='toTree';f.buildTicks=0;f.treeTarget=null;f.workTile=null;}
         }
         // Eat: at the eat tile, one meal from the shared camp stock.
+        // BUILD 1064 (R-1): the meal is withdrawn from the
+        // registry's camp store — only a whole meal taken restores
+        // hunger, and the pile drops by exactly that meal.
         if(f.activity==='eat'&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
-          const res=eatFounderMeal(f.needs,founderFoodRef.current);
-          if(res.foodStock!==founderFoodRef.current){f.needs=res.needs;founderFoodRef.current=res.foodStock;stockChanged=true;
+          const res=eatFounderMealFromRegistry(registryRef.current,f.needs);
+          if(res.ate){registryRef.current=res.registry;f.needs=res.needs;stockChanged=true;
             // BUILD 1060: a shared meal — record 'eat' with every
             // other founder at the eat tile (within 1 tile). The
             // meal is a discrete moment, so it records once.
@@ -5546,7 +5655,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // strands wood on a tree.
         if((f.activity==='work'||f.activity==='build')&&f.workState==='toTree'&&!f.treeTarget){
           const someoneBuilding=founders.some(o=>o!==f&&(o.workState==='toSite'||o.workState==='building'));
-          if(!hutDone&&!someoneBuilding&&canBuild(constructionRef.current,founderStockpileRef.current)){
+          if(!hutDone&&!someoneBuilding&&canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))){
             f.workState='toSite';
           }else{
             let skipped=founderSkippedTrees.get(f.name);
@@ -5611,10 +5720,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               f.buildTicks++;
               if(f.buildTicks>=HUT_TICKS_PER_STEP){
                 f.buildTicks=0;
-                if(founderStockpileRef.current>=HUT_WOOD_PER_STEP){
-                  const res=spendBuildStep(constructionRef.current,founderStockpileRef.current);
+                // BUILD 1064 (R-1): the step's wood is withdrawn
+                // from the registry's camp store — 2 wood leaves
+                // the pile only when the step completes.
+                if(campWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP){
+                  const res=spendBuildStepFromRegistry(registryRef.current,constructionRef.current);
+                  registryRef.current=res.registry;
                   constructionRef.current=res.construction;
-                  founderStockpileRef.current=res.stockpileWood;
                   stockChanged=true;hutChanged=true;
                   // BUILD 1060: a shared build step — the builder
                   // plus every founder chopping for the hut (activity
@@ -5653,14 +5765,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               if(f.chopTicks>=FOUNDER_CHOP_TICKS){
                 // The tree is gone (chopped by the player first) →
                 // no wood, walk home empty and re-target.
-                const fell=chopTreeAt(world,f.treeTarget.x,f.treeTarget.y);
-                if(fell){f.carrying=FOUNDER_WOOD_PER_TREE;worldDirty=true;}
+                // BUILD 1064 (R-1): the fell goes through the
+                // registry — the tree's deposit is extracted and
+                // the yield lands in the founder's carrier store
+                // (capacity 2), with the tree as its source.
+                const fell=fellTreeToCarrier(registryRef.current,world,f,f.treeTarget.x,f.treeTarget.y);
+                registryRef.current=fell.registry;
+                if(fell.yield>0){f.carrying=fell.yield;worldDirty=true;}
                 f.treeTarget=null;f.workTile=null;f.chopTicks=0;
                 f.workState='toStockpile';
               }
             }else if(f.workState==='toStockpile'&&f.carrying>0){
-              founderStockpileRef.current=deliverFounderWood(founderStockpileRef.current,f.carrying);
-              f.carrying=0;f.workState='toTree';stockChanged=true;
+              // BUILD 1064 (R-1): the delivery is a real transfer
+              // (carrier store → camp store) — the wood the tree
+              // held is the wood the pile gains, conserved.
+              const res=deliverFounderWoodToRegistry(registryRef.current,f);
+              registryRef.current=res.registry;
+              f.carrying-=res.moved;f.workState='toTree';stockChanged=true;
               setMessage(f.name+' delivered wood to the camp stockpile');
             }else if(f.workState==='toStockpile'){
               f.workState='toTree';
@@ -5673,8 +5794,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if((f.activity==='work'||f.activity==='build')&&f.workState==='idle')f.workState='toTree';
       }
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
-      if(stockChanged||hutChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
-      saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current,constructionRef.current));
+      if(stockChanged||hutChanged)refreshResourceUi();
+      // BUILD 1064 (R-1): the founders save is written back from
+      // the registry (the camp store's numbers), not from the plain
+      // refs — the registry is the authority, the save is its
+      // serialization (v4 shape preserved).
+      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),constructionRef.current));
     },900);
 
     // BUILD 1000: transient life. Mount spawns one traveler + one

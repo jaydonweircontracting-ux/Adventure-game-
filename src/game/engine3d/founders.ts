@@ -79,7 +79,18 @@ import { chooseScoredActivity } from './utility';
 import type { ScoredDecision, UtilityWorldContext } from './utility';
 import { freshFounderSocial } from './memory';
 import type { FounderSocial } from './memory';
-import { founderIdFor } from './entityIds';
+import { founderIdFor, treeId } from './entityIds';
+import {
+  CAMP_STORE_ID,
+  carrierStoreId,
+  depositInto,
+  extractDeposit,
+  setStoreQty,
+  storeQty,
+  transfer,
+  withdrawFrom,
+  type ResourceRegistry,
+} from './resourceRegistry';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
@@ -232,6 +243,133 @@ export function eatFounderMeal(needs: FounderNeeds, foodStock: number): { needs:
  */
 export function deliverFounderWood(stockpileWood: number, carrying: number): number {
   return Math.max(0, stockpileWood) + Math.max(0, carrying);
+}
+
+// --- BUILD 1064 (R-1): the registry as the live-game authority. ---
+//
+// The pure helpers above (eatFounderMeal / deliverFounderWood) stay
+// for the sim — the registry versions below are the live game's
+// authority, and the view calls them. The founders save keeps its
+// v4 shape (stockpileWood/foodStock/carrying numbers); the registry
+// is rebuilt from those numbers on load and written back into them
+// on save, so no save version moves in this build and the parked
+// Tamsin stash's v4 claim is untouched.
+
+/**
+ * Seed the camp store from the founders save numbers (load path):
+ * wood at the stockpile tile, food at the eat tile, source 'loaded'
+ * (the save does not record where a unit came from), uncapped — the
+ * same as the plain refs today. Pure.
+ */
+export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number): ResourceRegistry {
+  let next = setStoreQty(registry, CAMP_STORE_ID, 'wood', stockpileWood, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
+  next = setStoreQty(next, CAMP_STORE_ID, 'food', foodStock, { type: 'loaded' }, { location: { ...FOUNDER_EAT_TILE } });
+  return next;
+}
+
+/**
+ * Seed one founder's carrier store from their saved carrying (load
+ * path): capacity 2 (the real carry limit), location the founder's
+ * tile, owner the founder's id, source 'loaded'. A founder reloaded
+ * mid-carry still holds what the save says they hold. Pure.
+ */
+export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): ResourceRegistry {
+  const carrying = Math.max(0, Math.floor(f.carrying));
+  if (carrying <= 0) return registry;
+  return setStoreQty(
+    registry,
+    carrierStoreId(f.id),
+    'wood',
+    carrying,
+    { type: 'loaded' },
+    { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
+  );
+}
+
+/**
+ * Eat a meal from the camp store (registry authority): withdraw 1
+ * food; only when a whole meal is taken does hunger go to 100.
+ * With no food, nothing happens (the founder stays hungry — a real
+ * consequence, not a hidden refill). Pure.
+ */
+export function eatFounderMealFromRegistry(
+  registry: ResourceRegistry,
+  needs: FounderNeeds,
+): { registry: ResourceRegistry; needs: FounderNeeds; ate: boolean } {
+  const w = withdrawFrom(registry, CAMP_STORE_ID, 'food', 1);
+  if (w.taken < 1) return { registry, needs, ate: false };
+  return { registry: w.registry, needs: { ...needs, hunger: 100 }, ate: true };
+}
+
+/**
+ * Fell a tree into the founder's carrier store: the world loses
+ * the tree (chopTreeAt — the same removal as the player's E-key
+ * chop, so the tree disappears for everyone), the tree's deposit
+ * is extracted from the registry, and the yield is deposited into
+ * the carrier store (capacity 2, location the founder's tile,
+ * owner the founder's id, source the tree id). When the tree is
+ * already gone (chopped by the player first) the yield is 0 and
+ * nothing is deposited — no wood appears without a tree. The
+ * caller sets f.carrying to the returned yield. Pure apart from
+ * the world mutation chopTreeAt already performs.
+ */
+export function fellTreeToCarrier(
+  registry: ResourceRegistry,
+  world: IsoWorld,
+  f: FounderState,
+  tx: number,
+  ty: number,
+): { registry: ResourceRegistry; yield: number; sourceId: string | null } {
+  const sourceId = treeId(tx, ty);
+  if (!chopTreeAt(world, tx, ty)) return { registry, yield: 0, sourceId: null };
+  const extracted = extractDeposit(registry, sourceId);
+  const yieldWood = extracted.qty > 0 ? extracted.qty : FOUNDER_WOOD_PER_TREE;
+  const deposited = depositInto(
+    extracted.registry,
+    carrierStoreId(f.id),
+    'wood',
+    yieldWood,
+    { type: 'entity', id: sourceId },
+    { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
+  );
+  return { registry: deposited.registry, yield: deposited.added, sourceId };
+}
+
+/**
+ * Deliver the founder's carried wood to the camp store: a real
+ * transfer (carrier store → camp store), so the total is conserved
+ * across the chain — the wood the tree held is the wood the pile
+ * gains. Returns the new registry and how many units moved. The
+ * caller sets f.carrying -= moved. Pure.
+ */
+export function deliverFounderWoodToRegistry(
+  registry: ResourceRegistry,
+  f: FounderState,
+): { registry: ResourceRegistry; moved: number } {
+  const carrying = Math.max(0, Math.floor(f.carrying));
+  if (carrying <= 0) return { registry, moved: 0 };
+  const res = transfer(
+    registry,
+    carrierStoreId(f.id),
+    CAMP_STORE_ID,
+    'wood',
+    carrying,
+    { type: 'entity', id: f.id },
+    { location: { ...FOUNDER_CAMP_CENTRE } },
+  );
+  return res;
+}
+
+/** Units of wood in the camp store (the registry's answer to the
+ *  old founderStockpileRef.current read). Pure. */
+export function campWoodInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, CAMP_STORE_ID, 'wood');
+}
+
+/** Meals in the camp store (the registry's answer to the old
+ *  founderFoodRef.current read). Pure. */
+export function campFoodInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, CAMP_STORE_ID, 'food');
 }
 
 // --- Founder state ---

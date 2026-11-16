@@ -72,6 +72,7 @@
 import { planPathNpc } from './townsfolk3d';
 import { houseFootprint, doorForRect } from './placements';
 import { FOUNDER_CAMP, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_SLEEP_TILES } from './founders';
+import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import { terrainAt } from '../iso/isoWorld';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
@@ -232,6 +233,50 @@ export function spendBuildStep(
   return {
     construction: { state: 'building', progress, spentWood },
     stockpileWood: stockpileWood - HUT_WOOD_PER_STEP,
+    completed,
+    spent: true,
+  };
+}
+
+// --- BUILD 1064 (R-1): the registry as the live-game authority. ---
+//
+// spendBuildStep above stays for the sim. The live game spends
+// through the registry's camp store — the same rule (2 wood leaves
+// the pile only when a work step completes), the same guard (too
+// little wood, or an already-ready hut, spends nothing), but the
+// wood is withdrawn from the one authoritative record, not from a
+// plain number ref.
+
+/**
+ * Complete one work step at the site from the registry's camp
+ * store: 2 wood is withdrawn, the progress rises by 1. At the last
+ * step the hut is READY (progress 6) but the state stays
+ * 'building' — the caller flips it to 'done' only when the
+ * placement actually lands (finishConstruction). With too little
+ * wood in the camp store, or when the hut is already ready, nothing
+ * happens and nothing is withdrawn (a partial step is never taken).
+ * Pure.
+ */
+export function spendBuildStepFromRegistry(
+  registry: ResourceRegistry,
+  c: ConstructionState,
+): { registry: ResourceRegistry; construction: ConstructionState; completed: boolean; spent: boolean } {
+  if (c.state === 'done' || c.progress >= HUT_WORK_STEPS || storeQty(registry, CAMP_STORE_ID, 'wood') < HUT_WOOD_PER_STEP) {
+    return { registry, construction: c, completed: c.progress >= HUT_WORK_STEPS, spent: false };
+  }
+  const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', HUT_WOOD_PER_STEP);
+  if (w.taken < HUT_WOOD_PER_STEP) {
+    // Cannot happen (the guard above read the same store), but a
+    // partial withdrawal must never become a partial step — put
+    // back what was taken and spend nothing.
+    return { registry, construction: c, completed: false, spent: false };
+  }
+  const progress = c.progress + 1;
+  const spentWood = c.spentWood + HUT_WOOD_PER_STEP;
+  const completed = progress >= HUT_WORK_STEPS;
+  return {
+    registry: w.registry,
+    construction: { state: 'building', progress, spentWood },
     completed,
     spent: true,
   };
