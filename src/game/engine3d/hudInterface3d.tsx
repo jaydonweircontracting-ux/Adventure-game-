@@ -23,6 +23,7 @@ import { mineralMapColor } from './geology';
 import { renderAssetPreview } from './assetLibrary';
 import { type CustomAsset } from './customAssets';
 import { formatDayClock, waitOptionsFor, waitRemainingLabel, WAIT_STEP_MINUTES } from './worldclock';
+import { SEASON_EMOJI, seasonForDay, seasonLabel } from './climate';
 import { type DayClock } from './townsfolk3d';
 import { type StaminaState } from './sprint';
 import { type Inventory3D } from './inventoryCrafting3d';
@@ -150,10 +151,11 @@ export function Minimap3D({ world, playerX, playerY, npcsRef, foundersRef, car, 
 // so the map can never disagree with the surface. Tap-to-travel
 // reuses the 1030 A* bridge (travelRequestRef), exactly like the
 // minimap tap; the map closes when a journey starts.
-export function WorldMap3D({ world, playerX, playerY, onClose, onTapTravel }: {
+export function WorldMap3D({ world, playerX, playerY, day, onClose, onTapTravel }: {
   world: IsoWorld;
   playerX: number;
   playerY: number;
+  day: number;
   onClose: () => void;
   onTapTravel: (dest: { x: number; y: number }) => void;
 }) {
@@ -271,6 +273,7 @@ export function WorldMap3D({ world, playerX, playerY, onClose, onTapTravel }: {
           3D view (Build panel 4, minimap 4, Enter/Exit 6). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
         <strong style={{ flex: 1, fontSize: 16 }}>World Map</strong>
+        <span data-testid="world-map-season" style={{ fontSize: 12, fontWeight: 700 }}>{SEASON_EMOJI[seasonForDay(day)]} {seasonLabel(seasonForDay(day))}</span>
         <span data-testid="world-map-area-label" style={{ fontSize: 12, opacity: 0.85 }}>{worldmap3dTerrainLabel(hereTerrain)} · ({tileX}, {tileY})</span>
         <button type="button" data-testid="world-map-close" aria-label="Close world map" onClick={onClose} style={{ padding: '10px 14px', borderRadius: 9, border: '1px solid #c4d1bd', background: '#22392d', color: '#fff', fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</button>
       </div>
@@ -320,7 +323,7 @@ export function HudStrip(props: HudStripProps) {
           the real 3D day clock (clockUi refreshes every second), same
           format as the 2D game minus the year (the 3D clock has none).
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2,display:'flex',alignItems:'center',gap:6}}><span data-testid="clock-readout" style={{fontWeight:700}}>🕐 {formatDayClock(clockUi)}</span><button type="button" data-testid="wait-open" aria-label="Wait" onClick={onWaitToggle} style={{padding:'2px 8px',border:'1px solid #c4d1bd',borderRadius:6,background:'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1.4}}>⏳ Wait</button></div>
+      <div style={{marginTop:2,display:'flex',alignItems:'center',gap:6}}><span data-testid="clock-readout" style={{fontWeight:700}}>🕐 {formatDayClock(clockUi)}</span><span data-testid="season-readout" style={{fontWeight:700}}>{SEASON_EMOJI[seasonForDay(clockUi.day)]} {seasonLabel(seasonForDay(clockUi.day))}</span><button type="button" data-testid="wait-open" aria-label="Wait" onClick={onWaitToggle} style={{padding:'2px 8px',border:'1px solid #c4d1bd',borderRadius:6,background:'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1.4}}>⏳ Wait</button></div>
       <div style={{marginTop:2}}>HP {health}/100<div style={{display:'inline-block',width:80,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="hp-bar" style={{width:health+'%',height:'100%',background:'#5fbf6f'}} /></div></div>
       <div style={{marginTop:2}}>Stamina {Math.round(staminaUi.stamina)}/100<div style={{display:'inline-block',width:100,height:8,marginLeft:6,borderRadius:4,background:'#3a4a3f',verticalAlign:'middle',overflow:'hidden'}}><div data-testid="sprint-stamina-bar" style={{width:Math.round(staminaUi.stamina)+'%',height:'100%',background:staminaUi.exhausted?'#c0392b':'#5fbf6f'}} /></div>{staminaUi.exhausted?' · Tired':''}</div>
       {/* BUILD 1028: the Sprint control is a SMALL icon at the bottom

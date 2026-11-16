@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { SIM_SPEEDS, getSimSpeed, setSimSpeed, simSpeedLabel, type ControlCenterData, type SimSpeed } from './controlCenter';
 import { formatDayClock } from './worldclock';
+import { SEASON_EMOJI, seasonForDay, seasonLabel } from './climate';
 
 const panelStyle: React.CSSProperties = {
   position: 'absolute',
@@ -59,7 +60,7 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
         </button>
       </div>
       <div style={dimStyle}>
-        {d ? `Day ${d.day} · 🕐 ${formatDayClock({ minutes: d.minutes, day: d.day })}` : 'Reading the live sim…'}
+        {d ? `Day ${d.day} · 🕐 ${formatDayClock({ minutes: d.minutes, day: d.day })} · ${SEASON_EMOJI[seasonForDay(d.day)]} ${seasonLabel(seasonForDay(d.day))}` : 'Reading the live sim…'}
       </div>
 
       <div data-testid="cc-time-controls" style={sectionStyle}>

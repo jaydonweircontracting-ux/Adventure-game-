@@ -15,6 +15,7 @@ import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
+import { seasonArrivalMessage, seasonForDay } from './climate';
 import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
 import type { DayClock } from './townsfolk3d';
 
@@ -122,5 +123,13 @@ export function syncLivingWorld(ctx: LivingWorldSyncContext, world: IsoWorld): b
   saveLivingWorldState(res.state);
   ctx.refreshResourceUi();
   if(res.events.length>0)ctx.setMessage(res.events[res.events.length-1].description);
+  // BUILD 1084 (1.5): a season change is announced once, when the
+  // day boundary crosses it — it wins over a coordinator event
+  // (a season turns every 90 days; the event is rarer). The
+  // previous day must be a real played day (>= 1): a fresh world's
+  // first sync advances from lastAdvancedDay 0, and day 0 is not
+  // a season the player ever saw (it would announce "Spring has
+  // arrived" at every fresh boot).
+  if(res.advancedDays>0){const prevDay=ctx.clock.current.day-res.advancedDays;const prevSeason=seasonForDay(prevDay);const nowSeason=seasonForDay(ctx.clock.current.day);if(prevDay>=1&&prevSeason!==nowSeason)ctx.setMessage(seasonArrivalMessage(nowSeason));}
   return true;
 }

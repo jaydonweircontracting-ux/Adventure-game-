@@ -41,21 +41,24 @@ export function absMinutes(day: number, minutes: number): number {
  *  minutes), observed at `nowAbs`. A missing stamp is a fresh
  *  planting (stage 'planted'); a stamp in the future (clock moved
  *  backwards) is also planted, never ready. BUILD 1083 (1.4):
- *  `soilFactor` scales the age — rich soil (1.5) reaches ready in
- *  120 game-minutes, neutral (1.0) in 180, poor (0.6) in 300.
- *  It defaults to 1 (neutral), so callers that do not know the
- *  soil keep the exact old thresholds. */
-export function farmStageAt(plantedAt: number | undefined, nowAbs: number, soilFactor = 1): FarmStage {
+ *  `growthFactor` scales the age — the combined soil × season
+ *  factor (BUILD 1084: rich soil (1.5) × spring (1.0) reaches
+ *  ready in 120 game-minutes, neutral (1.0) in 180, poor (0.6)
+ *  in 300; winter (0.5) doubles those times, summer (1.25)
+ *  shortens them). It defaults to 1 (neutral spring), so
+ *  callers that do not know the factor keep the exact old
+ *  thresholds. */
+export function farmStageAt(plantedAt: number | undefined, nowAbs: number, growthFactor = 1): FarmStage {
   if (plantedAt === undefined) return 'planted';
-  const age = (nowAbs - plantedAt) * soilFactor;
+  const age = (nowAbs - plantedAt) * growthFactor;
   if (age < FARM_GROW_MIN) return 'planted';
   if (age < FARM_READY_MIN) return 'growing';
   return 'ready';
 }
 
 /** Stage of one placed farm item, observed at `nowAbs`. */
-export function farmStageOf(item: PlacedItem, nowAbs: number, soilFactor = 1): FarmStage {
-  return farmStageAt(item.farmPlantedAt, nowAbs, soilFactor);
+export function farmStageOf(item: PlacedItem, nowAbs: number, growthFactor = 1): FarmStage {
+  return farmStageAt(item.farmPlantedAt, nowAbs, growthFactor);
 }
 
 /** Harvest the farm tile at (tx, ty) if it is ready wheat: the tile
@@ -67,7 +70,7 @@ export function harvestFarmTile(
   tx: number,
   ty: number,
   nowAbs: number,
-  soilFactor = 1,
+  growthFactor = 1,
 ): { ok: true; wheat: number } | { ok: false; reason: string } {
   const list = w.placements;
   if (!list) return { ok: false, reason: 'no farm here' };
@@ -75,7 +78,7 @@ export function harvestFarmTile(
     (p) => p.kind === 'farm' && tx >= p.x0 && tx <= p.x1 && ty >= p.y0 && ty <= p.y1,
   );
   if (!item) return { ok: false, reason: 'no farm here' };
-  if (farmStageAt(item.farmPlantedAt, nowAbs, soilFactor) !== 'ready') {
+  if (farmStageAt(item.farmPlantedAt, nowAbs, growthFactor) !== 'ready') {
     return { ok: false, reason: 'still growing' };
   }
   item.farmPlantedAt = nowAbs;
@@ -92,12 +95,12 @@ export function nearestReadyFarmTile(
   y: number,
   nowAbs: number,
   maxDist: number = FARM_VILLAGER_RADIUS,
-  soilFactorAt?: (tx: number, ty: number) => number,
+  growthFactorAt?: (tx: number, ty: number) => number,
 ): { tx: number; ty: number } | null {
   let best: { tx: number; ty: number } | null = null;
   let bestD = Infinity;
   for (const t of placedFarmTiles(w)) {
-    if (farmStageAt(t.plantedAt, nowAbs, soilFactorAt ? soilFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
+    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
     const d = Math.abs(t.tx - x) + Math.abs(t.ty - y);
     if (d <= maxDist && d < bestD) {
       bestD = d;
@@ -118,11 +121,11 @@ export function readyFarmTiles(
   y: number,
   nowAbs: number,
   maxDist: number = FARM_VILLAGER_RADIUS,
-  soilFactorAt?: (tx: number, ty: number) => number,
+  growthFactorAt?: (tx: number, ty: number) => number,
 ): { tx: number; ty: number }[] {
   const out: { tx: number; ty: number }[] = [];
   for (const t of placedFarmTiles(w)) {
-    if (farmStageAt(t.plantedAt, nowAbs, soilFactorAt ? soilFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
+    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
     if (Math.abs(t.tx - x) + Math.abs(t.ty - y) > maxDist) continue;
     out.push({ tx: t.tx, ty: t.ty });
   }

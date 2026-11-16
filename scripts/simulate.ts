@@ -13110,6 +13110,97 @@ console.log('Testing landforms + soil (BUILD 1083)...');
   console.log('M1083: landforms verified (determinism, band, cliffs, traversability, height, soil, farm growth, persistence)');
 }
 
+console.log('Testing climate + seasons (BUILD 1084)...');
+{
+  const CL = await import('../src/game/engine3d/climate.js');
+  const { defaultWorld, terrainAt, isWalkableWorld, oceanAt } = await import('../src/game/iso/isoWorld.js');
+  const { groundElevation } = await import('../src/game/engine3d/townLook.js');
+  const { FOUNDER_CAMP, chopTreeAt } = await import('../src/game/engine3d/founders.js');
+  const { placedFarmTiles } = await import('../src/game/engine3d/placements.js');
+  const { stampMineralDeposits } = await import('../src/game/engine3d/geology.js');
+  const { stampRivers } = await import('../src/game/engine3d/rivers.js');
+  const L1084 = await import('../src/game/engine3d/landforms.js');
+  const { seedCampFarmPlot, farmStageAt } = await import('../src/game/engine3d/farm.js');
+  const { growthFactorAt, temperatureAt, rainfallAt, freshLivingWorldState, advanceLivingWorldDay, FOREST_POPULATION_ID } = await import('../src/game/engine3d/livingWorld.js');
+  const { seasonForDay } = await import('../src/game/worldCore.js');
+  // The laid-out world (farm + deposits + rivers + landforms),
+  // matching loadInitialWorld's order.
+  function setup1084() {
+    const w = defaultWorld();
+    seedCampFarmPlot(w, FOUNDER_CAMP.x, FOUNDER_CAMP.y, 1920, (x, y) => isWalkableWorld(w, w.crates, x, y));
+    stampMineralDeposits(w);
+    stampRivers(w);
+    L1084.stampLandforms(w);
+    return w;
+  }
+  const w1084 = setup1084();
+  // The four seasons, ~90 days each, in order, wrapping the year.
+  assert(seasonForDay(1) === 'spring' && seasonForDay(90) === 'spring', 'M1084: days 1-90 are spring');
+  assert(seasonForDay(91) === 'summer' && seasonForDay(180) === 'summer', 'M1084: days 91-180 are summer');
+  assert(seasonForDay(181) === 'autumn' && seasonForDay(270) === 'autumn', 'M1084: days 181-270 are autumn');
+  assert(seasonForDay(271) === 'winter' && seasonForDay(360) === 'winter', 'M1084: days 271-360 are winter');
+  assert(seasonForDay(361) === 'spring' && seasonForDay(450) === 'spring', 'M1084: the year wraps — day 361 is spring again');
+  assert(CL.SEASON_DAYS === 90 && CL.SEASONS.length === 4, 'M1084: four seasons of 90 days');
+  assert(CL.dayInSeason(1) === 1 && CL.dayInSeason(90) === 90 && CL.dayInSeason(91) === 1, 'M1084: dayInSeason counts within the season');
+  // Determinism: the same save (the same day) always gives the same season.
+  assert(seasonForDay(200) === seasonForDay(200) && CL.seasonLabelFor(200) === CL.seasonLabelFor(200), 'M1084: the season is deterministic for a day');
+  // Growth factors: spring is neutral (the M1069 guard).
+  assert(CL.SEASON_GROWTH.spring === 1 && CL.SEASON_GROWTH.summer === 1.25 && CL.SEASON_GROWTH.autumn === 0.8 && CL.SEASON_GROWTH.winter === 0.5, 'M1084: the season growth factors are spring 1, summer 1.25, autumn 0.8, winter 0.5');
+  assert(growthFactorAt(w1084, 1, FOUNDER_CAMP.x, FOUNDER_CAMP.y) === 1, 'M1084: the camp farm grows at factor 1.0 in spring (the M1069 guard)');
+  // A rich-soil tile: summer 1.5 x 1.25, winter 1.5 x 0.5.
+  let rich1084 = null;
+  outer1084: for (let y = 0; y < 200; y++) for (let x = 0; x < 200; x++) { if (L1084.soilAt(w1084, x, y) === 'rich') { rich1084 = { x, y }; break outer1084; } }
+  assert(rich1084 !== null, 'M1084: a rich-soil tile exists to measure');
+  assert(growthFactorAt(w1084, 120, rich1084.x, rich1084.y) === 1.875, 'M1084: rich soil in summer grows at 1.875');
+  assert(growthFactorAt(w1084, 300, rich1084.x, rich1084.y) === 0.75, 'M1084: rich soil in winter grows at 0.75');
+  // Farm growth, measured in game-minutes at neutral soil: spring
+  // 180, summer 144, winter 360.
+  const campTile1084 = placedFarmTiles(w1084)[0];
+  assert(campTile1084 !== undefined, 'M1084: the camp farm exists');
+  const fSpring1084 = growthFactorAt(w1084, 1, campTile1084.tx, campTile1084.ty);
+  const fSummer1084 = growthFactorAt(w1084, 120, campTile1084.tx, campTile1084.ty);
+  const fWinter1084 = growthFactorAt(w1084, 300, campTile1084.tx, campTile1084.ty);
+  assert(fSpring1084 === 1 && fSummer1084 === 1.25 && fWinter1084 === 0.5, 'M1084: the camp farm factors are spring 1, summer 1.25, winter 0.5');
+  assert(farmStageAt(0, 179, fSpring1084) === 'growing' && farmStageAt(0, 180, fSpring1084) === 'ready', 'M1084: neutral soil in spring is ready in 180 game-minutes');
+  assert(farmStageAt(0, 143, fSummer1084) === 'growing' && farmStageAt(0, 144, fSummer1084) === 'ready', 'M1084: neutral soil in summer is ready in 144 game-minutes');
+  assert(farmStageAt(0, 359, fWinter1084) === 'growing' && farmStageAt(0, 360, fWinter1084) === 'ready', 'M1084: neutral soil in winter is ready in 360 game-minutes');
+  // Temperature + rainfall: pure functions of (season, tile).
+  const tSpring1084 = temperatureAt(w1084, 1, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
+  const tWinter1084 = temperatureAt(w1084, 300, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
+  assert(tSpring1084 > tWinter1084, 'M1084: spring is warmer than winter at the camp (' + tSpring1084 + ' vs ' + tWinter1084 + ')');
+  assert(temperatureAt(w1084, 1, FOUNDER_CAMP.x, FOUNDER_CAMP.y) === tSpring1084, 'M1084: the temperature is deterministic for a tile');
+  const rAutumn1084 = rainfallAt(w1084, 200, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
+  const rSummer1084 = rainfallAt(w1084, 120, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
+  assert(rAutumn1084 > rSummer1084, 'M1084: autumn is wetter than summer at the camp (' + rAutumn1084 + ' vs ' + rSummer1084 + ')');
+  assert(rainfallAt(w1084, 200, FOUNDER_CAMP.x, FOUNDER_CAMP.y) === rAutumn1084, 'M1084: the rainfall is deterministic for a tile');
+  assert(CL.rainIntensityFor('autumn', FOUNDER_CAMP.x, FOUNDER_CAMP.y, 0) <= 1 && CL.rainIntensityFor('summer', FOUNDER_CAMP.x, FOUNDER_CAMP.y, 0) >= 0.25, 'M1084: the rain intensity is clamped to [0.25, 1] (never overflows the streak buffer)');
+  // Animal activity: winter animals step every other tick.
+  assert(CL.animalStepPeriod(CL.SEASON_ACTIVITY.spring) === 1 && CL.animalStepPeriod(CL.SEASON_ACTIVITY.winter) === 2, 'M1084: animals step every tick in spring, every other tick in winter');
+  // Tree regrowth: the same fresh state advanced two winter days
+  // grows less forest than two summer days, and the returned
+  // state keeps the base growth rate (never a scaled one). A
+  // depleted forest (300 trees chopped through the real chop path)
+  // is the test — a fresh unchopped forest is already at density
+  // 1.0 and regrows nothing in any season (the saturated case).
+  const wDepleted1084 = setup1084();
+  for (const t of wDepleted1084.trees.slice(0, 300)) chopTreeAt(wDepleted1084, t.tx, t.ty);
+  function regrow1084(targetDay) {
+    const s = freshLivingWorldState(wDepleted1084, [], { minutes: 480, day: targetDay - 1 });
+    const r = advanceLivingWorldDay({ state: s, clock: { minutes: 480, day: targetDay }, founders: [], world: wDepleted1084 });
+    return { density: r.state.livingWorld.resources[FOREST_POPULATION_ID].density, growthRate: r.state.livingWorld.resources[FOREST_POPULATION_ID].growthRate, planted: r.planted.length };
+  }
+  const winter1084 = regrow1084(300);
+  const summer1084 = regrow1084(120);
+  assert(winter1084.density < summer1084.density, 'M1084: two winter days regrow less forest than two summer days (' + winter1084.density + ' vs ' + summer1084.density + ')');
+  assert(winter1084.growthRate === paramsForResource('trees').growthRate && summer1084.growthRate === paramsForResource('trees').growthRate, 'M1084: the returned state keeps the base forest growth rate');
+  assert(winter1084.planted <= summer1084.planted, 'M1084: winter plants no more trees than summer (' + winter1084.planted + ' vs ' + summer1084.planted + ')');
+  // Persistence: the season is a function of the persisted day —
+  // a save in autumn (day 200) reloads in autumn.
+  const savedClock1084 = JSON.parse(JSON.stringify({ minutes: 480, day: 200 }));
+  assert(seasonForDay(savedClock1084.day) === 'autumn', 'M1084: a save in autumn (day 200) reloads in autumn');
+  console.log('M1084: climate verified (seasons, growth, temperature, rainfall, regrowth, animals, persistence)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

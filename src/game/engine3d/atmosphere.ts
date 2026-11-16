@@ -250,18 +250,21 @@ export function rainForMinutes(day: number, minuteOfDay: number): boolean {
 
 /**
  * Emit the rain streaks for one frame into `out` (6 floats per vertex:
- * pos + rgb, the sky.ts convention). Streaks live in a 44-tile box
- * around (px, pz) at heights baseY+1..baseY+9, falling 12 tiles/s on
- * the drift clock (each streak recycles at a seeded phase, the smoke
- * precedent — individual wraps are invisible among 120 streaks).
- * Two crossed quads per streak so it reads from any orbit yaw; a
- * slight +x slant at the top for the wind. Pure: same inputs give
- * the same streaks.
+ * pos + rgb, the sky.ts convention). Streak count defaults to
+ * RAIN_STREAKS (120) — the vertex buffer is allocated for exactly
+ * 120 streaks × 12 vertices, so a caller must never emit more
+ * (BUILD 1084 scales the count down by season, never up). Streaks
+ * live in a 44-tile box around (px, pz) at heights baseY+1..baseY+9,
+ * falling 12 tiles/s on the drift clock (each streak recycles at a
+ * seeded phase, the smoke precedent — individual wraps are invisible
+ * among the streaks). Two crossed quads per streak so it reads from
+ * any orbit yaw; a slight +x slant at the top for the wind. Pure:
+ * same inputs give the same streaks.
  */
-export function emitRainStreaks(out: number[], px: number, pz: number, baseY: number, driftSec: number): number {
+export function emitRainStreaks(out: number[], px: number, pz: number, baseY: number, driftSec: number, streaks: number = RAIN_STREAKS): number {
   const start = out.length;
   const frac = (v: number): number => v - Math.floor(v);
-  for (let i = 0; i < RAIN_STREAKS; i++) {
+  for (let i = 0; i < streaks; i++) {
     const sx = hash2(i * 1.71 + 4.2, 8.8);
     const sz = hash2(i * 2.33 + 9.6, 1.4);
     const sPhase = hash2(i * 3.57 + 2.2, 5.5);

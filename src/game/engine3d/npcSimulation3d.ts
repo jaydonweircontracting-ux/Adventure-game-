@@ -20,7 +20,8 @@ import {
 } from './townsfolk3d';
 import { absMinutes, harvestFarmTile, nearestReadyFarmTile, FARM_VILLAGER_RADIUS } from './farm';
 import { blockedAction } from './npcMotion';
-import { soilFactorAt } from './livingWorld';
+import { growthFactorAt } from './livingWorld';
+import { animalActivityFactor, animalStepPeriod, seasonForDay } from './climate';
 import {
   spawnTransient, stepTransient, barkLineFor, barkDayEligible,
   MAX_TRAVELERS, MAX_ADVENTURERS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS,
@@ -117,11 +118,15 @@ export function stepRosterNpcs(ctx: NpcSimContext, state: NpcSimState): void {
     // after harvesting (or if the wheat is gone when they arrive
     // — harvested by the player or another farmer first).
     const farmNowAbs = absMinutes(clock.day, clock.minutes);
-    const farmDest = rosterArchetype(actor.name) === 'farmer' ? nearestReadyFarmTile(world, cx, cy, farmNowAbs, FARM_VILLAGER_RADIUS, (tx, ty) => soilFactorAt(world, tx, ty)) : null;
+    const farmDest = rosterArchetype(actor.name) === 'farmer' ? nearestReadyFarmTile(world, cx, cy, farmNowAbs, FARM_VILLAGER_RADIUS, (tx, ty) => growthFactorAt(world, clock.day, tx, ty)) : null;
     const dest = farmDest ?? { tx: sched.tx, ty: sched.ty };
     if (cx === dest.tx && cy === dest.ty) {
       if (farmDest) {
-        const res = harvestFarmTile(world, farmDest.tx, farmDest.ty, farmNowAbs);
+        // BUILD 1083 bug (fixed here, BUILD 1084): the readiness
+  // check above uses the soil × season factor, but this harvest
+  // re-checked with factor 1 — a farmer on rich soil found a
+  // "ready" tile the harvest then refused. Same factor, both calls.
+  const res = harvestFarmTile(world, farmDest.tx, farmDest.ty, farmNowAbs, growthFactorAt(world, clock.day, farmDest.tx, farmDest.ty));
         if (res.ok) { saveWorld(world); ctx.setMessage(actor.name + ' harvested wheat'); }
       }
       npcPath.delete(actor.name);
@@ -252,12 +257,18 @@ export function stepTransients(ctx: NpcSimContext, state: NpcSimState): void {
 export function stepAnimals(ctx: NpcSimContext, state: NpcSimState): void {
   ctx.animalTick.current++;
   const tick = ctx.animalTick.current;
+  // BUILD 1084 (1.5): animals are less active in winter — they
+  // step every other 900ms tick (a deterministic phase per seed,
+  // so the forest does not freeze in lockstep). A skipped step
+  // also skips a wolf bite that tick: fewer bites in winter.
+  const activityPeriod = animalStepPeriod(animalActivityFactor(seasonForDay(ctx.clock.current.day)));
   const player = ctx.getPlayerPos();
   if (tick % ANIMAL_SPAWN_TOPUP_TICKS === 0) {
     (['bird', 'goat', 'deer', 'wolf', 'chicken'] as const).forEach((kind) => mountSpawnAnimal(ctx, kind));
   }
   const residents = ctx.npcActors.current;
   for (const a of ctx.animalActors.current) {
+    if ((tick + a.seed) % activityPeriod !== 0) continue;
     const occupied = (x: number, y: number) => (Math.round(player.x) === x && Math.round(player.y) === y)
       || residents.some((r) => r.alive && Math.round(r.x) === x && Math.round(r.y) === y)
       || ctx.transientActors.current.some((t) => Math.round(t.x) === x && Math.round(t.y) === y)

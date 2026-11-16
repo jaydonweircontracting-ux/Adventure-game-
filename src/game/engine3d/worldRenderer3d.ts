@@ -24,6 +24,8 @@ import { SKY_TOP, SKY_HORIZON, FIRST_PERSON_EYE, ZOOM_MIN, VIEW_FAR_PLANE } from
 import { applyZoomDelta } from './firstPerson';
 import { emitSkyObjects, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { nightFactor3dForMinutes, skyGradientForMinutes, FIGURE_NIGHT_CAP, rainForMinutes, emitRainStreaks, RAIN_STREAKS, RAIN_VERTS_PER_STREAK } from './atmosphere';
+import { growthFactorAt } from './livingWorld';
+import { rainIntensityFor, seasonForDay } from './climate';
 import { emitHouseFx, houseFxInputsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { absMinutes, farmStageAt, type FarmStage } from './farm';
 import { placedLanternTiles, placedFarmTiles, seedRectForHut, type PaletteKind } from './placements';
@@ -877,7 +879,7 @@ export class WorldRenderer {
     // function of (plantedAt, clock), so a harvest or a reload
     // changes the field with no world rebuild.
     const nowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
-    const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs) as FarmStage}));
+    const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs,growthFactorAt(world,clockRef.current.day,t.tx,t.ty)) as FarmStage}));
     // BUILD 1057: the founders' log pile rides the same fx call as
     // the wheat — the pile is per-frame fx (it grows with
     // deliveries), so it needs no world rebuild. The input is the
@@ -921,7 +923,12 @@ export class WorldRenderer {
     // the world itself goes dark (the 976 rationale, per segment).
     if(rainForMinutes(clockRef.current.day,clockRef.current.minutes)){
     const rainArr:number[]=[];
-    const rainVerts=emitRainStreaks(rainArr,player.x+.5,player.y+.5,playerBaseY,skyDriftRef.current);
+    // BUILD 1084 (1.5): rain is a real amount — the streak count
+    // scales with the season's rainfall at the player's tile
+    // (autumn full strength, summer about half), capped at the
+    // buffer's 120 streaks by rainIntensityFor.
+    const rainStreaks=Math.max(1,Math.round(RAIN_STREAKS*rainIntensityFor(seasonForDay(clockRef.current.day),player.x,player.y,playerBaseY)));
+    const rainVerts=emitRainStreaks(rainArr,player.x+.5,player.y+.5,playerBaseY,skyDriftRef.current,rainStreaks);
     if(rainVerts>0){
     gl.bindBuffer(gl.ARRAY_BUFFER,rainBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(rainArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
     gl.drawArrays(gl.TRIANGLES,0,rainVerts);

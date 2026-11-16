@@ -86,6 +86,8 @@ import {
   type IsoWorld,
 } from '../iso/isoWorld';
 import { soilAt as landformSoilAt, soilFactorAt as landformSoilFactorAt, type Soil } from './landforms';
+import { rainfallFor, seasonGrowthFactor, seasonRegrowthFactor, temperatureFor } from './climate';
+import { groundElevation } from './townLook';
 
 /** Persisted living-world save (versioned, strict on load). */
 export const LIVING_WORLD_SAVE_KEY = 'ag-3d-living-world-v1';
@@ -245,6 +247,25 @@ export function soilAt(world: IsoWorld, x: number, y: number): Soil {
  *  poor 0.6) — what farmStageAt scales its thresholds by. */
 export function soilFactorAt(world: IsoWorld, x: number, y: number): number {
   return landformSoilFactorAt(world, x, y);
+}
+
+/** BUILD 1084 (1.5): the farm growth factor for a tile — soil ×
+ *  season. The farm reads the season through this adapter, never
+ *  by importing climate.ts (climate owns the model, this adapter
+ *  exposes it, the farm consumes it). Spring is 1.0, so the camp
+ *  farm on Day 1 grows exactly as before (the M1069 guard). */
+export function growthFactorAt(world: IsoWorld, day: number, x: number, y: number): number {
+  return landformSoilFactorAt(world, x, y) * seasonGrowthFactor(seasonForDay(day));
+}
+
+/** BUILD 1084 (1.5): the temperature (°C) at a tile on a day. */
+export function temperatureAt(world: IsoWorld, day: number, x: number, y: number): number {
+  return temperatureFor(seasonForDay(day), x, y, groundElevation(x, y));
+}
+
+/** BUILD 1084 (1.5): the rainfall (mm/day) at a tile on a day. */
+export function rainfallAt(world: IsoWorld, day: number, x: number, y: number): number {
+  return rainfallFor(seasonForDay(day), x, y, groundElevation(x, y));
 }
 
 /** The adapter's persisted state: its own version + the coordinator's. */
@@ -469,6 +490,13 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
       events: [...state.livingWorld.civilization.events],
     },
   };
+  // BUILD 1084 (1.5): the forest regrows at the season's rate —
+  // the copy's growthRate is scaled for this advance only. The
+  // factor is the target day's season (the common case advances
+  // one day at a time, so it is exact; a multi-day catch-up batch
+  // uses the target day's season — a documented approximation).
+  const forestCopy = livingWorld.resources[FOREST_POPULATION_ID];
+  if (forestCopy) forestCopy.growthRate = paramsForResource('trees').growthRate * seasonRegrowthFactor(seasonForDay(day));
   const camp = livingWorld.civilization.settlements.find((s) => s.id === CAMP_SETTLEMENT_ID);
   if (camp) camp.population = founders.length;
   const kingdom = livingWorld.civilization.kingdoms.find((k) => k.id === 'wilderness');
@@ -490,10 +518,17 @@ export function advanceLivingWorldDay(input: LivingWorldDayInput): LivingWorldDa
     const toPlant = Math.max(0, targetLive - liveTrees);
     if (toPlant > 0) planted.push(...pickRegrowthTiles(world, toPlant, day));
   }
+  // BUILD 1084 (1.5): restore the forest's base growthRate — the
+  // returned state must never persist a season-scaled rate (the
+  // next advance re-scales from the base).
+  const restoredForest = result.state.resources[FOREST_POPULATION_ID];
+  const restoredLivingWorld: LivingWorldState = restoredForest && restoredForest.growthRate !== paramsForResource('trees').growthRate
+    ? { ...result.state, resources: { ...result.state.resources, [FOREST_POPULATION_ID]: { ...restoredForest, growthRate: paramsForResource('trees').growthRate } } }
+    : result.state;
   const next: LivingWorld3DState = {
     ...state,
     plantedTrees: [...state.plantedTrees, ...planted],
-    livingWorld: result.state,
+    livingWorld: restoredLivingWorld,
   };
   return {
     state: next,
