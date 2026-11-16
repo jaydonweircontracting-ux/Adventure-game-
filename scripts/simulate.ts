@@ -12465,6 +12465,74 @@ console.log('Testing the 24-simulated-hour settlement run — accelerated determ
   assert(foodNow1069 > 0, 'M1069: food does not end at 0 after the fix');
 }
 
+console.log('Testing the 3D world simulation module — the founder tick, clock, and wait step extracted from the view (BUILD 1070, 0x0D area 1)...');
+{
+  const WS = await import('../src/game/engine3d/worldSimulation3d.js');
+  const SS1070 = await import('../src/game/engine3d/settlementSim.js');
+  const F1070 = await import('../src/game/engine3d/founders.js');
+  const C1070 = await import('../src/game/engine3d/construction.js');
+  const J1070 = await import('../src/game/engine3d/jobs.js');
+  const CC1070 = await import('../src/game/engine3d/controlCenter.js');
+  const W1070 = await import('../src/game/iso/isoWorld.js');
+  // The module is verbatim from the view, so the sim pins its behaviour:
+  // the clock by speed, the tick's work + conservation, the wait step.
+  const sim1070 = SS1070.createSettlementSim(W1070.defaultWorld());
+  const clock1070 = { current: SS1070.settlementClock(sim1070) as { day: number; minutes: number } };
+  const ctx1070: WS.FounderSimContext = {
+    world: sim1070.world, clock: clock1070,
+    founders: { current: sim1070.founders },
+    construction: { current: sim1070.construction },
+    registry: { current: sim1070.registry },
+    jobBoard: { current: sim1070.board },
+    founderPath: sim1070.paths,
+    getPlayerPos: () => ({ x: 100, y: 100 }), // far from camp (see asserts1070)
+    npcActors: { current: [] },
+    waiting: { current: false },
+    needsWorldRebuild: { current: false },
+    setMessage: () => {}, setClockUi: () => {}, refreshResourceUi: () => {}, syncLivingWorld: () => false,
+  };
+  CC1070.setSimSpeed(0);
+  WS.advanceWorldSimClock(ctx1070);
+  assert(clock1070.current.day === 1 && clock1070.current.minutes === 480, 'M1070: the clock pauses at 0x');
+  CC1070.setSimSpeed(5);
+  WS.advanceWorldSimClock(ctx1070);
+  assert(clock1070.current.minutes === 485, 'M1070: the clock advances 5 minutes at 5x');
+  CC1070.setSimSpeed(1);
+  // 100 ticks, the clock +1 min per tick (the real game's whole-minute clock).
+  const trees1070a = F1070.treesInRadius(sim1070.world, F1070.FOUNDER_CAMP.x, F1070.FOUNDER_CAMP.y, F1070.FOUNDER_WORK_RADIUS).length;
+  let abs1070 = SS1070.SETTLEMENT_START_ABS;
+  for (let i = 0; i < 100; i++) {
+    abs1070 += 1;
+    ctx1070.clock.current = { day: Math.floor(abs1070 / 1440), minutes: abs1070 - Math.floor(abs1070 / 1440) * 1440 };
+    WS.runFounderSimTick(ctx1070);
+    sim1070.board = ctx1070.jobBoard.current; sim1070.registry = ctx1070.registry.current; sim1070.construction = ctx1070.construction.current; sim1070.founders = ctx1070.founders.current;
+  }
+  const trees1070b = F1070.treesInRadius(sim1070.world, F1070.FOUNDER_CAMP.x, F1070.FOUNDER_CAMP.y, F1070.FOUNDER_WORK_RADIUS).length;
+  const chopped1070 = (trees1070a - trees1070b) * 2;
+  const camp1070 = F1070.campWoodInRegistry(sim1070.registry);
+  const carried1070 = sim1070.founders.reduce((n: number, f: { carrying: number }) => n + f.carrying, 0);
+  const spent1070 = C1070.sitesOf(sim1070.construction).reduce((n: number, s: { spentWood: number }) => n + s.spentWood, 0);
+  assert(chopped1070 > 0 && camp1070 > 0, 'M1070: the module tick chopped trees and delivered wood in 100 ticks');
+  assert(camp1070 + carried1070 + spent1070 === chopped1070, 'M1070: wood conserves through the module tick (camp + carried + spent = chopped)');
+  assert(J1070.jobSummary(sim1070.board).open > 100, 'M1070: the module tick keeps the job board populated');
+  // The wait step: clock + re-choice, nobody moves, no wood appears.
+  const waitCtx1070: WS.WaitSimContext = {
+    world: sim1070.world, clock: clock1070,
+    founders: { current: sim1070.founders },
+    construction: { current: sim1070.construction },
+    registry: { current: sim1070.registry },
+    jobBoard: { current: sim1070.board },
+    syncLivingWorld: () => false, setClockUi: () => {},
+  };
+  const pos1070 = sim1070.founders.map((f: { x: number; y: number }) => [f.x, f.y].join(',')).join(';');
+  const wood1070 = F1070.campWoodInRegistry(sim1070.registry);
+  WS.simulateWorldSimWaitStep(waitCtx1070, 60);
+  assert(clock1070.current.minutes === 640, 'M1070: the wait step advances the clock 60 minutes');
+  assert(sim1070.founders.map((f: { x: number; y: number }) => [f.x, f.y].join(',')).join(';') === pos1070, 'M1070: the wait step moves nobody');
+  assert(F1070.campWoodInRegistry(sim1070.registry) === wood1070, 'M1070: the wait step delivers no wood (no fast-forward)');
+  console.log('M1070: 100 module ticks chopped=' + chopped1070 + ' camp=' + camp1070 + ' carried=' + carried1070 + ' spent=' + spent1070);
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
