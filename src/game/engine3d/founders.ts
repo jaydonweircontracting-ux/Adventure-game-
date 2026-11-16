@@ -131,11 +131,15 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  recovers it) and their carried GRAIN (carryingGrain — the
  *  harvest leg, like carrying for wood). v5 saves migrate with
  *  health 100 and carryingGrain 0 (no data — assume healthy and
- *  empty-handed, the fresh-social precedent). NOTE: the parked
- *  Tamsin stash (BUILD 1061, stash@{0}) ALSO claims v4 for the
- *  newcomer — when it resumes it must rebase its migration to
- *  v7 (this v6 means "has health + carryingGrain"). */
-export const FOUNDER_SAVE_VERSION = 6;
+ *  empty-handed, the fresh-social precedent). v7 (BUILD 1069,
+ *  0x0F): the camp's stored GRAIN (grainStock — the mill's
+ *  buffer; the 0x09 24h test proved a reload lost it, so the
+ *  food loop leaked grain on every save). v6 saves migrate with
+ *  grainStock 0. NOTE: the parked Tamsin stash (BUILD 1061,
+ *  stash@{0}) ALSO claims v4 for the newcomer — when it resumes
+ *  it must rebase its migration to v8 (this v7 means "has camp
+ *  grain"). */
+export const FOUNDER_SAVE_VERSION = 7;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -300,13 +304,15 @@ export function deliverFounderWood(stockpileWood: number, carrying: number): num
 
 /**
  * Seed the camp store from the founders save numbers (load path):
- * wood at the stockpile tile, food at the eat tile, source 'loaded'
- * (the save does not record where a unit came from), uncapped — the
- * same as the plain refs today. Pure.
+ * wood at the stockpile tile, food at the eat tile, grain at the
+ * stockpile tile (the mill's buffer), source 'loaded' (the save
+ * does not record where a unit came from), uncapped — the same
+ * as the plain refs today. Pure.
  */
-export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number): ResourceRegistry {
+export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number, grainStock: number): ResourceRegistry {
   let next = setStoreQty(registry, CAMP_STORE_ID, 'wood', stockpileWood, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
   next = setStoreQty(next, CAMP_STORE_ID, 'food', foodStock, { type: 'loaded' }, { location: { ...FOUNDER_EAT_TILE } });
+  next = setStoreQty(next, CAMP_STORE_ID, 'grain', grainStock, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
   return next;
 }
 
@@ -937,6 +943,10 @@ export type FoundersSaveState = {
   founders: FounderSave[];
   stockpileWood: number;
   foodStock: number;
+  /** BUILD 1069 (0x0F, v7): the camp's stored grain — the mill's
+   *  buffer. v6 saves have none and migrate to 0 (the 0x09 24h
+   *  test proved a reload lost it). */
+  grainStock: number;
   /** BUILD 1058: the first hut's construction (v2; v1 saves have
    *  none and migrate to a fresh one). */
   construction: ConstructionState;
@@ -969,6 +979,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     })),
     stockpileWood: 0,
     foodStock: FOUNDER_START_FOOD,
+    grainStock: 0,
     construction: freshConstruction(),
   };
 }
@@ -1061,7 +1072,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1066 (v5): construction from the save — a v5 save has the
   // per-site list (`sites`); a v4-or-earlier save has the single-hut
@@ -1215,7 +1226,13 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
     v.foodStock == null || !Number.isFinite(Number(v.foodStock))
       ? FOUNDER_START_FOOD
       : Math.max(0, Math.round(Number(v.foodStock)));
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, construction };
+  // BUILD 1069 (v7): the camp's stored grain — v6 saves have none
+  // and migrate to 0 (no data — assume the mill's buffer is empty).
+  const grainStock =
+    v.grainStock == null || !Number.isFinite(Number(v.grainStock))
+      ? 0
+      : Math.max(0, Math.round(Number(v.grainStock)));
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -1248,7 +1265,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, construction: ConstructionState): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, construction: ConstructionState): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -1277,6 +1294,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     })),
     stockpileWood,
     foodStock,
+    grainStock,
     construction: constructionFromSites(sitesOf(construction)),
   };
 }

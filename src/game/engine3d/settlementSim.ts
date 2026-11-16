@@ -94,7 +94,7 @@ import {
   type ConstructionState,
 } from './construction';
 import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './food';
-import { FARM_VILLAGER_RADIUS, seedCampFarmPlot } from './farm';
+import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot } from './farm';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
@@ -182,7 +182,7 @@ export function settlementClock(sim: SettlementSim): { day: number; minutes: num
  */
 export function createSettlementSim(world: IsoWorld): SettlementSim {
   const founders = FOUNDER_NAMES.map((name, i) => defaultFounderState(name, i, SETTLEMENT_START_ABS));
-  let registry = seedCampStore(createRegistry(), 0, 30);
+  let registry = seedCampStore(createRegistry(), 0, 30, 0);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   seedCampFarmPlot(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, SETTLEMENT_START_ABS, (x, y) => npcWalkable(world, x, y));
   return {
@@ -200,7 +200,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), sim.construction),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), sim.construction),
   );
 }
 
@@ -216,7 +216,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
   const save = migrateFoundersSave(JSON.parse(saveJson));
   if (!save) throw new Error('settlementSim: the save does not migrate');
   const founders = foundersStateOf(save);
-  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock);
+  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   return {
     world,
@@ -248,6 +248,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
 
   // Rebuild the job board from the world.
   sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs });
+
+  // BUILD 1069: the ready farm tiles this tick — computed once and
+  // fed to every founder's scorer, so food drives work.
+  const readyFarmCount = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS).length;
 
   // A newcomer arrives when a finished hut leaves a free bed, the camp
   // holds food, and the settlement is old enough. One at a time.
@@ -324,6 +328,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         currentJob,
         closestAffinity: tClosest ? tClosest.affinity : 50,
         companionAtCamp: tCompanionAtCamp,
+        readyFarmTiles: readyFarmCount,
       });
       f.activity = decision.activity;
       f.lastDecision = decision;

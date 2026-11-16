@@ -19,7 +19,7 @@ import { nightFactor3dForMinutes, skyGradientForMinutes, starAlphaForMinutes, ST
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
-import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
+import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, readyFarmTiles, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
@@ -2366,6 +2366,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // executed during a wait (no physical work fast-forwards);
         // the board is frozen, and the re-choice reads it.
         jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:stateRef.current.world,construction:constructionRef.current,founders:foundersRef.current,nowAbs});
+        // BUILD 1069: the ready farm tiles this wait step — the
+        // same feed as the real-time tick, so a wait never
+        // re-chooses by a different rule.
+        const wReadyFarm=readyFarmTiles(stateRef.current.world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS).length;
         for(let i=0;i<foundersRef.current.length;i++){
           const wf=foundersRef.current[i];
           // BUILD 1060: the wait-step re-choice is the SAME scorer
@@ -2393,6 +2397,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             currentJob:(()=>{const j=jobForFounder(jobBoardRef.current,wf.id);return j?(j.kind==='build'?'build':'chop'):null;})(),
             closestAffinity:wClosest?wClosest.affinity:50,
             companionAtCamp:wCompanionAtCamp,
+            readyFarmTiles:wReadyFarm,
           });
         }
         // BUILD 1058: construction does NOT advance during a wait
@@ -2402,7 +2407,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the registry (the camp store's numbers), not from the
         // plain refs — the registry is the authority, the save is
         // its serialization (v4 shape preserved).
-        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),constructionRef.current));
+        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),constructionRef.current));
       }
       remaining-=step;
       if(remaining<=0){cancelWait('done');return;}
@@ -3388,7 +3393,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // registry). The plain refs below are read mirrors, set by
       // refreshResourceUi — never written directly again.
       let reg=depositsFromWorld(createRegistry(),world);
-      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD);
+      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0);
       for(const f of states)reg=seedCarrierStore(reg,f);
       reg=playerInventoryToRegistry(reg,readSaved<Inventory3D>(INVENTORY_KEY,{}));
       registryRef.current=reg;
@@ -5606,6 +5611,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // Jobs whose target is gone are removed (open) or failed
       // (claimed — the holder re-targets below).
       jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs});
+      // BUILD 1069: the ready farm tiles this tick — computed once
+      // (the scan is over placed farm tiles only, a handful) and
+      // fed to every founder's scorer, so food drives work.
+      const readyFarmCount=readyFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS).length;
       // BUILD 1066 (0x06): the chain's closing loop — a newcomer
       // arrives when a finished hut leaves a free bed, the camp holds
       // food, and the settlement is old enough. One at a time (the
@@ -5672,7 +5681,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:founderDistToSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -6019,7 +6028,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // the registry (the camp store's numbers), not from the plain
       // refs — the registry is the authority, the save is its
       // serialization (v4 shape preserved).
-      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),constructionRef.current));
+      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),constructionRef.current));
     },900);
 
     // BUILD 1000: transient life. Mount spawns one traveler + one

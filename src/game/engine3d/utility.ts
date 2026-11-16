@@ -49,6 +49,12 @@
  *     the 1058 loose end closed: with the hut done and a full pile,
  *     the founders rest instead of chopping endlessly into a pile
  *     with no sink.
+ *   - BUILD 1069 food term: work = max(chop, 0.65 x (1 - food/20))
+ *     when a farm tile is ready and food < 20 (food 0 → 0.65, food
+ *     10 → 0.325, food 20+ → 0). A finished settlement with a full
+ *     pile still works for food — the 0x09 24h test proved the old
+ *     scorer starved it (food 30 → 0, farm never ran). The term
+ *     never beats night sleep (0.81) or a hungry founder's eat.
  * - build = 0 unless construction is pending (state !== 'done') AND
  *   the pile holds a step's wood (≥ 2) AND nobody else is building
  *   (one builder — the site has one work tile). Then 0.80 - 0.02 x
@@ -78,7 +84,7 @@
 
 import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
-import { healthWorkFactor } from './food';
+import { FARM_FOOD_THRESHOLD, healthWorkFactor } from './food';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, nearestUnfinishedSite } from './construction';
 import type { ConstructionState } from './construction';
 
@@ -112,6 +118,12 @@ export type UtilityWorldContext = {
    *  camp (within 3 tiles of the camp centre) — the premium only
    *  applies when the friend is actually there to rest with. */
   companionAtCamp?: boolean;
+  /** BUILD 1069: ready farm tiles within the founder's farm radius
+   *  (farm.ts readyFarmTiles) — the food term only fires when there
+   *  is wheat to harvest. Optional: absent means no farm data (the
+   *  1059/1067 callers) and the food term is 0, so old scores are
+   *  unchanged. */
+  readyFarmTiles?: number;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -156,6 +168,10 @@ export const UTILITY_PILE_FULL = 24;
 /** BUILD 1060: companionship premium on rest — the most a close
  *  friend at camp can add (at affinity 100 and full social need). */
 export const UTILITY_COMPANION_BONUS = 0.15;
+/** BUILD 1069: the food term — the most work is worth for food
+ *  alone (food 0 with a ready farm tile). Below night sleep (0.81)
+ *  and a hungry founder's eat (up to 1.2), above idle rest. */
+export const UTILITY_FOOD_TERM_MAX = 0.65;
 
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
@@ -186,15 +202,32 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
       : 0;
   const rest = clamp01(utilityNeed(needs.social) ** 2 * UTILITY_REST_WEIGHT + companionBonus);
 
-  let work = 0;
+  let chopWork = 0;
   if (nearestTreeDist !== null) {
     if (construction.state !== 'done') {
       const needWood = Math.max(0, HUT_COST_WOOD - construction.spentWood - stockpileWood);
-      work = clamp01(0.25 + 0.4 * Math.min(1, needWood / HUT_COST_WOOD) - distPenalty(nearestTreeDist));
+      chopWork = clamp01(0.25 + 0.4 * Math.min(1, needWood / HUT_COST_WOOD) - distPenalty(nearestTreeDist));
     } else {
-      work = clamp01(0.45 * Math.max(0, 1 - stockpileWood / UTILITY_PILE_FULL) - distPenalty(nearestTreeDist));
+      chopWork = clamp01(0.45 * Math.max(0, 1 - stockpileWood / UTILITY_PILE_FULL) - distPenalty(nearestTreeDist));
     }
   }
+  // BUILD 1069: the food term — when the camp is short of food
+  // (below FARM_FOOD_THRESHOLD) and a farm tile is ready, work is
+  // worth doing for the food alone. It scales with the shortage
+  // (food 0 → UTILITY_FOOD_TERM_MAX, food 10 → half, food 20+ → 0)
+  // and combines with the chop term by max, not addition: a founder
+  // already chopping for a needed hut gets no double score, and a
+  // founder with a full pile and a done hut still works for food.
+  // It never beats night sleep (0.81) or a hungry founder's eat
+  // (up to 1.2 when food is on hand) — food work yields to sleep
+  // and meals, and beats rest and idle chopping. No ready tile, no
+  // term (nothing to harvest).
+  const readyTiles = ctx.readyFarmTiles ?? 0;
+  const foodTerm =
+    readyTiles > 0 && foodStock < FARM_FOOD_THRESHOLD
+      ? UTILITY_FOOD_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
+      : 0;
+  let work = Math.max(chopWork, foodTerm);
 
   let build = 0;
   if (construction.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP && !builderTaken) {
