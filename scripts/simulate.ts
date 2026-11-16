@@ -12533,6 +12533,30 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
   console.log('M1070: 100 module ticks chopped=' + chopped1070 + ' camp=' + camp1070 + ' carried=' + carried1070 + ' spent=' + spent1070);
 }
 
+
+console.log('Testing the 3D world rendering + terrain module — the terrain geometry extracted from the view (BUILD 1071, 0x0D area 2)...');
+{
+  const WR1071 = await import('../src/game/engine3d/worldRender3d.js');
+  const W1071 = await import('../src/game/iso/isoWorld.js');
+  const world1071 = W1071.defaultWorld();
+  const center1071 = { x: 100, y: 100 };
+  const built1071 = WR1071.buildWorldVertices(world1071, center1071);
+  assert(built1071 instanceof Float32Array && built1071.length > 0 && built1071.length % 6 === 0, 'M1071: buildWorldVertices returns a non-empty vertex buffer');
+  const built1071b = WR1071.buildWorldVertices(world1071, center1071);
+  assert(built1071.length === built1071b.length && built1071.every((v: number, i: number) => v === built1071b[i]), 'M1071: buildWorldVertices is deterministic (bit-identical)');
+  const gen1071 = WR1071.buildWorldVerticesGen(world1071, center1071);
+  let r1071 = gen1071.next();
+  while (!r1071.done) r1071 = gen1071.next();
+  assert(r1071.value.length === built1071.length && r1071.value.every((v: number, i: number) => v === built1071[i]), 'M1071: the generator run to completion matches the sync build bit-for-bit');
+  const builder1071 = WR1071.createWorldBuilder(world1071, center1071);
+  let steps1071 = 0, done1071 = false;
+  while (!done1071 && steps1071 < 1000) { done1071 = builder1071.step(0.5); steps1071++; }
+  assert(done1071 && steps1071 > 1, 'M1071: the resumable builder completes and is really time-sliced');
+  assert(builder1071.result().length === built1071.length && builder1071.result().every((v: number, i: number) => v === built1071[i]), 'M1071: the builder result matches the sync build bit-for-bit');
+  assert(WR1071.FOG_NEAR === 300 && WR1071.FOG_FAR === 600 && WR1071.FAR_BLOB_RANGE === 150, 'M1071: the fog constants are 300/600/150');
+  console.log('M1071: world buffer verts=' + (built1071.length / 6) + ' builder steps=' + steps1071);
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
