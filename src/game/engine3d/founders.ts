@@ -91,7 +91,16 @@ import {
   withdrawFrom,
   type ResourceRegistry,
 } from './resourceRegistry';
-import type { ConstructionState } from './construction';
+import {
+  HUT_SITES,
+  HUT_SLEEP_TILES,
+  constructionFromSites,
+  freshConstruction,
+  sitesOf,
+  type ConstructionState,
+  type HutState,
+  type SiteState,
+} from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { WheatTri } from './farm';
 
@@ -110,10 +119,16 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  saves migrate with the id derived from the name, which is the
  *  same string the 1062 coordinator derived on every advance, so
  *  the coordinator's view of founder identity does not change.
- *  NOTE: the parked Tamsin stash (BUILD 1061, stash@{0}) ALSO
- *  claims v4 for the newcomer — when it resumes it must rebase
- *  its migration to v5 (this v4 means "has stable ids"). */
-export const FOUNDER_SAVE_VERSION = 4;
+ *  v5 (BUILD 1066, 0x06): each founder's BED (which hut, which
+ *  tile — the chain's housing capacity), the multi-site
+ *  construction (construction.ts sites list), and residents
+ *  beyond the 3 names (newcomers who arrived through the chain).
+ *  v4 saves migrate with beds from the founder's index (hut 0)
+ *  and the construction as hut 1. NOTE: the parked Tamsin stash
+ *  (BUILD 1061, stash@{0}) ALSO claims v4 for the newcomer —
+ *  when it resumes it must rebase its migration to v6 (this v5
+ *  means "has beds + residents + multi-site construction"). */
+export const FOUNDER_SAVE_VERSION = 5;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -138,6 +153,17 @@ export const FOUNDER_SLEEP_TILES = [
 
 /** New founders — none of these names is in the old 47-roster. */
 export const FOUNDER_NAMES = ['Marlow', 'Greta', 'Perrin'];
+
+/** A founder's bed: which hut (site index) and which sleep tile.
+ *  Saved (v5) — the bed is the housing capacity a resident
+ *  occupies, so it must survive a reload. */
+export type FounderBed = { hut: number; x: number; y: number };
+
+/** Newcomer names for the chain's arrivals (BUILD 1066) — none is
+ *  in the old 47-roster, none is a founder, none is Tamsin (the
+ *  parked stash's newcomer — a different resident, on the user's
+ *  word only). Checked in the 1066 asserts against ROSTER_3D. */
+export const RESIDENT_NAMES = ['Bram', 'Fern', 'Silas', 'Tessa', 'Orin', 'Hazel'];
 
 /** Meals the founders brought with them (3 founders × 3 meals/day
  *  ≈ 3 days of food; nothing replenishes it yet). */
@@ -374,7 +400,7 @@ export function campFoodInRegistry(registry: ResourceRegistry): number {
 
 // --- Founder state ---
 
-export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building';
+export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving';
 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
@@ -411,6 +437,11 @@ export type FounderState = {
    *  founder's social state. Saved (v3); the runtime copy is the
    *  live one the tick records into. */
   social: FounderSocial;
+  /** BUILD 1066: the founder's bed (which hut, which sleep tile).
+   *  Saved (v5). Assigned at spawn/arrival from a free bed in a
+   *  completed hut; the sleep destination and the door transition
+   *  both read it, so a resident always sleeps in THEIR hut. */
+  bed: FounderBed;
   /** BUILD 1060: the tile this founder rests on (session-only,
    *  never saved) — a tile beside their closest founder at camp
    *  (memory.ts restTileFor), or null for the camp centre. Set when
@@ -418,6 +449,69 @@ export type FounderState = {
    *  changes away. */
   restTile: { x: number; y: number } | null;
 };
+
+/** The first free bed: the first sleep tile in a completed hut
+ *  that no founder in `taken` (a set of "hut,x,y" keys) occupies,
+ *  or null when every bed in every finished hut is taken. A bed
+ *  only exists in a FINISHED hut — an unfinished hut has no beds
+ *  yet, so capacity never counts a hut still being built. Pure. */
+export function freeBed(construction: ConstructionState, taken: ReadonlySet<string>): FounderBed | null {
+  const sites = sitesOf(construction);
+  for (let i = 0; i < sites.length; i++) {
+    if (sites[i].state !== 'done') continue;
+    for (const t of HUT_SITES[i].sleepTiles) {
+      const key = i + ',' + t.x + ',' + t.y;
+      if (!taken.has(key)) return { hut: i, x: t.x, y: t.y };
+    }
+  }
+  return null;
+}
+
+/** The next newcomer name (the first pool name nobody has), or
+ *  null when the pool is exhausted. Pure. */
+export function nextResidentName(founders: readonly { name: string }[]): string | null {
+  for (const n of RESIDENT_NAMES) {
+    if (!founders.some((f) => f.name === n)) return n;
+  }
+  return null;
+}
+
+/**
+ * Spawn a new resident at an entry tile (BUILD 1066): a full
+ * FounderState, walking in (workState 'arriving', destination the
+ * camp centre — the tick flips them to 'toTree' when they arrive,
+ * so they join the workforce on foot, never by teleport). Needs
+ * start fresh; social is fresh toward the existing founders
+ * (neutral, no memories — the relationship is earned, like the
+ * founders'). The bed is assigned by the caller from freeBed.
+ * Pure.
+ */
+export function spawnResident(
+  name: string,
+  bed: FounderBed,
+  entry: { x: number; y: number },
+  clockAbs: number,
+  others: readonly { name: string }[],
+): FounderState {
+  return {
+    id: founderIdFor(name),
+    name,
+    x: entry.x,
+    y: entry.y,
+    needs: { hunger: 80, energy: 90, social: 60 },
+    activity: 'work',
+    workState: 'arriving',
+    carrying: 0,
+    chopTicks: 0,
+    buildTicks: 0,
+    treeTarget: null,
+    workTile: null,
+    lastAbs: clockAbs,
+    social: freshFounderSocial(others.map((o) => o.name).filter((n) => n !== name)),
+    bed,
+    restTile: null,
+  };
+}
 
 /** Absolute game minutes: the clock's (day, minutes) as one number. */
 export function founderAbsMinutes(day: number, minutes: number): number {
@@ -427,6 +521,7 @@ export function founderAbsMinutes(day: number, minutes: number): number {
 /** Fresh runtime state for one founder, spawned at their sleep tile. */
 export function defaultFounderState(name: string, index: number, clockAbs: number): FounderState {
   const sleep = FOUNDER_SLEEP_TILES[index % FOUNDER_SLEEP_TILES.length];
+  const bedTile = HUT_SLEEP_TILES[index % HUT_SLEEP_TILES.length];
   return {
     id: founderIdFor(name),
     name,
@@ -442,15 +537,19 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     workTile: null,
     lastAbs: clockAbs,
     social: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
+    bed: { hut: 0, x: bedTile.x, y: bedTile.y },
     restTile: null,
   };
 }
 
 /** Destination tile for a founder's current activity. */
 export function founderDestination(f: FounderState): { x: number; y: number } {
+  // BUILD 1066: a newcomer still walking in from the entry tile
+  // heads for the camp centre first (workState 'arriving') — they
+  // join the workforce only once they arrive.
+  if (f.workState === 'arriving') return FOUNDER_CAMP_CENTRE;
   if (f.activity === 'sleep') {
-    const i = FOUNDER_NAMES.indexOf(f.name);
-    return FOUNDER_SLEEP_TILES[i >= 0 ? i : 0];
+    return { x: f.bed.x, y: f.bed.y };
   }
   if (f.activity === 'eat') return FOUNDER_EAT_TILE;
   // BUILD 1060: rest is beside the founder's closest founder at
@@ -703,6 +802,10 @@ export type FounderSave = {
   /** BUILD 1058: build ticks on the current hut work step. */
   buildTicks: number;
   lastAbs: number;
+  /** BUILD 1066: the founder's bed (v5; v4 saves have none and
+   *  migrate to the founder's index tile in hut 0, residents to
+   *  the first free bed). */
+  bed?: FounderBed;
   /** BUILD 1060: pairwise affinity + memories (v3; v2 saves have
    *  none and migrate to fresh social). Named socialState — the
    *  save's `social` field is already the needs social (a number). */
@@ -738,16 +841,31 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
       chopTicks: 0,
       buildTicks: 0,
       lastAbs: clockAbs,
+      bed: { hut: 0, x: HUT_SLEEP_TILES[i].x, y: HUT_SLEEP_TILES[i].y },
       socialState: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
     })),
     stockpileWood: 0,
     foodStock: FOUNDER_START_FOOD,
-    construction: { state: 'none', progress: 0, spentWood: 0 },
+    construction: freshConstruction(),
   };
 }
 
 function clampNeed(n: number, fallback: number): number {
   return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
+}
+
+/** A saved bed ({hut, x, y}) is valid when the hut index exists
+ *  and the tile is one of that hut's sleep tiles. Pure. */
+function validSavedBed(value: unknown): FounderBed | null {
+  if (!value || typeof value !== 'object') return null;
+  const b = value as Record<string, unknown>;
+  const hut = Number(b.hut);
+  const x = Number(b.x);
+  const y = Number(b.y);
+  if (!Number.isInteger(hut) || hut < 0 || hut >= HUT_SITES.length) return null;
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
+  if (!HUT_SITES[hut].sleepTiles.some((t) => t.x === x && t.y === y)) return null;
+  return { hut, x, y };
 }
 
 /**
@@ -819,22 +937,32 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
-  // BUILD 1058: construction from the save (v2), else fresh. A
-  // 'done' construction with a founder still marked building/toSite
-  // (saved mid-completion) resets that founder to 'toTree' below.
+  // BUILD 1066 (v5): construction from the save — a v5 save has the
+  // per-site list (`sites`); a v4-or-earlier save has the single-hut
+  // shape (top-level state/progress/spentWood = hut 1) and the other
+  // sites are fresh. A 'done' hut 1 with a founder still marked
+  // building/toSite (saved mid-completion) resets that founder to
+  // 'toTree' below.
   const rawC = (v.construction && typeof v.construction === 'object' ? v.construction : {}) as Record<string, unknown>;
-  const cState = rawC.state === 'building' || rawC.state === 'done' ? rawC.state : 'none';
-  const construction: ConstructionState = {
-    state: cState,
-    progress: Math.max(0, Math.min(6, Math.round(Number(rawC.progress) || 0))),
-    spentWood: Math.max(0, Math.round(Number(rawC.spentWood) || 0)),
+  const rawSites = Array.isArray(rawC.sites) ? (rawC.sites as Record<string, unknown>[]) : null;
+  const siteState = (raw: Record<string, unknown> | undefined): SiteState => {
+    const st = raw?.state === 'building' || raw?.state === 'done' ? (raw.state as HutState) : 'none';
+    let progress = Math.max(0, Math.min(6, Math.round(Number(raw?.progress) || 0)));
+    let spentWood = Math.max(0, Math.round(Number(raw?.spentWood) || 0));
+    if (st === 'done') {
+      progress = 6;
+      spentWood = 12;
+    }
+    return { state: st, progress, spentWood };
   };
-  if (construction.state === 'done') {
-    construction.progress = 6;
-    construction.spentWood = 12;
-  }
+  const sites: SiteState[] = HUT_SITES.map((_, i) => {
+    if (rawSites && rawSites[i]) return siteState(rawSites[i]);
+    if (i === 0) return siteState(rawC);
+    return { state: 'none' as HutState, progress: 0, spentWood: 0 };
+  });
+  const construction: ConstructionState = constructionFromSites(sites);
   // BUILD 1063 (F-1): stable ids — a stored id is authoritative
   // and kept; a missing/empty/colliding one is replaced by the
   // derived id (suffixed on the pathological case where even the
@@ -864,10 +992,10 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         ? (s.activity as FounderActivity)
         : 'work';
     let workState: FounderWorkState =
-      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building'
+      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building' || s?.workState === 'arriving'
         ? (s.workState as FounderWorkState)
         : 'toTree';
-    if (construction.state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
+    if (construction.sites[0].state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
     return {
       id,
       name,
@@ -882,11 +1010,73 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       chopTicks: Math.max(0, Math.round(num('chopTicks', 0))),
       buildTicks: Math.max(0, Math.round(num('buildTicks', 0))),
       lastAbs: Math.max(0, Math.round(num('lastAbs', 0))),
+      // BUILD 1066 (v5): the bed — from the save when valid, else
+      // the founder's index tile in hut 0 (v4 saves have no bed).
+      bed: validSavedBed(s?.bed) ?? { hut: 0, x: HUT_SLEEP_TILES[i].x, y: HUT_SLEEP_TILES[i].y },
       // BUILD 1060: social from the save (v3) — v2 and older have
       // none and migrate to fresh (neutral, no memories).
       socialState: validateFounderSocial(s?.socialState, name),
     };
   });
+  // BUILD 1066 (v5): residents — saved founders beyond the 3 names
+  // (newcomers who arrived through the chain). They keep their
+  // name, id, needs, and bed; a missing/invalid/taken bed gets the
+  // first free bed in a completed hut (or hut 0's first sleep tile
+  // when no hut is done yet — a safety net, not the normal path,
+  // since a resident only arrives when a bed is free).
+  const takenBeds = new Set(founders.map((f) => (f.bed ? f.bed.hut + ',' + f.bed.x + ',' + f.bed.y : '')));
+  for (const raw of rawFounders) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const rName = typeof r.name === 'string' ? r.name : '';
+    if (!rName || FOUNDER_NAMES.includes(rName)) continue;
+    if (founders.some((f) => f.name === rName)) continue;
+    const num = (k: string, d: number): number => {
+      const n = Number(r[k]);
+      return Number.isFinite(n) ? n : d;
+    };
+    let rId = typeof r.id === 'string' && (r.id as string).length > 0 ? (r.id as string) : founderIdFor(rName);
+    if (takenIds.has(rId)) {
+      rId = founderIdFor(rName);
+      let n = 2;
+      while (takenIds.has(rId)) {
+        rId = founderIdFor(rName) + ':' + n;
+        n++;
+      }
+    }
+    takenIds.add(rId);
+    const rActivity =
+      r.activity === 'sleep' || r.activity === 'eat' || r.activity === 'rest' || r.activity === 'work' || r.activity === 'build'
+        ? (r.activity as FounderActivity)
+        : 'work';
+    let rWorkState: FounderWorkState =
+      r.workState === 'toTree' || r.workState === 'toStockpile' || r.workState === 'idle' || r.workState === 'toSite' || r.workState === 'building' || r.workState === 'arriving'
+        ? (r.workState as FounderWorkState)
+        : 'toTree';
+    if (construction.sites[0].state === 'done' && (rWorkState === 'toSite' || rWorkState === 'building')) rWorkState = 'toTree';
+    const rBed = validSavedBed(r.bed);
+    const bed = rBed && !takenBeds.has(rBed.hut + ',' + rBed.x + ',' + rBed.y)
+      ? rBed
+      : freeBed(construction, takenBeds) ?? { hut: 0, x: HUT_SLEEP_TILES[0].x, y: HUT_SLEEP_TILES[0].y };
+    takenBeds.add(bed.hut + ',' + bed.x + ',' + bed.y);
+    founders.push({
+      id: rId,
+      name: rName,
+      x: Math.round(num('x', FOUNDER_CAMP.x)),
+      y: Math.round(num('y', FOUNDER_CAMP.y)),
+      carrying: Math.max(0, Math.round(num('carrying', 0))),
+      hunger: clampNeed(num('hunger', 80), 80),
+      energy: clampNeed(num('energy', 90), 90),
+      social: clampNeed(num('social', 60), 60),
+      activity: rActivity,
+      workState: rWorkState,
+      chopTicks: Math.max(0, Math.round(num('chopTicks', 0))),
+      buildTicks: Math.max(0, Math.round(num('buildTicks', 0))),
+      lastAbs: Math.max(0, Math.round(num('lastAbs', 0))),
+      bed,
+      socialState: validateFounderSocial(r.socialState, rName),
+    });
+  }
   const stockpileWood =
     v.stockpileWood == null || !Number.isFinite(Number(v.stockpileWood))
       ? 0
@@ -945,6 +1135,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       chopTicks: f.chopTicks,
       buildTicks: f.buildTicks,
       lastAbs: f.lastAbs,
+      bed: { ...f.bed },
       socialState: {
         affinity: { ...f.social.affinity },
         affinityDay: { ...f.social.affinityDay },
@@ -953,30 +1144,49 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     })),
     stockpileWood,
     foodStock,
-    construction: { ...construction },
+    construction: constructionFromSites(sitesOf(construction)),
   };
 }
 
 /** Save shape → runtime state (positions validated by the caller
- *  against the live world; tree targets re-found on demand). Pure. */
+ *  against the live world; tree targets re-found on demand). The
+ *  bed comes from the save when valid; a missing/invalid/taken bed
+ *  falls back to the founder's index tile in hut 0 (the 3
+ *  founders) or the first free bed in a completed hut (a
+ *  resident). Pure. */
 export function foundersStateOf(save: FoundersSaveState): FounderState[] {
-  return save.founders.map((s) => ({
-    id: typeof s.id === 'string' && s.id.length > 0 ? s.id : founderIdFor(s.name),
-    name: s.name,
-    x: s.x,
-    y: s.y,
-    needs: { hunger: s.hunger, energy: s.energy, social: s.social },
-    activity: s.activity,
-    workState: s.workState,
-    carrying: s.carrying,
-    chopTicks: s.chopTicks,
-    buildTicks: s.buildTicks ?? 0,
-    treeTarget: null,
-    workTile: null,
-    lastAbs: s.lastAbs,
-    social: validateFounderSocial(s.socialState, s.name),
-    restTile: null,
-  }));
+  const taken = new Set<string>();
+  return save.founders.map((s) => {
+    const idx = FOUNDER_NAMES.indexOf(s.name);
+    const savedBed = validSavedBed(s.bed);
+    let bed: FounderBed;
+    if (savedBed && !taken.has(savedBed.hut + ',' + savedBed.x + ',' + savedBed.y)) {
+      bed = savedBed;
+    } else if (idx >= 0) {
+      bed = { hut: 0, x: FOUNDER_SLEEP_TILES[idx].x, y: FOUNDER_SLEEP_TILES[idx].y };
+    } else {
+      bed = freeBed(save.construction, taken) ?? { hut: 0, x: FOUNDER_SLEEP_TILES[0].x, y: FOUNDER_SLEEP_TILES[0].y };
+    }
+    taken.add(bed.hut + ',' + bed.x + ',' + bed.y);
+    return {
+      id: typeof s.id === 'string' && s.id.length > 0 ? s.id : founderIdFor(s.name),
+      name: s.name,
+      x: s.x,
+      y: s.y,
+      needs: { hunger: s.hunger, energy: s.energy, social: s.social },
+      activity: s.activity,
+      workState: s.workState,
+      carrying: s.carrying,
+      chopTicks: s.chopTicks,
+      buildTicks: s.buildTicks ?? 0,
+      treeTarget: null,
+      workTile: null,
+      lastAbs: s.lastAbs,
+      social: validateFounderSocial(s.socialState, s.name),
+      bed,
+      restTile: null,
+    };
+  });
 }
 
 // --- Stockpile visual: a log stack in the fx buffer ---

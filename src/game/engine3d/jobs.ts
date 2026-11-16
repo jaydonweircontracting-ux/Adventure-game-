@@ -68,12 +68,13 @@
  *   founder can ever claim another's carry), completes when the
  *   carrier empties. The transport leg is a job with a claim, a
  *   completion, and a conserving registry transfer.
- * - build: the hut, one job for the whole build (progress lives
- *   in the construction state — banked across claims, so a
- *   builder who leaves and another who takes over continue the
- *   same job). One builder at a time: the claim is the site.
+ * - build: a hut site, one job per unfinished site (BUILD 1066 —
+ *   two sites, two jobs, one builder each). Progress lives in the
+ *   construction state — banked across claims, so a builder who
+ *   leaves and another who takes over continue the same job. One
+ *   builder at a time per site: the claim is the site.
  *   A standalone haul job (store → store, contested claim) is
- *   the 0x06 extension point, not this build: the carrier is
+ *   the 0x0E extension point, not this build: the carrier is
  *   single-owner, so a deliver claim can never be contested.
  *
  * IDENTITY: a job's id is derived from its kind + target
@@ -93,7 +94,7 @@
  */
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
-import { HUT_APPROACH } from './construction';
+import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId } from './entityIds';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
@@ -141,11 +142,19 @@ export type JobBoard = {
   lastFailedReason: string | null;
 };
 
-/** The build job's target: the hut site (the site never moves,
- *  so the one build job is always this id). */
-export const HUT_SITE_TARGET_ID = 'hut-site';
-/** The build job's id: one job for the whole hut. */
+/** The build job's target for the FIRST hut site (the 1058 hut).
+ *  BUILD 1066: build jobs are per-site — one job per unfinished
+ *  hut site, so two builders can work two sites in parallel (one
+ *  builder per site: each site has one work tile, its approach).
+ *  The job's targetId is the site id ('hut-site-0' / 'hut-site-1')
+ *  and its tile is the site's approach. */
+export const HUT_SITE_TARGET_ID = 'hut-site-0';
+/** The build job's id for the first hut site. */
 export const HUT_SITE_JOB_ID = jobIdFor('build', HUT_SITE_TARGET_ID);
+/** The build job's id for a hut site. */
+export function buildJobIdFor(siteId: string): string {
+  return jobIdFor('build', siteId);
+}
 
 /** An empty board (no jobs — discovery fills it from the world). */
 export function createJobBoard(): JobBoard {
@@ -242,23 +251,33 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     changed = true;
   }
 
-  // --- Build job: one job while the hut is unfinished. ---
-  if (construction.state !== 'done') {
-    if (!next.jobs[HUT_SITE_JOB_ID]) {
-      next.jobs[HUT_SITE_JOB_ID] = {
-        id: HUT_SITE_JOB_ID,
-        kind: 'build',
-        targetId: HUT_SITE_TARGET_ID,
-        tile: { ...HUT_APPROACH },
-        state: 'open',
-        claimedBy: null,
-        createdAbs: nowAbs,
-      };
+  // --- Build jobs: one per unfinished hut site (BUILD 1066). A
+  // site's job is created while the site is unfinished and
+  // completes when the site is done — so two builders can work two
+  // sites in parallel, one per site (each site has one work tile,
+  // its approach). A claimed job whose site finished completes
+  // (the work is done, the hut stands).
+  const sites = sitesOf(construction);
+  for (let i = 0; i < sites.length; i++) {
+    const site = HUT_SITES[i];
+    const id = buildJobIdFor(site.id);
+    if (sites[i].state !== 'done') {
+      if (!next.jobs[id]) {
+        next.jobs[id] = {
+          id,
+          kind: 'build',
+          targetId: site.id,
+          tile: { ...site.approach },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[id]) {
+      next = completeJob(next, id);
       changed = true;
     }
-  } else if (next.jobs[HUT_SITE_JOB_ID]) {
-    next = completeJob(next, HUT_SITE_JOB_ID);
-    changed = true;
   }
 
   // --- Deliver jobs: one per founder carrying wood. ---
@@ -469,12 +488,20 @@ export function scorerTreeDist(board: JobBoard, founderId: string, campX: number
   return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
 }
 
-/** The founder holding the build job (the builder), or null when
- *  the site is free (no build job, or the job is open). */
-export function buildJobClaimedBy(board: JobBoard): string | null {
-  const job = board.jobs[HUT_SITE_JOB_ID];
-  if (!job || job.state !== 'claimed') return null;
-  return job.claimedBy;
+/** The founder holding a build job (the builder), or null when no
+ *  build job is claimed. With a site id, the builder of THAT
+ *  site's job (one builder per site); without one, the builder of
+ *  any claimed build job. Pure. */
+export function buildJobClaimedBy(board: JobBoard, siteId?: string): string | null {
+  if (siteId !== undefined) {
+    const job = board.jobs[buildJobIdFor(siteId)];
+    if (!job || job.state !== 'claimed') return null;
+    return job.claimedBy;
+  }
+  for (const job of Object.values(board.jobs)) {
+    if (job.kind === 'build' && job.state === 'claimed') return job.claimedBy;
+  }
+  return null;
 }
 
 /** The board as numbers: open/claimed by kind, plus the session

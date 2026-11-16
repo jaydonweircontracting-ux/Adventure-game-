@@ -78,7 +78,7 @@
 
 import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
-import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP } from './construction';
+import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, nearestUnfinishedSite } from './construction';
 import type { ConstructionState } from './construction';
 
 /** The five scored activities — the 1057 four plus 'build'. */
@@ -235,7 +235,18 @@ export function founderTileDist(a: { x: number; y: number }, b: { x: number; y: 
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-/** Distance from a founder's position to the build site. */
-export function founderDistToSite(pos: { x: number; y: number }): number {
+/** Distance from a founder's position to the build site. BUILD
+ *  1066: with a construction state, the nearest UNFINISHED site's
+ *  approach tile (the site the founder would actually build); with
+ *  no construction (the sim's old callers), the first hut's
+ *  approach — the old behaviour. When every site is done there is
+ *  nothing to build, so the distance is far (the build score is 0
+ *  then anyway, gated on the construction being pending). */
+export function founderDistToSite(pos: { x: number; y: number }, construction?: ConstructionState): number {
+  if (construction) {
+    const site = nearestUnfinishedSite(construction, pos);
+    if (site) return founderTileDist(pos, site.approach);
+    return 999;
+  }
   return founderTileDist(pos, HUT_APPROACH);
 }

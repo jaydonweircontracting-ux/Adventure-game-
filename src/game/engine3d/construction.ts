@@ -93,6 +93,63 @@ export const HUT_SLEEP_TILES = [
   { x: 127, y: 119 },
   { x: 129, y: 119 },
 ];
+// --- BUILD 1066 (0x06): the second hut — the chain's housing.
+// The first hut sleeps the 3 founders (capacity 3 = population 3),
+// so no resident can ever arrive. The second hut is the capacity
+// the chain creates: surveyed on the real fresh world (verify1066
+// survey — north of camp is clear, door reachable in 2 steps;
+// west has a rock on the centre tile, east has three trees in the
+// rect). A hut site is one cottage: centre, 4x3 rect, south door,
+// approach tile one south of the door, and 3 sleep tiles on the
+// north row with the door lane kept clear. ---
+/** One hut site: the geometry a cottage needs. */
+export type HutSite = {
+  /** Stable id ('hut-site-0', 'hut-site-1') — the build job's
+   *  target and the bed's hut index. */
+  id: string;
+  centre: { x: number; y: number };
+  rect: { x0: number; y0: number; x1: number; y1: number };
+  door: { x: number; y: number };
+  approach: { x: number; y: number };
+  sleepTiles: { x: number; y: number }[];
+};
+/** The hut sites, in build order. Site 0 is the 1058 hut (east of
+ *  camp); site 1 is the 1066 hut (north of camp). */
+export const HUT_SITES: HutSite[] = [
+  {
+    id: 'hut-site-0',
+    centre: { ...HUT_CENTRE },
+    rect: { ...HUT_RECT },
+    door: { ...HUT_DOOR },
+    approach: { ...HUT_APPROACH },
+    sleepTiles: HUT_SLEEP_TILES.map((t) => ({ ...t })),
+  },
+  {
+    id: 'hut-site-1',
+    centre: { x: 124, y: 116 },
+    rect: { x0: 122, y0: 115, x1: 125, y1: 117 },
+    door: { x: 124, y: 117 },
+    approach: { x: 124, y: 118 },
+    sleepTiles: [
+      { x: 122, y: 115 },
+      { x: 123, y: 115 },
+      { x: 125, y: 115 },
+    ],
+  },
+];
+/** A hut site by its id, or undefined when unknown. */
+export function hutSiteById(id: string): HutSite | undefined {
+  return HUT_SITES.find((s) => s.id === id);
+}
+/** A hut site's index in HUT_SITES, or -1 when unknown. */
+export function hutSiteIndexById(id: string): number {
+  return HUT_SITES.findIndex((s) => s.id === id);
+}
+/** The hut site containing a tile (inside its rect), or undefined
+ *  when the tile is in no hut. */
+export function hutSiteForTile(x: number, y: number): HutSite | undefined {
+  return HUT_SITES.find((s) => x >= s.rect.x0 && x <= s.rect.x1 && y >= s.rect.y0 && y <= s.rect.y1);
+}
 /** Placement kind for the hut (validatePlacement 'house-cottage'). */
 export const HUT_KIND = 'house-cottage' as const;
 
@@ -107,31 +164,143 @@ export const HUT_TICKS_PER_STEP = 3;
 
 export type HutState = 'none' | 'building' | 'done';
 
-/** Construction progress (saved in the founders save, v2). */
-export type ConstructionState = {
+/** One site's progress (0..HUT_WORK_STEPS, 2 wood per step). */
+export type SiteState = {
   state: HutState;
   /** Completed work steps, 0..HUT_WORK_STEPS. */
   progress: number;
-  /** Wood actually spent on the hut (2 per step). */
+  /** Wood actually spent on this hut (2 per step). */
   spentWood: number;
 };
 
-/** Fresh construction: nothing started. */
+/**
+ * Construction progress (saved in the founders save, v2 — v5 in
+ * BUILD 1066). BUILD 1066: the state is a list — one entry per hut
+ * site — PLUS a top-level mirror of the ACTIVE site (the first
+ * unfinished site; when all are done, the last site). The mirror is
+ * what keeps the old single-hut readers working: the sim's M1058
+ * asserts construct {state, progress, spentWood} literals with no
+ * `sites` at all, the scorer reads `construction.state` /
+ * `construction.spentWood`, and the HUD reads the label — all of
+ * them mean the ACTIVE site, which is the site the founders are
+ * building now. The pure functions below are the only writers, and
+ * they always update the mirror together with the site they change,
+ * so the two can never drift. `sitesOf` normalizes a state with no
+ * `sites` (an old literal or an old save) to a one-site list built
+ * from the top-level fields, so old shapes keep working.
+ */
+export type ConstructionState = {
+  /** The ACTIVE site's state (mirror — see the doc above). */
+  state: HutState;
+  /** The ACTIVE site's completed work steps (mirror). */
+  progress: number;
+  /** The ACTIVE site's wood spent (mirror). */
+  spentWood: number;
+  /** One entry per hut site, in HUT_SITES order. */
+  sites: SiteState[];
+};
+
+/** The per-site list for a construction state (normalized — an old
+ *  state with no `sites` is the single site its top-level fields
+ *  describe). Pure. */
+export function sitesOf(c: ConstructionState): SiteState[] {
+  if (Array.isArray((c as { sites?: unknown }).sites) && (c.sites as SiteState[]).length === HUT_SITES.length) {
+    return c.sites;
+  }
+  // Old shape (no `sites`, or a short list): site 0 is the
+  // top-level fields, the rest are fresh — so an old save that says
+  // "hut done" means hut 1 is done and hut 2 is still to build.
+  const out: SiteState[] = [{ state: c.state, progress: c.progress, spentWood: c.spentWood }];
+  while (out.length < HUT_SITES.length) out.push({ state: 'none', progress: 0, spentWood: 0 });
+  return out;
+}
+
+/** The mirror fields for a per-site list: the ACTIVE site (the
+ *  first unfinished one; when all are done, the last site). Pure. */
+export function mirrorFor(sites: SiteState[]): { state: HutState; progress: number; spentWood: number } {
+  const active = sites.find((s) => s.state !== 'done') ?? sites[sites.length - 1] ?? { state: 'none' as HutState, progress: 0, spentWood: 0 };
+  return { state: active.state, progress: active.progress, spentWood: active.spentWood };
+}
+
+/** A construction state from a per-site list (mirror computed). Pure. */
+export function constructionFromSites(sites: SiteState[]): ConstructionState {
+  return { ...mirrorFor(sites), sites: sites.map((s) => ({ ...s })) };
+}
+
+/** The index of the ACTIVE site (the first unfinished one), or null
+ *  when every site is done. Pure. */
+export function activeSiteIndex(c: ConstructionState): number | null {
+  const sites = sitesOf(c);
+  const i = sites.findIndex((s) => s.state !== 'done');
+  return i >= 0 ? i : null;
+}
+
+/** The ACTIVE site's geometry, or null when every site is done. Pure. */
+export function activeSite(c: ConstructionState): HutSite | null {
+  const i = activeSiteIndex(c);
+  return i === null ? null : HUT_SITES[i];
+}
+
+/** True when any site is unfinished (there is housing left to
+ *  build). Pure. */
+export function hasUnfinishedSite(c: ConstructionState): boolean {
+  return activeSiteIndex(c) !== null;
+}
+
+/** The nearest unfinished site to a position (Manhattan to its
+ *  approach tile), or null when every site is done. Pure. */
+export function nearestUnfinishedSite(c: ConstructionState, pos: { x: number; y: number }): HutSite | null {
+  const sites = sitesOf(c);
+  let best: HutSite | null = null;
+  let bestD = Infinity;
+  for (let i = 0; i < sites.length; i++) {
+    if (sites[i].state === 'done') continue;
+    const d = Math.abs(HUT_SITES[i].approach.x - pos.x) + Math.abs(HUT_SITES[i].approach.y - pos.y);
+    if (d < bestD) {
+      bestD = d;
+      best = HUT_SITES[i];
+    }
+  }
+  return best;
+}
+
+/** Housing capacity: beds in completed huts (3 per hut). Pure. */
+export function housingCapacity(c: ConstructionState): number {
+  return sitesOf(c).filter((s) => s.state === 'done').length * HUT_SLEEP_TILES.length;
+}
+
+/** Fresh construction: nothing started, on any site. */
 export function freshConstruction(): ConstructionState {
-  return { state: 'none', progress: 0, spentWood: 0 };
+  return constructionFromSites(HUT_SITES.map(() => ({ state: 'none' as HutState, progress: 0, spentWood: 0 })));
 }
 
-/** True when the tile is inside the hut rect. */
+/** True when the tile is inside ANY hut rect. */
 export function insideHutRect(x: number, y: number): boolean {
-  return x >= HUT_RECT.x0 && x <= HUT_RECT.x1 && y >= HUT_RECT.y0 && y <= HUT_RECT.y1;
+  return hutSiteForTile(x, y) !== undefined;
 }
 
-/** The hut placement exists in the world (a 'house' item on the
- *  exact hut rect — the same check the player-facing lists use). */
-export function hutPlacementExists(world: IsoWorld): boolean {
+/** A hut site's placement exists in the world (a 'house' item on
+ *  the site's exact rect — the same check the player-facing lists
+ *  use). Pure read. */
+export function hutSitePlacementExists(world: IsoWorld, site: HutSite): boolean {
   return (world.placements ?? []).some(
-    (p) => p.kind === 'house' && p.x0 === HUT_RECT.x0 && p.y0 === HUT_RECT.y0 && p.x1 === HUT_RECT.x1 && p.y1 === HUT_RECT.y1,
+    (p) => p.kind === 'house' && p.x0 === site.rect.x0 && p.y0 === site.rect.y0 && p.x1 === site.rect.x1 && p.y1 === site.rect.y1,
   );
+}
+
+/** The hut placement exists in the world (the first hut — the
+ *  1058 site). */
+export function hutPlacementExists(world: IsoWorld): boolean {
+  return hutSitePlacementExists(world, HUT_SITES[0]);
+}
+
+/** A hut site's stable id — the id of the 'house' PlacedItem on
+ *  the site's rect, or null when no hut placement exists yet. */
+export function hutSitePlacementId(world: IsoWorld, site: HutSite): string | null {
+  const p = (world.placements ?? []).find(
+    (q) => q.kind === 'house' && q.x0 === site.rect.x0 && q.y0 === site.rect.y0 && q.x1 === site.rect.x1 && q.y1 === site.rect.y1,
+  );
+  return p && typeof p.id === 'string' && p.id.length > 0 ? p.id : null;
 }
 
 /**
@@ -156,16 +325,16 @@ export function hutPlacementId(world: IsoWorld): string | null {
  * own tiles may fall inside the rect. Returns the problems (empty =
  * clear). Pure read.
  */
-export function hutSiteProblems(world: IsoWorld): string[] {
+export function hutSiteProblems(world: IsoWorld, site: HutSite = HUT_SITES[0]): string[] {
   const problems: string[] = [];
   const fp = houseFootprint(HUT_KIND, 0);
-  if (fp.w !== HUT_RECT.x1 - HUT_RECT.x0 + 1 || fp.d !== HUT_RECT.y1 - HUT_RECT.y0 + 1) {
+  if (fp.w !== site.rect.x1 - site.rect.x0 + 1 || fp.d !== site.rect.y1 - site.rect.y0 + 1) {
     problems.push('hut rect does not match the cottage footprint');
   }
-  const door = doorForRect(HUT_RECT.x0, HUT_RECT.y0, HUT_RECT.x1, HUT_RECT.y1, 'south');
-  if (door.x !== HUT_DOOR.x || door.y !== HUT_DOOR.y) problems.push('door is not where the constants say');
-  for (let y = HUT_RECT.y0; y <= HUT_RECT.y1; y++) {
-    for (let x = HUT_RECT.x0; x <= HUT_RECT.x1; x++) {
+  const door = doorForRect(site.rect.x0, site.rect.y0, site.rect.x1, site.rect.y1, 'south');
+  if (door.x !== site.door.x || door.y !== site.door.y) problems.push('door is not where the constants say');
+  for (let y = site.rect.y0; y <= site.rect.y1; y++) {
+    for (let x = site.rect.x0; x <= site.rect.x1; x++) {
       if (terrainAt(world, x, y) === 'water') problems.push(`water@${x},${y}`);
       if ((world.trees ?? []).some((t) => t.tx === x && t.ty === y)) problems.push(`tree@${x},${y}`);
       if ((world.rocks ?? []).some((r) => r.tx === x && r.ty === y)) problems.push(`rock@${x},${y}`);
@@ -185,16 +354,16 @@ export function hutSiteProblems(world: IsoWorld): string[] {
  * reach the door too). Returns the step counts, or nulls when a
  * route does not exist. Pure read.
  */
-export function hutDoorReachable(world: IsoWorld): { campToApproach: number | null; approachToSpawn: number | null } {
-  const toApproach = planPathNpc(world, { x: FOUNDER_CAMP.x, y: FOUNDER_CAMP.y }, HUT_APPROACH);
-  const toSpawn = planPathNpc(world, HUT_APPROACH, { x: 99, y: 105 });
+export function hutDoorReachable(world: IsoWorld, site: HutSite = HUT_SITES[0]): { campToApproach: number | null; approachToSpawn: number | null } {
+  const toApproach = planPathNpc(world, { x: FOUNDER_CAMP.x, y: FOUNDER_CAMP.y }, site.approach);
+  const toSpawn = planPathNpc(world, site.approach, { x: 99, y: 105 });
   return { campToApproach: toApproach ? toApproach.length : null, approachToSpawn: toSpawn ? toSpawn.length : null };
 }
 
 /** True when the site is clear AND the door is reachable. */
-export function verifyHutSite(world: IsoWorld): { ok: boolean; problems: string[]; campToApproach: number | null; approachToSpawn: number | null } {
-  const problems = hutSiteProblems(world);
-  const reach = hutDoorReachable(world);
+export function verifyHutSite(world: IsoWorld, site: HutSite = HUT_SITES[0]): { ok: boolean; problems: string[]; campToApproach: number | null; approachToSpawn: number | null } {
+  const problems = hutSiteProblems(world, site);
+  const reach = hutDoorReachable(world, site);
   if (reach.campToApproach === null) problems.push('no path camp -> door approach');
   if (reach.approachToSpawn === null) problems.push('no path door approach -> player spawn');
   return { ok: problems.length === 0, problems, ...reach };
@@ -223,15 +392,20 @@ export function canBuild(c: ConstructionState, stockpileWood: number): boolean {
 export function spendBuildStep(
   c: ConstructionState,
   stockpileWood: number,
+  siteIndex: number | null = activeSiteIndex(c),
 ): { construction: ConstructionState; stockpileWood: number; completed: boolean; spent: boolean } {
-  if (c.state === 'done' || c.progress >= HUT_WORK_STEPS || stockpileWood < HUT_WOOD_PER_STEP) {
-    return { construction: c, stockpileWood, completed: c.progress >= HUT_WORK_STEPS, spent: false };
+  const sites = sitesOf(c);
+  const i = siteIndex ?? activeSiteIndex(c) ?? 0;
+  const site = sites[i] ?? sites[0];
+  if (site.state === 'done' || site.progress >= HUT_WORK_STEPS || stockpileWood < HUT_WOOD_PER_STEP) {
+    return { construction: c, stockpileWood, completed: site.progress >= HUT_WORK_STEPS, spent: false };
   }
-  const progress = c.progress + 1;
-  const spentWood = c.spentWood + HUT_WOOD_PER_STEP;
+  const progress = site.progress + 1;
+  const spentWood = site.spentWood + HUT_WOOD_PER_STEP;
   const completed = progress >= HUT_WORK_STEPS;
+  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood } : { ...s }));
   return {
-    construction: { state: 'building', progress, spentWood },
+    construction: constructionFromSites(next),
     stockpileWood: stockpileWood - HUT_WOOD_PER_STEP,
     completed,
     spent: true,
@@ -260,9 +434,13 @@ export function spendBuildStep(
 export function spendBuildStepFromRegistry(
   registry: ResourceRegistry,
   c: ConstructionState,
+  siteIndex: number | null = activeSiteIndex(c),
 ): { registry: ResourceRegistry; construction: ConstructionState; completed: boolean; spent: boolean } {
-  if (c.state === 'done' || c.progress >= HUT_WORK_STEPS || storeQty(registry, CAMP_STORE_ID, 'wood') < HUT_WOOD_PER_STEP) {
-    return { registry, construction: c, completed: c.progress >= HUT_WORK_STEPS, spent: false };
+  const sites = sitesOf(c);
+  const i = siteIndex ?? activeSiteIndex(c) ?? 0;
+  const site = sites[i] ?? sites[0];
+  if (site.state === 'done' || site.progress >= HUT_WORK_STEPS || storeQty(registry, CAMP_STORE_ID, 'wood') < HUT_WOOD_PER_STEP) {
+    return { registry, construction: c, completed: site.progress >= HUT_WORK_STEPS, spent: false };
   }
   const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', HUT_WOOD_PER_STEP);
   if (w.taken < HUT_WOOD_PER_STEP) {
@@ -271,21 +449,27 @@ export function spendBuildStepFromRegistry(
     // back what was taken and spend nothing.
     return { registry, construction: c, completed: false, spent: false };
   }
-  const progress = c.progress + 1;
-  const spentWood = c.spentWood + HUT_WOOD_PER_STEP;
+  const progress = site.progress + 1;
+  const spentWood = site.spentWood + HUT_WOOD_PER_STEP;
   const completed = progress >= HUT_WORK_STEPS;
+  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood } : { ...s }));
   return {
     registry: w.registry,
-    construction: { state: 'building', progress, spentWood },
+    construction: constructionFromSites(next),
     completed,
     spent: true,
   };
 }
 
-/** Flip a ready construction (progress 6) to 'done' once its hut
- *  placement has actually landed. Pure. */
-export function finishConstruction(c: ConstructionState): ConstructionState {
-  return { state: 'done', progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD };
+/** Flip a ready site (progress 6) to 'done' once its hut placement
+ *  has actually landed. Defaults to the active site. Pure. */
+export function finishConstruction(c: ConstructionState, siteIndex: number | null = activeSiteIndex(c)): ConstructionState {
+  const sites = sitesOf(c);
+  const i = siteIndex ?? activeSiteIndex(c);
+  if (i === null || i < 0 || i >= sites.length) return c;
+  if (sites[i].state === 'done') return c;
+  const next = sites.map((s, j) => (j === i ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD } : { ...s }));
+  return constructionFromSites(next);
 }
 
 /**
@@ -297,16 +481,68 @@ export function finishConstruction(c: ConstructionState): ConstructionState {
  * on completion) is treated as done. Pure.
  */
 export function reconcileConstruction(c: ConstructionState, hutPlaced: boolean): ConstructionState {
-  if (c.state === 'done' && !hutPlaced) return freshConstruction();
-  if (c.state !== 'done' && hutPlaced) return { state: 'done', progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD };
+  // Site 0 only (hutPlaced is the FIRST hut's placement — the
+  // signature is the sim's M1058 contract, so it does not change).
+  // Sites 1+ are reconciled by reconcileExtraSites (which has the
+  // world). Returns the SAME object when nothing changes (the sim
+  // asserts reference equality for the unchanged case).
+  const sites = sitesOf(c);
+  const s0 = sites[0];
+  if (s0.state === 'done' && !hutPlaced) {
+    const next = sites.map((s, j) => (j === 0 ? { state: 'none' as HutState, progress: 0, spentWood: 0 } : { ...s }));
+    return constructionFromSites(next);
+  }
+  if (s0.state !== 'done' && hutPlaced) {
+    const next = sites.map((s, j) => (j === 0 ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD } : { ...s }));
+    return constructionFromSites(next);
+  }
   return c;
 }
 
-/** Hut progress as a "3/6" label for the HUD / E reports. */
+/**
+ * Reconcile sites 1+ against the world: a 'done' site whose hut
+ * placement is gone (the player removed it with Build Remove)
+ * resets to 'none' — the founders rebuild it from the pile; a
+ * 'building' site with a placement present is treated as done.
+ * Site 0 is reconcileConstruction's job (above). Returns the SAME
+ * object when nothing changes. Pure.
+ */
+export function reconcileExtraSites(c: ConstructionState, world: IsoWorld): ConstructionState {
+  const sites = sitesOf(c);
+  let changed = false;
+  const next = sites.map((s, j) => {
+    if (j === 0) return s;
+    const placed = hutSitePlacementExists(world, HUT_SITES[j]);
+    if (s.state === 'done' && !placed) {
+      changed = true;
+      return { state: 'none' as HutState, progress: 0, spentWood: 0 };
+    }
+    if (s.state !== 'done' && placed) {
+      changed = true;
+      return { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD };
+    }
+    return s;
+  });
+  return changed ? constructionFromSites(next) : c;
+}
+
+/** Hut progress as a label for the HUD / E reports. One hut:
+ *  "3/6", "done", or "—" (the sim's M1058 literals, which have no
+ *  `sites`, keep the old label). Two huts: "1 done · 2/6" — the
+ *  finished count plus the active site's progress — or "done" when
+ *  every site is finished. Pure. */
 export function hutProgressLabel(c: ConstructionState): string {
-  if (c.state === 'done') return 'done';
-  if (c.state === 'building') return `${c.progress}/${HUT_WORK_STEPS}`;
-  return '—';
+  if (!Array.isArray((c as { sites?: unknown }).sites) || (c.sites as SiteState[]).length !== HUT_SITES.length) {
+    if (c.state === 'done') return 'done';
+    if (c.state === 'building') return `${c.progress}/${HUT_WORK_STEPS}`;
+    return '—';
+  }
+  const sites = c.sites;
+  const done = sites.filter((s) => s.state === 'done').length;
+  if (done === sites.length) return 'done';
+  const active = sites.find((s) => s.state !== 'done');
+  const prog = active ? `${active.progress}/${HUT_WORK_STEPS}` : '—';
+  return done > 0 ? `${done} done · ${prog}` : prog;
 }
 
 // --- Build-site visual: foundation + frame that grows with progress ---
@@ -325,7 +561,7 @@ export const SITE_FRAME_DARK: [number, number, number] = [0.34, 0.24, 0.13];
  * 12-triangle box; faces alternate light/dark for shading (the
  * stockpile-logs precedent). Pure geometry.
  */
-export function constructionSiteTrisFor(baseY: number, progress: number): WheatTri[] {
+export function constructionSiteTrisFor(baseY: number, progress: number, site: HutSite = HUT_SITES[0]): WheatTri[] {
   if (progress >= HUT_WORK_STEPS) return [];
   const out: WheatTri[] = [];
   const pushBox = (cx: number, cz: number, y0: number, len: number, h: number, d: number, col: [number, number, number], dark: [number, number, number]) => {
@@ -349,26 +585,42 @@ export function constructionSiteTrisFor(baseY: number, progress: number): WheatT
       out.push({ a: v[a], b: v[cc], c: v[dd], col: cl });
     }
   };
-  const cx = HUT_RECT.x0 + (HUT_RECT.x1 - HUT_RECT.x0 + 1) / 2;
-  const cz = HUT_RECT.y0 + (HUT_RECT.y1 - HUT_RECT.y0 + 1) / 2;
-  const w = HUT_RECT.x1 - HUT_RECT.x0 + 1;
-  const d = HUT_RECT.y1 - HUT_RECT.y0 + 1;
+  const cx = site.rect.x0 + (site.rect.x1 - site.rect.x0 + 1) / 2;
+  const cz = site.rect.y0 + (site.rect.y1 - site.rect.y0 + 1) / 2;
+  const w = site.rect.x1 - site.rect.x0 + 1;
+  const d = site.rect.y1 - site.rect.y0 + 1;
   // Foundation slab covering the rect.
   pushBox(cx, cz, baseY, w - 0.2, 0.1, d - 0.2, SITE_FOUNDATION, SITE_FOUNDATION);
   if (progress >= 2) {
     // Four corner posts.
-    const px = [HUT_RECT.x0 + 0.15, HUT_RECT.x1 + 0.85];
-    const pz = [HUT_RECT.y0 + 0.15, HUT_RECT.y1 + 0.85];
+    const px = [site.rect.x0 + 0.15, site.rect.x1 + 0.85];
+    const pz = [site.rect.y0 + 0.15, site.rect.y1 + 0.85];
     for (const x of px) for (const z of pz) pushBox(x, z, baseY + 0.1, 0.14, 0.9, 0.14, SITE_FRAME, SITE_FRAME_DARK);
   }
   if (progress >= 4) {
     // Wall beams along the top of the posts (north + south edges).
-    pushBox(cx, HUT_RECT.y0 + 0.15, baseY + 1.0, w - 0.2, 0.12, 0.14, SITE_FRAME, SITE_FRAME_DARK);
-    pushBox(cx, HUT_RECT.y1 + 0.85, baseY + 1.0, w - 0.2, 0.12, 0.14, SITE_FRAME, SITE_FRAME_DARK);
+    pushBox(cx, site.rect.y0 + 0.15, baseY + 1.0, w - 0.2, 0.12, 0.14, SITE_FRAME, SITE_FRAME_DARK);
+    pushBox(cx, site.rect.y1 + 0.85, baseY + 1.0, w - 0.2, 0.12, 0.14, SITE_FRAME, SITE_FRAME_DARK);
   }
   if (progress >= 5) {
     // Roof ridge beam.
     pushBox(cx, cz, baseY + 1.15, w - 0.2, 0.12, 0.14, SITE_FRAME, SITE_FRAME_DARK);
+  }
+  return out;
+}
+
+/**
+ * Build-site triangles for EVERY site still building (the view's
+ * per-frame fx call): the foundation + frame for each unfinished
+ * site at its own rect, so the second hut grows visibly too. A
+ * finished site renders its real hut placement instead. Pure.
+ */
+export function constructionSiteTrisForAll(baseY: number, c: ConstructionState): WheatTri[] {
+  const out: WheatTri[] = [];
+  const sites = sitesOf(c);
+  for (let i = 0; i < sites.length; i++) {
+    if (sites[i].state === 'done') continue;
+    out.push(...constructionSiteTrisFor(baseY, sites[i].progress, HUT_SITES[i]));
   }
   return out;
 }

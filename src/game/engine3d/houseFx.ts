@@ -56,7 +56,7 @@ import { wheatStalksFor, type FarmWheatInput } from './farm';
 // (per-frame, time-varying — it grows with deliveries, so it cannot
 // live in the static world buffer).
 import { stockpileLogsFor } from './founders';
-import { constructionSiteTrisFor } from './construction';
+import { constructionSiteTrisFor, type HutSite } from './construction';
 import { CLOUD_DRIFT_TILES_PER_SEC } from './sky';
 import { placedHutRects, seedRectForHut } from './placements';
 import { sameHut, type InteriorQuad } from './interiors';
@@ -521,7 +521,7 @@ export interface StockpileFxInput { tx: number; ty: number; baseY: number; wood:
 /** BUILD 1058: the first hut's build site — its heightfield base y
  *  and the REAL construction progress (0..5: foundation, posts,
  *  beams, roof frame; at 6 the real hut placement renders instead). */
-export interface ConstructionSiteFxInput { baseY: number; progress: number; }
+export interface ConstructionSiteFxInput { baseY: number; progress: number; site?: HutSite; }
 
 /**
  * Emit the house fx for one frame into `out` (6 floats per vertex:
@@ -621,7 +621,7 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
   // pass (deterministic).
   let siteTiles = 0, siteVerts = 0;
   for (const t of site) {
-    const tris = constructionSiteTrisFor(t.baseY, t.progress);
+    const tris = constructionSiteTrisFor(t.baseY, t.progress, t.site);
     if (tris.length === 0) continue;
     const cost = tris.length * 3;
     if (!fits(cost)) break;
