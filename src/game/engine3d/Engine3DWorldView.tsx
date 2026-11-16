@@ -120,6 +120,11 @@ import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, memoryCountsFor, recordSharedEvent, restTileFor } from './memory';
 import type { SharedEventType } from './memory';
+// BUILD 1062: the living-world coordinator (F-0) — the adapter that
+// reads real 3D state (founders, trees, clock) and writes back real
+// trees + a persisted camp ledger. The view owns the ref; the 1s
+// clock timer and the wait step call the sync on the day boundary.
+import { advanceLivingWorldDay, forestDensity, freshLivingWorldState, livingWorldSummary, loadLivingWorldState, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SLEEP_TILES, HUT_KIND, HUT_WORK_STEPS, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStep, finishConstruction, reconcileConstruction, hutPlacementExists, insideHutRect, hutProgressLabel, freshConstruction, type ConstructionState } from './construction';
 import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
@@ -2166,6 +2171,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const foundersRef=useRef<FounderState[]>([]);
   const founderStockpileRef=useRef(0);
   const founderFoodRef=useRef(FOUNDER_START_FOOD);
+  // BUILD 1062: the living-world coordinator state (the adapter's
+  // persisted state — null until the mount effect loads it, like the
+  // founders save). The 1s clock timer and the wait step advance it.
+  const livingWorldRef=useRef<LivingWorld3DState|null>(null);
   // BUILD 1058: the first hut's construction (progress + wood spent).
   // The tick owns it; the founders save persists it (v3).
   const constructionRef=useRef<ConstructionState>(freshConstruction());
@@ -2197,7 +2206,31 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // count (wood delivered by the founders) + the shared food stock.
   // Updated by the founder tick / wait steps when either changes.
   // BUILD 1058: + the hut progress ('—' / '3/6' / 'done').
-  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,hut:'—'});
+  // BUILD 1062: + the forest density % from the living-world adapter
+  // (live stored trees / baseline) — '—' until the adapter loads.
+  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,hut:'—',forest:'—'});
+  // BUILD 1062: the forest % for the Camp line, from the live tree
+  // count and the adapter's fixed baseline. '—' when the adapter has
+  // not loaded yet (first render, before the mount effect).
+  const forestPct=(trees:number)=>{const s=livingWorldRef.current;return s?String(Math.round(forestDensity(trees,s.baselineTrees)*100)):'—';};
+  // BUILD 1062: advance the living world to the clock's day — called
+  // from the 1s clock timer and the wait step, the two places the
+  // clock moves. Idempotent (same-day calls are no-ops), so both
+  // callers can never double-advance a day. Plants any regrown trees
+  // into the world (saved + rebuilt, like a chop), persists the
+  // adapter state, refreshes the Camp line, and reports a coordinator
+  // event once when one fires. Returns true when anything changed.
+  const syncLivingWorld=(world:IsoWorld)=>{
+    if(!FOUNDERS_ENABLED||!livingWorldRef.current)return false;
+    const res=advanceLivingWorldDay({state:livingWorldRef.current,clock:clockRef.current,founders:foundersRef.current,world});
+    if(res.advancedDays===0&&res.planted.length===0)return false;
+    livingWorldRef.current=res.state;
+    if(res.planted.length>0){world.trees=[...world.trees,...res.planted];saveWorld(world);needsWorldRebuild.current=true;}
+    saveLivingWorldState(res.state);
+    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
+    if(res.events.length>0)setMessage(res.events[res.events.length-1].description);
+    return true;
+  };
   const waitingRef=useRef(false);
   const waitTimerRef=useRef<number|null>(null);
   const waitStartHpRef=useRef(100);
@@ -2231,6 +2264,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(waitInterrupted(waitStartHpRef.current,healthRef.current)){cancelWait('interrupted');return;}
       const step=Math.min(WAIT_STEP_MINUTES,remaining);
       clockRef.current=advanceClock(clockRef.current,step);saveClock(clockRef.current);setClockUi(clockRef.current);
+      // BUILD 1062: a wait can cross midnight, and the founder tick
+      // is paused during waits — so the wait step advances the living
+      // world itself (same idempotent sync as the 1s clock timer).
+      syncLivingWorld(stateRef.current.world);
       // BUILD 1057: waiting founders simulate per wait-step — needs
       // decay + activity re-choice by the stepped clock (sleep
       // restores energy). Positions, chopping, and deliveries do NOT
@@ -3255,7 +3292,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(constructionRef.current.state==='done'){
         for(const f of foundersRef.current)if(f.workState==='toSite'||f.workState==='building')f.workState='toTree';
       }
-      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});
+      // BUILD 1062: the living-world coordinator (F-0) — load the saved
+      // adapter state, or fresh from the live world (real trees, real
+      // founders, real day). A corrupt/unknown save starts fresh; the
+      // coordinator never advances a disconnected sim.
+      livingWorldRef.current=loadLivingWorldState()??freshLivingWorldState(world,foundersRef.current,clockRef.current);
+      setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
     }
     // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
     // are built once per world load; hut-derived anchors resolve live per
@@ -4926,7 +4968,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // count the founder does not remember. Only non-zero counts
         // are shown.
         if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+rel);return}
-        if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food');return}
+        if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){
+          // BUILD 1062: the stockpile tile is the camp's status board —
+          // the living-world numbers ride along (forest density from
+          // the real tree count, trees regrown, the day the sim has
+          // advanced through). All numbers are live, never invented.
+          const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,world.trees.length,clockRef.current.day):null;
+          setMessage('Settlers\' stockpile: '+founderStockpileRef.current+' wood · '+founderFoodRef.current+' food'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
+          return;
+        }
         // BUILD 1058: E at the founders' hut reports its state:
         // progress + wood spent while building, whose hut it is once
         // finished. After the door check (the door enters) and after
@@ -5151,7 +5201,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // (probe setup only — the game itself only ever changes the
       // pile by delivery or by a build step).
       getConstruction:()=>({...constructionRef.current,hutPlaced:hutPlacementExists(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
-      setStockpileWood:(n:number)=>{founderStockpileRef.current=Math.max(0,Math.round(n));setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});return founderStockpileRef.current;},
+      // BUILD 1062 test hooks (probes only — no gameplay effect): the
+      // living-world coordinator state (day advanced, forest density
+      // from the real tree count, trees regrown, camp ledger, latest
+      // event), the stored tree count, and the nearest tree (probe
+      // setup — lets a probe walk the player to a tree and chop it).
+      getLivingWorld:()=>{const s=livingWorldRef.current;return s?livingWorldSummary(s,stateRef.current.world.trees.length,clockRef.current.day):null;},
+      getTreeCount:()=>stateRef.current.world.trees.length,
+      getNearestTree:(x:number,y:number)=>nearestTreeTile(stateRef.current.world,Math.round(x),Math.round(y),FOUNDER_WORK_RADIUS),
+      setStockpileWood:(n:number)=>{founderStockpileRef.current=Math.max(0,Math.round(n));setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});return founderStockpileRef.current;},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -5225,6 +5283,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const c=clockRef.current;let minutes=c.minutes+1,day=c.day;
       if(minutes>=1440){minutes-=1440;day+=1;}
       clockRef.current={minutes,day};saveClock(clockRef.current);setClockUi(clockRef.current);
+      // BUILD 1062: the living-world coordinator advances on the real
+      // day boundary (this tick rolls the day at midnight). The sync
+      // is idempotent — same-day calls are no-ops.
+      syncLivingWorld(world);
     },1000);
     // BUILD 993: roster NPCs walk their 2.5D schedules. Destinations
     // recompute from the clock every tick (anchors resolve hut doorsteps
@@ -5604,7 +5666,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         if((f.activity==='work'||f.activity==='build')&&f.workState==='idle')f.workState='toTree';
       }
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
-      if(stockChanged||hutChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current)});
+      if(stockChanged||hutChanged)setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(world.trees.length)});
       saveFoundersSave(foundersSaveOf(foundersRef.current,founderStockpileRef.current,founderFoodRef.current,constructionRef.current));
     },900);
 
@@ -5789,7 +5851,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Hut {campUi.hut}</span></div>
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Hut {campUi.hut} · Forest {campUi.forest}%</span></div>
     </div>}
     {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
         A centred panel (the sheet covers the canvas, so taps land on it,

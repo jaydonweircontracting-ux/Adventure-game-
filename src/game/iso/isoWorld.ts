@@ -343,6 +343,25 @@ export const TREE_PROTECTED_TILES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Tiles a tree must never stand on: rocks, crates, stalls, hut rects,
+ * placement rects, the player-spawn ring, and the protected camp tiles.
+ * BUILD 1062: extracted from migrateTreeDensity (same set, same order)
+ * so the living-world regrowth plants by the identical rule instead
+ * of a second copy that could drift.
+ */
+export function treeBlockedKeys(w: IsoWorld): Set<string> {
+  const blocked = new Set<string>();
+  for (const r of w.rocks ?? []) blocked.add(terrainKey(r.tx, r.ty));
+  for (const c of w.crates ?? []) blocked.add(terrainKey(c.tx, c.ty));
+  for (const s of w.stalls ?? []) for (let x = s.x0; x <= s.x1; x++) blocked.add(terrainKey(x, s.y0));
+  for (const h of w.huts ?? []) for (let y = h.y0; y <= h.y1; y++) for (let x = h.x0; x <= h.x1; x++) blocked.add(terrainKey(x, y));
+  for (const p of w.placements ?? []) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) blocked.add(terrainKey(x, y));
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blocked.add(terrainKey(w.playerStart.tx + dx, w.playerStart.ty + dy));
+  for (const k of TREE_PROTECTED_TILES) blocked.add(k);
+  return blocked;
+}
+
+/**
  * Migrate a stored world to the forest-cluster tree rule. Adds every
  * tile that is a tree under the NEW rule but was NOT a tree under the
  * OLD rule — and nothing else — so:
@@ -367,14 +386,7 @@ export function migrateTreeDensity(w: IsoWorld): { world: IsoWorld; added: numbe
   const C = 100; // town centre, same constant as defaultWorld
   const existing = new Set((w.trees ?? []).map((t) => terrainKey(t.tx, t.ty)));
   const removed = new Set([...(w.removedTrees ?? []), ...(w.removedWildTrees ?? [])]);
-  const blocked = new Set<string>();
-  for (const r of w.rocks ?? []) blocked.add(terrainKey(r.tx, r.ty));
-  for (const c of w.crates ?? []) blocked.add(terrainKey(c.tx, c.ty));
-  for (const s of w.stalls ?? []) for (let x = s.x0; x <= s.x1; x++) blocked.add(terrainKey(x, s.y0));
-  for (const h of w.huts ?? []) for (let y = h.y0; y <= h.y1; y++) for (let x = h.x0; x <= h.x1; x++) blocked.add(terrainKey(x, y));
-  for (const p of w.placements ?? []) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) blocked.add(terrainKey(x, y));
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blocked.add(terrainKey(w.playerStart.tx + dx, w.playerStart.ty + dy));
-  for (const k of TREE_PROTECTED_TILES) blocked.add(k);
+  const blocked = treeBlockedKeys(w);
   const added: TilePoint[] = [];
   for (let y = 3; y < w.h - 3; y++) for (let x = 3; x < w.w - 3; x++) {
     const inTown = Math.abs(x - C) <= 24 && Math.abs(y - C) <= 24;

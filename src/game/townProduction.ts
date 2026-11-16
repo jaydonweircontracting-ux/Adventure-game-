@@ -19,15 +19,19 @@ type ProductionLedger = CivilizationState & { lastNPCProductionDay?: number };
  * Apply all outstanding days of NPC-driven production to settlement storage.
  * Safe to call every tick and after save/load; repeated calls for a day are no-ops.
  * Deterministic: same NPC roster and day range yields the same total.
+ * BUILD 1062: the settlement is a parameter (default 'mosslight', the 2.5D
+ * town) so the 3D camp can run the same production into its own ledger
+ * without a second copy of this system.
  */
 export function applyNPCProduction(
   civ: CivilizationState,
   townsfolk: Townsperson[],
   clock: WorldClockState,
+  settlementId = 'mosslight',
 ): CivilizationState {
   const day = Math.max(1, Math.floor(clock.day));
   const ledger = civ as ProductionLedger;
-  const mosslight = civ.settlements.find((s) => s.id === 'mosslight');
+  const mosslight = civ.settlements.find((s) => s.id === settlementId);
   if (!mosslight) return civ;
 
   const lastDay = Math.max(0, Math.floor(ledger.lastNPCProductionDay ?? 0));

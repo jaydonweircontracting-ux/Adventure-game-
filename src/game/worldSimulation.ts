@@ -67,11 +67,17 @@ export function createLivingWorldState(
  *
  * Each subsystem retains its own deterministic/idempotent checkpoint. This
  * outer checkpoint prevents duplicate daily orchestration after save/load.
+ *
+ * BUILD 1062: `options.productionSettlementId` names the settlement NPC
+ * production lands in (default 'mosslight', the 2.5D town) — the 3D
+ * adapter passes its camp's id so the same production runs into the
+ * camp's ledger instead of a disconnected town.
  */
 export function advanceLivingWorld(
   previous: LivingWorldState,
   townsfolk: Townsperson[],
   clock: WorldClockState,
+  options?: { productionSettlementId?: string },
 ): LivingWorldAdvanceResult {
   if (previous.schemaVersion !== LIVING_WORLD_SCHEMA_VERSION) {
     throw new Error('living world: incompatible state schema');
@@ -116,7 +122,7 @@ export function advanceLivingWorld(
     month: 1 + Math.floor(((targetDay - 1) % 360) / 30),
     week: 1 + Math.floor((targetDay - 1) / 7),
   };
-  applyNPCProduction(civilization, townsfolk, nextClock);
+  applyNPCProduction(civilization, townsfolk, nextClock, options?.productionSettlementId);
   const beforeCivilizationDay = civilization.lastSimDay;
   advanceCivilization(civilization, nextClock);
 

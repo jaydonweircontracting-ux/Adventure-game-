@@ -76,7 +76,7 @@ function normalizeSimulationSpeed(value: number | undefined): SimulationSpeed {
   return typeof value === 'number' && isSimulationSpeed(value) ? value : 1;
 }
 
-function seasonForDay(day: number): WorldSeason {
+export function seasonForDay(day: number): WorldSeason {
   const dayOfYear = ((day - 1) % DAYS_PER_YEAR + DAYS_PER_YEAR) % DAYS_PER_YEAR;
   if (dayOfYear < 90) return 'spring';
   if (dayOfYear < 180) return 'summer';
