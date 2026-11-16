@@ -184,6 +184,16 @@ export interface IsoWorld {
    *  mined-out because the stamp never re-derives it. Old saves load
    *  with none (the stamp generates them on the same load). */
   mineralDeposits?: Array<{ id: string; mineral: string; x: number; y: number; amount: number; remaining: number }>;
+  /** BUILD 1082 — rivers (rivers.ts): the deterministic river courses,
+   *  stamped once by stampRivers on load and saved wholesale with the
+   *  world. Plain data (strings/numbers only). Each river is a course
+   *  of tiles from high ground to water; dx/dy is the downstream step
+   *  toward the next tile (the last tile points at the mouth water).
+   *  The tiles are also stamped as 'water' terrain entries, so
+   *  terrainAt / effTerrainFor / walkability / rendering / maps all
+   *  read them as water through the existing water path. Old saves
+   *  load with none (the stamp generates them on the same load). */
+  rivers?: Array<{ id: string; tiles: Array<{ x: number; y: number; dx: number; dy: number }>; mouth: { x: number; y: number } }>;
   /** BUILD 1061: tree-density generation of this world's stored tree
    *  list. 2 = the forest-cluster rule (scatterTreeAt). Absent = the
    *  old 0.6% uniform scatter (defaultWorld before 1061) — loadWorld

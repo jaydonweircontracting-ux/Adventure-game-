@@ -1237,6 +1237,25 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     houseBox(br.tx+.5,br.ty+.08,.98,.1,.08,bwy,LANTERN_TIMBER);
     houseBox(br.tx+.5,br.ty+.92,.98,.1,.08,bwy,LANTERN_TIMBER);
   }
+  // BUILD 1082 (1.3): river flow chevrons — every 3rd tile along
+  // each course carries a small pale triangle pointing downstream,
+  // at the water surface + 0.06 (the bridge deck height, so it
+  // sits on the water, not under it). No culling is enabled in
+  // the renderer, so winding is free. A tile whose terrain is no
+  // longer water (the player Removed it — removedWater wins)
+  // shows no chevron. The chevron is the visible half of the
+  // flow direction; the other half is the Examine text.
+  for(const rv of world.rivers ?? []){
+    for(let i=0;i<rv.tiles.length;i+=3){
+      const t=rv.tiles[i];
+      if(effTerrain(t.x,t.y)!=='water')continue;
+      const wy=surfaceElevation(effTerrain,t.x+.5,t.y+.5)+0.06;
+      const dl=Math.hypot(t.dx,t.dy)||1, ux=t.dx/dl, uz=t.dy/dl;
+      const px=-uz, pz=ux;
+      const cx=t.x+.5, cz=t.y+.5;
+      tri([cx+ux*.32,wy,cz+uz*.32],[cx-ux*.12+px*.22,wy,cz-uz*.12+pz*.22],[cx-ux*.12-px*.22,wy,cz-uz*.12-pz*.22],COLORS.foam);
+    }
+  }
   // BUILD 1024: wild trees + rocks past the old map edge. The stored
   // lists stop at 200x200, but the scatter hash continues — so the
   // wilderness has trees and rocks too, over the same far detail

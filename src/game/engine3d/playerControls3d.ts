@@ -47,6 +47,7 @@ import {
 import { absMinutes, farmStageAt, harvestFarmTile } from './farm';
 import { campGrainInRegistry } from './food';
 import { depositNear, examineDeposit } from './geology';
+import { riverNear, examineRiver } from './rivers';
 import { wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
 import { isCarNear, carBlocksTile, type CarState } from './car';
 import {
@@ -603,6 +604,12 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // shared 1-tile reach.
     const deposit=depositNear(world,Math.round(p.x),Math.round(p.y));
     if(deposit){setMessage(examineDeposit(deposit));return}
+    // BUILD 1082 (1.3): a river answers E with its Examine text
+    // (which way it flows) — the river is water, so it blocks
+    // like water, and the player stands beside it, within the
+    // shared 1-tile reach. No fishing, swimming, or drinking here.
+    const river=riverNear(world,Math.round(p.x),Math.round(p.y));
+    if(river){setMessage(examineRiver(river));return}
     const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
     const crate=world.crates.find(c=>key(c.tx,c.ty));
     // BUILD 1064 (R-1): the crate's deposit is extracted (the

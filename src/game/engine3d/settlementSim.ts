@@ -95,6 +95,7 @@ import {
 } from './construction';
 import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './food';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot } from './farm';
+import { stampRivers } from './rivers';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
@@ -185,6 +186,12 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
   let registry = seedCampStore(createRegistry(), 0, 30, 0);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   seedCampFarmPlot(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, SETTLEMENT_START_ABS, (x, y) => npcWalkable(world, x, y));
+  // BUILD 1082 (1.3): stamp the rivers into the sim world too, so the
+  // 24h run exercises founder paths around real water — the M1069
+  // numbers staying identical WITH rivers present is the proof the
+  // routing keeps the work sites clear (a rivers system that only
+  // ADDS water must not change them).
+  stampRivers(world);
   return {
     world,
     founders,

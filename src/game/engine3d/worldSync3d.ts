@@ -11,6 +11,7 @@ import type { MutableRefObject } from 'react';
 import { loadWorld, saveWorld, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { seedCampFarmPlot } from './farm';
 import { stampMineralDeposits } from './geology';
+import { stampRivers } from './rivers';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
@@ -64,6 +65,11 @@ export function loadInitialWorld(
   // applied by the time this runs, so the camp/hut/path exclusions
   // see the real world.
   if (stampMineralDeposits(world)) saveWorld(world);
+  // BUILD 1082 (1.3): stamp the river map on a world that has none
+  // (the stamp never re-derives a stamped world, so a river never
+  // moves or vanishes on reload). After the deposits stamp, so the
+  // river routing sees the real deposit tiles and routes around them.
+  if (stampRivers(world)) saveWorld(world);
   return world as IsoWorld & { placements: PlacedItem[] };
 }
 

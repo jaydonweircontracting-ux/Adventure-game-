@@ -12876,6 +12876,86 @@ console.log('Testing geology + mineral deposits (BUILD 1081)...');
   console.log('M1081: geology verified (determinism, placement, Examine, persistence, depletion, registry)');
 }
 
+
+console.log('Testing rivers + flowing water (BUILD 1082)...');
+{
+  const R1082 = await import('../src/game/engine3d/rivers.js');
+  const { defaultWorld, terrainAt, isWalkableWorld, oceanAt } = await import('../src/game/iso/isoWorld.js');
+  const { FOUNDER_CAMP } = await import('../src/game/engine3d/founders.js');
+  const { walkableWithPlacements, placedFarmTiles } = await import('../src/game/engine3d/placements.js');
+  const { stampMineralDeposits } = await import('../src/game/engine3d/geology.js');
+  const { seedCampFarmPlot } = await import('../src/game/engine3d/farm.js');
+  // Determinism: the same world yields the same rivers twice.
+  const wA1082 = defaultWorld();
+  const riversA1082 = R1082.generateRivers(wA1082);
+  const riversB1082 = R1082.generateRivers(defaultWorld());
+  assert(JSON.stringify(riversA1082) === JSON.stringify(riversB1082), 'M1082: river generation is deterministic (same world, same rivers)');
+  assert(riversA1082.length >= 1, 'M1082: the world holds at least one river (got ' + riversA1082.length + ')');
+  // Every river is a real course: length in range, tiles chain
+  // downstream, the last tile points at the mouth.
+  let coastRivers1082 = 0;
+  for (const r of riversA1082) {
+    assert(r.tiles.length >= 10 && r.tiles.length <= R1082.RIVER_MAX_LEN, 'M1082: river ' + r.id + ' length ' + r.tiles.length + ' is a real course');
+    for (let i = 0; i < r.tiles.length; i++) {
+      const t = r.tiles[i];
+      const next = i + 1 < r.tiles.length ? r.tiles[i + 1] : r.mouth;
+      assert(next.x - t.x === t.dx && next.y - t.y === t.dy, 'M1082: river ' + r.id + ' tile ' + i + ' flows toward the next tile');
+      // No tile floods the camp, a hut, or an occupied tile.
+      assert(Math.hypot(t.x - FOUNDER_CAMP.x, t.y - FOUNDER_CAMP.y) >= R1082.RIVER_CAMP_EXCLUSION, 'M1082: river ' + r.id + ' tile (' + t.x + ',' + t.y + ') stays clear of the camp');
+      assert(!wA1082.huts.some((h) => t.x >= h.x0 - 2 && t.x <= h.x1 + 2 && t.y >= h.y0 - 2 && t.y <= h.y1 + 2), 'M1082: river ' + r.id + ' tile (' + t.x + ',' + t.y + ') stays clear of the huts');
+      assert(!wA1082.trees.some((tr) => tr.tx === t.x && tr.ty === t.y), 'M1082: river ' + r.id + ' tile (' + t.x + ',' + t.y + ') is not on a tree');
+      assert(!wA1082.rocks.some((rk) => rk.tx === t.x && rk.ty === t.y), 'M1082: river ' + r.id + ' tile (' + t.x + ',' + t.y + ') is not on a rock');
+      assert(terrainAt(wA1082, t.x, t.y) !== 'water', 'M1082: river ' + r.id + ' tile (' + t.x + ',' + t.y + ') does not overwrite existing water');
+    }
+    // The mouth is water (ocean, lake, pond) or another river's tile.
+    const mouthIsWater = R1082.isWaterTile(wA1082, r.mouth.x, r.mouth.y);
+    const mouthIsRiver = riversA1082.some((o) => o !== r && o.tiles.some((t) => t.x === r.mouth.x && t.y === r.mouth.y));
+    assert(mouthIsWater || mouthIsRiver, 'M1082: river ' + r.id + ' mouth reaches water or joins another river');
+    if (mouthIsWater) coastRivers1082++;
+  }
+  assert(coastRivers1082 >= 1, 'M1082: at least one river reaches the coast (got ' + coastRivers1082 + ')');
+  // The rivers route around the farm and the deposits too (the
+  // real load order: farm seeded, deposits stamped, rivers last).
+  const wF1082 = defaultWorld();
+  seedCampFarmPlot(wF1082, FOUNDER_CAMP.x, FOUNDER_CAMP.y, 480, () => true);
+  stampMineralDeposits(wF1082);
+  const riversF1082 = R1082.generateRivers(wF1082);
+  const farmTiles1082 = placedFarmTiles(wF1082).map((t) => t.tx + ',' + t.ty);
+  const depTiles1082 = (wF1082.mineralDeposits ?? []).map((d) => d.x + ',' + d.y);
+  for (const r of riversF1082) for (const t of r.tiles) {
+    assert(!farmTiles1082.includes(t.x + ',' + t.y), 'M1082: river tile (' + t.x + ',' + t.y + ') is not on a farm tile');
+    assert(!depTiles1082.includes(t.x + ',' + t.y), 'M1082: river tile (' + t.x + ',' + t.y + ') is not on a mineral deposit');
+  }
+  // Stamping: tiles become water, block movement, and a bridge
+  // over one is walkable. The stamp is once-only.
+  const wS1082 = defaultWorld();
+  assert(R1082.stampRivers(wS1082) === true, 'M1082: stampRivers generates on a fresh world');
+  assert(R1082.stampRivers(wS1082) === false, 'M1082: stampRivers never re-derives a stamped world');
+  assert(JSON.stringify(wS1082.rivers) === JSON.stringify(riversA1082), 'M1082: the stamp stores exactly what generateRivers produces');
+  const rt1082 = wS1082.rivers[0].tiles[0];
+  assert(terrainAt(wS1082, rt1082.x, rt1082.y) === 'water', 'M1082: a stamped river tile reads as water');
+  assert(isWalkableWorld(wS1082, wS1082.crates, rt1082.x, rt1082.y) === false, 'M1082: a river tile blocks movement like water');
+  assert(walkableWithPlacements(wS1082, wS1082.crates, rt1082.x, rt1082.y) === false, 'M1082: walkableWithPlacements blocks a river tile');
+  wS1082.placements = [...(wS1082.placements ?? []), { kind: 'bridge', x0: rt1082.x, y0: rt1082.y, x1: rt1082.x, y1: rt1082.y }];
+  assert(walkableWithPlacements(wS1082, wS1082.crates, rt1082.x, rt1082.y) === true, 'M1082: a bridge placed over a river tile is walkable');
+  // Persistence: a JSON round-trip (the save) keeps the rivers,
+  // and the stamp still refuses to re-derive them.
+  const reloaded1082 = JSON.parse(JSON.stringify(wS1082));
+  assert(R1082.stampRivers(reloaded1082) === false, 'M1082: a reloaded world is not re-stamped');
+  assert(JSON.stringify(reloaded1082.rivers) === JSON.stringify(wS1082.rivers), 'M1082: the rivers survive a save/reload round-trip');
+  assert(terrainAt(reloaded1082, rt1082.x, rt1082.y) === 'water', 'M1082: a reloaded river tile is still water');
+  // Examine + flow directions (all 8 + still).
+  const dirCases1082: Array<[number, number, string]> = [[1, 0, 'east'], [-1, 0, 'west'], [0, 1, 'south'], [0, -1, 'north'], [1, 1, 'south-east'], [-1, -1, 'north-west'], [1, -1, 'north-east'], [-1, 1, 'south-west'], [0, 0, 'still']];
+  for (const [dx, dy, want] of dirCases1082) assert(R1082.flowDirName(dx, dy) === want, 'M1082: flowDirName(' + dx + ',' + dy + ') is ' + want);
+  const found1082 = R1082.riverAt(wS1082, rt1082.x, rt1082.y);
+  assert(found1082 !== null, 'M1082: riverAt finds a stamped river tile');
+  assert(R1082.examineRiver(found1082) === 'River — flows ' + R1082.flowDirName(rt1082.dx, rt1082.dy), 'M1082: Examine names the river and its flow');
+  assert(R1082.riverAt(wS1082, FOUNDER_CAMP.x, FOUNDER_CAMP.y) === null, 'M1082: riverAt finds no river at the camp');
+  assert(R1082.riverNear(wS1082, rt1082.x, rt1082.y) !== null, 'M1082: riverNear finds a river tile within reach');
+  assert(oceanAt(0, 100) === true && oceanAt(100, 100) === false, 'M1082: the ocean is west (sanity — the rivers drain to it)');
+  console.log('M1082: rivers verified (determinism, courses, mouths, placement, water blocking, bridge, persistence, Examine)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

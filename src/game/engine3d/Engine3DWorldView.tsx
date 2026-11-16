@@ -2583,6 +2583,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // across reload). Depleting updates the world save, the
       // registry entry, and the rebuild flag.
       getDeposits:()=>JSON.parse(JSON.stringify(stateRef.current.world.mineralDeposits??[])),
+      getRivers:()=>JSON.parse(JSON.stringify(stateRef.current.world.rivers??[])),
       depleteDeposit:(id:string,qty:number)=>{const w=stateRef.current.world;const res=applyDepletion((w.mineralDeposits??[]) as unknown as MineralDeposit[],id,qty);if(!res.depleted)return null;w.mineralDeposits=res.deposits;if(res.depleted.remaining<=0){registryRef.current=extractDeposit(registryRef.current,id).registry;}else{registryRef.current=addDeposit(registryRef.current,mineralDepositEntry(res.depleted));}commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(res.depleted));},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
