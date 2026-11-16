@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
-import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, blockedAction, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
+import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import {
   houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR, hash2,
@@ -19,7 +19,7 @@ import { nightFactor3dForMinutes, skyGradientForMinutes, starAlphaForMinutes, ST
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
-import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, readyFarmTiles, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
+import { absMinutes, farmStageAt, harvestFarmTile, readyFarmTiles, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
@@ -113,7 +113,7 @@ function AssetPreviewCanvas({ asset, size, testid }: { asset: CustomAsset; size:
   return <canvas ref={ref} width={size} height={size} data-testid={testid} style={{ display: 'block', width: size, height: size, borderRadius: 6, background: '#d8e2d4', border: '1px solid rgba(255,255,255,.25)' }} />;
 }
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorCeilingFor, interiorWallBandFor, interiorHearthFor, interiorTileWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
-import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, quantizeTile, pathHasUnwalkableTile, sidestepTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
+import { ROSTER_3D, buildStaticAnchors, buildAnchors, npcWalkable, quantizeTile, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
 import { formatDayClock, waitOptionsFor, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
@@ -131,6 +131,7 @@ import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWo
 // the module formats them, the panel renders them.
 import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond, formatControlCenterData } from './controlCenter';
 import { advanceWorldSimClock, runFounderSimInterval, simulateWorldSimWaitStep, type FounderSimContext, type WaitSimContext } from './worldSimulation3d';
+import { createNpcSimState, startNpcSimTimers, type NpcSimContext } from './npcSimulation3d';
 import { WorldRenderer, type Diagnostics3D } from './worldRenderer3d';
 import { createWorldBuilder, type WorldBuilder, type Vec3, type Position } from './worldRender3d';
 import { ControlCenterPanel } from './ControlCenterPanel';
@@ -154,8 +155,8 @@ import { createJobBoard, discoverJobs, claimJob, claimNearestJob, claimDeliverJo
 // the forest-to-resident chain (a newcomer arrives when a finished hut,
 // food, and settlement age allow).
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
-import { spawnTransient, stepTransient, barkLineFor, barkDayEligible, maxVillagerVerts, MAX_TRAVELERS, MAX_ADVENTURERS, MAX_TRANSIENTS, TRAVELER_SPAWN_TICKS, ADVENTURER_SPAWN_TICKS, ADVENTURER_SPAWN_PHASE, BARK_CHECK_MS, BARK_GLOBAL_COOLDOWN_MS, BARK_NPC_COOLDOWN_MS, BARK_RANGE, type TransientActor, type TransientPathState } from './transients';
-import { spawnAnimal, stepAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, ANIMAL_SPAWN_TOPUP_TICKS, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor, type AnimalPathState } from './animals';
+import { spawnTransient, barkLineFor, maxVillagerVerts, MAX_TRANSIENTS, type TransientActor } from './transients';
+import { spawnAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, isSprintTap, latchAfterTap, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, playerWalkable, PLAYER_REPLAN_MS, PLAYER_STUCK_MS, PLAYER_WAIT_MS, PLAYER_WAYPOINT_ARRIVE, type PlayerPath } from './playerPath';
@@ -3149,7 +3150,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // tick (caught by the 999 probes: a teleported NPC jumped ~21
       // tiles to its old path). Probes only — no gameplay effect: no
       // in-game system moves an NPC outside the timer today.
-      setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;npcPath.delete(name);}},
+      setNpcPos:(name:string,tx:number,ty:number)=>{const a=npcActorsRef.current.find(n=>n.name===name);if(a){a.x=tx;a.y=ty;npcSimState.npcPath.delete(name);}},
       // BUILD 998 test hooks: interpolated render tile coords (floats)
       // for motion proofs, and last-frame slot upload stats (emitted vs
       // reused vs drawn) for the caching proof.
@@ -3198,7 +3199,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // flight height h for birds).
       getAnimals:()=>animalActorsRef.current.map(a=>({id:a.id,kind:a.kind,x:a.x,y:a.y,state:a.state,hp:a.hp,slotId:a.slotId,flightTo:a.flightTo})),
       spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
-      setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;animalPath.delete(id);return true;}return false;},
+      setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;npcSimState.animalPath.delete(id);return true;}return false;},
       getAnimalRenderPos:(id:string)=>{const r=renderer.animalRender.get(id);return r?{x:r.x,y:r.y,h:r.h}:null;},
       // BUILD 1057 test hooks (probes only — no gameplay effect):
       // read founders (name, tile, activity, work state, carrying,
@@ -3246,11 +3247,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
       // lesson: absolute path tiles would snap it back otherwise.
-      setTransientPos:(id:string,tx:number,ty:number)=>{const t=transientActorsRef.current.find(x=>x.id===id);if(t){t.x=tx;t.y=ty;transientPath.delete(id);return true;}return false;},
+      setTransientPos:(id:string,tx:number,ty:number)=>{const t=transientActorsRef.current.find(x=>x.id===id);if(t){t.x=tx;t.y=ty;npcSimState.transientPath.delete(id);return true;}return false;},
       // BUILD 1000: cached-path inspector (probes only — distinguishes
       // a sealed route (path []) from an occupied deadlock (path with
       // a stuck index) when a transient is not advancing).
-      debugTransient:(id:string)=>{const t=transientActorsRef.current.find(x=>x.id===id);const p=transientPath.get(id);return t?{exit:t.exit,path:p?p.path:null,index:p?p.index:null,blockedTicks:p?p.blockedTicks:null,noPathTicks:p?p.noPathTicks:null,state:t.state}:null;},
+      debugTransient:(id:string)=>{const t=transientActorsRef.current.find(x=>x.id===id);const p=npcSimState.transientPath.get(id);return t?{exit:t.exit,path:p?p.path:null,index:p?p.index:null,blockedTicks:p?p.blockedTicks:null,noPathTicks:p?p.noPathTicks:null,state:t.state}:null;},
       forceBark:(name:string)=>{const clock=clockRef.current;const res=npcActorsRef.current.find(n=>n.name===name);if(res){const line=barkLineFor('resident',rosterArchetype(name),clock.minutes,name,clock.day);setMessage(name+': '+line);return line;}const tr=transientActorsRef.current.find(t=>t.name===name);if(tr){const line=barkLineFor(tr.kind,null,clock.minutes,name,clock.day);setMessage(name+': '+line);return line;}return null;},
       // BUILD 989 refinement: project a tile centre to container pixel
       // coordinates (same math as the Remove aiming preview), so the
@@ -3331,112 +3332,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       refreshResourceUi,
       syncLivingWorld,
     };
+    const npcSimCtx: NpcSimContext = {
+      world,
+      staticAnchors,
+      clock: clockRef,
+      getPlayerPos: () => stateRef.current.position,
+      health: healthRef,
+      npcActors: npcActorsRef,
+      transientActors: transientActorsRef,
+      animalActors: animalActorsRef,
+      transientTick: transientTickRef,
+      animalTick: animalTickRef,
+      renderer,
+      npcSaveKey: NPC_SAVE_KEY,
+      healthKey: HEALTH_KEY,
+      setHealth,
+      setMessage,
+    };
+    const npcSimState = createNpcSimState();
+    const stopNpcSim = startNpcSimTimers(npcSimCtx, npcSimState);
     const clockTimer=window.setInterval(()=>{advanceWorldSimClock(simCtx);},1000);
-    // BUILD 993: roster NPCs walk their 2.5D schedules. Destinations
-    // recompute from the clock every tick (anchors resolve hut doorsteps
-    // LIVE, so a removed home/workplace falls back to the plaza at once);
-    // movement follows a cached A* path (1 tile/900ms, the demo speed),
-    // replanned when the destination changes or a path tile becomes
-    // unwalkable. A pathless NPC waits and retries planning (a sealed
-    // destination never teleports); an occupied next tile waits a tick
-    // without replanning. At a destination the NPC stands still until
-    // the next phase retargets.
-    const npcByName=new Map(ROSTER_3D.map((n,i)=>[n.name,i]));
-    // Path state per NPC (session-only, never saved). blockedTicks
-    // counts consecutive ticks behind the same occupied tile (998).
-    const npcPath=new Map<string,{dest:string;path:{x:number;y:number}[];index:number;noPathTicks:number;blockedTicks:number;detour:boolean}>();
-    const npcTimer=window.setInterval(()=>{
-      // BUILD 1054: villagers are gated off — the tick has no actors
-      // to move, and the roster save at its end is gated too.
-      if(WILDERNESS_ONLY)return;
-      const actors=npcActorsRef.current;
-      const clock=clockRef.current;
-      const anchors=buildAnchors(world,staticAnchors);
-      actors.forEach((actor,i)=>{
-        if(!actor.alive)return;
-        const idx=npcByName.get(actor.name);if(idx===undefined)return;
-        const sched=scheduleTileFor(ROSTER_3D[idx],idx,anchors,clock.minutes,clock.day,world);
-        const cx=Math.round(actor.x),cy=Math.round(actor.y);
-        // BUILD 1041: farmers detour to a ready wheat tile within
-        // FARM_VILLAGER_RADIUS and harvest it on arrival (the tile
-        // resets to planted and regrows — the village's wheat, no
-        // counter). The detour is a destination swap, not a schedule
-        // change: the farmer resumes their schedule the next tick
-        // after harvesting (or if the wheat is gone when they arrive
-        // — harvested by the player or another farmer first).
-        const farmNowAbs=absMinutes(clock.day,clock.minutes);
-        const farmDest=rosterArchetype(actor.name)==='farmer'?nearestReadyFarmTile(world,cx,cy,farmNowAbs):null;
-        const dest=farmDest??{tx:sched.tx,ty:sched.ty};
-        if(cx===dest.tx&&cy===dest.ty){
-          if(farmDest){
-            const res=harvestFarmTile(world,farmDest.tx,farmDest.ty,farmNowAbs);
-            if(res.ok){saveWorld(world);setMessage(actor.name+' harvested wheat');}
-          }
-          npcPath.delete(actor.name);return;
-        }
-        const destKey=dest.tx+','+dest.ty;
-        let w=npcPath.get(actor.name);
-        if(!w||w.dest!==destKey){
-          w={dest:destKey,path:planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[],index:0,noPathTicks:0,blockedTicks:0,detour:false};
-          npcPath.set(actor.name,w);
-        }
-        if(w.path.length===0){
-          // No route (sealed): wait, retry planning occasionally in case
-          // the world changed (a placed item removed).
-          w.noPathTicks++;
-          if(w.noPathTicks>=11){
-            w.path=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[];
-            w.index=0;w.noPathTicks=0;w.detour=false;
-          }
-          return;
-        }
-        const next=w.path[w.index];
-        if(!next){npcPath.delete(actor.name);return;}
-        // BUILD 1030: any remaining path tile became unwalkable (a
-        // placed item landed on a later tile) — replan now, not just
-        // when the NPC walks up to the blocker.
-        if(pathHasUnwalkableTile(world,w.path,w.index)){
-          w.path=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty})??[];
-          w.index=0;w.noPathTicks=0;w.blockedTicks=0;w.detour=false;
-          return;
-        }
-        const player=stateRef.current.position;
-        const occupied=(Math.round(player.x)===next.x&&Math.round(player.y)===next.y)||actors.some((other,j)=>j!==i&&Math.round(other.x)===next.x&&Math.round(other.y)===next.y);
-        if(!occupied){actor.x=next.x;actor.y=next.y;w.index++;w.blockedTicks=0;}
-        else{
-          // BUILD 998: persistent-block rule — wait briefly (a leader
-          // one tick ahead, a player stepping aside), then replan with
-          // the blocking tile excluded so head-on and standing blocks
-          // route around instead of deadlocking. A failed replan falls
-          // into the sealed wait + 11-tick retry (empty path below).
-          // BUILD 1030: a detour replan only when this path is not
-          // itself a detour — two head-on actors both detour into the
-          // same lane and ping-pong between lanes forever if each
-          // replans again; an actor blocked on a detour steps aside
-          // instead, which breaks the symmetry (the other one passes).
-          w.blockedTicks++;
-          if(blockedAction(w.blockedTicks)==='replan'){
-            let resolved=false;
-            if(!w.detour){
-              const detour=planPathNpc(world,{x:cx,y:cy},{x:dest.tx,y:dest.ty},4000,new Set([next.x+','+next.y]));
-              if(detour){w.path=detour;w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=true;resolved=true;}
-            }
-            if(!resolved){
-              const occupiedFn=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)||actors.some((other,j)=>j!==i&&Math.round(other.x)===x&&Math.round(other.y)===y);
-              const aside=sidestepTile(world,{x:cx,y:cy},next,occupiedFn);
-              if(aside){w.path=[aside];w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=false;resolved=true;}
-            }
-            if(!resolved){w.path=[];w.index=0;w.blockedTicks=0;w.noPathTicks=0;w.detour=false;}
-          }
-        }
-      });
-      // BUILD 1054: never overwrite the saved villager roster while
-      // the villagers are gated off — actors is [] in wilderness
-      // mode, and writing it would wipe the roster the town rework
-      // restores.
-      if(!WILDERNESS_ONLY){try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}}
-    },900);
-
     // BUILD 1057: founder life — the first NPCs of the empty world.
     // One 900ms tick, the resident pattern: needs decay from elapsed
     // GAME minutes (clock-driven, not tick-driven — the 1056 wait
@@ -3461,134 +3376,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // written once per interval, after all sub-steps (not per sub-step).
     const founderTimer=window.setInterval(()=>{runFounderSimInterval(simCtx);},900);
 
-    // BUILD 1000: transient life. Mount spawns one traveler + one
-    // adventurer when an out-of-view road entry exists (the town
-    // reads as lived-in on first load, never a pop-in); the timer
-    // then paces further spawns (travelers ~45s, adventurers ~100s,
-    // staggered) up to the caps, and steps every transient with the
-    // same rules as residents (cached road-biased A*, occupied waits,
-    // persistent-block replans, sealed retries). Despawn frees the
-    // GPU slot + render state. NOTHING here touches NPC_SAVE_KEY:
-    // transients are session-only (see the ref comment above).
-    const transientPath=new Map<string,TransientPathState>();
-    const mountSpawn=(kind:'traveler'|'adventurer')=>{
-      const live=transientActorsRef.current;
-      const s=spawnTransient(world,kind,new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),transientTickRef.current,stateRef.current.position,true);
-      if(s)transientActorsRef.current=[...live,s];
-    };
-    // BUILD 1054: no travelers or adventurers in the clean
-    // wilderness — the mount spawns are skipped outright.
-    if(!WILDERNESS_ONLY){mountSpawn('traveler');mountSpawn('adventurer');}
-    const transientTimer=window.setInterval(()=>{
-      transientTickRef.current++;
-      const tick=transientTickRef.current;
-      const player=stateRef.current.position;
-      const live=transientActorsRef.current;
-      if(!WILDERNESS_ONLY&&tick%TRAVELER_SPAWN_TICKS===0&&live.filter(t=>t.kind==='traveler').length<MAX_TRAVELERS){
-        const s=spawnTransient(world,'traveler',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
-        if(s)transientActorsRef.current=[...transientActorsRef.current,s];
-      }
-      if(!WILDERNESS_ONLY&&tick%ADVENTURER_SPAWN_TICKS===ADVENTURER_SPAWN_PHASE&&live.filter(t=>t.kind==='adventurer').length<MAX_ADVENTURERS){
-        const s=spawnTransient(world,'adventurer',new Set(live.map(t=>t.name)),new Set(live.map(t=>t.slotId)),tick,player,true);
-        if(s)transientActorsRef.current=[...transientActorsRef.current,s];
-      }
-      const residents=npcActorsRef.current;
-      const kept:TransientActor[]=[];
-      for(const t of transientActorsRef.current){
-        const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)
-          ||residents.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y)
-          ||transientActorsRef.current.some(o=>o!==t&&Math.round(o.x)===x&&Math.round(o.y)===y);
-        const res=stepTransient(world,t,transientPath.get(t.id),occupied,staticAnchors.plaza);
-        if(res.path)transientPath.set(t.id,res.path);else transientPath.delete(t.id);
-        if(res.despawn){renderer.npcRender.delete(t.id);renderer.slotUploaded.delete(renderer.transientSlotBase+t.slotId);}
-        else kept.push(t);
-      }
-      transientActorsRef.current=kept;
-    },900);
-
-    // BUILD 1013: wild animals. Mount spawns one of each kind when an
-    // out-of-view wild tile exists (the wild reads as alive on first
-    // load, never a pop-in); the timer tops each kind up to its cap
-    // every 30 ticks (~27s) and steps every animal with the 998 rules
-    // (cached A*, occupied waits, persistent-block replans, sealed
-    // retries — see animals.ts). A wolf bite lands here, on the wolf's
-    // own 900ms tick: the player takes WOLF_BITE damage (persisted to
-    // HEALTH_KEY, with the same exhaustion rule as the NPC strike-back).
-    // NOTHING here touches NPC_SAVE_KEY: animals are session-only.
-    const animalPath=new Map<string,AnimalPathState>();
-    const mountSpawnAnimal=(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{
-      const live=animalActorsRef.current;
-      const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;
-      if(live.filter(a=>a.kind===kind).length>=cap)return;
-      const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,true);
-      if(s)animalActorsRef.current=[...live,s];
-    };
-    mountSpawnAnimal('bird');
-    mountSpawnAnimal('goat');
-    mountSpawnAnimal('deer');
-    mountSpawnAnimal('wolf');
-    // BUILD 1016: chickens spawn in town with the wild animals.
-    mountSpawnAnimal('chicken');
-    const animalTimer=window.setInterval(()=>{
-      animalTickRef.current++;
-      const tick=animalTickRef.current;
-      const player=stateRef.current.position;
-      if(tick%ANIMAL_SPAWN_TOPUP_TICKS===0){
-        (['bird','goat','deer','wolf','chicken'] as const).forEach(kind=>mountSpawnAnimal(kind));
-      }
-      const residents=npcActorsRef.current;
-      for(const a of animalActorsRef.current){
-        const occupied=(x:number,y:number)=>(Math.round(player.x)===x&&Math.round(player.y)===y)
-          ||residents.some(r=>r.alive&&Math.round(r.x)===x&&Math.round(r.y)===y)
-          ||transientActorsRef.current.some(t=>Math.round(t.x)===x&&Math.round(t.y)===y)
-          ||animalActorsRef.current.some(o=>o!==a&&Math.round(o.x)===x&&Math.round(o.y)===y);
-        const res=stepAnimal(world,a,animalPath.get(a.id),occupied,player,staticAnchors.plaza);
-        if(res.path)animalPath.set(a.id,res.path);else animalPath.delete(a.id);
-        if(res.biteDamage>0){
-          const nextHealth=Math.max(0,healthRef.current-res.biteDamage);
-          healthRef.current=nextHealth;setHealth(nextHealth);
-          try{localStorage.setItem(HEALTH_KEY,String(nextHealth))}catch{}
-          if(nextHealth===0){setMessage('You are exhausted. Health restored to 100.');healthRef.current=100;setHealth(100);try{localStorage.setItem(HEALTH_KEY,'100')}catch{}}
-          else setMessage('A wolf bites you for '+res.biteDamage+'!');
-        }
-      }
-    },900);
-
-    // BUILD 1000: barks through the existing message area. Every 3s,
-    // the nearest figure within 4 tiles barks when eligible (residents:
-    // seeded day rule; transients: always day-eligible) and both
-    // cooldowns (global 25s, per-figure 90s) have elapsed. No floating
-    // text exists in this renderer (see the transients.ts verdict).
-    let lastBarkAt=0;
-    const lastBarkBy=new Map<string,number>();
-    const barkTimer=window.setInterval(()=>{
-      const now=Date.now();
-      if(now-lastBarkAt<BARK_GLOBAL_COOLDOWN_MS)return;
-      const p=stateRef.current.position;
-      const clock=clockRef.current;
-      type Cand={name:string;kind:'resident'|'traveler'|'adventurer';archetype:string|null;x:number;y:number};
-      const cands:Cand[]=[];
-      for(const n of npcActorsRef.current){
-        if(!n.alive)continue;
-        const r=renderer.npcRender.get(n.name);
-        cands.push({name:n.name,kind:'resident',archetype:rosterArchetype(n.name),x:r?r.x:n.x,y:r?r.y:n.y});
-      }
-      for(const t of transientActorsRef.current){
-        const r=renderer.npcRender.get(t.id);
-        cands.push({name:t.name,kind:t.kind,archetype:null,x:r?r.x:t.x,y:r?r.y:t.y});
-      }
-      const near=cands.filter(c=>Math.hypot(c.x-p.x,c.y-p.y)<=BARK_RANGE)
-        .sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y));
-      for(const c of near){
-        if(c.kind==='resident'&&!barkDayEligible(c.name,clock.day))continue;
-        if(now-(lastBarkBy.get(c.name)??0)<BARK_NPC_COOLDOWN_MS)continue;
-        setMessage(c.name+': '+barkLineFor(c.kind,c.archetype,clock.minutes,c.name,clock.day));
-        lastBarkAt=now;lastBarkBy.set(c.name,now);
-        break;
-      }
-    },BARK_CHECK_MS);
-
-    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;renderer.stop();window.clearInterval(npcTimer);window.clearInterval(founderTimer);window.clearInterval(transientTimer);window.clearInterval(animalTimer);window.clearInterval(barkTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;renderer.dispose();};
+    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;renderer.stop();stopNpcSim();window.clearInterval(founderTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;renderer.dispose();};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}

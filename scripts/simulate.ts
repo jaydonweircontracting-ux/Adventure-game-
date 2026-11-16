@@ -12557,6 +12557,51 @@ console.log('Testing the 3D world rendering + terrain module — the terrain geo
   console.log('M1071: world buffer verts=' + (built1071.length / 6) + ' builder steps=' + steps1071);
 }
 
+console.log('Testing the NPC simulation module — the roster/transient/animal ticks + barks extracted from the view (BUILD 1073, 0x0D area 3)...');
+{
+  const NS1073 = await import('../src/game/engine3d/npcSimulation3d.js');
+  const W1073 = await import('../src/game/iso/isoWorld.js');
+  const T1073 = await import('../src/game/engine3d/townsfolk3d.js');
+  const world1073 = W1073.defaultWorld();
+  const anchors1073 = T1073.buildStaticAnchors(world1073);
+  const messages1073: string[] = [];
+  const fakeRenderer1073 = {
+    npcRender: new Map(), animalRender: new Map(), slotUploaded: new Map(), transientSlotBase: 48,
+  };
+  const ctx1073 = {
+    world: world1073, staticAnchors: anchors1073,
+    clock: { current: { minutes: 480, day: 1 } },
+    getPlayerPos: () => ({ x: 124, y: 120 }),
+    health: { current: 100 },
+    npcActors: { current: [] }, transientActors: { current: [] }, animalActors: { current: [] },
+    transientTick: { current: 0 }, animalTick: { current: 0 },
+    renderer: fakeRenderer1073,
+    npcSaveKey: 'ag-3d-npcs-test-1073', healthKey: 'ag-3d-health-test-1073',
+    setHealth: (_n: number) => {}, setMessage: (m: string) => { messages1073.push(m); },
+  };
+  const state1073 = NS1073.createNpcSimState();
+  assert(state1073.npcPath.size === 0 && state1073.transientPath.size === 0 && state1073.animalPath.size === 0 && state1073.lastBarkAt === 0, 'M1073: createNpcSimState starts empty');
+  NS1073.stepRosterNpcs(ctx1073 as never, state1073);
+  assert(ctx1073.npcActors.current.length === 0 && state1073.npcPath.size === 0, 'M1073: the roster tick is a no-op while WILDERNESS_ONLY');
+  NS1073.stepTransients(ctx1073 as never, state1073);
+  assert(ctx1073.transientTick.current === 1 && ctx1073.transientActors.current.length === 0, 'M1073: the transient tick advances and spawns nothing while WILDERNESS_ONLY');
+  NS1073.stepAnimals(ctx1073 as never, state1073);
+  assert(ctx1073.animalTick.current === 1 && ctx1073.health.current === 100, 'M1073: the animal tick advances and leaves health alone with no animals');
+  (ctx1073.transientActors.current as never[]).push({ id: 't-1', kind: 'traveler', name: 'Wren', x: 125, y: 120, state: 'toExit', slotId: 0, exit: { x: 0, y: 0 } });
+  state1073.lastBarkAt = Date.now();
+  NS1073.stepBarks(ctx1073 as never, state1073);
+  assert(messages1073.length === 0, 'M1073: no bark inside the global cooldown');
+  state1073.lastBarkAt = 0;
+  NS1073.stepBarks(ctx1073 as never, state1073);
+  assert(messages1073.length === 1 && messages1073[0].startsWith('Wren: '), 'M1073: a nearby transient barks once the cooldown elapses');
+  state1073.lastBarkAt = 0;
+  NS1073.stepBarks(ctx1073 as never, state1073);
+  assert(messages1073.length === 1, 'M1073: the per-figure cooldown blocks a repeat bark');
+  NS1073.mountNpcSim(ctx1073 as never);
+  assert(ctx1073.animalActors.current.length === 5 && ctx1073.transientActors.current.length === 1, 'M1073: mount spawns one animal of each kind and no travelers');
+  console.log('M1073: npc sim ticks + barks + mount spawns verified (animals=' + ctx1073.animalActors.current.length + ')');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
