@@ -78,6 +78,7 @@
 
 import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
+import { healthWorkFactor } from './food';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, nearestUnfinishedSite } from './construction';
 import type { ConstructionState } from './construction';
 
@@ -199,6 +200,15 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
   if (construction.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP && !builderTaken) {
     build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
   }
+
+  // BUILD 1067: a weak founder works at half strength, a collapsed
+  // one (health 0) cannot work at all — starvation has a real
+  // consequence for the workforce, not just the need bar. Sleep /
+  // eat / rest are unaffected (a weak founder still sleeps, eats,
+  // and rests — that is how they recover).
+  const weakFactor = healthWorkFactor(needs.health);
+  work *= weakFactor;
+  build *= weakFactor;
 
   const scores: UtilityScores = { sleep, eat, rest, work, build };
   // Continuation bonus: the founder's current job scores a little

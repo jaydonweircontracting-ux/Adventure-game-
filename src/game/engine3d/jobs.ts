@@ -76,6 +76,13 @@
  *   A standalone haul job (store → store, contested claim) is
  *   the 0x0E extension point, not this build: the carrier is
  *   single-owner, so a deliver claim can never be contested.
+ * - harvest (BUILD 1067, 0x07): one ready farm tile → the
+ *   founder's carrier (2 grain). Completes on the harvest (the
+ *   grain is in the carrier); the delivery is a deliver job, like
+ *   chop's — the carrier's grain must survive a reload as work.
+ *   A harvest job whose tile is no longer ready (harvested by the
+ *   player or another founder first) is removed (open) or failed
+ *   (claimed — 'target-gone').
  *
  * IDENTITY: a job's id is derived from its kind + target
  * (entityIds.ts jobIdFor — "job:chop:tree:122,122",
@@ -95,12 +102,13 @@
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
 import { HUT_SITES, sitesOf } from './construction';
-import { jobIdFor, treeId, wildTreeId } from './entityIds';
+import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
+import { FARM_VILLAGER_RADIUS, readyFarmTiles } from './farm';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -182,6 +190,11 @@ export function deliverJobIdFor(founderId: string): string {
   return jobIdFor('deliver', founderId);
 }
 
+/** The job id for a farm tile at (tx, ty). */
+export function harvestJobIdFor(tx: number, ty: number): string {
+  return jobIdFor('harvest', farmTileId(tx, ty));
+}
+
 /** What discovery needs: the world (trees), the construction
  *  (the hut), the founders' carried wood, and the clock (for
  *  createdAbs). The registry is NOT an input — a job's existence
@@ -191,7 +204,7 @@ export function deliverJobIdFor(founderId: string): string {
 export type JobDiscoveryInput = {
   world: IsoWorld;
   construction: ConstructionState;
-  founders: readonly { id: string; carrying: number }[];
+  founders: readonly { id: string; carrying: number; carryingGrain?: number }[];
   nowAbs: number;
 };
 
@@ -204,9 +217,15 @@ export type JobDiscoveryInput = {
  *   holds the rest), so discovery stays one tree scan per tick.
  * - build: one job while the hut is unfinished; completing it
  *   when the construction is done.
+ * - harvest (BUILD 1067): one job per READY farm tile within the
+ *   farmer radius of the camp; completing it when the tile is
+ *   harvested (the grain is in the carrier).
  * - deliver: one job per founder carrying wood; completing it
  *   when the carrier empties (the work is done — the wood is
- *   in the camp store).
+ *   in the camp store). BUILD 1067: a founder carrying GRAIN
+ *   (harvested wheat) also gets a deliver job — the carrier
+ *   holds wood or grain, and the job completes when BOTH are
+ *   empty.
  * A claimed job whose target vanished FAILS (failedReason
  * 'target-gone', the failed counter rises) — the holder's tree
  * was felled by the player first, and the holder must re-target.
@@ -280,10 +299,43 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     }
   }
 
-  // --- Deliver jobs: one per founder carrying wood. ---
+  // --- Harvest jobs: one per READY farm tile within the farmer
+  // radius of the camp (BUILD 1067). A tile that is no longer
+  // ready (harvested by the player or another founder first) is
+  // removed (open) or failed (claimed — 'target-gone'). Farm tiles
+  // are walk-through ground cover, so the tile itself is the work
+  // tile — the founder stands on it to harvest.
+  const ready = readyFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS);
+  const liveHarvestIds = new Set<string>();
+  for (const t of ready) {
+    const id = harvestJobIdFor(t.tx, t.ty);
+    liveHarvestIds.add(id);
+    if (next.jobs[id]) continue;
+    next.jobs[id] = {
+      id,
+      kind: 'harvest',
+      targetId: farmTileId(t.tx, t.ty),
+      tile: { x: t.tx, y: t.ty },
+      state: 'open',
+      claimedBy: null,
+      createdAbs: nowAbs,
+    };
+    changed = true;
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'harvest' || liveHarvestIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
+  // --- Deliver jobs: one per founder carrying wood OR grain. ---
   const carryingIds = new Set<string>();
   for (const f of founders) {
-    if (Math.max(0, Math.floor(f.carrying)) <= 0) continue;
+    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) <= 0) continue;
     carryingIds.add(f.id);
     const id = deliverJobIdFor(f.id);
     if (!next.jobs[id]) {
@@ -301,9 +353,9 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   }
   for (const job of Object.values(next.jobs)) {
     if (job.kind !== 'deliver' || carryingIds.has(job.targetId)) continue;
-    // The carrier emptied — the work is done (the wood is in the
-    // camp store). A claimed deliver job completes here; an open
-    // one is removed silently (nobody was carrying it).
+    // The carrier emptied — the work is done (the wood and grain
+    // are in the camp store). A claimed deliver job completes here;
+    // an open one is removed silently (nobody was carrying it).
     if (job.state === 'claimed') {
       next = completeJob(next, job.id);
     } else {
@@ -517,6 +569,8 @@ export function jobSummary(board: JobBoard): {
   buildClaimed: number;
   deliverOpen: number;
   deliverClaimed: number;
+  harvestOpen: number;
+  harvestClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -529,18 +583,22 @@ export function jobSummary(board: JobBoard): {
   let buildClaimed = 0;
   let deliverOpen = 0;
   let deliverClaimed = 0;
+  let harvestOpen = 0;
+  let harvestClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
       if (job.kind === 'chop') chopOpen++;
       else if (job.kind === 'build') buildOpen++;
+      else if (job.kind === 'harvest') harvestOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
       if (job.kind === 'chop') chopClaimed++;
       else if (job.kind === 'build') buildClaimed++;
+      else if (job.kind === 'harvest') harvestClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

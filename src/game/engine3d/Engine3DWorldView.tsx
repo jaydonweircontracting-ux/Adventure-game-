@@ -19,7 +19,8 @@ import { nightFactor3dForMinutes, skyGradientForMinutes, starAlphaForMinutes, ST
 import { emitHouseFx, houseFxInputsFor, resolveHouseFx, smokePuffsFor, chimneyTopFor, windowSlotsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
 import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
-import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, type FarmStage } from './farm';
+import { absMinutes, farmStageAt, harvestFarmTile, nearestReadyFarmTile, seedCampFarmPlot, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
+import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
   alignArea, enhanceArea, adjustSpacing,
@@ -116,7 +117,7 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathN
 import { formatDayClock, waitOptionsFor, advanceClock, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
-import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, deliverFounderWoodToRegistry, campWoodInRegistry, campFoodInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_WOOD_PER_TREE, decayFounderNeeds, founderAbsMinutes, defaultFounderState, founderDestination, nearestTreeTile, treeWorkTile, chopTreeAt, stepFounderMove, emptyFounderPath, applyFounderWaitStep, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, roundFounderNeeds, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, deliverFounderWoodToRegistry, deliverFounderCarryToRegistry, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { closestFounder, memoryCountsFor, recordSharedEvent, restTileFor } from './memory';
 import type { SharedEventType } from './memory';
@@ -2192,6 +2193,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const foundersRef=useRef<FounderState[]>([]);
   const founderStockpileRef=useRef(0);
   const founderFoodRef=useRef(FOUNDER_START_FOOD);
+  // BUILD 1067: the camp grain store mirror (the grain the founders
+  // harvested, waiting to be milled into meals) — same pattern.
+  const founderGrainRef=useRef(0);
   // BUILD 1064 (R-1): the unified resource registry — the one
   // authoritative record (player store, camp store, carrier stores,
   // world deposits). Built from the world + the saves on load (the
@@ -2240,7 +2244,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1058: + the hut progress ('—' / '3/6' / 'done').
   // BUILD 1062: + the forest density % from the living-world adapter
   // (live stored trees / baseline) — '—' until the adapter loads.
-  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,hut:'—',forest:'—'});
+  const [campUi,setCampUi]=useState({wood:0,food:FOUNDER_START_FOOD,grain:0,hut:'—',forest:'—'});
   // BUILD 1062: the forest % for the Camp line, from the live tree
   // count and the adapter's fixed baseline. '—' when the adapter has
   // not loaded yet (first render, before the mount effect).
@@ -2261,7 +2265,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(nextInv));}catch{}
     founderStockpileRef.current=campWoodInRegistry(reg);
     founderFoodRef.current=campFoodInRegistry(reg);
-    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
+    founderGrainRef.current=campGrainInRegistry(reg);
+    setCampUi({wood:founderStockpileRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,hut:hutProgressLabel(constructionRef.current),forest:forestPct(stateRef.current.world.trees.length)});
   };
   // BUILD 1062: advance the living world to the clock's day — called
   // from the 1s clock timer and the wait step, the two places the
@@ -3325,6 +3330,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const canvas=canvasRef.current;if(!canvas)return;
     const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
     if(!world.placements)world.placements=[];
+    // BUILD 1067: the camp's farm plot — seed the 4 farm tiles
+    // south-west of the camp (planted now) when no farm land exists
+    // near it, so a fresh world can feed itself. Idempotent (the
+    // seed checks for existing farm land first); the world is saved
+    // when tiles land, so the plot survives reload.
+    if(seedCampFarmPlot(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,absMinutes(clockRef.current.day,clockRef.current.minutes),(x,y)=>npcWalkable(world,x,y))>0)saveWorld(world);
     setPlacedCount(world.placements.length);
     npcActorsRef.current=savedNpcActors(world);
     // BUILD 1057: founders load from the versioned founders save (or
@@ -3355,7 +3366,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the step from 0 ticks (like the chop reset above); a
         // founder reloaded mid-build whose hut finished while they
         // were away goes back to chopping.
-        f.treeTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;
+        f.treeTarget=null;f.farmTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;f.harvestTicks=0;
         f.restTile=null;
         f.lastAbs=clockAbs;
       }
@@ -5080,14 +5091,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // founder's actual memories, so the player never sees a
         // count the founder does not remember. Only non-zero counts
         // are shown.
-        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}const nj=jobForFounder(jobBoardRef.current,nearFounder.id);const job=nj?` · job ${nj.kind} ${nj.targetId}`:' · job —';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+rel+job);return}
+        if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}const nj=jobForFounder(jobBoardRef.current,nearFounder.id);const job=nj?` · job ${nj.kind} ${nj.targetId}`:' · job —';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+' · health '+n.health+rel+job);return}
         if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){
           // BUILD 1062: the stockpile tile is the camp's status board —
           // the living-world numbers ride along (forest density from
           // the real tree count, trees regrown, the day the sim has
           // advanced through). All numbers are live, never invented.
           const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,world.trees.length,clockRef.current.day):null;
-          setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campFoodInRegistry(registryRef.current)+' food'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
+          setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campFoodInRegistry(registryRef.current)+' food · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:''));
           return;
         }
         // BUILD 1058: E at the founders' hut reports its state:
@@ -5316,13 +5327,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
+      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
       // BUILD 1065 (J-1): the job board for the probe — the summary
       // counts plus every live job (id, kind, target, tile, state,
       // claim). Read-only.
       getJobs:()=>{const s=jobSummary(jobBoardRef.current);return {...s,jobs:Object.values(jobBoardRef.current.jobs).map(j=>({id:j.id,kind:j.kind,targetId:j.targetId,tile:j.tile,state:j.state,claimedBy:j.claimedBy}))};},
       setFounderPos:(name:string,tx:number,ty:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.x=tx;f.y=ty;founderPath.delete(name);return true;}return false;},
-      setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social};return true;}return false;},
+      setFounderNeeds:(name:string,hunger:number,energy:number,social:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(f){f.needs={hunger,energy,social,health:f.needs.health};return true;}return false;},
       // BUILD 1060 test hooks (probes only — no gameplay effect):
       // read each founder's social state (affinity + memories +
       // closest companion at the current day) and set one affinity
@@ -5348,8 +5359,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1064 (R-1): the registry read (probes only) — the
       // player store, the camp store, the carrier stores, the world
       // deposits still standing, and the totals a scheduler asks.
-      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current)},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
+      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current)},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood'),grain:storeQty(registryRef.current,'carrier:'+f.id,'grain')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
       setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
+      setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE}});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
+      setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE}});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
       // BUILD 1000: teleport a transient (probes only — lets a probe
       // place an adventurer beside the plaza to watch its pause +
       // exit without a 90s walk). Drops the cached A* path, the 999
@@ -5600,9 +5613,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         let myJob=jobForFounder(jobBoardRef.current,f.id);
         if(!myJob){
           if(f.workState==='toSite'||f.workState==='building'||f.workState==='chopping'){f.workState='toTree';f.buildTicks=0;f.chopTicks=0;f.treeTarget=null;f.workTile=null;}
+      else if(f.workState==='toFarm'||f.workState==='harvesting'){f.workState='toTree';f.harvestTicks=0;f.farmTarget=null;}
           else if(f.workState==='toTree'){f.treeTarget=null;f.workTile=null;}
-          if(f.workState==='toStockpile'&&f.carrying>0){
-            const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying,nowAbs);
+          if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0)){
+            const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying+f.carryingGrain,nowAbs);
             jobBoardRef.current=dc.board;
             if(dc.job)myJob=dc.job;
           }
@@ -5746,6 +5760,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             jobBoardRef.current=bc.board;
             if(bc.job){f.workState='toSite';myJob=bc.job;}
           }
+          // BUILD 1067: farming — a 'work' founder farms while the
+          // camp is short of food (below FARM_FOOD_THRESHOLD) and a
+          // ready farm tile is open. The build job still comes
+          // first (the settlement's project); the harvest is the
+          // 'work' choice when food is low, chopping when it is not.
+          if(f.workState==='toTree'&&!f.treeTarget&&f.activity==='work'&&campFoodInRegistry(registryRef.current)<FARM_FOOD_THRESHOLD){
+            const hc=claimNearestJob(jobBoardRef.current,f.id,'harvest',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FARM_VILLAGER_RADIUS);
+            jobBoardRef.current=hc.board;
+            if(hc.job){f.workState='toFarm';f.farmTarget={x:hc.job.tile.x,y:hc.job.tile.y};myJob=hc.job;}
+          }
           if(f.workState==='toTree'&&!f.treeTarget){
             const cc=claimNearestJob(jobBoardRef.current,f.id,'chop',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
             jobBoardRef.current=cc.board;
@@ -5778,6 +5802,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // the returning founder re-takes it if free.
         let dest=founderDestination(f);
         if(myJob&&myJob.kind==='build')dest=myJob.tile;
+        else if(myJob&&myJob.kind==='harvest'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
         else if(f.activity==='sleep'&&hutPlaced)dest=(HUT_SITES[f.bed.hut]?.approach??HUT_APPROACH);
         else if((f.activity==='work'||f.activity==='build')&&(f.workState==='toSite'||f.workState==='building'))dest=buildSite?buildSite.approach:HUT_APPROACH;
         const cx=Math.round(f.x),cy=Math.round(f.y);
@@ -5892,7 +5917,40 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 f.treeTarget=null;f.workTile=null;f.chopTicks=0;
                 f.workState='toStockpile';
               }
-            }else if(f.workState==='toStockpile'&&f.carrying>0){
+            }else if(f.workState==='toFarm'&&f.farmTarget){
+              // At the farm tile: start harvesting (the tile is
+              // walk-through ground cover, so the founder stands
+              // on it; the tile itself is the work tile).
+              f.workState='harvesting';f.harvestTicks=0;
+            }else if(f.workState==='harvesting'&&f.farmTarget){
+              f.harvestTicks++;
+              if(f.harvestTicks>=FOUNDER_HARVEST_TICKS){
+                // BUILD 1067: the harvest goes through the registry
+                // — the tile resets to planted (it regrows) and the
+                // yield lands in the founder's carrier store
+                // (capacity 2), with the farm tile as its source.
+                const harv=harvestFarmTileToCarrier(registryRef.current,world,f,f.farmTarget.x,f.farmTarget.y,nowAbs);
+                registryRef.current=harv.registry;
+                if(harv.yield>0){
+                  f.carryingGrain=harv.yield;worldDirty=true;
+                  // The harvest job completes on the harvest (the
+                  // grain is in the carrier); the delivery is a
+                  // deliver job, claimed now so the founder holds
+                  // it from the harvest onward.
+                  if(myJob&&myJob.kind==='harvest'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+                  const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying+f.carryingGrain,nowAbs);
+                  jobBoardRef.current=dc.board;
+                  if(dc.job)myJob=dc.job;
+                }else if(myJob&&myJob.kind==='harvest'){
+                  // The tile is no longer ready (harvested by the
+                  // player or another founder first) — the job
+                  // failed; re-target next tick.
+                  jobBoardRef.current=failJob(jobBoardRef.current,myJob.id,'target-gone');myJob=undefined;
+                }
+                f.farmTarget=null;f.harvestTicks=0;
+                f.workState='toStockpile';
+              }
+            }else if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0)){
               // BUILD 1065 (J-1): the delivery runs only on a held
               // deliver job — the transfer IS the job's completion.
               // Without the job (claimed next tick) the founder
@@ -5901,13 +5959,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
                 // BUILD 1064 (R-1): the delivery is a real transfer
                 // (carrier store → camp store) — the wood the tree
                 // held is the wood the pile gains, conserved.
-                const res=deliverFounderWoodToRegistry(registryRef.current,f);
+                // BUILD 1067: the delivery moves wood AND grain.
+                const res=deliverFounderCarryToRegistry(registryRef.current,f);
                 registryRef.current=res.registry;
-                f.carrying-=res.moved;stockChanged=true;
-                if(f.carrying<=0){
-                  f.carrying=0;f.workState='toTree';
+                f.carrying-=res.movedWood;f.carryingGrain-=res.movedGrain;stockChanged=true;
+                if(f.carrying<=0&&f.carryingGrain<=0){
+                  f.carrying=0;f.carryingGrain=0;f.workState='toTree';
                   jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;
-                  setMessage(f.name+' delivered wood to the camp stockpile');
+                  const what=res.movedWood>0&&res.movedGrain>0?'wood and grain':res.movedGrain>0?'grain':'wood';
+                  setMessage(f.name+' delivered '+what+' to the camp stockpile');
                 }
               }
             }else if(f.workState==='toStockpile'){
@@ -5920,6 +5980,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // Idle (no tree in range) retries next tick.
         if((f.activity==='work'||f.activity==='build')&&f.workState==='idle')f.workState='toTree';
       }
+      // BUILD 1067: the mill — while the camp is short of food and
+      // holds grain, mill grain into meals (2 grain → 1 meal, a
+      // production step through the registry). The grain the
+      // founders harvested becomes the meals they eat.
+      const milled=millGrainToMeals(registryRef.current);
+      if(milled.milled>0){registryRef.current=milled.registry;stockChanged=true;}
       if(worldDirty){saveWorld(world);needsWorldRebuild.current=true;}
       if(stockChanged||hutChanged)refreshResourceUi();
       // BUILD 1064 (R-1): the founders save is written back from
@@ -6110,7 +6176,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Hut {campUi.hut} · Forest {campUi.forest}%</span></div>
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Food {campUi.food} · Grain {campUi.grain} · Hut {campUi.hut} · Forest {campUi.forest}%</span></div>
     </div>}
     {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
         A centred panel (the sheet covers the canvas, so taps land on it,

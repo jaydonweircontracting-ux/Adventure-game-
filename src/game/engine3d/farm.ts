@@ -17,7 +17,7 @@
 
 import { hash2 } from './townLook';
 import type { Vec3 } from './houseFx';
-import { placedFarmTiles } from './placements';
+import { addPlacement, placedFarmTiles } from './placements';
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 
 /** Planted -> growing: 1 in-game hour (1 real minute of play). */
@@ -99,6 +99,86 @@ export function nearestReadyFarmTile(
     }
   }
   return best;
+}
+
+/** Every ready wheat tile within `maxDist` (Manhattan) of (x, y)
+ *  — the tiles a farmer can harvest now. The scheduler's
+ *  discovery needs the whole list, not just the nearest (the same
+ *  reason treesInRadius exists for chop jobs). Pure read (never
+ *  mutates the world). */
+export function readyFarmTiles(
+  w: IsoWorld,
+  x: number,
+  y: number,
+  nowAbs: number,
+  maxDist: number = FARM_VILLAGER_RADIUS,
+): { tx: number; ty: number }[] {
+  const out: { tx: number; ty: number }[] = [];
+  for (const t of placedFarmTiles(w)) {
+    if (farmStageAt(t.plantedAt, nowAbs) !== 'ready') continue;
+    if (Math.abs(t.tx - x) + Math.abs(t.ty - y) > maxDist) continue;
+    out.push({ tx: t.tx, ty: t.ty });
+  }
+  return out;
+}
+
+// --- The camp's farm plot (BUILD 1067) ---
+
+/** The camp's farm plot: 4 tiles south-west of the camp, clear of
+ *  both hut rects (site 0: 126..129 × 119..121; site 1: 122..125 ×
+ *  115..117) and of the camp footprint. The founders farm this
+ *  field; the player can expand it (Build mode) or remove it. */
+export const CAMP_FARM_PLOT: { x: number; y: number }[] = [
+  { x: 120, y: 122 },
+  { x: 121, y: 122 },
+  { x: 120, y: 123 },
+  { x: 121, y: 123 },
+];
+/** Do not seed the plot when farm land already exists within this
+ *  many tiles of the camp (the player already farms there). */
+export const CAMP_FARM_SEED_RADIUS = 40;
+
+/**
+ * Seed the camp's farm plot into the world (load path, once):
+ * places CAMP_FARM_PLOT tiles (planted now, so they grow and are
+ * ready after FARM_READY_MIN game-minutes) when no farm tile
+ * exists within CAMP_FARM_SEED_RADIUS of the camp. Tiles that are
+ * not walkable (a tree, a rock, a hut, water — the caller's
+ * `walkable` predicate, npcWalkable in the view) or already a farm
+ * tile are skipped, never forced. Returns how many tiles were
+ * placed (0 = already seeded, or nowhere to put them). The caller
+ * saves the world when the count is > 0. The tiles go through
+ * addPlacement, so each gets its stable F-1 id. Pure apart from
+ * the world mutation (the placement list, like addPlacement).
+ */
+export function seedCampFarmPlot(
+  w: IsoWorld,
+  campX: number,
+  campY: number,
+  nowAbs: number,
+  walkable: (x: number, y: number) => boolean,
+): number {
+  if (!w.placements) w.placements = [];
+  for (const t of placedFarmTiles(w)) {
+    if (Math.abs(t.tx - campX) + Math.abs(t.ty - campY) <= CAMP_FARM_SEED_RADIUS) return 0;
+  }
+  const existing = new Set(placedFarmTiles(w).map((t) => t.tx + ',' + t.ty));
+  let placed = 0;
+  for (const tile of CAMP_FARM_PLOT) {
+    if (existing.has(tile.x + ',' + tile.y)) continue;
+    if (!walkable(tile.x, tile.y)) continue;
+    addPlacement(w, {
+      kind: 'farm',
+      x0: tile.x,
+      y0: tile.y,
+      x1: tile.x,
+      y1: tile.y,
+      farmPlantedAt: nowAbs,
+    });
+    existing.add(tile.x + ',' + tile.y);
+    placed++;
+  }
+  return placed;
 }
 
 // ---- Rendering colours (the view's soil slab + these stalks) ----

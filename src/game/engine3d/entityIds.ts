@@ -61,7 +61,7 @@
  */
 
 /** The entity kinds an id can name. */
-export type EntityKind = 'founder' | 'npc' | 'tree' | 'wild-tree' | 'rock' | 'crate' | 'animal' | 'placed' | 'job';
+export type EntityKind = 'founder' | 'npc' | 'tree' | 'wild-tree' | 'rock' | 'crate' | 'farm' | 'animal' | 'placed' | 'job';
 
 /** A founder's stable id: 'founder-' + name (the same string the
  *  1062 coordinator derived on every advance — now stored in the
@@ -98,6 +98,16 @@ export function crateId(tx: number, ty: number): string {
   return 'crate:' + Math.floor(tx) + ',' + Math.floor(ty);
 }
 
+/** A farm tile's id: its tile. One farm tile per tile, and a farm
+ *  tile never moves — the tile IS the identity (the tree rule).
+ *  A moved farm tile is a different work site (the harvest job's
+ *  target follows the tile, not the PlacedItem id — the placed
+ *  item's stored id is the building's identity, this is the work
+ *  site's). */
+export function farmTileId(tx: number, ty: number): string {
+  return 'farm:' + Math.floor(tx) + ',' + Math.floor(ty);
+}
+
 /** An animal's id: kind + '-' + slotId (the existing animals.ts
  *  rule — the fixed GPU slot, stable for the animal's life in the
  *  session; animals are session-only, so the id is not saved). */
@@ -116,7 +126,7 @@ export function animalId(kind: string, slotId: number): string {
  * site, one carrier per founder), so a job id never collides with
  * another live job of the same kind.
  */
-export function jobIdFor(kind: 'chop' | 'build' | 'deliver', targetId: string): string {
+export function jobIdFor(kind: 'chop' | 'build' | 'deliver' | 'harvest', targetId: string): string {
   return 'job:' + kind + ':' + targetId;
 }
 
