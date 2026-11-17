@@ -106,13 +106,15 @@ import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm';
+import { plantableFarmTiles } from './granary';
+import { npcWalkable } from './townsfolk3d';
 import { WELL_START_DAY, type BridgeSite } from './paths';
 import { lumberTreesInRect, openMineSite, type MineState } from './mines';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -218,6 +220,11 @@ export function waterJobIdFor(tx: number, ty: number): string {
   return jobIdFor('water', farmTileId(tx, ty));
 }
 
+/** The job id for planting a farm tile at (tx, ty). */
+export function plantJobIdFor(tx: number, ty: number): string {
+  return jobIdFor('plant', farmTileId(tx, ty));
+}
+
 /** The job id for a mine site (its deposit id). */
 export function mineJobIdFor(depositId: string): string {
   return jobIdFor('mine', depositId);
@@ -275,6 +282,12 @@ export type JobDiscoveryInput = {
    *  factor through it, never by importing landforms.ts or
    *  climate.ts. */
   growthFactorAt?: (tx: number, ty: number) => number;
+  /** BUILD 1090 (2.5): the soil factor per tile, from the 1.1
+   *  adapter (livingWorld.soilFactorAt = rich 1.5 / neutral 1.0 /
+   *  poor 0.6) — plant discovery reads soil through it, never by
+   *  importing landforms.ts. Absent means no soil data (the old
+   *  callers) and no plant job, so old boards are unchanged. */
+  soilFactorAt?: (tx: number, ty: number) => number;
 };
 
 /** The board id for a quarry job on a target (a deposit or a rock). */
@@ -487,6 +500,43 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   }
   for (const job of Object.values(next.jobs)) {
     if (job.kind !== 'harvest' || liveHarvestIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
+  // --- Plant jobs: one per plantable tile, up to the target field
+  // size (BUILD 1090) — the founders plant farms on adapter-rated
+  // soil (1.4) when the camp's field is below FARM_TARGET_TILES.
+  // plantableFarmTiles caps the list (best soil first), so the
+  // board holds at most the tiles still needed — never one job per
+  // plantable tile. A tile that is planted (or built over) leaves
+  // the list: open jobs are removed, claimed ones fail
+  // ('target-gone'). No soil data (the old callers) means no plant
+  // jobs, so old boards are unchanged.
+  const livePlantIds = new Set<string>();
+  if (input.soilFactorAt) {
+    for (const t of plantableFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, input.soilFactorAt, (x, y) => npcWalkable(world, x, y))) {
+      const id = plantJobIdFor(t.tx, t.ty);
+      livePlantIds.add(id);
+      if (next.jobs[id]) continue;
+      next.jobs[id] = {
+        id,
+        kind: 'plant',
+        targetId: farmTileId(t.tx, t.ty),
+        tile: { x: t.tx, y: t.ty },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
+      changed = true;
+    }
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'plant' || livePlantIds.has(job.id)) continue;
     if (job.state === 'claimed') {
       next = failJob(next, job.id, 'target-gone');
     } else {
@@ -966,6 +1016,8 @@ export function jobSummary(board: JobBoard): {
   mineClaimed: number;
   lumberOpen: number;
   lumberClaimed: number;
+  plantOpen: number;
+  plantClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -988,6 +1040,8 @@ export function jobSummary(board: JobBoard): {
   let mineClaimed = 0;
   let lumberOpen = 0;
   let lumberClaimed = 0;
+  let plantOpen = 0;
+  let plantClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
@@ -998,6 +1052,7 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'water') waterOpen++;
       else if (job.kind === 'mine') mineOpen++;
       else if (job.kind === 'lumber') lumberOpen++;
+      else if (job.kind === 'plant') plantOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
@@ -1008,8 +1063,9 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'water') waterClaimed++;
       else if (job.kind === 'mine') mineClaimed++;
       else if (job.kind === 'lumber') lumberClaimed++;
+      else if (job.kind === 'plant') plantClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, plantOpen, plantClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

@@ -144,7 +144,7 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
           <div data-testid="cc-resources" style={sectionStyle}>
             <div style={headingStyle}>🪵 Resources + shortages</div>
             <div>
-              Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · food {d.resources.campFood} · grain {d.resources.campGrain}
+              Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · Granary {d.resources.campFood} meals · {d.resources.campGrain} grain
             </div>
             <div>
               Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone} · iron {d.resources.storehouseIron}
@@ -180,9 +180,9 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
           </div>
 
           <div data-testid="cc-food" style={sectionStyle}>
-            <div style={headingStyle}>🌾 Food — production + consumption</div>
+            <div style={headingStyle}>🌾 Food (Granary) — production + consumption</div>
             <div>
-              Grain {d.food.grain} · food {d.food.food} · farm: {d.food.farmPlanted} planted / {d.food.farmGrowing} growing / {d.food.farmReady} ready
+              Granary {d.food.food} meals · {d.food.grain} grain · farm: {d.food.farmPlanted} planted / {d.food.farmGrowing} growing / {d.food.farmReady} ready
             </div>
             <div>
               Average health {d.food.healthAvg}

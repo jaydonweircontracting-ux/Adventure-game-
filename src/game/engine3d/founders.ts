@@ -84,6 +84,7 @@ import { plantSapling } from './ecosystems';
 import { decayFounderHealth } from './food';
 import {
   CAMP_STORE_ID,
+  GRANARY_STORE_ID,
   carrierStoreId,
   depositInto,
   extractDeposit,
@@ -106,6 +107,7 @@ import {
 import type { IsoWorld } from '../iso/isoWorld';
 import type { MineState } from './mines';
 import { harvestFarmTile } from './farm';
+import { seedGranaryStore, GRANARY_GRAIN_TILE } from './granary';
 import { freshStorehouse, validateStorehouseState, type StorehouseState } from './storehouse';
 import type { BridgeSite } from './paths';
 import type { WheatTri } from './farm';
@@ -159,15 +161,20 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  yet, the world keeps working, the same as before). NOTE: the
  *  parked Tamsin stash (BUILD 1061, stash@{0}) ALSO claims v4
  *  for the newcomer — when it resumes it must rebase its
- *  migration to v12 (this v11 means "has mines + ore"). v11
+ *  migration to v13 (this v12 means "has a granary"). v11
  *  (BUILD 1089, 0x18): the MINES (mines.ts — the mine sites, the
  *  quarry site, the lumber site) and each founder's carried ORE
  *  (carryingOre — the mine leg, like carryingStone for the
  *  quarry) and the storehouse's stored ORE (storehouseOre — iron
  *  in the storehouse store). v10 saves migrate with no sites,
  *  no carried ore, and no stored ore (the world keeps working,
- *  the same as before). */
-export const FOUNDER_SAVE_VERSION = 11;
+ *  the same as before). v12 (BUILD 1090, 0x19): the GRANARY
+ *  (granary.ts — the camp's food store; foodStock/grainStock are
+ *  now the granary's counts, not the camp store's; fresh worlds
+ *  start with an empty granary, no more magic 30). v11 saves
+ *  migrate with the granary seeded from their foodStock/
+ *  grainStock (the same fields, the new store). */
+export const FOUNDER_SAVE_VERSION = 12;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -204,9 +211,14 @@ export type FounderBed = { hut: number; x: number; y: number };
  *  word only). Checked in the 1066 asserts against ROSTER_3D. */
 export const RESIDENT_NAMES = ['Bram', 'Fern', 'Silas', 'Tessa', 'Orin', 'Hazel'];
 
-/** Meals the founders brought with them (3 founders × 3 meals/day
- *  ≈ 3 days of food; nothing replenishes it yet). */
-export const FOUNDER_START_FOOD = 30;
+/** BUILD 1090 (2.5): meals the founders start with — 0. The
+ *  camp's food no longer arrives as a magic 30: fresh worlds
+ *  start with an empty granary, and the first meal comes from
+ *  the first harvest (the seeded plot is ready ~11:30 day 1;
+ *  hunger at 11:30 is ~48, no starvation). v11 saves migrate
+ *  with the granary seeded from their foodStock (same field,
+ *  new store), so old saves do not start starving on load. */
+export const FOUNDER_START_FOOD = 0;
 /** Nearest-tree search radius around the camp, in tiles. BUILD 1059:
  *  30 → 60. Only 8 trees sit within 30 tiles of the camp (measured
  *  from the deterministic default world: 4 within 12, 7 within 25,
@@ -336,15 +348,17 @@ export function deliverFounderWood(stockpileWood: number, carrying: number): num
 
 /**
  * Seed the camp store from the founders save numbers (load path):
- * wood at the stockpile tile, food at the eat tile, grain at the
- * stockpile tile (the mill's buffer), source 'loaded' (the save
- * does not record where a unit came from), uncapped — the same
- * as the plain refs today. Pure.
+ * wood + stone at the stockpile tile (the camp store, uncapped),
+ * food + grain into the GRANARY store (granary.ts — the mill's
+ * buffer lives there since BUILD 1090, not in the camp store).
+ * Source 'loaded' (the save does not record where a unit came
+ * from). The signature is unchanged (wood, food, grain, stone) —
+ * the food/grain args now seed the granary, so the load sites and
+ * the sim keep calling it the same way. Pure.
  */
 export function seedCampStore(registry: ResourceRegistry, stockpileWood: number, foodStock: number, grainStock: number, stoneStock = 0): ResourceRegistry {
   let next = setStoreQty(registry, CAMP_STORE_ID, 'wood', stockpileWood, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
-  next = setStoreQty(next, CAMP_STORE_ID, 'food', foodStock, { type: 'loaded' }, { location: { ...FOUNDER_EAT_TILE } });
-  next = setStoreQty(next, CAMP_STORE_ID, 'grain', grainStock, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
+  next = seedGranaryStore(next, grainStock, foodStock);
   next = setStoreQty(next, CAMP_STORE_ID, 'stone', stoneStock, { type: 'loaded' }, { location: { ...FOUNDER_STOCKPILE_TILE } });
   return next;
 }
@@ -404,7 +418,7 @@ export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): R
 }
 
 /**
- * Eat a meal from the camp store (registry authority): withdraw 1
+ * Eat a meal from the granary (registry authority): withdraw 1
  * food; only when a whole meal is taken does hunger go to 100.
  * With no food, nothing happens (the founder stays hungry — a real
  * consequence, not a hidden refill). Pure.
@@ -413,7 +427,7 @@ export function eatFounderMealFromRegistry(
   registry: ResourceRegistry,
   needs: FounderNeeds,
 ): { registry: ResourceRegistry; needs: FounderNeeds; ate: boolean } {
-  const w = withdrawFrom(registry, CAMP_STORE_ID, 'food', 1);
+  const w = withdrawFrom(registry, GRANARY_STORE_ID, 'food', 1);
   if (w.taken < 1) return { registry, needs, ate: false };
   return { registry: w.registry, needs: { ...needs, hunger: 100 }, ate: true };
 }
@@ -514,12 +528,14 @@ export function harvestFarmTileToCarrier(
 }
 
 /**
- * Deliver the founder's carried wood AND grain to the camp store
- * (BUILD 1067 — the grain leg): two real transfers (carrier store
- * → camp store), so both totals are conserved across the chain.
- * Returns the new registry and how many units of each moved. The
- * caller sets f.carrying -= movedWood and
- * f.carryingGrain -= movedGrain. Pure.
+ * Deliver the founder's carried wood AND grain to their stores
+ * (BUILD 1067 — the grain leg; BUILD 1090 — the grain goes to the
+ * granary now, not the camp store): two real transfers (carrier
+ * store → camp store for wood, carrier store → granary store for
+ * grain), so both totals are conserved across the chain. Returns
+ * the new registry and how many units of each moved. The caller
+ * sets f.carrying -= movedWood and f.carryingGrain -= movedGrain.
+ * Pure.
  */
 export function deliverFounderCarryToRegistry(
   registry: ResourceRegistry,
@@ -531,7 +547,7 @@ export function deliverFounderCarryToRegistry(
   let reg = wood.registry;
   let movedGrain = 0;
   if (grain > 0) {
-    const res = transfer(reg, carrierStoreId(f.id), CAMP_STORE_ID, 'grain', grain, { type: 'entity', id: f.id }, { location: { ...FOUNDER_CAMP_CENTRE } });
+    const res = transfer(reg, carrierStoreId(f.id), GRANARY_STORE_ID, 'grain', grain, { type: 'entity', id: f.id }, { location: { ...GRANARY_GRAIN_TILE } });
     reg = res.registry;
     movedGrain = res.moved;
   }
@@ -552,10 +568,11 @@ export function campWoodInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, CAMP_STORE_ID, 'wood');
 }
 
-/** Meals in the camp store (the registry's answer to the old
- *  founderFoodRef.current read). Pure. */
+/** Meals in the granary store (BUILD 1090 — the camp's food lives
+ *  in the granary now; the name stays, it means "the camp's food").
+ *  Pure. */
 export function campFoodInRegistry(registry: ResourceRegistry): number {
-  return storeQty(registry, CAMP_STORE_ID, 'food');
+  return storeQty(registry, GRANARY_STORE_ID, 'food');
 }
 
 /** Stone in the camp store (BUILD 1086 — the quarry loop's
@@ -566,7 +583,7 @@ export function campStoneInRegistry(registry: ResourceRegistry): number {
 
 // --- Founder state ---
 
-export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting' | 'toQuarry' | 'mining' | 'toStorehouse' | 'toWell' | 'toWater' | 'toMine' | 'miningOre';
+export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting' | 'toQuarry' | 'mining' | 'toStorehouse' | 'toWell' | 'toWater' | 'toMine' | 'miningOre' | 'toPlant' | 'planting';
 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
@@ -594,6 +611,12 @@ export type FounderState = {
   buildTicks: number;
   /** Harvest ticks spent on the current farm tile (BUILD 1067). */
   harvestTicks: number;
+  /** Plant ticks spent on the current farm tile (BUILD 1090 —
+   *  the planting leg, like harvestTicks for the harvest).
+   *  Session-only (reset to 0 on load, like mineTicks — a founder
+   *  reloaded mid-plant restarts the plant; nothing is lost,
+   *  the tile is not planted yet). */
+  plantTicks: number;
   /** Stone currently carried (0..2 — the mine leg, BUILD 1086,
    *  like carryingGrain for the harvest). */
   carryingStone: number;
@@ -710,6 +733,7 @@ export function spawnResident(
     chopTicks: 0,
     buildTicks: 0,
     harvestTicks: 0,
+    plantTicks: 0,
     mineTicks: 0,
     treeTarget: null,
     farmTarget: null,
@@ -750,6 +774,7 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     chopTicks: 0,
     buildTicks: 0,
     harvestTicks: 0,
+    plantTicks: 0,
     mineTicks: 0,
     treeTarget: null,
     farmTarget: null,
@@ -1066,10 +1091,15 @@ export type FoundersSaveState = {
   version: number;
   founders: FounderSave[];
   stockpileWood: number;
+  /** BUILD 1090 (0x19, v12): the granary's stored meals — the
+   *  camp's food lives in the granary store now, not the camp
+   *  store (same field, new store — v11 saves migrate with the
+   *  granary seeded from it). */
   foodStock: number;
   /** BUILD 1069 (0x0F, v7): the camp's stored grain — the mill's
    *  buffer. v6 saves have none and migrate to 0 (the 0x09 24h
-   *  test proved a reload lost it). */
+   *  test proved a reload lost it). BUILD 1090 (v12): grainStock
+   *  is the granary's stored grain now (same field, new store). */
   grainStock: number;
   /** BUILD 1086 (0x15, v8): the camp's stored stone — the
    *  quarry loop's stockpile leg. v7 saves have none and migrate
@@ -1103,8 +1133,9 @@ export type FoundersSaveState = {
   construction: ConstructionState;
 };
 
-/** Fresh v4 save: founders at their sleep tiles, empty stockpile,
- *  full starting food, no hut started, neutral toward each other. */
+/** Fresh v12 save: founders at their sleep tiles, empty stockpile,
+ *  empty granary (BUILD 1090 — no more magic 30), no hut started,
+ *  neutral toward each other. */
 export function freshFoundersSave(clockAbs: number): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
@@ -1211,7 +1242,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 }
 
 /**
- * Migrate an unknown founders save to the current version (v11).
+ * Migrate an unknown founders save to the current version (v12).
  * Missing version field =
  * v0 (defaults filled); version 1 = validated + clamped (unknown
  * founder names dropped, missing founders restored at camp,
@@ -1234,7 +1265,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== 7 && v.version !== 8 && v.version !== 9 && v.version !== 10 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== 7 && v.version !== 8 && v.version !== 9 && v.version !== 10 && v.version !== 11 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1066 (v5): construction from the save — a v5 save has the
   // per-site list (`sites`); a v4-or-earlier save has the single-hut
@@ -1574,6 +1605,7 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
       buildTicks: s.buildTicks ?? 0,
       harvestTicks: s.harvestTicks ?? 0,
       mineTicks: 0,
+      plantTicks: 0,
       treeTarget: null,
       farmTarget: null,
     waterTarget: null,

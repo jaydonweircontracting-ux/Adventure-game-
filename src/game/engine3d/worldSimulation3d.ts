@@ -29,7 +29,8 @@ import {
   type ConstructionState,
 } from './construction';
 import { readyFarmTiles, FARM_VILLAGER_RADIUS, waterFarmTile, waterableFarmTiles } from './farm';
-import { growthFactorAt } from './livingWorld';
+import { soilFactorAt, growthFactorAt } from './livingWorld';
+import { FOUNDER_PLANT_TICKS, plantFarmTile } from './granary';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import { advanceClock } from './worldclock';
 import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
@@ -275,7 +276,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // hut is unfinished, deliver jobs for carrying founders.
       // Jobs whose target is gone are removed (open) or failed
       // (claimed — the holder re-targets below).
-      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clock.day,tx,ty),storehouse:storehouseRef.current,day:clock.day,quarryRadius:claimQuarryRadius,well,bridges:pathsRef.current.bridges,mines:minesRef.current});
+      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clock.day,tx,ty),soilFactorAt:(tx:number,ty:number)=>soilFactorAt(world,tx,ty),storehouse:storehouseRef.current,day:clock.day,quarryRadius:claimQuarryRadius,well,bridges:pathsRef.current.bridges,mines:minesRef.current});
       // BUILD 1069: the ready farm tiles this tick — computed once
       // (the scan is over placed farm tiles only, a handful) and
       // fed to every founder's scorer, so food drives work.
@@ -298,6 +299,9 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // sites open day 3).
       const readyMineCount=openJobs(jobBoardRef.current,'mine').length;
       const readyLumberCount=openJobs(jobBoardRef.current,'lumber').length;
+      // BUILD 1090: the open plant jobs this tick — the same
+      // feed as the sim tick. 0 once the field is at target.
+      const readyPlantCount=openJobs(jobBoardRef.current,'plant').length;
       // BUILD 1089: the quarry crew cap — 2 when a site quarry job
       // is open (the crew works the designated site in parallel),
       // 1 otherwise (the ad-hoc rule). In the 24h window there is
@@ -332,6 +336,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         if(!myJob){
           if(f.workState==='toSite'||f.workState==='building'||f.workState==='toStorehouse'||f.workState==='chopping'){f.workState='toTree';f.buildTicks=0;f.chopTicks=0;f.treeTarget=null;f.workTile=null;}
       else if(f.workState==='toFarm'||f.workState==='harvesting'){f.workState='toTree';f.harvestTicks=0;f.farmTarget=null;}
+      else if(f.workState==='toPlant'||f.workState==='planting'){f.workState='toTree';f.plantTicks=0;f.farmTarget=null;}
       else if(f.workState==='toWell'||f.workState==='toWater'){if(f.carryingWater>0)f.carryingWater=0;f.workState='toTree';f.waterTarget=null;}
       else if(f.workState==='toQuarry'||f.workState==='mining'){f.workState='toTree';f.mineTicks=0;f.quarryTarget=null;}
       else if(f.workState==='toMine'||f.workState==='miningOre'){f.workState='toTree';f.mineTicks=0;f.mineTarget=null;}
@@ -377,7 +382,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,hutDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMine'||o.workState==='miningOre'||o.carryingOre>0)),storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),readyLumberJobs:readyLumberCount});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,hutDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMine'||o.workState==='miningOre'||o.carryingOre>0)),storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -572,6 +577,23 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             jobBoardRef.current=wc.board;
             if(wc.job){f.workState='toWell';f.waterTarget={x:wc.job.tile.x,y:wc.job.tile.y};myJob=wc.job;}
           }
+          if(f.workState==='toTree'&&!f.treeTarget&&f.activity==='work'&&f.lastDecision?.workKind==='plant'&&campFoodInRegistry(registryRef.current)<FARM_FOOD_THRESHOLD){
+            // BUILD 1090: the plant claim does the path check here,
+            // like the quarry claim (a plant job whose tile the
+            // founder cannot reach fails 'no-path' and the next
+            // candidate is tried — a blocked tile never blocks
+            // the founder). The claim loop runs once per founder
+            // per tick at most; a founder that claimed keeps the
+            // job until it is done or lost.
+            for(;;){
+              const pc=claimNearestJob(jobBoardRef.current,f.id,'plant',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FARM_VILLAGER_RADIUS);
+              jobBoardRef.current=pc.board;
+              if(!pc.job)break;
+              const path=planPathNpc(world,{x:f.x,y:f.y},{x:pc.job.tile.x,y:pc.job.tile.y});
+              if(path&&path.length>0){f.workState='toPlant';f.farmTarget={x:pc.job.tile.x,y:pc.job.tile.y};myJob=pc.job;break;}
+              jobBoardRef.current=failJob(jobBoardRef.current,pc.job.id,'no-path');
+            }
+          }
           // BUILD 1086: quarrying — a 'work' founder mines stone
           // when the scorer says stone is the work that matters
           // (workKind 'quarry') and the pile is below target. The
@@ -708,6 +730,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         else if(f.workState==='toStockpile'&&storehouseRef.current.state==='done')dest={...STOREHOUSE_APPROACH};
         else if(myJob&&myJob.kind==='build')dest=myJob.tile;
         else if(myJob&&myJob.kind==='harvest'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
+        else if(myJob&&myJob.kind==='plant'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
         else if(f.activity==='sleep'&&hutPlaced)dest=(HUT_SITES[f.bed.hut]?.approach??HUT_APPROACH);
         else if((f.activity==='work'||f.activity==='build')&&(f.workState==='toSite'||f.workState==='building'))dest=buildSite?buildSite.approach:HUT_APPROACH;
         const cx=Math.round(f.x),cy=Math.round(f.y);
@@ -1039,6 +1062,30 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                 f.farmTarget=null;f.harvestTicks=0;
                 f.workState='toStockpile';
               }
+            }else if(f.workState==='toPlant'&&f.farmTarget){
+              // At the farm tile: start planting (the tile is
+              // walk-through ground cover, so the founder stands
+              // on it; the tile itself is the work tile).
+              f.workState='planting';f.plantTicks=0;
+            }else if(f.workState==='planting'&&f.farmTarget){
+              f.plantTicks++;
+              if(f.plantTicks>=FOUNDER_PLANT_TICKS){
+                // BUILD 1090: planting tills the tile through the
+                // same placement path the player uses (a tile that
+                // is no longer plantable fails the job — another
+                // founder planted it first, or the player built
+                // there). No carried item, so no deliver job — the
+                // founder goes straight back to work.
+                const planted=plantFarmTile(world,f.farmTarget.x,f.farmTarget.y,nowAbs);
+                if(planted.ok){
+                  worldDirty=true;
+                  if(myJob&&myJob.kind==='plant'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+                }else if(myJob&&myJob.kind==='plant'){
+                  jobBoardRef.current=failJob(jobBoardRef.current,myJob.id,'target-gone');myJob=undefined;
+                }
+                f.farmTarget=null;f.plantTicks=0;
+                f.workState='toTree';
+              }
             }else if(f.workState==='toMine'&&f.mineTarget){
               // At the mine's work tile: start the shift. No ore
               // moves while walking — the mine runs only here, on
@@ -1215,7 +1262,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // mirrored here), so a wait never re-chooses by a different rule.
         const wWell=wellTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y);
         const wReadyWater=wWell&&clockRef.current.day>=WELL_START_DAY?waterableFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS,(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty)).length:0;
-        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty),storehouse:storehouseRef.current,day:clockRef.current.day,quarryRadius:wClaimQuarryRadius,well:wWell,bridges:pathsRef.current.bridges,mines:minesRef.current});
+        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty),soilFactorAt:(tx:number,ty:number)=>soilFactorAt(world,tx,ty),storehouse:storehouseRef.current,day:clockRef.current.day,quarryRadius:wClaimQuarryRadius,well:wWell,bridges:pathsRef.current.bridges,mines:minesRef.current});
         // BUILD 1069: the ready farm tiles this wait step — the
         // same feed as the real-time tick, so a wait never
         // re-chooses by a different rule.
@@ -1226,6 +1273,8 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // wait never re-chooses by a different rule.
         const wReadyMine=jobSummary(jobBoardRef.current).mineOpen;
         const wReadyLumber=jobSummary(jobBoardRef.current).lumberOpen;
+        // BUILD 1090: the plant feed for the wait-step re-choice.
+        const wReadyPlant=jobSummary(jobBoardRef.current).plantOpen;
         for(let i=0;i<foundersRef.current.length;i++){
           const wf=foundersRef.current[i];
           // BUILD 1060: the wait-step re-choice is the SAME scorer
@@ -1265,6 +1314,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
             readyMineJobs:wReadyMine,
             storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),
             readyLumberJobs:wReadyLumber,
+            readyPlantJobs:wReadyPlant,
           });
         }
         // BUILD 1058: construction does NOT advance during a wait

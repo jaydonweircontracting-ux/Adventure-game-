@@ -34,7 +34,7 @@
  * the standalone asserts can import it directly.
  */
 
-import { CAMP_STORE_ID, depositInto, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
+import { GRANARY_STORE_ID, depositInto, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 
 /** Grain milled into one meal (the recipe: 2 wheat → 1 meal). */
 export const MILL_GRAIN_PER_MEAL = 2;
@@ -48,39 +48,40 @@ export const MILL_MEALS_PER_TICK = 2;
  *  farming runs, milling waits; below 15 both run). */
 export const FARM_FOOD_THRESHOLD = 20;
 
-/** Grain in the camp store (the registry's answer to the food
- *  read — there was no grain read before; grain is new here).
- *  Pure. */
+/** Grain in the granary store (BUILD 1090 — the mill's input lives
+ *  in the granary now, not the camp store; the name stays, it means
+ *  "the camp's grain"). Pure. */
 export function campGrainInRegistry(registry: ResourceRegistry): number {
-  return storeQty(registry, CAMP_STORE_ID, 'grain');
+  return storeQty(registry, GRANARY_STORE_ID, 'grain');
 }
 
 /**
- * Mill camp grain into meals: 2 grain → 1 meal, a production step
+ * Mill granary grain into meals: 2 grain → 1 meal, a production step
  * (source 'production', settlement 'camp' — the camp settlement id
  * in livingWorld.ts). Runs only while the camp is short of food
  * (below MILL_FOOD_THRESHOLD) and holds grain; makes at most
  * MILL_MEALS_PER_TICK meals, and never mills past the threshold.
- * Conservative: if a meal cannot be deposited (the camp store is
- * uncapped, so this never happens today), the grain for the
- * un-made meals goes back to the camp store — grain + 2×food is
- * constant across the call. Pure.
+ * BUILD 1090: the grain + the meals both live in the granary store
+ * now, not the camp store. Conservative: if a meal cannot be
+ * deposited (the granary is capped, so this never happens today),
+ * the grain for the un-made meals goes back to the granary — grain
+ * + 2×food is constant across the call. Pure.
  */
 export function millGrainToMeals(registry: ResourceRegistry): { registry: ResourceRegistry; milled: number; grainUsed: number } {
-  const food = storeQty(registry, CAMP_STORE_ID, 'food');
-  const grain = storeQty(registry, CAMP_STORE_ID, 'grain');
+  const food = storeQty(registry, GRANARY_STORE_ID, 'food');
+  const grain = storeQty(registry, GRANARY_STORE_ID, 'grain');
   if (food >= MILL_FOOD_THRESHOLD || grain < MILL_GRAIN_PER_MEAL) return { registry, milled: 0, grainUsed: 0 };
   const meals = Math.max(0, Math.min(MILL_MEALS_PER_TICK, MILL_FOOD_THRESHOLD - food, Math.floor(grain / MILL_GRAIN_PER_MEAL)));
   if (meals <= 0) return { registry, milled: 0, grainUsed: 0 };
   const want = meals * MILL_GRAIN_PER_MEAL;
-  const withdrawn = withdrawFrom(registry, CAMP_STORE_ID, 'grain', want);
+  const withdrawn = withdrawFrom(registry, GRANARY_STORE_ID, 'grain', want);
   const make = Math.floor(withdrawn.taken / MILL_GRAIN_PER_MEAL);
-  const deposited = depositInto(withdrawn.registry, CAMP_STORE_ID, 'food', make, { type: 'production', settlementId: 'camp' });
+  const deposited = depositInto(withdrawn.registry, GRANARY_STORE_ID, 'food', make, { type: 'production', settlementId: 'camp' });
   const made = Math.floor(deposited.added);
   const leftoverGrain = withdrawn.taken - made * MILL_GRAIN_PER_MEAL;
   let next = deposited.registry;
   if (leftoverGrain > 0) {
-    next = depositInto(next, CAMP_STORE_ID, 'grain', leftoverGrain, { type: 'loaded' }).registry;
+    next = depositInto(next, GRANARY_STORE_ID, 'grain', leftoverGrain, { type: 'loaded' }).registry;
   }
   return { registry: next, milled: made, grainUsed: withdrawn.taken - leftoverGrain };
 }

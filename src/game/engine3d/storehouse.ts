@@ -95,6 +95,7 @@ import {
 } from './construction';
 import {
   CAMP_STORE_ID,
+  GRANARY_STORE_ID,
   carrierStoreId,
   setStoreQty,
   storeQty,
@@ -102,6 +103,7 @@ import {
   withdrawFrom,
   type ResourceRegistry,
 } from './resourceRegistry';
+import { GRANARY_CAPACITY_GRAIN, GRANARY_GRAIN_TILE } from './granary';
 import { doorForRect } from './placements';
 import { planPathNpc } from './townsfolk3d';
 import { terrainAt, type IsoWorld } from '../iso/isoWorld';
@@ -535,8 +537,9 @@ export function deliveryStoreId(storehouse: StorehouseState | null | undefined):
  * build wood to their stores (BUILD 1087 — the hauling leg):
  * wood + stone + build wood go to the delivery store (the
  * storehouse when it exists, the camp pile before that); grain
- * always goes to the camp store (the mill's buffer lives at
- * camp). When the storehouse is full for a kind, the remainder
+ * always goes to the granary store (BUILD 1090 — the mill's
+ * buffer lives in the granary now, not the camp pile). When the
+ * storehouse is full for a kind, the remainder
  * overflows to the camp pile — a real transfer each way, so the
  * total is conserved across the chain (transfer() puts what does
  * not fit back in the source, and the second leg moves it to
@@ -581,7 +584,7 @@ export function deliverFounderCarryToStore(
   const grain = Math.max(0, Math.floor(f.carryingGrain));
   let movedGrain = 0;
   if (grain > 0) {
-    const res = transfer(reg, carrierStoreId(f.id), CAMP_STORE_ID, 'grain', grain, src, { location: { ...FOUNDER_CAMP_CENTRE } });
+    const res = transfer(reg, carrierStoreId(f.id), GRANARY_STORE_ID, 'grain', grain, src, { location: { ...GRANARY_GRAIN_TILE }, capacity: GRANARY_CAPACITY_GRAIN });
     reg = res.registry;
     movedGrain = res.moved;
   }

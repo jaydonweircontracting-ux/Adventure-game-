@@ -106,7 +106,8 @@ import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './fo
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot, waterFarmTile, waterableFarmTiles } from './farm';
 import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
-import { forestBaselineTrees, forestDensity, growthFactorAt } from './livingWorld';
+import { forestBaselineTrees, forestDensity, growthFactorAt, soilFactorAt } from './livingWorld';
+import { FOUNDER_PLANT_TICKS, plantFarmTile } from './granary';
 import { advanceEcosystemDay, applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
@@ -192,6 +193,8 @@ export type SettlementLedger = {
   bridgeWoodSpent: number;
   /** Iron mined by the mine shift (BUILD 1089). */
   oreMined: number;
+  /** Farm tiles the founders planted (BUILD 1090). */
+  plantsPlanted: number;
   /** Iron delivered to the storehouse (BUILD 1089). */
   oreDelivered: number;
   /** Mine shifts completed (BUILD 1089). */
@@ -220,7 +223,7 @@ export function freshSettlementLedger(): SettlementLedger {
     mealsMilled: 0,
     grainMilled: 0,
     mealsEaten: 0,
-    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0 },
+    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0, plant: 0 },
     stoneMined: 0,
     stoneDelivered: 0,
     jobsFailed: {},
@@ -240,6 +243,7 @@ export function freshSettlementLedger(): SettlementLedger {
     bridgesCompleted: 0,
     bridgeWoodSpent: 0,
     oreMined: 0,
+    plantsPlanted: 0,
     oreDelivered: 0,
     mineShifts: 0,
     quarrySiteStone: 0,
@@ -293,7 +297,7 @@ export function settlementClock(sim: SettlementSim): { day: number; minutes: num
  */
 export function createSettlementSim(world: IsoWorld): SettlementSim {
   const founders = FOUNDER_NAMES.map((name, i) => defaultFounderState(name, i, SETTLEMENT_START_ABS));
-  let registry = seedCampStore(createRegistry(), 0, 30, 0, 0);
+  let registry = seedCampStore(createRegistry(), 0, 0, 0, 0); // BUILD 1090: no more magic 30 — fresh worlds start with an empty granary.
   for (const f of founders) registry = seedCarrierStore(registry, f);
   seedCampFarmPlot(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, SETTLEMENT_START_ABS, (x, y) => npcWalkable(world, x, y));
   // BUILD 1082 (1.3): stamp the rivers into the sim world too, so the
@@ -478,7 +482,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   const well = wellTile(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
 
   // Rebuild the job board from the world.
-  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines });
+  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines });
 
   // BUILD 1069: the ready farm tiles this tick — computed once and
   // fed to every founder's scorer, so food drives work.
@@ -503,6 +507,9 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // open day 3).
   const readyMineCount = openJobs(sim.board, 'mine').length;
   const readyLumberCount = openJobs(sim.board, 'lumber').length;
+  // BUILD 1090: the open plant jobs this tick — the same feed as
+  // the real-time tick. 0 once the field is at target.
+  const readyPlantCount = openJobs(sim.board, 'plant').length;
   // BUILD 1089: the quarry crew cap — 2 when a site quarry job is
   // open (the crew works the designated site in parallel), 1
   // otherwise (the ad-hoc rule). In the 24h window there is no
@@ -545,6 +552,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       } else if (f.workState === 'toFarm' || f.workState === 'harvesting') {
         f.workState = 'toTree';
         f.harvestTicks = 0;
+        f.farmTarget = null;
+      } else if (f.workState === 'toPlant' || f.workState === 'planting') {
+        f.workState = 'toTree';
+        f.plantTicks = 0;
         f.farmTarget = null;
       } else if (f.workState === 'toQuarry' || f.workState === 'mining') {
         f.workState = 'toTree';
@@ -639,6 +650,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         mineTaken: sim.founders.some((o) => o !== f && (o.workState === 'toMine' || o.workState === 'miningOre' || o.carryingOre > 0)),
         storehouseIron: storehouseOreInRegistry(sim.registry, 'iron'),
         readyLumberJobs: readyLumberCount,
+        readyPlantJobs: readyPlantCount,
       });
       f.activity = decision.activity;
       f.lastDecision = decision;
@@ -839,6 +851,21 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           myJob = wc.job;
         }
       }
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'plant' && campFoodInRegistry(sim.registry) < FARM_FOOD_THRESHOLD) {
+        for (;;) {
+          const pc = claimNearestJob(sim.board, f.id, 'plant', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FARM_VILLAGER_RADIUS);
+          sim.board = pc.board;
+          if (!pc.job) break;
+          const path = planPathNpc(world, { x: f.x, y: f.y }, { x: pc.job.tile.x, y: pc.job.tile.y });
+          if (path && path.length > 0) {
+            f.workState = 'toPlant';
+            f.farmTarget = { x: pc.job.tile.x, y: pc.job.tile.y };
+            myJob = pc.job;
+            break;
+          }
+          sim.board = failJob(sim.board, pc.job.id, 'no-path');
+        }
+      }
       // BUILD 1089: the mine — the mirror of the real-time tick
       // (same gate: workKind 'mine' and the storehouse below its
       // iron target). One miner at a time (the mineTaken guard).
@@ -989,6 +1016,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     else if (f.workState === 'toStockpile' && sim.storehouse.state === 'done') dest = { ...STOREHOUSE_APPROACH };
     else if (myJob && myJob.kind === 'build') dest = myJob.tile;
     else if (myJob && myJob.kind === 'harvest' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
+    else if (myJob && myJob.kind === 'plant' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (f.activity === 'sleep' && hutPlaced) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;
     else if ((f.activity === 'work' || f.activity === 'build') && (f.workState === 'toSite' || f.workState === 'building'))
       dest = buildSite ? buildSite.approach : HUT_APPROACH;
@@ -1386,6 +1414,29 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             f.farmTarget = null;
             f.harvestTicks = 0;
             f.workState = 'toStockpile';
+          }
+        } else if (f.workState === 'toPlant' && f.farmTarget) {
+          f.workState = 'planting';
+          f.plantTicks = 0;
+        } else if (f.workState === 'planting' && f.farmTarget) {
+          f.plantTicks++;
+          if (f.plantTicks >= FOUNDER_PLANT_TICKS) {
+            const planted = plantFarmTile(world, f.farmTarget.x, f.farmTarget.y, nowAbs);
+            if (planted.ok) {
+              ledger.plantsPlanted++;
+              if (myJob && myJob.kind === 'plant') {
+                ledger.jobsCompleted.plant++;
+                sim.board = completeJob(sim.board, myJob.id);
+                myJob = undefined;
+              }
+            } else if (myJob && myJob.kind === 'plant') {
+              ledger.jobsFailed['target-gone'] = (ledger.jobsFailed['target-gone'] ?? 0) + 1;
+              sim.board = failJob(sim.board, myJob.id, 'target-gone');
+              myJob = undefined;
+            }
+            f.farmTarget = null;
+            f.plantTicks = 0;
+            f.workState = 'toTree';
           }
         } else if (f.workState === 'toMine' && f.mineTarget) {
           // At the mine's work tile: start the shift (the arrival

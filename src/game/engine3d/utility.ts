@@ -234,6 +234,10 @@ export type UtilityWorldContext = {
    *  a tree to fell in the rotation. Optional: absent means no
    *  lumber data and the lumber term is 0. */
   readyLumberJobs?: number;
+  /** BUILD 1090: open plant jobs on the board — the plant term
+   *  only fires when there is a tile to plant. Optional: absent
+   *  means no plant data and the plant term is 0. */
+  readyPlantJobs?: number;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -258,8 +262,9 @@ export type ScoredDecision = {
   /** BUILD 1086: which work the founder should do when the
    *  activity is 'work' — the argmax of the chop / food / stone
    *  terms (null when no work is worth doing). BUILD 1089: the
-   *  mine and the lumber join the argmax (see workTermsFor). */
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null;
+   *  mine and the lumber join the argmax (see workTermsFor).
+   *  BUILD 1090: planting joins it too. */
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -318,6 +323,15 @@ export const UTILITY_WATER_TERM_MAX = 0.25;
  *  fades as the storehouse fills (iron 20 → 0). */
 export const UTILITY_MINE_TERM_MAX = 0.45;
 
+/** BUILD 1090: the plant term — the most work is worth for planting
+ *  alone (an open plant job, food 0). Below the food term (0.65 —
+ *  a ready tile always outranks a tile to plant), below night sleep
+ *  (0.81) and a hungry founder's eat, above idle rest — planting
+ *  is real work with a real payoff (the field that feeds the camp),
+ *  done on spare capacity, and it fades as the granary fills
+ *  (food 20 → 0). */
+export const UTILITY_PLANT_TERM_MAX = 0.45;
+
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
   return Math.max(0, Math.min(1, (100 - value) / 100));
@@ -348,8 +362,9 @@ function workTermsFor(ctx: UtilityContext): {
   waterTerm: number;
   mineTerm: number;
   lumberTerm: number;
+  plantTerm: number;
   work: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -476,15 +491,32 @@ function workTermsFor(ctx: UtilityContext): {
     (ctx.day ?? 0) >= MINE_START_DAY && storehouseIron < MINE_IRON_TARGET && woodWork === 0
       ? UTILITY_MINE_TERM_MAX * Math.max(0, 1 - storehouseIron / MINE_IRON_TARGET)
       : 0;
-  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm);
-  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null = null;
-  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm) workKind = 'water';
-  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm) workKind = 'quarry';
+  // BUILD 1090: the plant term — when the camp is short of food
+  // (below FARM_FOOD_THRESHOLD) and a plant job is open, work is
+  // worth doing for the planting alone. It scales with the shortage
+  // like the food term (food 0 → UTILITY_PLANT_TERM_MAX, food 10 →
+  // half, food 20+ → 0) and combines by max, not addition. It never
+  // beats night sleep or a hungry founder's eat, and it never steals
+  // a harvest: the food term (0.65 max) is always above it (0.45
+  // max) at the same food level, so whenever a tile is ready the
+  // harvest branch below wins first — planting fires only when
+  // nothing is ready to harvest. No day gate (it must fire day 1,
+  // when the granary is empty and the field is 4 of 8).
+  const readyPlant = ctx.readyPlantJobs ?? 0;
+  const plantTerm =
+    readyPlant > 0 && foodStock < FARM_FOOD_THRESHOLD
+      ? UTILITY_PLANT_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null = null;
+  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm && waterTerm > plantTerm) workKind = 'water';
+  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm && stoneTerm > plantTerm) workKind = 'quarry';
+  else if (plantTerm > 0 && plantTerm > chopWork && plantTerm > foodTerm && plantTerm >= lumberTerm && plantTerm >= mineTerm) workKind = 'plant';
   else if (foodTerm > 0 && foodTerm >= chopWork && foodTerm >= lumberTerm && foodTerm >= mineTerm) workKind = 'harvest';
   else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm) workKind = 'lumber';
   else if (mineTerm > 0 && mineTerm >= chopWork) workKind = 'mine';
   else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, work, workKind };
+  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {

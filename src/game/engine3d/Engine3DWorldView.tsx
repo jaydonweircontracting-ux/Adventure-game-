@@ -131,7 +131,7 @@ import { freshMineState, validateMineState, mineSummaryText, type MineState } fr
 // came from. The view owns the ref; the E-key gather, the founder
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
-import { CAMP_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, extractDeposit, treeDeposit, depositsFromWorld, registryToSettlementStorage, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, extractDeposit, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
 // BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
 // the registry -> React mirror. No crafting system exists in 3D yet.
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
@@ -1706,11 +1706,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // mid-watering walks to a site again; the carried water is
         // spilled (it is never stocked).
         if(f.workState==='toWell'||f.workState==='toWater'){f.workState='toTree';f.carryingWater=0;}
+        // BUILD 1090: 'toPlant'/'planting' are session-only too (the
+        // farm tile) — a founder reloaded mid-plant walks to a site
+        // again; the tile is not planted yet, so nothing is lost.
+        if(f.workState==='toPlant'||f.workState==='planting'){f.workState='toTree';f.plantTicks=0;}
         // BUILD 1058: a founder reloaded at the build site resumes
         // the step from 0 ticks (like the chop reset above); a
         // founder reloaded mid-build whose hut finished while they
         // were away goes back to chopping.
-        f.treeTarget=null;f.farmTarget=null;f.waterTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;f.harvestTicks=0;
+        f.treeTarget=null;f.farmTarget=null;f.waterTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;f.harvestTicks=0;f.plantTicks=0;
         f.restTile=null;
         f.lastAbs=clockAbs;
       }
@@ -1772,7 +1776,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // load, so the coordinator's first advance sees the pile the
       // founders actually filled, not a second (empty) ledger.
       const campSettlement=livingWorldRef.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
-      if(campSettlement)registryToSettlementStorage(registryRef.current,campSettlement,CAMP_STORE_ID);
+      // BUILD 1090: the camp's storage is two stores now (wood +
+      // stone in the camp store, food + grain in the granary) —
+      // mirror both, so the coordinator sees the pile the founders
+      // actually filled.
+      if(campSettlement)mirrorCampStoresToSettlement(registryRef.current,campSettlement);
       refreshResourceUi();
     }
     // BUILD 993: static schedule anchors (plaza, stalls, gardens, patrol)
@@ -2658,10 +2666,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1064 (R-1): the registry read (probes only) — the
       // player store, the camp store, the carrier stores, the world
       // deposits still standing, and the totals a scheduler asks.
-      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current),stone:campStoneInRegistry(registryRef.current)},storehouse:{wood:storehouseWoodInRegistry(registryRef.current),stone:storehouseStoneInRegistry(registryRef.current),iron:storehouseOreInRegistry(registryRef.current,'iron')},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood'),grain:storeQty(registryRef.current,'carrier:'+f.id,'grain'),stone:storeQty(registryRef.current,'carrier:'+f.id,'stone'),iron:storeQty(registryRef.current,'carrier:'+f.id,'iron')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
+      getResourceRegistry:()=>({player:{wood:storeQty(registryRef.current,PLAYER_STORE_ID,'wood'),stone:storeQty(registryRef.current,PLAYER_STORE_ID,'stone'),gold:storeQty(registryRef.current,PLAYER_STORE_ID,'gold'),grain:storeQty(registryRef.current,PLAYER_STORE_ID,'grain')},camp:{wood:campWoodInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current),stone:campStoneInRegistry(registryRef.current)},granary:{grain:campGrainInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current)},storehouse:{wood:storehouseWoodInRegistry(registryRef.current),stone:storehouseStoneInRegistry(registryRef.current),iron:storehouseOreInRegistry(registryRef.current,'iron')},carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(registryRef.current,'carrier:'+f.id,'wood'),grain:storeQty(registryRef.current,'carrier:'+f.id,'grain'),stone:storeQty(registryRef.current,'carrier:'+f.id,'stone'),iron:storeQty(registryRef.current,'carrier:'+f.id,'iron')})),deposits:{wood:depositsOfKind(registryRef.current,'wood').length,stone:depositsOfKind(registryRef.current,'stone').length},totalWoodAvailable:totalAvailable(registryRef.current,'wood'),totalStoneAvailable:totalAvailable(registryRef.current,'stone')}),
       setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
-      setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE}});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
-      setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE}});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
+      setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE},capacity:60});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
+      setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE},capacity:200});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
       setCampStone:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'stone',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campStoneInRegistry(registryRef.current);},
       setCampWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
       // BUILD 1081 (1.2): mineral deposits (probes only) — the live

@@ -166,12 +166,16 @@ export function isValidSource(value: unknown): value is ResourceSource {
 // --- Stores ---
 
 /** A store's kind: what holds the resource. */
-export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier' | 'storehouse';
+export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier' | 'storehouse' | 'granary';
 
 /** The player's carried store (uncapped, owner 'player'). */
 export const PLAYER_STORE_ID = 'player';
 /** The founders' camp stockpile store (uncapped, the pile tile). */
 export const CAMP_STORE_ID = 'camp';
+/** BUILD 1090 (2.5): the granary store — the camp's food store
+ *  (grain + meals), capped per resource (granary.ts). The camp
+ *  store keeps wood + stone; food + grain live here now. */
+export const GRANARY_STORE_ID = 'granary';
 
 /** A 2.5D settlement's storage as a registry store. */
 export function settlementStoreId(id: string): string {
@@ -193,6 +197,9 @@ export function storeKindOf(storeId: string): StoreKind | null {
   // BUILD 1087 (2.2): the storehouse store — the settlement's
   // materials store, capped per resource (storehouse.ts).
   if (storeId === 'storehouse') return 'storehouse';
+  // BUILD 1090 (2.5): the granary store — the camp's food store,
+  // capped per resource (granary.ts).
+  if (storeId === GRANARY_STORE_ID) return 'granary';
   if (storeId.startsWith('settlement:')) return 'settlement';
   if (storeId.startsWith('carrier:')) return 'carrier';
   return null;
@@ -648,22 +655,46 @@ export function registryToSettlementStorage(
 }
 
 /**
+ * BUILD 1090 (2.5): the live 3D camp's storage is TWO stores now
+ * — wood + stone in the camp store, food + grain in the granary —
+ * so the coordinator mirror writes both: wood/stone from the camp
+ * store (clamped to the settlement cap, the old mirror's rule),
+ * food/grain from the granary (UNclamped — the granary's caps
+ * 200/60 exceed the settlement cap 50+pop, so clamping grain would
+ * lose it on the reverse sync below). The single-store mirror above
+ * cannot do this (one store per call, and a second call would zero
+ * the first store's kinds). Pure apart from the settlement mutation
+ * (the coordinator's object).
+ */
+export function mirrorCampStoresToSettlement(
+  registry: ResourceRegistry,
+  settlement: Settlement,
+): void {
+  const cap = settlementStorageCap(settlement);
+  settlement.storage.wood = Math.max(0, Math.min(cap, Math.floor(storeQty(registry, CAMP_STORE_ID, 'wood'))));
+  settlement.storage.stone = Math.max(0, Math.min(cap, Math.floor(storeQty(registry, CAMP_STORE_ID, 'stone'))));
+  settlement.storage.food = Math.max(0, Math.floor(storeQty(registry, GRANARY_STORE_ID, 'food')));
+  settlement.storage.grain = Math.max(0, Math.floor(storeQty(registry, GRANARY_STORE_ID, 'grain')));
+}
+
+/**
  * The reverse sync for the live 3D camp: write a settlement's
- * storage wood/food back into the registry's camp store (the
- * coordinator's production/consumption for the camp is zero today,
- * so this is a no-op until it is not — but when J-1 gives the
- * founders jobs and production flows into settlement.storage, the
- * change lands in the one authoritative record instead of a second
- * ledger). Writes both kinds exactly, including 0 (a coordinator
- * change that empties the pile must empty the camp store). Source
- * 'production' (the settlement's own production/consumption).
- * Pure.
+ * storage back into the registry's stores (the coordinator's
+ * production/consumption for the camp is zero today, so this is a
+ * no-op until it is not — but when J-1 gives the founders jobs
+ * and production flows into settlement.storage, the change lands
+ * in the one authoritative record instead of a second ledger).
+ * Wood goes to the camp store, food + grain to the GRANARY store
+ * (BUILD 1090 — the camp's food lives there now). Writes each kind
+ * exactly, including 0 (a coordinator change that empties the pile
+ * must empty the store). Source 'production' (the settlement's own
+ * production/consumption). Pure.
  */
 export function syncCampStoreFromSettlement(
   registry: ResourceRegistry,
   settlement: Settlement,
 ): ResourceRegistry {
-  // No location opts: the camp store is seeded at load with the
+  // No location opts: the stores are seeded at load with the
   // stockpile/eat tiles, and setStoreQty keeps an existing entry's
   // location — the sync only moves the numbers.
   let next = setStoreQty(
@@ -675,9 +706,16 @@ export function syncCampStoreFromSettlement(
   );
   next = setStoreQty(
     next,
-    CAMP_STORE_ID,
+    GRANARY_STORE_ID,
     'food',
     Math.max(0, Math.floor(settlement.storage.food ?? 0)),
+    { type: 'production', settlementId: settlement.id },
+  );
+  next = setStoreQty(
+    next,
+    GRANARY_STORE_ID,
+    'grain',
+    Math.max(0, Math.floor(settlement.storage.grain ?? 0)),
     { type: 'production', settlementId: settlement.id },
   );
   return next;

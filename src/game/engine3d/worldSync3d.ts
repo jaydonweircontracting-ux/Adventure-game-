@@ -18,7 +18,7 @@ import { applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { seasonArrivalMessage, seasonForDay } from './climate';
-import { CAMP_STORE_ID, addDeposit, treeDeposit, registryToSettlementStorage, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { addDeposit, treeDeposit, mirrorCampStoresToSettlement, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
 import type { DayClock } from './townsfolk3d';
 
 export interface WorldSyncContext {
@@ -118,7 +118,10 @@ export function syncLivingWorld(ctx: LivingWorldSyncContext, world: IsoWorld): b
   // real numbers in before advancing, so the coordinator sees the
   // pile the founders actually filled.
   const campSettlement=ctx.livingWorld.current.livingWorld.civilization.settlements.find(s=>s.id===CAMP_SETTLEMENT_ID);
-  if(campSettlement)registryToSettlementStorage(ctx.registry.current,campSettlement,CAMP_STORE_ID);
+  // BUILD 1090: the camp's storage is two stores now (wood +
+  // stone in the camp store, food + grain in the granary) — mirror
+  // both, so the coordinator sees the pile the founders filled.
+  if(campSettlement)mirrorCampStoresToSettlement(ctx.registry.current,campSettlement);
   const res=advanceLivingWorldDay({state:ctx.livingWorld.current,clock:ctx.clock.current,founders:ctx.founders.current,world});
   if(res.advancedDays===0&&res.planted.length===0)return false;
   ctx.livingWorld.current=res.state;

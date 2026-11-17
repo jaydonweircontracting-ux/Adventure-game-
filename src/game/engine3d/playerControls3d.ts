@@ -583,7 +583,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       // BUILD 1085 (1.6): the ecosystem counts ride on the stockpile
       // board too (deer/wolves/saplings, live from the world save).
       const eco=ecosystemSummaryText(world);
-      setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campStoneInRegistry(registryRef.current)+' stone · '+campFoodInRegistry(registryRef.current)+' food · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:'')+(eco?' · '+eco:''));
+      setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campStoneInRegistry(registryRef.current)+' stone · Granary '+campFoodInRegistry(registryRef.current)+' meals · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:'')+(eco?' · '+eco:''));
       return;
     }
     // BUILD 1058: E at the founders' hut reports its state:
