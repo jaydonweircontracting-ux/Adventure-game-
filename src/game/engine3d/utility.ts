@@ -100,7 +100,8 @@ import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
 import { FARM_FOOD_THRESHOLD, healthWorkFactor } from './food';
 import { QUARRY_STONE_TARGET } from './quarry';
-import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, nearestUnfinishedSite } from './construction';
+import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
+import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
 import type { ConstructionState } from './construction';
 
 /** The five scored activities — the 1057 four plus 'build'. */
@@ -156,6 +157,26 @@ export type UtilityWorldContext = {
    *  recovers the social that lets them chop again). Optional:
    *  absent means the slot is free. */
   quarryTaken?: boolean;
+  /** BUILD 1087: the storehouse state — the build score fires for
+   *  the storehouse project once housing is done and the day is
+   *  old enough. Optional: absent means no storehouse data (the
+   *  1059/1067/1069 callers) and the build score is the hut's
+   *  alone, so old scores are unchanged. */
+  storehouse?: StorehouseState;
+  /** BUILD 1087: wood in the storehouse store — a hut build scores
+   *  when EITHER the camp pile or the storehouse holds a step's
+   *  wood (the builder fetches from the storehouse first).
+   *  Optional: absent means 0. */
+  storehouseWood?: number;
+  /** BUILD 1087: the settlement day (the storehouse project only
+   *  starts on STOREHOUSE_START_DAY). Optional: absent means 0. */
+  day?: number;
+  /** BUILD 1087: the settlement still needs stone for (or in) the
+   *  storehouse (the tick's quarry-radius gate is open) — the stone
+   *  term rises to building urgency so it can beat the food term.
+   *  Optional: absent means false (the 1059/1067/1069/1086 callers)
+   *  and the stone term is unboosted, so old scores are unchanged. */
+  storehouseStoneNeed?: boolean;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -298,10 +319,21 @@ function workTermsFor(ctx: UtilityContext): {
   const stoneStock = ctx.stoneStock ?? 0;
   const readyQuarry = ctx.readyQuarryJobs ?? 0;
   const quarryTaken = ctx.quarryTaken ?? false;
-  const stoneTerm =
+  const stoneTermRaw =
     readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && chopWork === 0
       ? UTILITY_STONE_TERM_MAX * Math.max(0, 1 - stoneStock / QUARRY_STONE_TARGET)
       : 0;
+  // BUILD 1087: while the settlement needs stone for (or in) the
+  // storehouse, the stone term rises to building urgency (0.8) so
+  // it can beat the food term — otherwise the storehouse stalls at
+  // 5/6 in the post-day-2 food crisis (the 0.03 term never wins
+  // against food 0.65, and the last stone never comes). It still
+  // loses to night sleep (0.81) and to a hungry founder's eat, and
+  // only an idle founder (workState 'toTree') can claim the quarry
+  // job, so a mid-build builder is never pulled off the site.
+  // Gated on the tick's storehouse-need flag, so the 24h window
+  // (storehouse 'none', day < 3) never sees it.
+  const stoneTerm = (ctx.storehouseStoneNeed ?? false) && stoneTermRaw > 0 ? Math.max(stoneTermRaw, UTILITY_BUILD_BASE) : stoneTermRaw;
   const work = Math.max(chopWork, foodTerm, stoneTerm);
   let workKind: 'chop' | 'harvest' | 'quarry' | null = null;
   if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm) workKind = 'quarry';
@@ -333,8 +365,36 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
   let work = workTermsFor(ctx).work;
 
   let build = 0;
-  if (construction.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP && !builderTaken) {
-    build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
+  // BUILD 1087: the build score fires for the project that is
+  // actually pending. A hut scores when EITHER store holds a
+  // step's wood (the camp pile, or the storehouse once it exists
+  // — the builder fetches from the storehouse first). The
+  // storehouse itself scores once housing is done, the settlement
+  // is old enough, and the CAMP pile holds a step's wood + stone
+  // (the storehouse draws from camp — it does not exist yet to
+  // draw from). With no storehouse data (the old callers) both
+  // branches reduce to the old hut-only gate, so old scores are
+  // unchanged.
+  // BUILD 1087 (ready-site fix): a site at full progress whose
+  // placement has not landed scores with NO materials on hand —
+  // the placement retry is free (the step spend returns completed
+  // without spending), so gating it on wood/stone strands the
+  // project: the builder releases the job, the score stays 0,
+  // nobody re-claims it, and the job sits open forever (diag F).
+  if (!builderTaken) {
+    if (construction.state !== 'done' && (stockpileWood >= HUT_WOOD_PER_STEP || (ctx.storehouseWood ?? 0) >= HUT_WOOD_PER_STEP || hasReadyHutSite(construction))) {
+      build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
+    } else if (
+      construction.state === 'done' &&
+      ctx.storehouse !== undefined &&
+      ctx.storehouse.state !== 'done' &&
+      (storehouseReadyForPlacement(ctx.storehouse) ||
+        ((ctx.day ?? 0) >= STOREHOUSE_START_DAY &&
+          stockpileWood >= STOREHOUSE_WOOD_PER_STEP &&
+          (ctx.stoneStock ?? 0) >= STOREHOUSE_STONE_PER_STEP))
+    ) {
+      build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
+    }
   }
 
   // BUILD 1067: a weak founder works at half strength, a collapsed

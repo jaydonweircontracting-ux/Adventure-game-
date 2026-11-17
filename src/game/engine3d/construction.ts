@@ -371,8 +371,19 @@ export function verifyHutSite(world: IsoWorld, site: HutSite = HUT_SITES[0]): { 
 
 /** True when a founder may start (or continue) building: the hut is
  *  unfinished and the pile holds at least one step's wood. */
+/** A hut site at full progress whose placement has not landed yet
+ *  (the rect was occupied when the last step completed). The step
+ *  spend on such a site returns completed without spending wood, so
+ *  the placement retry is free — the site still needs a builder.
+ *  BUILD 1087: without this, a ready hut whose placement failed
+ *  strands the same way a ready storehouse did (no camp wood, no
+ *  build score, no re-claim, the job sits open forever). Pure. */
+export function hasReadyHutSite(c: ConstructionState): boolean {
+  return sitesOf(c).some((s) => s.state !== 'done' && s.progress >= HUT_WORK_STEPS);
+}
+
 export function canBuild(c: ConstructionState, stockpileWood: number): boolean {
-  return c.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP;
+  return (c.state !== 'done' && stockpileWood >= HUT_WOOD_PER_STEP) || hasReadyHutSite(c);
 }
 
 /**

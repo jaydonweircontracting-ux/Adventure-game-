@@ -114,6 +114,9 @@ export type ControlCenterInput = {
   sites: ControlCenterSiteRow[];
   hutDone: boolean;
   camp: { wood: number; food: number; grain: number; stone: number };
+  /** BUILD 1087: the storehouse (optional — the old callers pass
+   *  none and the panel shows the site line). */
+  storehouse?: { state: string; progress: number; wood: number; stone: number };
   player: { wood: number; stone: number; gold: number; grain: number };
   carried: { id: string; wood: number; grain: number; stone: number }[];
   deposits: { wood: number; stone: number };
@@ -147,6 +150,11 @@ export type ControlCenterData = {
     carriedWood: number;
     carriedGrain: number;
     carriedStone: number;
+    /** BUILD 1087: the storehouse store (0s when it never held any). */
+    storehouseWood: number;
+    storehouseStone: number;
+    /** BUILD 1087: the storehouse label ('—' / '3/6' / 'done'). */
+    storehouseLabel: string;
     depositsWood: number;
     depositsStone: number;
     totalWoodAvailable: number;
@@ -240,6 +248,9 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       carriedWood: input.carried.reduce((s, c) => s + c.wood, 0),
       carriedGrain: input.carried.reduce((s, c) => s + c.grain, 0),
       carriedStone: input.carried.reduce((s, c) => s + c.stone, 0),
+      storehouseWood: input.storehouse ? input.storehouse.wood : 0,
+      storehouseStone: input.storehouse ? input.storehouse.stone : 0,
+      storehouseLabel: input.storehouse ? (input.storehouse.state === 'done' ? 'done' : input.storehouse.state === 'building' ? input.storehouse.progress + '/6' : '—') : '—',
       depositsWood: input.deposits.wood,
       depositsStone: input.deposits.stone,
       totalWoodAvailable: input.totalWoodAvailable,

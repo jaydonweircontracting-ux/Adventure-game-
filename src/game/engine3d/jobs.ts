@@ -101,6 +101,7 @@
  */
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
+import { STOREHOUSE_APPROACH, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type StorehouseState } from './storehouse';
 import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
@@ -149,6 +150,11 @@ export type JobBoard = {
   lastFailedId: string | null;
   /** Why the last job failed ('target-gone'), or null. */
   lastFailedReason: string | null;
+  /** Quarry targetIds that failed with 'no-path' this session (a rock
+   *  across a river — walkable work tile, no path from camp). Discovery
+   *  never recreates them, so the expensive failed A* is paid once per
+   *  session, not once per claim attempt (BUILD 1087). Session-only. */
+  blockedQuarry?: string[];
 };
 
 /** The build job's target for the FIRST hut site (the 1058 hut).
@@ -171,7 +177,16 @@ export function createJobBoard(): JobBoard {
 }
 
 function copyBoard(board: JobBoard): JobBoard {
-  return { jobs: { ...board.jobs }, completed: board.completed, failed: board.failed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { jobs: { ...board.jobs }, completed: board.completed, failed: board.failed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason, blockedQuarry: board.blockedQuarry ? [...board.blockedQuarry] : undefined };
+}
+
+/** Mark a quarry target as unreachable this session (its claim failed
+ *  with 'no-path'). Discovery skips it from now on — the rock stays
+ *  in the world, but no founder re-runs the failed A* for it. Pure. */
+export function blockQuarryTarget(board: JobBoard, targetId: string): JobBoard {
+  const blocked = board.blockedQuarry ? [...board.blockedQuarry] : [];
+  if (!blocked.includes(targetId)) blocked.push(targetId);
+  return { ...copyBoard(board), blockedQuarry: blocked };
 }
 
 /** The target id for a tree at (tx, ty): stored trees by their
@@ -205,8 +220,20 @@ export function harvestJobIdFor(tx: number, ty: number): string {
 export type JobDiscoveryInput = {
   world: IsoWorld;
   construction: ConstructionState;
-  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number }[];
+  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number; carryingBuild?: number }[];
   nowAbs: number;
+  /** BUILD 1087: the storehouse state + the settlement day — the
+   *  storehouse build job exists only once the huts are done and
+   *  the day is old enough (the housing-first rule). Absent means
+   *  no storehouse data (the old callers) and no storehouse job,
+   *  so old boards are unchanged. */
+  storehouse?: StorehouseState;
+  day?: number;
+  /** BUILD 1087: the rock-discovery radius this tick — the widened
+   *  storehouse radius while the storehouse needs stone. Absent
+   *  means FOUNDER_WORK_RADIUS (the 1086 behaviour). Deposits stay
+   *  at FOUNDER_WORK_RADIUS (ore mining is Phase 2.4). */
+  quarryRadius?: number;
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -319,6 +346,42 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     }
   }
 
+  // --- Storehouse build job: one job while the storehouse is
+  // unfinished (BUILD 1087) — created only once the huts are all
+  // done and the settlement day is old enough (the housing-first
+  // rule: STOREHOUSE_START_DAY). Completing it when the
+  // storehouse is done. A claimed job whose startability vanished
+  // (a hut removed mid-build) fails — the holder re-targets to
+  // the hut, and the storehouse waits for housing again.
+  if (input.storehouse !== undefined && input.day !== undefined) {
+    const sh = input.storehouse;
+    const shId = buildJobIdFor(STOREHOUSE_SITE_ID);
+    const shStartable = sites.every((s) => s.state === 'done') && input.day >= STOREHOUSE_START_DAY;
+    if (sh.state !== 'done' && shStartable) {
+      if (!next.jobs[shId]) {
+        next.jobs[shId] = {
+          id: shId,
+          kind: 'build',
+          targetId: STOREHOUSE_SITE_ID,
+          tile: { ...STOREHOUSE_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[shId]) {
+      if (sh.state === 'done') {
+        next = completeJob(next, shId);
+      } else if (next.jobs[shId].state === 'claimed') {
+        next = failJob(next, shId, 'not-startable');
+      } else {
+        delete next.jobs[shId];
+      }
+      changed = true;
+    }
+  }
+
   // --- Harvest jobs: one per READY farm tile within the farmer
   // radius of the camp (BUILD 1067). A tile that is no longer
   // ready (harvested by the player or another founder first) is
@@ -373,8 +436,14 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     };
     changed = true;
   }
-  for (const r of rocksInRadius(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS)) {
+  const rockRadius = input.quarryRadius ?? FOUNDER_WORK_RADIUS;
+  for (const r of rocksInRadius(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, rockRadius)) {
     const targetId = quarryTargetIdFor('rock', r.tx, r.ty);
+    // BUILD 1087: a rock that failed 'no-path' is never rediscovered
+    // this session — the claim loop already proved no path from camp.
+    // It is skipped BEFORE liveQuarryIds, so a stale job for it is
+    // cleaned up by the loop below instead of preserved.
+    if (board.blockedQuarry?.includes(targetId)) continue;
     const id = quarryJobIdFor(targetId);
     liveQuarryIds.add(id);
     if (next.jobs[id]) continue;
@@ -403,7 +472,11 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   // --- Deliver jobs: one per founder carrying wood, grain, OR stone. ---
   const carryingIds = new Set<string>();
   for (const f of founders) {
-    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) <= 0) continue;
+    // BUILD 1087: a founder carrying BUILD wood (fetched from the
+    // storehouse for a site) also gets a deliver job — the carrier
+    // holds wood, grain, stone, or build wood, and the job
+    // completes when ALL are empty (the return leg).
+    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) + Math.max(0, Math.floor(f.carryingBuild ?? 0)) <= 0) continue;
     carryingIds.add(f.id);
     const id = deliverJobIdFor(f.id);
     if (!next.jobs[id]) {

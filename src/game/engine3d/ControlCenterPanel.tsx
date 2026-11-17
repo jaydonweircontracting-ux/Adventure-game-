@@ -147,6 +147,9 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
               Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · food {d.resources.campFood} · grain {d.resources.campGrain}
             </div>
             <div>
+              Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone}
+            </div>
+            <div>
               You — wood {d.resources.playerWood} · stone {d.resources.playerStone} · gold {d.resources.playerGold} · grain {d.resources.playerGrain}
             </div>
             <div>

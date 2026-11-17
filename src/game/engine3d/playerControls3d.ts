@@ -36,6 +36,7 @@ import {
   HUT_SITES, HUT_WORK_STEPS, sitesOf, hutSitePlacementExists,
   type ConstructionState,
 } from './construction';
+import { STOREHOUSE_CENTRE, STOREHOUSE_WORK_STEPS, storehouseWoodInRegistry, storehouseStoneInRegistry, type StorehouseState } from './storehouse';
 import { crateId, rockId, treeId, wildTreeId, npcSpawnIdFor } from './entityIds';
 import {
   depositInto, extractDeposit, CAMP_STORE_ID, PLAYER_STORE_ID,
@@ -103,6 +104,10 @@ export interface PlayerControlsContext {
   registry: MutableRefObject<ResourceRegistry>;
   jobBoard: MutableRefObject<JobBoard>;
   construction: MutableRefObject<ConstructionState>;
+  // BUILD 1087: the storehouse state (the E-key storehouse-site
+  // report reads it). Optional: the old callers pass no storehouse
+  // and the report falls back to the site line.
+  storehouse?: MutableRefObject<StorehouseState>;
   livingWorld: MutableRefObject<LivingWorld3DState | null>;
   clock: MutableRefObject<DayClock>;
   health: MutableRefObject<number>;
@@ -600,6 +605,17 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
           return;
         }
       }
+    }
+    // BUILD 1087: E at the storehouse site reports its state:
+    // progress + wood/stone spent while building, and the stored
+    // wood/stone once finished. After the hut-site check (the hut
+    // check's 3x2 window does not reach the storehouse centre, so
+    // the two never compete) and before the deposit check.
+    if(FOUNDERS_ENABLED&&ctx.storehouse&&Math.abs(p.x-STOREHOUSE_CENTRE.x)<=3&&Math.abs(p.y-STOREHOUSE_CENTRE.y)<=2){
+      const sh=ctx.storehouse.current;
+      if(sh.state==='done'){setMessage('The storehouse — '+storehouseWoodInRegistry(registryRef.current)+' wood · '+storehouseStoneInRegistry(registryRef.current)+' stone stored');return;}
+      if(sh.state==='building'){const b=foundersRef.current.find(f=>f.workState==='building'||f.workState==='toSite');setMessage('Storehouse: '+sh.progress+'/'+STOREHOUSE_WORK_STEPS+' built · '+sh.spentWood+' wood · '+sh.spentStone+' stone spent'+(b?' · '+b.name+' is building':' · waiting for wood and stone'));return;}
+      setMessage('The storehouse site — the founders will build it here once the huts are done.');return;
     }
     // BUILD 1081 (1.2): a mineral deposit answers E with its Examine
     // text (mineral + remaining) — mining it is Phase 2, so E only

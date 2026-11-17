@@ -166,7 +166,7 @@ export function isValidSource(value: unknown): value is ResourceSource {
 // --- Stores ---
 
 /** A store's kind: what holds the resource. */
-export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier';
+export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier' | 'storehouse';
 
 /** The player's carried store (uncapped, owner 'player'). */
 export const PLAYER_STORE_ID = 'player';
@@ -190,6 +190,9 @@ export function storeKindOf(storeId: string): StoreKind | null {
   if (typeof storeId !== 'string' || storeId.length === 0) return null;
   if (storeId === PLAYER_STORE_ID) return 'player';
   if (storeId === CAMP_STORE_ID) return 'camp';
+  // BUILD 1087 (2.2): the storehouse store — the settlement's
+  // materials store, capped per resource (storehouse.ts).
+  if (storeId === 'storehouse') return 'storehouse';
   if (storeId.startsWith('settlement:')) return 'settlement';
   if (storeId.startsWith('carrier:')) return 'carrier';
   return null;
