@@ -123,6 +123,10 @@ import { createWorldBuilder, type WorldBuilder, type Vec3, type Position } from 
 import { ControlCenterPanel } from './ControlCenterPanel';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, reconcileExtraSites, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite, sitesOf, constructionFromSites, type ConstructionState } from './construction';
+// BUILD 1092 (0x1B, Phase 3.1): the building catalogue as data — the
+// Build menu lists it (entries with a palette kind arm that tool;
+// the rest are listed, locked, with the reason why).
+import { BUILDING_CATALOGUE, CATALOGUE_CATEGORIES, catalogueMenuEntryFor } from './buildingCatalogue';
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
 import { freshPathState, pathTiles, reconcileBridges, wellTile, type PathState } from './paths';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
@@ -3295,6 +3299,27 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>Models render as plain coloured triangles — textures and animation are ignored. 1 unit = 1 tile; footprint max 8×8. PNGs cannot be placed: the 3D renderer draws geometry, not pictures. No scale control yet — a model places at its authored size, and there is no way to make it bigger or smaller.</div>
           </div>
         </div>}
+        {/* BUILD 1092 (0x1B, Phase 3.1): the settlement catalogue — every
+            building the settlement can grow into, generated from
+            buildingCatalogue.ts. Entries with a palette kind arm that
+            tool exactly like the palette buttons above (same behaviour,
+            free placement where it was free); the rest are listed,
+            locked, with the reason why. Nothing here builds anything
+            new — the catalogue is data, the construction path (3.2)
+            comes in a later build. */}
+        <div data-testid="build-catalogue" style={{marginTop:10}}>
+          <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>Settlement Catalogue — every building the settlement can grow into</div>
+          <div style={{fontSize:11,opacity:.7,marginTop:4,lineHeight:1.4}}>93 buildings in 6 categories. Tap one that is ready to place it; the rest are listed so you can see what each one needs — locked ones have no construction path yet and arrive in a later build.</div>
+          {CATALOGUE_CATEGORIES.map(cat=><div key={cat.id}>
+            <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>{cat.letter}. {cat.label}</div>
+            {BUILDING_CATALOGUE.filter(e=>e.category===cat.id).map(entry=>{const m=catalogueMenuEntryFor(entry);const cost=entry.materials.length===0?'No cost':entry.materials.map(x=>x.qty+' '+x.resource).join(' + ');return (
+              <button key={entry.id} type="button" data-testid={'build-catalogue-'+entry.id} disabled={!m.placeable} onClick={()=>{if(!entry.paletteKind)return;const kind=entry.paletteKind;const next=palette===kind?null:kind;setPalette(next);setCustomSelection(null);setRemoveMode(false);setSaveAreaMode(false);setPasteName(null);setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);buildRef.current={palette:next,removeMode:false,moveMode:buildRef.current.moveMode,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};if(!next){const el=placePreviewRef.current;if(el)el.style.display='none';placeHoverRef.current=null;}}} style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:m.placeable?(palette===entry.paletteKind?'#526d42':'#22392d'):'#1a2a22',color:'#fff',fontSize:13,marginTop:6,opacity:m.placeable?1:.75}}>
+                <span style={{fontWeight:700}}>{entry.name}</span>
+                <span style={{display:'block',fontSize:11,opacity:.8,marginTop:2}}>{entry.footprint.w}×{entry.footprint.h} · {cost}{entry.produces?' · makes '+entry.produces.perHour+' '+entry.produces.resource+'/h':''}{entry.capacity>0?' · holds '+entry.capacity+' '+entry.capacityUnit:''}{entry.workers>0?' · '+entry.workers+' worker'+(entry.workers===1?'':'s'):''}</span>
+                {!m.placeable&&<span style={{display:'block',fontSize:11,opacity:.7,marginTop:2}}>🔒 {m.lockedReason}</span>}
+              </button>);})}
+          </div>)}
+        </div>
       </div>
       {/* BUILD 1036: rotation controls — shown while a house or stall
           is armed (the only kinds rotation changes: houses rotate

@@ -14648,6 +14648,85 @@ console.log('Testing farms that feed — the granary + NPC-planted farms (BUILD 
   console.log('M1090: the granary + the planted farms verified (store, mill/eat/delivery, plantable tiles, planting, growth, plant jobs, scorer, save v12 + migration, 24h pins, week run)');
 }
 
+console.log('Testing the building catalogue as data (BUILD 1092, 0x1B Phase 3.1)...');
+{
+  const BC = await import('../src/game/engine3d/buildingCatalogue.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const GR = await import('../src/game/engine3d/granary.js');
+  const PA = await import('../src/game/engine3d/paths.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const MI = await import('../src/game/engine3d/mines.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  // --- The catalogue is the vision doc's list: 93 entries, 6 categories. ---
+  assert(BC.BUILDING_CATALOGUE.length === 93, 'M1092: the catalogue holds 93 buildings');
+  assert(BC.CATALOGUE_CATEGORIES.length === 6, 'M1092: the catalogue has 6 categories (A-F)');
+  const expectedCounts: Record<string, number> = { settlement: 12, production: 19, food: 17, trade: 15, military: 14, infrastructure: 16 };
+  for (const cat of BC.CATALOGUE_CATEGORIES) {
+    assert(BC.catalogueByCategory(cat.id).length === expectedCounts[cat.id], `M1092: category ${cat.id} has ${expectedCounts[cat.id]} entries`);
+  }
+  // --- Every entry is complete and the graph is acyclic. ---
+  const issues1092 = BC.validateCatalogue(R.REGISTRY_KINDS);
+  assert(issues1092.length === 0, 'M1092: validateCatalogue finds no issues (complete definitions, known resources, existing upgrade targets)' + (issues1092.length ? ' — ' + issues1092.slice(0, 5).join('; ') : ''));
+  const topo1092 = BC.catalogueTopologicalOrder();
+  assert(topo1092.cycle === null && topo1092.order !== null && topo1092.order.length === 93, 'M1092: the dependency graph is acyclic (a topological order covers all 93 entries)');
+  // --- Every prerequisite is itself buildable. ---
+  const byId1092 = new Map(BC.BUILDING_CATALOGUE.map((e: { id: string }) => [e.id, e]));
+  for (const e of BC.BUILDING_CATALOGUE) {
+    for (const p of e.prerequisites) {
+      if (p.kind === 'building') assert(byId1092.has(p.id), `M1092: ${e.id} prerequisite building ${p.id} is itself a catalogue entry`);
+      if (p.kind === 'resource' || p.kind === 'deposit') assert((R.REGISTRY_KINDS as readonly string[]).includes(p.resource), `M1092: ${e.id} prerequisite ${p.kind} ${p.resource} is a registry kind`);
+    }
+  }
+  // The two deposit prerequisites are real in the world: iron deposits
+  // exist near camp (the mine's claim) and stone deposits exist (rocks).
+  // defaultWorld() alone carries no mineral deposits — the game stamps
+  // them onto a fresh world on load, so the check stamps first.
+  const world1092 = W.defaultWorld();
+  const GEO1092 = await import('../src/game/engine3d/geology.js');
+  GEO1092.stampMineralDeposits(world1092);
+  assert(MI.mineralDepositsInRadius(world1092, MI.MINE_MINERAL, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, MI.mineClaimRadius()).length > 0, 'M1092: live iron deposits exist inside the mine claim radius (the mine-entrance deposit prerequisite is real)');
+  const reg1092 = R.depositsFromWorld(R.createRegistry(), world1092);
+  assert(R.depositsOfKind(reg1092, 'stone').length > 0, 'M1092: stone deposits exist in the world (the quarry deposit prerequisite is real)');
+  // --- The plan's ordering is encoded, not invented. ---
+  const prereqIds1092 = (id: string) => (byId1092.get(id)?.prerequisites ?? []).filter((p: { kind: string }) => p.kind === 'building').map((p: { id: string }) => p.id);
+  assert(prereqIds1092('hospital').includes('apothecary'), 'M1092: no hospital before healthcare — the hospital requires the apothecary');
+  assert(prereqIds1092('market-square').includes('storehouses') && (byId1092.get('market-square')?.prerequisites ?? []).some((p: { kind: string }) => p.kind === 'transport'), 'M1092: no market before logistics — the market square requires the storehouse + a transport route');
+  assert(prereqIds1092('castle').includes('stone-towers') && prereqIds1092('castle').includes('barracks') && (byId1092.get('castle')?.prerequisites ?? []).some((p: { kind: string; minPopulation: number }) => p.kind === 'settlement' && p.minPopulation === 40), 'M1092: no kingdom before settlements sustain themselves — the castle requires stone towers, barracks, and 40 residents');
+  assert(prereqIds1092('blacksmith').includes('forge') && (byId1092.get('blacksmith')?.prerequisites ?? []).some((p: { kind: string; resource: string }) => p.kind === 'resource' && p.resource === 'tools') && (byId1092.get('blacksmith')?.prerequisites ?? []).some((p: { kind: string; resource: string }) => p.kind === 'resource' && p.resource === 'coal') && (byId1092.get('blacksmith')?.prerequisites ?? []).some((p: { kind: string; resource: string }) => p.kind === 'resource' && p.resource === 'iron'), 'M1092: the blacksmith needs building + tools + fuel + materials (forge, tools, coal, iron)');
+  // --- Existing systems are described with their CURRENT costs. ---
+  const hut1092 = byId1092.get('houses-cottages')!;
+  assert(hut1092.materials.length === 1 && hut1092.materials[0].resource === 'wood' && hut1092.materials[0].qty === C.HUT_COST_WOOD, 'M1092: the hut entry costs HUT_COST_WOOD wood (12, enforced)');
+  assert(hut1092.footprint.w === C.HUT_RECT.x1 - C.HUT_RECT.x0 + 1 && hut1092.footprint.h === C.HUT_RECT.y1 - C.HUT_RECT.y0 + 1, 'M1092: the hut entry footprint is the HUT_RECT (4x3)');
+  assert(hut1092.capacity === C.HUT_SLEEP_TILES.length, 'M1092: the hut entry sleeps HUT_SLEEP_TILES beds (3)');
+  assert(hut1092.costStatus === 'enforced' && hut1092.system === 'hut', 'M1092: the hut entry is enforced hut data');
+  const store1092 = byId1092.get('storehouses')!;
+  assert(store1092.materials.some((m: { resource: string; qty: number }) => m.resource === 'wood' && m.qty === SH.STOREHOUSE_COST_WOOD) && store1092.materials.some((m: { resource: string; qty: number }) => m.resource === 'stone' && m.qty === SH.STOREHOUSE_COST_STONE), 'M1092: the storehouse entry costs STOREHOUSE_COST_WOOD + STOREHOUSE_COST_STONE (12 wood + 6 stone, enforced)');
+  assert(store1092.capacity === SH.STOREHOUSE_CAPACITY_WOOD + SH.STOREHOUSE_CAPACITY_STONE, 'M1092: the storehouse entry holds the wood + stone capacities (160)');
+  const bridge1092 = byId1092.get('bridges')!;
+  assert(bridge1092.materials.length === 1 && bridge1092.materials[0].resource === 'wood' && bridge1092.materials[0].qty === PA.BRIDGE_COST_WOOD, 'M1092: the bridge entry costs BRIDGE_COST_WOOD wood (4, enforced)');
+  const granary1092 = byId1092.get('granaries')!;
+  assert(granary1092.capacity === GR.GRANARY_CAPACITY_GRAIN + GR.GRANARY_CAPACITY_FOOD, 'M1092: the granary entry holds the grain + food capacities (260)');
+  assert(granary1092.system === 'granary' && granary1092.costStatus === 'none', 'M1092: the granary is a seeded registry store (no build cost)');
+  const mine1092 = byId1092.get('mine-entrance')!;
+  assert(mine1092.system === 'mine' && mine1092.costStatus === 'none' && mine1092.paletteKind === 'house-mine', 'M1092: the mine entrance is the designated mine system, placeable as house-mine');
+  const farm1092 = byId1092.get('farms')!;
+  assert(farm1092.system === 'farm' && farm1092.produces !== null && farm1092.produces.resource === 'grain', 'M1092: the farm entry is the planted-wheat system producing grain');
+  // --- The Build menu is generated from the catalogue. ---
+  const menu1092 = BC.catalogueMenuEntries();
+  assert(menu1092.length === 93, 'M1092: the Build menu lists all 93 catalogue entries');
+  const placeable1092 = menu1092.filter((m: { placeable: boolean }) => m.placeable);
+  const locked1092 = menu1092.filter((m: { placeable: boolean }) => !m.placeable);
+  assert(placeable1092.length === 18 && locked1092.length === 75, 'M1092: 18 entries are placeable (existing tools) and 75 are listed locked');
+  const expectedKinds1092 = ['house-cottage', 'house-tall', 'house-grand', 'house-inn', 'house-smith', 'house-store', 'house-shop', 'house-windmill', 'house-mine', 'stall', 'bridge', 'farm', 'path', 'fence'].sort();
+  const actualKinds1092 = [...new Set(placeable1092.map((m: { entry: { paletteKind: string } }) => m.entry.paletteKind))].sort();
+  assert(JSON.stringify(actualKinds1092) === JSON.stringify(expectedKinds1092), 'M1092: the placeable entries arm exactly the 14 existing palette kinds (no invented construction)');
+  assert(locked1092.every((m: { lockedReason: string | null }) => m.lockedReason !== null && m.lockedReason.length > 0), 'M1092: every locked entry names why it is locked');
+  assert(locked1092.filter((m: { lockedReason: string | null }) => m.lockedReason === 'No construction path yet — coming in a later build').length === 70, 'M1092: 70 entries are locked for having no construction path yet (5 run in the settlement already: storehouse, woodcutter, quarry, granary, well)');
+  console.log('M1092: the catalogue verified (93 entries, 6 categories, complete definitions, acyclic graph, buildable prerequisites, current system costs, 18 placeable / 75 locked menu entries)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
