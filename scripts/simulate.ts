@@ -11534,10 +11534,10 @@ console.log('Testing 3D first settlers (BUILD 1057)...');
   assert(F.deliverFounderWood(4, 2) === 6 && F.deliverFounderWood(6, 0) === 6, 'M1057: stockpile rises ONLY on delivery');
   assert(F.stockpileLogsFor(125, 120, 0, 0).length === 12 && F.stockpileLogsFor(125, 120, 0, 10).length === 72, 'M1057: log pile grows with wood (1 log at 0, 6 at 10)');
   const fresh = F.freshFoundersSave(1000);
-  assert(fresh.version === 10 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v10 save (1088: version bumped, the bridges + water ride along)');
+  assert(fresh.version === 11 && fresh.founders.length === 3 && fresh.stockpileWood === 0 && fresh.foodStock === 30, 'M1057: fresh v11 save (1089: version bumped, the bridges + water ride along)');
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh)))) === JSON.stringify(fresh), 'M1057: versioned save round-trips');
   const v0 = F.migrateFoundersSave({ founders: [{ name: 'Marlow', x: 130, y: 130 }] });
-  assert(v0 !== null && v0.version === 10 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v10 (missing founders restored, food defaults to 30)');
+  assert(v0 !== null && v0.version === 11 && v0.founders[0].x === 130 && v0.founders[1].x === 124 && v0.foodStock === 30, 'M1057: unversioned save migrates to v11 (missing founders restored, food defaults to 30)');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1057: unknown version / null → null (fresh defaults)');
   // The 1056 localStorage stand-in is still in place: the founders
   // save/load runs against it (the real persistence is proven by the
@@ -11616,9 +11616,9 @@ console.log('Testing 3D NPC construction — first hut (BUILD 1058)...');
   assert(C.reconcileConstruction(c, false) === c, 'M1058: ready hut (placement blocked) is NOT reset');
   assert(C.hutProgressLabel({ state: 'building', progress: 3, spentWood: 6 }) === '3/6' && C.hutProgressLabel(doneC) === '1 done · 0/6', 'M1058: progress labels (one hut done, one to go)');
   assert(C.constructionSiteTrisFor(0, 1).length === 12 && C.constructionSiteTrisFor(0, 2).length === 60 && C.constructionSiteTrisFor(0, 4).length === 84 && C.constructionSiteTrisFor(0, 5).length === 96 && C.constructionSiteTrisFor(0, 6).length === 0, 'M1058: build-site visual grows with progress, nothing at step 6');
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1058: founders save is v10 in 1088 (beds + multi-site construction ride along)');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1058: founders save is v11 in 1089 (beds + multi-site construction ride along)');
   const v1 = F.migrateFoundersSave({ version: 1, founders: [], stockpileWood: 4, foodStock: 28 });
-  assert(v1 !== null && v1.version === 10 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v10 with a fresh construction, wood survives');
+  assert(v1 !== null && v1.version === 11 && v1.construction.state === 'none' && v1.stockpileWood === 4, 'M1058: v1 migrates to v11 with a fresh construction, wood survives');
   const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 0));
   const saved = F.foundersSaveOf(states, 8, 25, 5, 0, { state: 'building', progress: 3, spentWood: 6 });
   const rt = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(saved)));
@@ -11695,7 +11695,7 @@ console.log('Testing 3D utility scorer — founders choose by scored utility (BU
   const dBuild = F.decayFounderNeeds(fit, 60, 'build');
   assert(close(dBuild.social, 60 - 0.04 * 60) && close(dBuild.hunger, 71), 'M1059: building decays social like work (alone at the site)');
   // --- Save is v3 now (social rides along); 'build' activity round-trips. ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1059: founders save is v10 in 1088 (stable ids are stored, scores are still computed live)');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1059: founders save is v11 in 1089 (stable ids are stored, scores are still computed live)');
   const withBuild = F.freshFoundersSave(1000);
   withBuild.founders[0].activity = 'build';
   withBuild.founders[0].workState = 'building';
@@ -11794,13 +11794,13 @@ console.log('Testing 3D NPC memory + relationships — founders remember each ot
   const noFlip = U.chooseScoredActivity({ ...flipCtx, closestAffinity: 50 });
   assert(flip.activity === 'rest' && noFlip.activity === 'work', 'M1060: at social 40 the companion premium flips rest over work (0.396 > 0.37 vs 0.324 < 0.37)');
   // --- Save v3: fresh, migration, round-trip, validation. ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1060: founders save is v10 in 1088 (stable ids ride along; social still rides too)');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1060: founders save is v11 in 1089 (stable ids ride along; social still rides too)');
   const fresh3 = F.freshFoundersSave(1000);
-  assert(fresh3.version === 10 && fresh3.founders[0].socialState !== undefined && fresh3.founders[0].socialState.affinity.Greta === 50 && fresh3.founders[0].socialState.memories.length === 0, 'M1060: fresh v10 save carries fresh social (neutral, no memories)');
+  assert(fresh3.version === 11 && fresh3.founders[0].socialState !== undefined && fresh3.founders[0].socialState.affinity.Greta === 50 && fresh3.founders[0].socialState.memories.length === 0, 'M1060: fresh v11 save carries fresh social (neutral, no memories)');
   const rt3 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh3)));
   assert(rt3 !== null && JSON.stringify(rt3) === JSON.stringify(fresh3), 'M1060: versioned save round-trips (v3)');
   const v2 = F.migrateFoundersSave({ version: 2, founders: [{ name: 'Marlow', x: 130, y: 130 }], stockpileWood: 4, construction: { state: 'none', progress: 0, spentWood: 0 } });
-  assert(v2 !== null && v2.version === 10 && v2.founders[0].socialState.affinity.Greta === 50 && v2.founders[0].socialState.memories.length === 0, 'M1060: v2 migrates to v10 with fresh social (neutral, no memories)');
+  assert(v2 !== null && v2.version === 11 && v2.founders[0].socialState.affinity.Greta === 50 && v2.founders[0].socialState.memories.length === 0, 'M1060: v2 migrates to v11 with fresh social (neutral, no memories)');
   const v3bad = F.migrateFoundersSave({ version: 3, founders: [{ name: 'Marlow', socialState: { affinity: { Greta: 150, Perrin: -20, Marlow: 99, Stranger: 80 }, affinityDay: { Greta: -5 }, memories: [{ type: 'build', other: 'Greta', day: 1, abs: 1500 }, { type: 'dance', other: 'Greta', day: 1, abs: 1501 }, { type: 'eat', other: 'Marlow', day: 1, abs: 1502 }] } }] });
   assert(v3bad !== null && v3bad.founders[0].socialState.affinity.Greta === 100 && v3bad.founders[0].socialState.affinity.Perrin === 0 && v3bad.founders[0].socialState.affinity.Marlow === undefined && v3bad.founders[0].socialState.affinity.Stranger === undefined && v3bad.founders[0].socialState.memories.length === 1, 'M1060: v3 validation clamps affinity, drops self/unknown names, drops bad memory types');
   assert(F.migrateFoundersSave({ version: 99 }) === null && F.migrateFoundersSave(null) === null, 'M1060: unknown version / null → null (fresh defaults)');
@@ -11830,13 +11830,13 @@ console.log('Testing entity identity — stable ids (BUILD 1063, F-1)...');
   assert(E.animalId('goat', 2) === 'goat-2', 'M1063: animal id is kind-slotId');
   assert(E.entityKindOf('founder-Marlow') === 'founder' && E.entityKindOf('tree:1,2') === 'tree' && E.entityKindOf('placed:house:126,119') === 'placed' && E.entityKindOf('goat-2') === 'animal' && E.entityKindOf('nope') === null, 'M1063: ids parse back to their kinds');
   // --- Founders v4: stored ids, migration fills them, round-trip keeps them. ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1063: founders save is v10');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1063: founders save is v11');
   const fresh4 = F.freshFoundersSave(1000);
   assert(fresh4.founders.map((f: { id: string }) => f.id).join(',') === 'founder-Marlow,founder-Greta,founder-Perrin', 'M1063: a fresh v4 save carries founder ids');
   const rt4 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh4)));
   assert(rt4 !== null && JSON.stringify(rt4) === JSON.stringify(fresh4), 'M1063: a v4 save round-trips with ids');
   const m3 = F.migrateFoundersSave({ version: 3, founders: F.FOUNDER_NAMES.map((n: string) => ({ name: n, x: 130, y: 130 })), stockpileWood: 4, foodStock: 28, construction: { state: 'none', progress: 0, spentWood: 0 } });
-  assert(m3 !== null && m3.version === 10 && m3.founders[0].id === 'founder-Marlow', 'M1063: v3 migrates to v10 with ids derived from the names');
+  assert(m3 !== null && m3.version === 11 && m3.founders[0].id === 'founder-Marlow', 'M1063: v3 migrates to v11 with ids derived from the names');
   const kept = F.migrateFoundersSave({ version: 4, founders: [{ name: 'Marlow', id: 'founder-Marlow-renamed', x: 130, y: 130 }], stockpileWood: 0, foodStock: 30, construction: { state: 'none', progress: 0, spentWood: 0 } });
   assert(kept !== null && kept.founders[0].id === 'founder-Marlow-renamed', 'M1063: a stored id is authoritative (a rename keeps the identity)');
   const states = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 1000));
@@ -12019,7 +12019,7 @@ console.log('Testing unified resource registry — one authoritative record (BUI
   // --- The registry round-trips; the founders save is still v4. ---
   const rt = R.migrateRegistry(JSON.parse(R.serializeRegistry(cr)));
   assert(rt !== null && JSON.stringify(rt) === JSON.stringify(cr), 'M1064: a registry round-trips');
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1064: the founders save is v10 in 1088 (the registry rebuilds from it; the bed + multi-site shape moved)');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1064: the founders save is v11 in 1089 (the registry rebuilds from it; the bed + multi-site shape moved)');
 }
 
 console.log('Testing job scheduler — NPCs claim jobs through the registry (BUILD 1065, J-1)...');
@@ -12126,7 +12126,7 @@ console.log('Testing job scheduler — NPCs claim jobs through the registry (BUI
   // --- No work without a job; the founders save is still v4. ---
   assert(J.claimNearestJob(J.createJobBoard(), 'founder-Marlow', 'chop', F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).job === null, 'M1065: no open job means no claim');
   assert(J.openJobs(J.createJobBoard()).length === 0, 'M1065: a fresh board has no open jobs');
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1065: the founders save is v10 in 1088 (the board is session-only, the shape moved)');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1065: the founders save is v11 in 1089 (the board is session-only, the shape moved)');
   const sum1065 = J.jobSummary(board1065);
   assert(sum1065.chopOpen === J.openJobs(board1065, 'chop').length && sum1065.buildOpen === 2 && sum1065.completed === 0 && sum1065.failed === 0, 'M1065: the job summary counts match the board (2 build jobs: one per unfinished site)');
 }
@@ -12188,11 +12188,11 @@ console.log('Testing forest-to-resident chain — the second hut closes the loop
   const entry1066 = planPathNpc(world1066, G.RESIDENT_ENTRY_TILE, F.FOUNDER_CAMP_CENTRE);
   assert(entry1066 !== null && entry1066.length >= 50, 'M1066: a real walk exists from the entry tile to camp');
   // --- Save v5: round-trip + v4 migration (old shape, no beds). ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1066: founders save is v10');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1066: founders save is v11');
   const fresh1066 = F.freshFoundersSave(1000);
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh1066)))) === JSON.stringify(fresh1066), 'M1066: v6 save round-trips');
   const m41066 = F.migrateFoundersSave({ version: 4, founders: [{ name: 'Marlow', x: 130, y: 130 }, { name: 'Greta', x: 131, y: 130 }, { name: 'Perrin', x: 132, y: 130 }, { name: 'Bram', x: 199, y: 120 }], stockpileWood: 4, foodStock: 30, construction: { state: 'building', progress: 3, spentWood: 6 } });
-  assert(m41066 !== null && m41066.version === 10 && m41066.founders.length === 4 && m41066.founders.every((f: { bed: unknown }) => f.bed !== undefined) && m41066.construction.sites[0].state === 'building' && m41066.construction.sites[0].progress === 3 && m41066.construction.sites[1].state === 'none', 'M1066: v4 migrates to v10 (old construction becomes site 0, beds assigned, the resident is kept)');
+  assert(m41066 !== null && m41066.version === 11 && m41066.founders.length === 4 && m41066.founders.every((f: { bed: unknown }) => f.bed !== undefined) && m41066.construction.sites[0].state === 'building' && m41066.construction.sites[0].progress === 3 && m41066.construction.sites[1].state === 'none', 'M1066: v4 migrates to v11 (old construction becomes site 0, beds assigned, the resident is kept)');
 }
 
 console.log('Testing food and survival — farming, milling, health, save v6 (BUILD 1067, 0x07)...');
@@ -12287,15 +12287,15 @@ console.log('Testing food and survival — farming, milling, health, save v6 (BU
   const sWeakEat = U.scoreFounderActivities(ctx67({ needs: { hunger: 20, energy: 90, social: 60, health: 0 } }));
   assert(close(sWeakEat.eat, 0.768), 'M1067: health never gates eating (a collapsed founder still eats 0.768)');
   // --- Save v6: round-trip + v5 migration (health 100, carryingGrain 0). ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1067: founders save is v10');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1067: founders save is v11');
   const fresh1067 = F.freshFoundersSave(1000);
   assert(JSON.stringify(F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(fresh1067)))) === JSON.stringify(fresh1067), 'M1067: v6 save round-trips');
   const m51067 = F.migrateFoundersSave({ version: 5, founders: [{ name: 'Marlow', x: 130, y: 130, hunger: 80, energy: 90, social: 60 }, { name: 'Greta', x: 131, y: 130, hunger: 70, energy: 80, social: 50 }, { name: 'Perrin', x: 132, y: 130, hunger: 90, energy: 95, social: 70 }], stockpileWood: 4, foodStock: 30, construction: { sites: [{ state: 'done', progress: 6, spentWood: 12 }, { state: 'building', progress: 3, spentWood: 6 }] } });
-  assert(m51067 !== null && m51067.version === 10 && m51067.founders.every((f: { health: number; carryingGrain: number }) => f.health === 100 && f.carryingGrain === 0), 'M1067: v5 migrates to v10 (health 100, carryingGrain 0, the beds and sites survive)');
+  assert(m51067 !== null && m51067.version === 11 && m51067.founders.every((f: { health: number; carryingGrain: number }) => f.health === 100 && f.carryingGrain === 0), 'M1067: v5 migrates to v11 (health 100, carryingGrain 0, the beds and sites survive)');
   const m61069 = F.migrateFoundersSave({ version: 6, founders: [], stockpileWood: 4, foodStock: 28, grainStock: 7 });
-  assert(m61069 !== null && m61069.version === 10 && m61069.grainStock === 7, 'M1069: v6 migrates to v10 with camp grain kept');
+  assert(m61069 !== null && m61069.version === 11 && m61069.grainStock === 7, 'M1069: v6 migrates to v11 with camp grain kept');
   const m61069b = F.migrateFoundersSave({ version: 6, founders: [], stockpileWood: 4, foodStock: 28 });
-  assert(m61069b !== null && m61069b.version === 10 && m61069b.grainStock === 0, 'M1069: v6 without grain migrates to v10 with grain 0 (no data — assume the mill buffer is empty)');
+  assert(m61069b !== null && m61069b.version === 11 && m61069b.grainStock === 0, 'M1069: v6 without grain migrates to v11 with grain 0 (no data — assume the mill buffer is empty)');
 }
 
 console.log('Testing the Control Center — sim speeds, panel data, shortages (BUILD 1068, 0x08)...');
@@ -12489,6 +12489,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     registry: { current: sim1070.registry },
     jobBoard: { current: sim1070.board },
     paths: pathState1070,
+    mines: { current: sim1070.mines },
     founderPath: sim1070.paths,
     getPlayerPos: () => ({ x: 100, y: 100 }), // far from camp (see asserts1070)
     npcActors: { current: [] },
@@ -12510,7 +12511,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     abs1070 += 1;
     ctx1070.clock.current = { day: Math.floor(abs1070 / 1440), minutes: abs1070 - Math.floor(abs1070 / 1440) * 1440 };
     WS.runFounderSimTick(ctx1070);
-    sim1070.board = ctx1070.jobBoard.current; sim1070.registry = ctx1070.registry.current; sim1070.construction = ctx1070.construction.current; sim1070.founders = ctx1070.founders.current; sim1070.storehouse = ctx1070.storehouse.current;
+    sim1070.board = ctx1070.jobBoard.current; sim1070.registry = ctx1070.registry.current; sim1070.construction = ctx1070.construction.current; sim1070.founders = ctx1070.founders.current; sim1070.storehouse = ctx1070.storehouse.current; sim1070.mines = ctx1070.mines.current;
   }
   const trees1070b = F1070.treesInRadius(sim1070.world, F1070.FOUNDER_CAMP.x, F1070.FOUNDER_CAMP.y, F1070.FOUNDER_WORK_RADIUS).length;
   const chopped1070 = (trees1070a - trees1070b) * 2;
@@ -12529,6 +12530,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     registry: { current: sim1070.registry },
     jobBoard: { current: sim1070.board },
     paths: pathState1070,
+    mines: { current: sim1070.mines },
     syncLivingWorld: () => false, setClockUi: () => {},
   };
   const pos1070 = sim1070.founders.map((f: { x: number; y: number }) => [f.x, f.y].join(',')).join(';');
@@ -13502,7 +13504,7 @@ console.log('Testing stone gathering + the quarry loop (BUILD 1086)...');
   const v7Save1086 = { version: 7, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 0, foodStock: 30, grainStock: 0, construction: C.freshConstruction() };
   const migrated1086 = F.migrateFoundersSave(v7Save1086);
   assert(migrated1086 !== null && migrated1086.stoneStock === 0 && migrated1086.founders[0].carryingStone === 0, 'M1086: a v7 save migrates with stone 0');
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1086: the founders save is v10');
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1086: the founders save is v11');
   // --- The arrival gate, end to end: a founder walks, mines on arrival, carries stone home. ---
   const sim1086 = SS.createSettlementSim(W.defaultWorld());
   sim1086.registry = R.setStoreQty(sim1086.registry, 'camp', 'wood', 24, { type: 'loaded' }, { location: { x: camp1086.x, y: camp1086.y } });
@@ -13829,18 +13831,18 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   assert(U.chooseScoredActivity({ ...boostBase1087, storehouse: readySh1087, stockpileWood: 0, stoneStock: 0 }).activity === 'build', 'M1087: a ready storehouse scores build with no wood or stone on hand');
   assert(U.chooseScoredActivity({ ...boostBase1087, construction: readyHut1087, stockpileWood: 0, storehouseWood: 0, nearestTreeDist: 4 }).activity === 'build', 'M1087: a ready hut scores build with no wood anywhere');
 
-  // --- Persistence: the founders save is v10.
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1087: the founders save is v10');
+  // --- Persistence: the founders save is v11.
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1087: the founders save is v11');
   const fSave1087 = F.defaultFounderState('Marlow', 0, 1920);
   fSave1087.carryingBuild = 2;
   const save1087 = F.foundersSaveOf([fSave1087], 10, 25, 4, 6, C.freshConstruction(), 40, 20, { state: 'building', progress: 3, spentWood: 6, spentStone: 3 });
   const rt1087 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(save1087)));
-  assert(rt1087 !== null && rt1087.version === 10 && rt1087.storehouseWood === 40 && rt1087.storehouseStone === 20 && rt1087.storehouse.state === 'building' && rt1087.storehouse.progress === 3, 'M1087: the storehouse state + counts survive a save/reload');
+  assert(rt1087 !== null && rt1087.version === 11 && rt1087.storehouseWood === 40 && rt1087.storehouseStone === 20 && rt1087.storehouse.state === 'building' && rt1087.storehouse.progress === 3, 'M1087: the storehouse state + counts survive a save/reload');
   assert(rt1087 !== null && rt1087.founders[0].carryingBuild === 2, 'M1087: carried build wood survives a save/reload');
   const v8Save1087 = { version: 8, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, carryingStone: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 10, foodStock: 25, grainStock: 4, stoneStock: 6, construction: C.freshConstruction() };
   const m81087 = F.migrateFoundersSave(v8Save1087);
-  assert(m81087 !== null && m81087.version === 10 && m81087.storehouse.state === 'none' && m81087.storehouseWood === 0 && m81087.storehouseStone === 0 && m81087.founders[0].carryingBuild === 0, 'M1087: a v8 save migrates to v10 with no storehouse and empty counts');
-  assert(m81087 !== null && m81087.stockpileWood === 10 && m81087.stoneStock === 6, 'M1087: the v8 camp pile survives the v10 migration');
+  assert(m81087 !== null && m81087.version === 11 && m81087.storehouse.state === 'none' && m81087.storehouseWood === 0 && m81087.storehouseStone === 0 && m81087.founders[0].carryingBuild === 0, 'M1087: a v8 save migrates to v11 with no storehouse and empty counts');
+  assert(m81087 !== null && m81087.stockpileWood === 10 && m81087.stoneStock === 6, 'M1087: the v8 camp pile survives the v11 migration');
   const simSave1087 = SS.createSettlementSim(W.defaultWorld());
   simSave1087.storehouse = { state: 'building', progress: 2, spentWood: 4, spentStone: 2 };
   simSave1087.registry = SH.seedStorehouseStore(simSave1087.registry, 30, 10);
@@ -14094,19 +14096,19 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(U.chooseScoredActivity(ctx1088({ bridge: { dist: 4, ready: true } })).activity !== 'build', 'M1088: no bridge build while the storehouse is unfinished');
   assert(U.chooseScoredActivity(ctx1088({ storehouse: doneSh1088, bridge: null })).activity !== 'build', 'M1088: no bridge build with no bridge site');
 
-  // --- Persistence: the founders save is v10. ---
-  assert(F.FOUNDER_SAVE_VERSION === 10, 'M1088: the founders save is v10');
+  // --- Persistence: the founders save is v11. ---
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1088: the founders save is v11');
   const fSave1088 = F.defaultFounderState('Marlow', 0, 1920);
   fSave1088.carryingWater = 1;
   const save1088 = F.foundersSaveOf([fSave1088], 10, 25, 4, 6, C.freshConstruction(), 40, 20, { state: 'building', progress: 3, spentWood: 6, spentStone: 3 }, [site1088!]);
   const rt1088 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(save1088)));
-  assert(rt1088 !== null && rt1088.version === 10, 'M1088: the save round-trips at v10');
+  assert(rt1088 !== null && rt1088.version === 11, 'M1088: the save round-trips at v11');
   assert(rt1088 !== null && rt1088.founders[0].carryingWater === 1, 'M1088: carried water survives a save/reload');
   assert(rt1088 !== null && rt1088.bridges.length === 1 && rt1088.bridges[0].id === site1088!.id, 'M1088: the bridge sites survive a save/reload');
   const v9Save1088 = { version: 9, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, carryingStone: 0, carryingBuild: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 10, foodStock: 25, grainStock: 4, stoneStock: 6, storehouse: { state: 'none', progress: 0, spentWood: 0, spentStone: 0 }, storehouseWood: 0, storehouseStone: 0, construction: C.freshConstruction() };
   const m91088 = F.migrateFoundersSave(v9Save1088);
-  assert(m91088 !== null && m91088.version === 10 && m91088.bridges.length === 0 && m91088.founders[0].carryingWater === 0, 'M1088: a v9 save migrates to v10 with no bridges and no carried water');
-  assert(m91088 !== null && m91088.stockpileWood === 10, 'M1088: the v9 camp pile survives the v10 migration');
+  assert(m91088 !== null && m91088.version === 11 && m91088.bridges.length === 0 && m91088.founders[0].carryingWater === 0, 'M1088: a v9 save migrates to v11 with no bridges and no carried water');
+  assert(m91088 !== null && m91088.stockpileWood === 10, 'M1088: the v9 camp pile survives the v11 migration');
   const simPersist1088 = SS.createSettlementSim(W.defaultWorld());
   simPersist1088.pathState.bridges = [site1088!];
   const restoredPersist1088 = SS.restoreSettlement(simPersist1088.world, SS.serializeSettlement(simPersist1088), simPersist1088.abs, simPersist1088.ledger);
@@ -14179,6 +14181,281 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(PT.wellTile(weekRestored1088.world, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y) !== null, 'M1088: the reload keeps the well');
   console.log('M1088 week run: ticks=' + LWeek1088.ticks + ' paths=' + LWeek1088.pathTilesPlaced + ' water drawn/poured/spilled=' + LWeek1088.waterDrawn + '/' + LWeek1088.tilesWatered + '/' + LWeek1088.waterSpilled + ' bridges=' + LWeek1088.bridgesCompleted + ' bridgeWood=' + LWeek1088.bridgeWoodSpent + ' starvedTicks=' + LWeek1088.starvedTicks + ' minHealth=' + Math.round(LWeek1088.minHealth) + ' population=' + simWeek1088.founders.length);
   console.log('M1088: dirt paths + the well + the builder-placed bridge verified (constants, traffic, seed, detection, steps, jobs, scorer, persistence, 24h pins, week run)');
+}
+console.log('Testing mines/quarries/lumber — the mine over an iron deposit + the quarry crew + the lumber rotation (BUILD 1089)...');
+{
+  const MN = await import('../src/game/engine3d/mines.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const J = await import('../src/game/engine3d/jobs.js');
+  const U = await import('../src/game/engine3d/utility.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const T3 = await import('../src/game/engine3d/townsfolk3d.js');
+  const Q = await import('../src/game/engine3d/quarry.js');
+  const G = await import('../src/game/engine3d/geology.js');
+
+  // --- The constants (locked, surveyed first). ---
+  assert(MN.MINE_IRON_TARGET === 20, 'M1089: the storehouse iron target is 20');
+  assert(MN.MINE_START_DAY === 3, 'M1089: the mine / quarry / lumber all open on day 3');
+  assert(MN.MINE_TICKS_PER_SHIFT === 3, 'M1089: a mine shift is 3 ticks (the quarry shift length)');
+  assert(MN.MINE_ORE_PER_SHIFT === 2, 'M1089: a mine shift yields 2 iron (the carrier capacity)');
+  assert(MN.QUARRY_SITE_RADIUS === 25, 'M1089: the quarry site radius is 25 tiles');
+  assert(MN.QUARRY_CREW_SIZE === 2, 'M1089: the quarry crew is 2 founders');
+  assert(MN.LUMBER_RECT.x0 === 130 && MN.LUMBER_RECT.y0 === 120 && MN.LUMBER_RECT.x1 === 141 && MN.LUMBER_RECT.y1 === 131, 'M1089: the lumber rect is 130..141 x 120..131 (the surveyed forest-edge rect east of hut 0)');
+  assert(U.UTILITY_MINE_TERM_MAX === 0.45, 'M1089: the mine term caps at 0.45');
+  assert(SH.STOREHOUSE_CAPACITY_ORE === 60, 'M1089: the storehouse holds 60 iron (the stone cap)');
+
+  // --- The mine designation: over the nearest live iron deposit. ---
+  const wMine1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  const mineSite1089 = MN.designateMine(wMine1089, 3, true, []);
+  assert(mineSite1089 !== null && mineSite1089.x === 84 && mineSite1089.y === 111, 'M1089: the mine opens over the nearest live iron deposit (84,111)');
+  assert(mineSite1089 !== null && mineSite1089.mineral === 'iron' && mineSite1089.state === 'open', 'M1089: the mine is an open iron site');
+  assert(mineSite1089 !== null && mineSite1089.workTile.x === 83 && mineSite1089.workTile.y === 110, 'M1089: the mine work tile is the surveyed walkable neighbour (83,110)');
+  assert(MN.designateMine(wMine1089, 2, true, []) === null, 'M1089: no mine before day 3');
+  assert(MN.designateMine(wMine1089, 3, false, []) === null, 'M1089: no mine while the storehouse is unfinished (storage first)');
+  assert(MN.mineSiteForDeposit(mineSite1089 ? [mineSite1089] : [], mineSite1089 ? mineSite1089.depositId : '') === mineSite1089, 'M1089: mineSiteForDeposit finds the site by its deposit id');
+  assert(MN.mineSiteForDeposit([], 'deposit:iron:84,111') === null, 'M1089: mineSiteForDeposit returns null for an undesignated deposit');
+  assert(MN.openMineSite({ mines: mineSite1089 ? [mineSite1089] : [], quarry: null, lumber: null, lastDesignateDay: 3 }) === mineSite1089, 'M1089: openMineSite returns the open site');
+
+  // --- The quarry designation: the best reachable rock cluster. ---
+  // The 24h window mines the 3 near rocks (the 1086 baseline: stone 3
+  // mined) — strip them so the designation sees the day-3 rock state.
+  const stripNearRocks1089 = (w: { rocks: { tx: number; ty: number }[] }) => {
+    w.rocks = w.rocks.filter((r) => !((r.tx === 120 && r.ty === 120) || (r.tx === 111 && r.ty === 125) || (r.tx === 97 && r.ty === 117)));
+  };
+  const wQuarry1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  stripNearRocks1089(wQuarry1089);
+  const quarrySite1089 = MN.designateQuarry(wQuarry1089, 3, null);
+  assert(quarrySite1089 !== null && quarrySite1089.centre.x === 157 && quarrySite1089.centre.y === 81, 'M1089: the quarry opens over the best reachable rock cluster (157,81) — 3 reachable rocks within 25, the most of any cluster');
+  assert(quarrySite1089 !== null && quarrySite1089.state === 'open' && quarrySite1089.stonesMined === 0, 'M1089: the quarry is an open site with no stone yet');
+  assert(quarrySite1089 !== null && MN.quarrySiteRocks(wQuarry1089, quarrySite1089).length === 4, 'M1089: the quarry site holds 4 rocks within its radius ((148,94) + (150,77) + (157,81) + (158,61); (150,77) is unreachable, so the crew works the 3 reachable ones)');
+  assert(MN.designateQuarry(wQuarry1089, 2, null) === null, 'M1089: no quarry before day 3');
+  assert(MN.isQuarrySiteRock(quarrySite1089, 148, 94) === true && MN.isQuarrySiteRock(quarrySite1089, 157, 81) === true && MN.isQuarrySiteRock(quarrySite1089, 158, 61) === true, 'M1089: the reachable cluster rocks are site rocks');
+  assert(MN.isQuarrySiteRock(quarrySite1089, 87, 102) === false, 'M1089: the ad-hoc singleton (87,102) is not a site rock');
+  assert(MN.isQuarrySiteRock(null, 148, 94) === false, 'M1089: no site, no site rocks');
+
+  // --- The lumber designation: the surveyed forest-edge rect. ---
+  const wLumber1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  const lumberSite1089 = MN.designateLumber(wLumber1089, 3, null);
+  assert(lumberSite1089 !== null && lumberSite1089.rect.x0 === 130 && lumberSite1089.rect.x1 === 141 && lumberSite1089.rect.y0 === 120 && lumberSite1089.rect.y1 === 131, 'M1089: the lumber site is the surveyed rect');
+  assert(lumberSite1089 !== null && lumberSite1089.state === 'open' && lumberSite1089.treesFelled === 0, 'M1089: the lumber site is open with no trees felled');
+  assert(lumberSite1089 !== null && MN.lumberTreesInRect(wLumber1089, lumberSite1089.rect).length >= 5, 'M1089: the rect holds trees on day 3 (the north-edge trees may be chopped ad-hoc in the 24h window, but the site is not bare)');
+  assert(MN.designateLumber(wLumber1089, 2, null) === null, 'M1089: no lumber site before day 3');
+
+  // --- The mine shift: the deposit depletes, the carrier gains iron,
+  // the registry conserves (the acceptance test's first clause, in
+  // miniature — the full shift runs in the week run below). ---
+  const wShift1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  const siteShift1089 = MN.designateMine(wShift1089, 3, true, []);
+  let regShift1089 = F.seedCampStore(R.createRegistry(), 0, 30, 0, 0);
+  regShift1089 = G.depositsFromGeology(regShift1089, wShift1089);
+  const fShift1089 = F.defaultFounderState('Marlow', 0, SS.SETTLEMENT_START_ABS);
+  regShift1089 = F.seedCarrierStore(regShift1089, fShift1089);
+  const ironBefore1089 = ((wShift1089.mineralDeposits ?? []) as { mineral: string; x: number; y: number; remaining: number }[]).find((d) => d.mineral === 'iron' && d.x === 84 && d.y === 111)?.remaining ?? -1;
+  assert(ironBefore1089 === 36, 'M1089: the iron deposit holds 36 before the shift (the 1.2 inventory)');
+  const mined1089 = MN.mineOreToCarrier(regShift1089, wShift1089, fShift1089, siteShift1089!);
+  assert(mined1089.yield === 2, 'M1089: a mine shift yields 2 iron');
+  // The shift deposits into the carrier STORE (the registry); the
+  // tick sets the founder's carried count from the yield (the same
+  // split as the quarry's mineStoneToCarrier).
+  assert(R.storeQty(mined1089.registry, 'carrier:' + fShift1089.id, 'iron') === 2, 'M1089: the shift lands 2 iron in the carrier store');
+  fShift1089.carryingOre += mined1089.yield;
+  assert(fShift1089.carryingOre === 2, 'M1089: the founder carries the 2 iron home');
+  const ironAfter1089 = ((wShift1089.mineralDeposits ?? []) as { mineral: string; x: number; y: number; remaining: number }[]).find((d) => d.mineral === 'iron' && d.x === 84 && d.y === 111)?.remaining ?? -1;
+  assert(ironAfter1089 === 34, 'M1089: the deposit depletes 36 → 34 (the ore came from the deposit, not thin air)');
+  assert(R.storeQty(mined1089.registry, 'carrier:' + fShift1089.id, 'iron') === 2, 'M1089: the carrier store holds the 2 iron (the registry is the carrier)');
+  // The shift's ore delivers to the storehouse store (the acceptance
+  // test: a miner shift ends with the storehouse gaining iron).
+  const fDeliver1089 = { ...fShift1089, carryingOre: 2 };
+  let regDeliver1089 = SH.seedStorehouseStore(mined1089.registry, 0, 0, 0);
+  const delivered1089 = SH.deliverFounderCarryToStore(regDeliver1089, fDeliver1089, { state: 'done', progress: 6, spentWood: 12, spentStone: 6 });
+  assert(delivered1089.movedOre === 2 && delivered1089.dest === 'storehouse', 'M1089: the shift delivers 2 iron to the storehouse store');
+  assert(SH.storehouseOreInRegistry(delivered1089.registry, 'iron') === 2, 'M1089: the storehouse gained the iron (the acceptance test, in miniature)');
+  assert(MN.storehouseOreInRegistry(delivered1089.registry, 'iron') === 2, 'M1089: mineSummaryText reads the storehouse iron through the same helper');
+
+  // --- The quarry crew A/B: two founders in parallel beat one
+  // founder working ad-hoc, for the same 2 stone. The path length IS
+  // the time (one step per tick): the crew's parallel round trips
+  // cost max(252, 208) = 252 ticks for 2 stone; a single founder
+  // mining the two nearest ad-hoc rocks sequentially costs 114 + 252
+  // = 366 ticks for the same 2 stone. The crew is faster because the
+  // work is parallel, not because the rocks are nearer.
+  const wCrew1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  stripNearRocks1089(wCrew1089);
+  const qCrew1089 = MN.designateQuarry(wCrew1089, 3, null)!;
+  const rocksCrew1089 = MN.quarrySiteRocks(wCrew1089, qCrew1089);
+  assert(rocksCrew1089.length === 4, 'M1089: the crew A/B starts from the 4-rock site (3 reachable)');
+  // (The round-trip lengths are measured below, via planPathNpc,
+  // from the quarry's own work tiles — the same tiles the tick
+  // claims, so the A/B measures the real trips. The crew claims the
+  // 2 nearest REACHABLE site rocks; (150,77) has no round trip.)
+  const roundTrip = (x: number, y: number) => {
+    const wt = Q.quarryWorkTile(wCrew1089, x, y);
+    if (!wt) return null;
+    const out = T3.planPathNpc(wCrew1089, { x: F.FOUNDER_CAMP.x, y: F.FOUNDER_CAMP.y }, wt);
+    const back = T3.planPathNpc(wCrew1089, wt, { x: F.FOUNDER_CAMP.x, y: F.FOUNDER_CAMP.y });
+    return out && back ? out.length + back.length : null;
+  };
+  const reachableCrew1089 = rocksCrew1089
+    .map((r: { tx: number; ty: number }) => ({ ...r, rt: roundTrip(r.tx, r.ty), dist: Math.abs(r.tx - F.FOUNDER_CAMP.x) + Math.abs(r.ty - F.FOUNDER_CAMP.y) }))
+    .filter((r: { rt: number | null }) => r.rt !== null)
+    .sort((a: { dist: number }, b: { dist: number }) => a.dist - b.dist);
+  assert(reachableCrew1089.length === 3, 'M1089: the crew A/B site has 3 reachable rocks ((148,94) + (157,81) + (158,61))');
+  const rt1 = reachableCrew1089[0].rt!;
+  const rt2 = reachableCrew1089[1].rt!;
+  const rtAdhoc = roundTrip(87, 102);
+  assert(rtAdhoc !== null, 'M1089: the crew A/B rocks and the ad-hoc singleton all have round trips');
+  const parallelTicks = Math.max(rt1, rt2);
+  const sequentialTicks = rtAdhoc! + rt1;
+  assert(parallelTicks < sequentialTicks, 'M1089: the crew mines 2 stone in ' + parallelTicks + ' ticks (parallel) vs ' + sequentialTicks + ' ticks ad-hoc (sequential) — the crew is faster');
+  console.log('M1089 crew A/B: parallel=' + parallelTicks + ' ticks (2 stone) vs sequential=' + sequentialTicks + ' ticks (2 stone)');
+
+  // --- Jobs: one mine job per open site, one lumber job per rect
+  // tree (row-major — the felling rotation), chop skips rect trees. ---
+  const wJobs1089 = SS.createSettlementSim(W.defaultWorld()).world;
+  stripNearRocks1089(wJobs1089);
+  const siteJobs1089 = MN.designateMine(wJobs1089, 3, true, []);
+  const qJobs1089 = MN.designateQuarry(wJobs1089, 3, null);
+  const lJobs1089 = MN.designateLumber(wJobs1089, 3, null);
+  const stateJobs1089: typeof minesJobs1089 = { mines: siteJobs1089 ? [siteJobs1089] : [], quarry: qJobs1089, lumber: lJobs1089, lastDesignateDay: 3 };
+  const fJobs1089 = [F.defaultFounderState('Marlow', 0, SS.SETTLEMENT_START_ABS)];
+  const jobInput1089 = { world: wJobs1089, construction: C.freshConstruction(), founders: fJobs1089, nowAbs: SS.SETTLEMENT_START_ABS, growthFactorAt: () => 1, storehouse: { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, day: 3, mines: stateJobs1089 };
+  const boardJobs1089 = J.discoverJobs(J.createJobBoard(), jobInput1089);
+  const mineJobs1089 = Object.values(boardJobs1089.jobs).filter((j: { kind: string }) => j.kind === 'mine');
+  assert(mineJobs1089.length === 1, 'M1089: discovery creates one mine job for the open site');
+  assert(mineJobs1089[0].id === J.mineJobIdFor('deposit:iron:84,111'), 'M1089: the mine job id names its deposit');
+  assert(mineJobs1089[0].tile.x === 83 && mineJobs1089[0].tile.y === 110, 'M1089: the mine job tile is the work tile');
+  const lumberJobs1089 = Object.values(boardJobs1089.jobs).filter((j: { kind: string }) => j.kind === 'lumber');
+  const rectTrees1089 = MN.lumberTreesInRect(wJobs1089, MN.LUMBER_RECT);
+  assert(lumberJobs1089.length === rectTrees1089.length, 'M1089: discovery creates one lumber job per rect tree (' + rectTrees1089.length + ')');
+  assert(lumberJobs1089.every((j: { id: string; tile: { x: number; y: number } }) => j.id === J.lumberJobIdFor(j.tile.x, j.tile.y)), 'M1089: the lumber job id names its tree');
+  // The rotation is row-major: the first lumber job is the topmost,
+  // leftmost rect tree; claimFirstJob takes it first.
+  const sortedRect1089 = [...rectTrees1089].sort((a: { tx: number; ty: number }, b: { tx: number; ty: number }) => (a.ty - b.ty) || (a.tx - b.tx));
+  assert(lumberJobs1089[0].tile.x === sortedRect1089[0].tx && lumberJobs1089[0].tile.y === sortedRect1089[0].ty, 'M1089: the first lumber job is the topmost-leftmost rect tree (the rotation starts at the rect corner)');
+  const claimL1089 = J.claimFirstJob(boardJobs1089, 'founder-Marlow', 'lumber');
+  assert(claimL1089.job !== null && claimL1089.job.id === lumberJobs1089[0].id, 'M1089: claimFirstJob claims the first lumber job in board (rotation) order');
+  const chopJobs1089 = Object.values(boardJobs1089.jobs).filter((j: { kind: string }) => j.kind === 'chop');
+  assert(chopJobs1089.every((j: { tile: { x: number; y: number } }) => !(j.tile.x >= 130 && j.tile.x <= 141 && j.tile.y >= 120 && j.tile.y <= 131)), 'M1089: chop jobs skip the lumber rect trees (they are lumber jobs, not chop jobs)');
+  const boardNoMines1089 = J.discoverJobs(J.createJobBoard(), { ...jobInput1089, mines: undefined });
+  assert(Object.values(boardNoMines1089.jobs).filter((j: { kind: string }) => j.kind === 'mine' || j.kind === 'lumber').length === 0, 'M1089: no mine or lumber jobs without the mines state');
+  const boardDay2_1089 = J.discoverJobs(J.createJobBoard(), { ...jobInput1089, day: 2, mines: MN.freshMineState() });
+  assert(Object.values(boardDay2_1089.jobs).filter((j: { kind: string }) => j.kind === 'mine' || j.kind === 'lumber').length === 0, 'M1089: no mine or lumber jobs before day 3');
+
+  // --- The scorer: the mine term + the lumber term. ---
+  const close1089 = (a: number, b: number) => Math.abs(a - b) < 0.001;
+  const ctx1089 = (over: Record<string, unknown>) => ({
+    needs: { hunger: 80, energy: 90, social: 60, health: 100 }, minutes: 600, foodStock: 30, stockpileWood: 24, construction: { state: 'done', progress: 6, spentWood: 12 },
+    nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, stoneStock: 12, readyQuarryJobs: 0, readyFarmTiles: 0,
+    storehouse: { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, storehouseWood: 0, day: 3, ...over,
+  });
+  assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0 })).work, 0.45), 'M1089: iron 0 + a mine job + the storehouse done + day 3 → work 0.45 (the mine term at full)');
+  assert(U.chooseScoredActivity(ctx1089({ readyMineJobs: 1, storehouseIron: 0 })).workKind === 'mine', 'M1089: the mine term names mine as the work');
+  assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 10 })).work, 0.225), 'M1089: iron 10 + a mine job → work 0.225 (half the term)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 20 })).work === 0, 'M1089: iron 20 + a mine job → work 0 (at the target, no term)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 0, storehouseIron: 0 })).work === 0, 'M1089: iron 0 + no mine job → work 0');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, day: 2 })).work === 0, 'M1089: iron 0 + a mine job on day 2 → work 0 (the term opens day 3)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, storehouse: { state: 'none', progress: 0, spentWood: 0, spentStone: 0 } })).work === 0, 'M1089: iron 0 + a mine job with no storehouse → work 0 (storage first)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, mineTaken: true })).work === 0, 'M1089: iron 0 + a mine job + a miner already working → work 0 (one miner at a time)');
+  assert(U.chooseScoredActivity(ctx1089({ readyMineJobs: 1, storehouseIron: 0, stockpileWood: 0 })).workKind === 'chop', 'M1089: the mine never steals a chop on an empty pile (wood work gates the mine)');
+  assert(U.chooseScoredActivity(ctx1089({ minutes: 1350, readyMineJobs: 1, storehouseIron: 0 })).activity === 'sleep', 'M1089: night sleep (0.81) beats the mine term (0.45)');
+  assert(close1089(U.scoreFounderActivities(ctx1089({ readyLumberJobs: 1, stockpileWood: 0 })).work, 0.45), 'M1089: a lumber job + an empty pile → work 0.45 (the lumber term, the chop formula without the distance penalty — 0.45 beats the chop 0.37)');
+  assert(U.chooseScoredActivity(ctx1089({ readyLumberJobs: 1, stockpileWood: 0 })).workKind === 'lumber', 'M1089: the lumber term names lumber as the work (it wins ties over chop)');
+  assert(U.scoreFounderActivities(ctx1089({ readyLumberJobs: 0, stockpileWood: 24 })).work === 0, 'M1089: no lumber job → work 0 (the pile is full, chop scores 0)');
+  assert(U.scoreFounderActivities(ctx1089({ readyLumberJobs: 1, readyQuarryJobs: 1, stoneStock: 0, stockpileWood: 0 })).work === 0.45, 'M1089: lumber work beats the stone term (the stone gate is no wood work — the lumber term is 0.45, the stone term is gated to 0)');
+
+  // --- Persistence: the founders save is v11. ---
+  assert(F.FOUNDER_SAVE_VERSION === 11, 'M1089: the founders save is v11');
+  const fSave1089 = F.defaultFounderState('Marlow', 0, 1920);
+  fSave1089.carryingOre = 2;
+  const save1089 = F.foundersSaveOf([fSave1089], 10, 25, 4, 6, C.freshConstruction(), 40, 20, { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, [], 8, stateJobs1089);
+  const rt1089 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(save1089)));
+  assert(rt1089 !== null && rt1089.version === 11, 'M1089: the save round-trips at v11');
+  assert(rt1089 !== null && rt1089.founders[0].carryingOre === 2, 'M1089: carried ore survives a save/reload');
+  assert(rt1089 !== null && rt1089.storehouseOre === 8, 'M1089: stored iron survives a save/reload');
+  assert(rt1089 !== null && rt1089.mines.mines.length === 1 && rt1089.mines.mines[0].x === 84 && rt1089.mines.mines[0].y === 111, 'M1089: the mine site survives a save/reload');
+  assert(rt1089 !== null && rt1089.mines.quarry !== null && rt1089.mines.quarry.centre.x === 157 && rt1089.mines.quarry.centre.y === 81, 'M1089: the quarry site survives a save/reload');
+  assert(rt1089 !== null && rt1089.mines.lumber !== null && rt1089.mines.lumber.rect.x0 === 130, 'M1089: the lumber site survives a save/reload');
+  const v10Save1089 = { version: 10, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, carryingStone: 0, carryingBuild: 0, carryingWater: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 10, foodStock: 25, grainStock: 4, stoneStock: 6, storehouse: { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, storehouseWood: 40, storehouseStone: 20, bridges: [], construction: C.freshConstruction() };
+  const m101089 = F.migrateFoundersSave(v10Save1089);
+  assert(m101089 !== null && m101089.version === 11 && m101089.mines.mines.length === 0 && m101089.mines.quarry === null && m101089.mines.lumber === null, 'M1089: a v10 save migrates to v11 with no sites (the world keeps working, the same as before)');
+  assert(m101089 !== null && m101089.storehouseOre === 0 && m101089.founders[0].carryingOre === 0, 'M1089: a v10 save migrates with no ore');
+  const simPersist1089 = SS.createSettlementSim(W.defaultWorld());
+  simPersist1089.mines = stateJobs1089;
+  const restoredPersist1089 = SS.restoreSettlement(simPersist1089.world, SS.serializeSettlement(simPersist1089), simPersist1089.abs, simPersist1089.ledger);
+  assert(restoredPersist1089.mines.mines.length === 1 && restoredPersist1089.mines.quarry !== null && restoredPersist1089.mines.lumber !== null, 'M1089: the sim round-trip restores the mine / quarry / lumber sites');
+  assert(SH.storehouseOreInRegistry(restoredPersist1089.registry, 'iron') === SH.storehouseOreInRegistry(simPersist1089.registry, 'iron'), 'M1089: the sim round-trip restores the stored iron');
+
+  // --- The 24h run: the M1088 pins must be exact (the sites open
+  // on day 3, so the 24h window is untouched — the mine, the quarry
+  // crew, and the lumber rotation never fire in it).
+  const sim1089 = SS.createSettlementSim(W.defaultWorld());
+  SS.advanceSettlement(sim1089, 1600);
+  const L1089 = sim1089.ledger;
+  const inFlightStone1089 = sim1089.founders.reduce((n: number, f: { carryingStone: number }) => n + f.carryingStone, 0);
+  assert(L1089.woodChopped === 40 && L1089.woodDelivered === 40 && L1089.woodSpent === 24, 'M1089: 24h wood 40/40/24 (the M1088 no-reload pins)');
+  assert(L1089.grainHarvested === 14 && L1089.grainDelivered === 14, 'M1089: 24h grain 14/14');
+  assert(L1089.mealsMilled === 5 && L1089.mealsEaten === 20, 'M1089: 24h meals 5/20');
+  assert(L1089.jobsCompleted.chop === 20 && L1089.jobsCompleted.build === 2 && L1089.jobsCompleted.harvest === 7, 'M1089: 24h jobs chop/build/harvest 20/2/7');
+  assert(L1089.jobsCompleted.deliver === 28 && L1089.jobsCompleted.quarry === 2 && inFlightStone1089 === 1, 'M1089: 24h deliver 28, quarry 2, 1 stone still carried');
+  assert(L1089.hutsCompleted === 2 && L1089.arrivals.join(',') === 'Bram,Fern,Silas', 'M1089: 24h huts 2, arrivals Bram, Fern, Silas');
+  assert(F.campWoodInRegistry(sim1089.registry) === 16 && F.campFoodInRegistry(sim1089.registry) === 15 && SS.settlementGrain(sim1089) === 4, 'M1089: 24h final wood/food/grain 16/15/4');
+  assert(sim1089.founders.length === 6, 'M1089: 24h population 6');
+  assert(sim1089.storehouse.state === 'none' && L1089.storehouseCompleted === 0, 'M1089: the storehouse has not started at hour 24 (day 2)');
+  assert(L1089.oreMined === 0 && L1089.mineShifts === 0 && L1089.jobsCompleted.mine === 0, 'M1089: no mining in 24h (the mine opens day 3)');
+  assert(L1089.quarrySiteStone === 0 && L1089.lumberTreesFelled === 0 && L1089.jobsCompleted.lumber === 0, 'M1089: no site work in 24h (the sites open day 3)');
+  assert(sim1089.mines.mines.length === 0 && sim1089.mines.quarry === null && sim1089.mines.lumber === null, 'M1089: no sites designated in the 24h window');
+  console.log('M1089 24h: wood=' + L1089.woodChopped + '/' + L1089.woodDelivered + '/' + L1089.woodSpent + ' grain=' + L1089.grainHarvested + '/' + L1089.grainDelivered + ' meals=' + L1089.mealsMilled + '/' + L1089.mealsEaten + ' ore=' + L1089.oreMined);
+
+  // --- The 24h run WITH the hour-12 reload: the 1087 baseline
+  // numbers (the M1069 section prints them; these pin them).
+  const simReload1089 = SS.createSettlementSim(W.defaultWorld());
+  SS.advanceSettlement(simReload1089, 800);
+  const restoredReload1089 = SS.restoreSettlement(simReload1089.world, SS.serializeSettlement(simReload1089), simReload1089.abs, simReload1089.ledger);
+  SS.advanceSettlement(restoredReload1089, 800);
+  const LReload1089 = restoredReload1089.ledger;
+  assert(LReload1089.woodChopped === 44 && LReload1089.woodDelivered === 44 && LReload1089.woodSpent === 24, 'M1089: 24h with reload — wood 44/44/24 (the 1087 baseline)');
+  assert(LReload1089.grainHarvested === 14 && LReload1089.grainDelivered === 14, 'M1089: 24h with reload — grain 14/14');
+  assert(LReload1089.mealsMilled === 5 && LReload1089.mealsEaten === 20, 'M1089: 24h with reload — meals 5/20');
+  assert(LReload1089.jobsCompleted.chop === 22 && LReload1089.jobsCompleted.build === 2 && LReload1089.jobsCompleted.deliver === 31 && LReload1089.jobsCompleted.harvest === 7, 'M1089: 24h with reload — jobs chop/build/deliver/harvest 22/2/31/7');
+  assert(F.campWoodInRegistry(restoredReload1089.registry) === 20 && F.campFoodInRegistry(restoredReload1089.registry) === 15 && SS.settlementGrain(restoredReload1089) === 4, 'M1089: 24h with reload — final wood/food/grain 20/15/4');
+  assert(restoredReload1089.founders.length === 6, 'M1089: 24h with reload — population 6');
+  assert(LReload1089.hutsCompleted === 2 && LReload1089.arrivals.join(',') === 'Bram,Fern,Silas', 'M1089: 24h with reload — huts 2, arrivals Bram, Fern, Silas');
+  assert(LReload1089.starvedTicks === 0 && LReload1089.minHealth === 100, 'M1089: 24h with reload — starvedTicks 0, minHealth 100');
+
+  // --- The week-long run: the acceptance test, run for real. A
+  // miner shift ends with the storehouse gaining iron; the quarry
+  // crew works the designated site; the lumber forest thins then
+  // regrows (saplings planted on every fell, maturing over days).
+  const simWeek1089 = SS.createSettlementSim(W.defaultWorld());
+  SS.advanceSettlement(simWeek1089, 11200);
+  const LWeek1089 = simWeek1089.ledger;
+  const weekClock1089 = SS.settlementClock(simWeek1089);
+  assert(weekClock1089.day === 8, 'M1089: 11200 ticks is 7 in-game days (day 1 08:00 → day 8 08:00)');
+  assert(simWeek1089.storehouse.state === 'done', 'M1089: the storehouse is done by the end of the week');
+  assert(simWeek1089.mines.mines.length >= 1 && simWeek1089.mines.mines[0].state === 'open', 'M1089: the mine opened over the iron deposit');
+  assert(LWeek1089.mineShifts > 0 && LWeek1089.oreMined > 0, 'M1089: miners worked shifts and mined ore');
+  assert(LWeek1089.oreMined === 2 * LWeek1089.mineShifts, 'M1089: every shift yields exactly 2 iron (the carrier capacity)');
+  assert(LWeek1089.oreDelivered > 0, 'M1089: the mined ore was delivered (the acceptance test: a miner shift ends with the storehouse gaining iron)');
+  assert(SH.storehouseOreInRegistry(simWeek1089.registry, 'iron') > 0, 'M1089: the storehouse holds iron at the end of the week');
+  assert(LWeek1089.oreMined === LWeek1089.oreDelivered + simWeek1089.founders.reduce((n: number, f: { carryingOre: number }) => n + f.carryingOre, 0), 'M1089: every mined iron is delivered or still carried (conservation)');
+  assert(simWeek1089.mines.quarry !== null && simWeek1089.mines.quarry.state === 'open', 'M1089: the quarry site opened');
+  assert(LWeek1089.quarrySiteStone > 0, 'M1089: the quarry crew mined stone at the designated site');
+  assert(simWeek1089.mines.lumber !== null && simWeek1089.mines.lumber.state === 'open', 'M1089: the lumber site opened');
+  assert(LWeek1089.lumberTreesFelled > 0 && LWeek1089.jobsCompleted.lumber > 0, 'M1089: the lumber crew felled rect trees (the forest thinned)');
+  assert(MN.lumberTreesInRect(simWeek1089.world, MN.LUMBER_RECT).length < rectTrees1089.length, 'M1089: the rect holds fewer trees than it started with (the forest thinned)');
+  const saplingsWeek1089 = (simWeek1089.world.saplings ?? []).filter((s: { x: number; y: number }) => s.x >= 130 && s.x <= 141 && s.y >= 120 && s.y <= 131).length;
+  assert(saplingsWeek1089 > 0, 'M1089: felled rect trees left saplings behind (the forest regrows through the 1.6 path — none matures inside the week, the earliest is planted day 3)');
+  assert(saplingsWeek1089 >= LWeek1089.lumberTreesFelled, 'M1089: every felled rect tree left a sapling behind (the fell plants it; the north-edge trees chopped ad-hoc before day 3 plant extras)');
+  assert(simWeek1089.founders.length >= 6, 'M1089: the population never shrank over the week');
+  const weekRestored1089 = SS.restoreSettlement(simWeek1089.world, SS.serializeSettlement(simWeek1089), simWeek1089.abs, simWeek1089.ledger);
+  assert(weekRestored1089.mines.mines.length === simWeek1089.mines.mines.length && weekRestored1089.mines.quarry !== null && weekRestored1089.mines.lumber !== null, 'M1089: the reload keeps the mine / quarry / lumber sites');
+  assert(SH.storehouseOreInRegistry(weekRestored1089.registry, 'iron') === SH.storehouseOreInRegistry(simWeek1089.registry, 'iron'), 'M1089: the reload keeps the stored iron');
+  console.log('M1089 week run: ticks=' + LWeek1089.ticks + ' mine shifts=' + LWeek1089.mineShifts + ' ore mined/delivered=' + LWeek1089.oreMined + '/' + LWeek1089.oreDelivered + ' storehouse iron=' + SH.storehouseOreInRegistry(simWeek1089.registry, 'iron') + ' quarry site stone=' + LWeek1089.quarrySiteStone + ' lumber felled=' + LWeek1089.lumberTreesFelled + ' rect trees now=' + MN.lumberTreesInRect(simWeek1089.world, MN.LUMBER_RECT).length + ' (started ' + rectTrees1089.length + ') saplings in rect=' + saplingsWeek1089 + ' starvedTicks=' + LWeek1089.starvedTicks + ' minHealth=' + Math.round(LWeek1089.minHealth) + ' population=' + simWeek1089.founders.length);
+  console.log('M1089: the mine + the quarry crew + the lumber rotation verified (constants, designation, shift, crew A/B, jobs, scorer, persistence, 24h pins, week run)');
 }
 
 // ---- Results ----

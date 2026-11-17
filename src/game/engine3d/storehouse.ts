@@ -156,6 +156,9 @@ export const STOREHOUSE_TICKS_PER_STEP = 3;
 export const STOREHOUSE_CAPACITY_WOOD = 100;
 /** Stone the storehouse can hold. */
 export const STOREHOUSE_CAPACITY_STONE = 60;
+/** Ore capacity of the storehouse store (BUILD 1089 — the mine's
+ *  iron; the stone cap's sibling, same size). */
+export const STOREHOUSE_CAPACITY_ORE = 60;
 
 /** The storehouse's registry store id (R-1). */
 export const STOREHOUSE_STORE_ID = 'storehouse';
@@ -469,6 +472,12 @@ export function storehouseStoneInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, STOREHOUSE_STORE_ID, 'stone');
 }
 
+/** Ore of a kind in the storehouse store (0 when it never held any).
+ *  BUILD 1089: the mine's iron lives here (mines.ts). Pure. */
+export function storehouseOreInRegistry(registry: ResourceRegistry, kind: string): number {
+  return storeQty(registry, STOREHOUSE_STORE_ID, kind as 'iron' | 'copper' | 'coal' | 'gold' | 'silver' | 'stone');
+}
+
 /**
  * Seed the storehouse store from the founders save numbers (load
  * path): wood + stone at the storehouse approach tile, capacity
@@ -477,7 +486,7 @@ export function storehouseStoneInRegistry(registry: ResourceRegistry): number {
  * first deposit, so a fresh storehouse's first delivery creates
  * the capped entry. Pure.
  */
-export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number): ResourceRegistry {
+export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number, ore = 0): ResourceRegistry {
   let next = registry;
   if (wood > 0) {
     next = setStoreQty(
@@ -497,6 +506,18 @@ export function seedStorehouseStore(registry: ResourceRegistry, wood: number, st
       stone,
       { type: 'loaded' },
       { capacity: STOREHOUSE_CAPACITY_STONE, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  // BUILD 1089: the storehouse's stored iron (the mine's ore) —
+  // seeded from the founders save (v11), like wood and stone.
+  if (ore > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'iron',
+      ore,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_ORE, location: { ...STOREHOUSE_APPROACH } },
     );
   }
   return next;
@@ -529,7 +550,7 @@ export function deliverFounderCarryToStore(
   registry: ResourceRegistry,
   f: FounderState,
   storehouse: StorehouseState | null | undefined,
-): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; dest: string } {
+): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; movedOre: number; dest: string } {
   const dest = deliveryStoreId(storehouse);
   const loc = dest === STOREHOUSE_STORE_ID ? { ...STOREHOUSE_APPROACH } : { ...FOUNDER_CAMP_CENTRE };
   const src = { type: 'entity', id: f.id } as const;
@@ -540,7 +561,11 @@ export function deliverFounderCarryToStore(
   const carrying = Math.max(0, Math.floor(f.carrying));
   const carryingStone = Math.max(0, Math.floor(f.carryingStone));
   const carryingBuild = Math.max(0, Math.floor(f.carryingBuild ?? 0));
-  const moveToDest = (kind: 'wood' | 'stone', qty: number, capacity: number): number => {
+  // BUILD 1089: the mine's ore (iron) rides the same delivery — a
+  // real transfer to the delivery store, capacity-capped, with the
+  // same overflow-to-camp when the storehouse is full for the kind.
+  const carryingOre = Math.max(0, Math.floor(f.carryingOre ?? 0));
+  const moveToDest = (kind: 'wood' | 'stone' | 'iron', qty: number, capacity: number): number => {
     if (qty <= 0) return 0;
     const first = transfer(reg, carrierStoreId(f.id), dest, kind, qty, src, { location: loc, capacity });
     reg = first.registry;
@@ -562,7 +587,8 @@ export function deliverFounderCarryToStore(
   }
   movedStone = moveToDest('stone', carryingStone, STOREHOUSE_CAPACITY_STONE);
   movedBuildWood = moveToDest('wood', carryingBuild, STOREHOUSE_CAPACITY_WOOD);
-  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, dest };
+  const movedOre = moveToDest('iron', carryingOre, STOREHOUSE_CAPACITY_ORE);
+  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, movedOre, dest };
 }
 
 /**

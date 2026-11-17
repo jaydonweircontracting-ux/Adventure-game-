@@ -147,13 +147,13 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
               Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · food {d.resources.campFood} · grain {d.resources.campGrain}
             </div>
             <div>
-              Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone}
+              Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone} · iron {d.resources.storehouseIron}
             </div>
             <div>
               You — wood {d.resources.playerWood} · stone {d.resources.playerStone} · gold {d.resources.playerGold} · grain {d.resources.playerGrain}
             </div>
             <div>
-              Carried — wood {d.resources.carriedWood} · grain {d.resources.carriedGrain} · stone {d.resources.carriedStone} · deposits: {d.resources.depositsWood} wood, {d.resources.depositsStone} stone · total wood available {d.resources.totalWoodAvailable} · total stone available {d.resources.totalStoneAvailable}
+              Carried — wood {d.resources.carriedWood} · grain {d.resources.carriedGrain} · stone {d.resources.carriedStone} · iron {d.resources.carriedIron} · deposits: {d.resources.depositsWood} wood, {d.resources.depositsStone} stone · total wood available {d.resources.totalWoodAvailable} · total stone available {d.resources.totalStoneAvailable}
             </div>
             {d.shortages.length > 0 ? (
               <div data-testid="cc-shortages" style={{ color: '#ffb3a7', marginTop: 4 }}>

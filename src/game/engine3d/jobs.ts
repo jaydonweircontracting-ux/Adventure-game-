@@ -107,11 +107,12 @@ import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm';
 import { WELL_START_DAY, type BridgeSite } from './paths';
+import { lumberTreesInRect, openMineSite, type MineState } from './mines';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -217,6 +218,16 @@ export function waterJobIdFor(tx: number, ty: number): string {
   return jobIdFor('water', farmTileId(tx, ty));
 }
 
+/** The job id for a mine site (its deposit id). */
+export function mineJobIdFor(depositId: string): string {
+  return jobIdFor('mine', depositId);
+}
+
+/** The job id for a lumber tree at (tx, ty). */
+export function lumberJobIdFor(tx: number, ty: number): string {
+  return jobIdFor('lumber', treeId(tx, ty));
+}
+
 /** What discovery needs: the world (trees), the construction
  *  (the hut), the founders' carried wood, and the clock (for
  *  createdAbs). The registry is NOT an input — a job's existence
@@ -226,7 +237,7 @@ export function waterJobIdFor(tx: number, ty: number): string {
 export type JobDiscoveryInput = {
   world: IsoWorld;
   construction: ConstructionState;
-  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number; carryingBuild?: number }[];
+  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number; carryingBuild?: number; carryingOre?: number }[];
   nowAbs: number;
   /** BUILD 1087: the storehouse state + the settlement day — the
    *  storehouse build job exists only once the huts are done and
@@ -251,6 +262,13 @@ export type JobDiscoveryInput = {
    *  construction path). Absent means no bridge data (the old
    *  callers) and no bridge job, so old boards are unchanged. */
   bridges?: BridgeSite[];
+  /** BUILD 1089: the mine / quarry / lumber sites (mines.ts) — a
+   *  mine job per open mine site, lumber jobs per tree in the
+   *  lumber rect (the rect's trees are lumber jobs, NOT chop
+   *  jobs, once the site is designated). Absent means no mines
+   *  data (the old callers) and no mine/lumber jobs, so old
+   *  boards are unchanged. */
+  mines?: MineState;
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -303,9 +321,16 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   let changed = false;
 
   // --- Chop jobs: the trees in radius, by tile. ---
+  // BUILD 1089: a tree inside the designated lumber rect is a
+  // LUMBER job, not a chop job (the rect is the settlement's
+  // planned wood source — one job per tree, never two). Before
+  // the site is designated (day < 3) the rect's trees are chop
+  // jobs as always, so the 24h window is untouched.
+  const lumberRect = input.mines?.lumber && input.mines.lumber.state === 'open' ? input.mines.lumber.rect : null;
   const trees = treesInRadius(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS);
   const liveChopIds = new Set<string>();
   for (const t of trees) {
+    if (lumberRect && t.tx >= lumberRect.x0 && t.tx <= lumberRect.x1 && t.ty >= lumberRect.y0 && t.ty <= lumberRect.y1) continue;
     const targetId = treeTargetId(world, t.tx, t.ty);
     const id = jobIdFor('chop', targetId);
     liveChopIds.add(id);
@@ -505,6 +530,77 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     changed = true;
   }
 
+  // --- Mine jobs: one per open mine site (BUILD 1089) — the
+  // miner's shift (walk to the mine, work 3 ticks, carry 2 ore
+  // to the storehouse). The job's tile is the mine's work tile;
+  // the job completes when the shift's ore is in the carrier
+  // (the deposit depletes / the site exhausts). A claimed job
+  // whose site exhausted fails ('target-gone').
+  const liveMineIds = new Set<string>();
+  const openMine = input.mines ? openMineSite(input.mines) : null;
+  if (openMine) {
+    const id = mineJobIdFor(openMine.depositId);
+    liveMineIds.add(id);
+    if (!next.jobs[id]) {
+      next.jobs[id] = {
+        id,
+        kind: 'mine',
+        targetId: openMine.depositId,
+        tile: { ...openMine.workTile },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
+      changed = true;
+    }
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'mine' || liveMineIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
+  // --- Lumber jobs: one per tree in the designated lumber rect
+  // (BUILD 1089) — the felling rotation. Discovery iterates the
+  // rect row-major (lumberTreesInRect), so the board order IS the
+  // rotation: the crew claims the first open lumber job and fells
+  // section by section across the rect. A felled tree's job
+  // completes on the fell (the sapling is planted by the fell, so
+  // the site thins, then regrows). A claimed job whose tree is
+  // gone (felled by the player first) fails ('target-gone').
+  const liveLumberIds = new Set<string>();
+  if (lumberRect) {
+    for (const t of lumberTreesInRect(world, lumberRect)) {
+      const id = lumberJobIdFor(t.tx, t.ty);
+      liveLumberIds.add(id);
+      if (next.jobs[id]) continue;
+      if (!treeWorkTile(world, t.tx, t.ty)) continue;
+      next.jobs[id] = {
+        id,
+        kind: 'lumber',
+        targetId: treeTargetId(world, t.tx, t.ty),
+        tile: { x: t.tx, y: t.ty },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
+      changed = true;
+    }
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'lumber' || liveLumberIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
   // --- Quarry jobs: one per live stone deposit + one per rock in
   // work radius WITH a walkable work tile (BUILD 1086). A deposit
   // with no walkable tile beside it is not work (the chop rule).
@@ -566,7 +662,10 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     // storehouse for a site) also gets a deliver job — the carrier
     // holds wood, grain, stone, or build wood, and the job
     // completes when ALL are empty (the return leg).
-    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) + Math.max(0, Math.floor(f.carryingBuild ?? 0)) <= 0) continue;
+    // BUILD 1089: a founder carrying ORE (mined) also gets a
+    // deliver job — the carrier holds ore too, and the job
+    // completes when ALL are empty.
+    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) + Math.max(0, Math.floor(f.carryingBuild ?? 0)) + Math.max(0, Math.floor(f.carryingOre ?? 0)) <= 0) continue;
     carryingIds.add(f.id);
     const id = deliverJobIdFor(f.id);
     if (!next.jobs[id]) {
@@ -638,6 +737,26 @@ export function claimNearestJob(
   }
   if (!best) return { board, job: null };
   return claimJob(board, founderId, best.id);
+}
+
+/**
+ * Claim the FIRST open job of a kind in board order (insertion
+ * order — deterministic for a given build). The lumber rotation
+ * claims this way: discovery inserts the rect's trees row-major,
+ * so the first open lumber job is the next tree in the rotation
+ * (fell section by section), not the nearest tree to the founder.
+ * Pure.
+ */
+export function claimFirstJob(
+  board: JobBoard,
+  founderId: string,
+  kind: JobKind,
+): { board: JobBoard; job: Job | null } {
+  for (const job of Object.values(board.jobs)) {
+    if (job.kind !== kind || job.state !== 'open') continue;
+    return claimJob(board, founderId, job.id);
+  }
+  return { board, job: null };
 }
 
 /**
@@ -785,6 +904,29 @@ export function scorerQuarryDist(board: JobBoard, founderId: string, campX: numb
   return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
 }
 
+/** BUILD 1089: the Manhattan distance camp → the founder's own
+ *  claimed mine job, or the nearest OPEN mine job — null when no
+ *  mine is open (the mine term scores 0). Pure. */
+export function scorerMineDist(board: JobBoard, founderId: string, campX: number, campY: number, maxDist: number): number | null {
+  const mine = jobForFounder(board, founderId);
+  if (mine && mine.kind === 'mine') return Math.abs(mine.tile.x - campX) + Math.abs(mine.tile.y - campY);
+  const open = nearestOpenJob(board, 'mine', campX, campY, maxDist);
+  if (!open) return null;
+  return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
+}
+
+/** BUILD 1089: the Manhattan distance camp → the founder's own
+ *  claimed lumber job, or the nearest OPEN lumber job — null when
+ *  no lumber tree in the rect is open (the lumber term scores 0).
+ *  Pure. */
+export function scorerLumberDist(board: JobBoard, founderId: string, campX: number, campY: number, maxDist: number): number | null {
+  const mine = jobForFounder(board, founderId);
+  if (mine && mine.kind === 'lumber') return Math.abs(mine.tile.x - campX) + Math.abs(mine.tile.y - campY);
+  const open = nearestOpenJob(board, 'lumber', campX, campY, maxDist);
+  if (!open) return null;
+  return Math.abs(open.tile.x - campX) + Math.abs(open.tile.y - campY);
+}
+
 /** The founder holding a build job (the builder), or null when no
  *  build job is claimed. With a site id, the builder of THAT
  *  site's job (one builder per site); without one, the builder of
@@ -820,6 +962,10 @@ export function jobSummary(board: JobBoard): {
   quarryClaimed: number;
   waterOpen: number;
   waterClaimed: number;
+  mineOpen: number;
+  mineClaimed: number;
+  lumberOpen: number;
+  lumberClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -838,6 +984,10 @@ export function jobSummary(board: JobBoard): {
   let quarryClaimed = 0;
   let waterOpen = 0;
   let waterClaimed = 0;
+  let mineOpen = 0;
+  let mineClaimed = 0;
+  let lumberOpen = 0;
+  let lumberClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
@@ -846,6 +996,8 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'harvest') harvestOpen++;
       else if (job.kind === 'quarry') quarryOpen++;
       else if (job.kind === 'water') waterOpen++;
+      else if (job.kind === 'mine') mineOpen++;
+      else if (job.kind === 'lumber') lumberOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
@@ -854,8 +1006,10 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'harvest') harvestClaimed++;
       else if (job.kind === 'quarry') quarryClaimed++;
       else if (job.kind === 'water') waterClaimed++;
+      else if (job.kind === 'mine') mineClaimed++;
+      else if (job.kind === 'lumber') lumberClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

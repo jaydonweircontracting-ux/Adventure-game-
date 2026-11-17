@@ -75,6 +75,19 @@ export const RIVER_COUNT = 2;
 export const RIVER_CAMP_EXCLUSION = 25;
 /** No river tile within this many tiles of a hut rect edge. */
 export const RIVER_HUT_MARGIN = 2;
+/** BUILD 1089 (2.4): the mine corridor — the lane from camp
+ *  (124,120) to the near iron deposit (84,111), work tile
+ *  (83,110). River:1's southward meander used to cut diagonally
+ *  across this lane (18 water tiles, x 80..97, y 108..116),
+ *  which made the near iron unreachable: the mine designation
+ *  reads a deposit as unreachable when no round-trip path exists
+ *  at the A* default budget, so it fell through to the far iron
+ *  (180,123), whose 89-step trip no founder can complete (the
+ *  needs decay outruns the walk at 100x). The corridor stays dry
+ *  so the mine route is the direct ~51-step path. The deposits
+ *  and the camp are deterministic world facts, so the rectangle
+ *  is stable across loads. */
+export const RIVER_MINE_CORRIDOR = { x0: 80, y0: 108, x1: 124, y1: 122 };
 /** Longest a river course may run (a coast-to-coast walk is
  *  ~160 tiles west plus meanders; 300 is headroom). */
 export const RIVER_MAX_LEN = 300;
@@ -172,6 +185,8 @@ function buildExclusions(world: IsoWorld): Exclusions {
 
 function isExcluded(ex: Exclusions, x: number, y: number): boolean {
   if (Math.hypot(x - FOUNDER_CAMP.x, y - FOUNDER_CAMP.y) < RIVER_CAMP_EXCLUSION) return true;
+  // BUILD 1089: the mine corridor stays dry (above).
+  if (x >= RIVER_MINE_CORRIDOR.x0 && x <= RIVER_MINE_CORRIDOR.x1 && y >= RIVER_MINE_CORRIDOR.y0 && y <= RIVER_MINE_CORRIDOR.y1) return true;
   if (ex.occ.has(key(x, y))) return true;
   if (ex.farms.has(key(x, y))) return true;
   if (ex.deposits.has(key(x, y))) return true;

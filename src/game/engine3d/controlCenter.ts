@@ -78,6 +78,8 @@ export type ControlCenterFounderRow = {
   carrying: number;
   carryingGrain: number;
   carryingStone: number;
+  /** BUILD 1089: the iron a founder carries from the mine. */
+  carryingOre: number;
 };
 
 export type ControlCenterSiteRow = {
@@ -116,9 +118,9 @@ export type ControlCenterInput = {
   camp: { wood: number; food: number; grain: number; stone: number };
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
-  storehouse?: { state: string; progress: number; wood: number; stone: number };
+  storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number };
   player: { wood: number; stone: number; gold: number; grain: number };
-  carried: { id: string; wood: number; grain: number; stone: number }[];
+  carried: { id: string; wood: number; grain: number; stone: number; iron: number }[];
   deposits: { wood: number; stone: number };
   totalWoodAvailable: number;
   totalStoneAvailable: number;
@@ -150,9 +152,13 @@ export type ControlCenterData = {
     carriedWood: number;
     carriedGrain: number;
     carriedStone: number;
+    /** BUILD 1089: the iron founders carry from the mine. */
+    carriedIron: number;
     /** BUILD 1087: the storehouse store (0s when it never held any). */
     storehouseWood: number;
     storehouseStone: number;
+    /** BUILD 1089: the storehouse's iron (0 when it never held any). */
+    storehouseIron: number;
     /** BUILD 1087: the storehouse label ('—' / '3/6' / 'done'). */
     storehouseLabel: string;
     depositsWood: number;
@@ -248,8 +254,10 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       carriedWood: input.carried.reduce((s, c) => s + c.wood, 0),
       carriedGrain: input.carried.reduce((s, c) => s + c.grain, 0),
       carriedStone: input.carried.reduce((s, c) => s + c.stone, 0),
+      carriedIron: input.carried.reduce((s, c) => s + (c.iron ?? 0), 0),
       storehouseWood: input.storehouse ? input.storehouse.wood : 0,
       storehouseStone: input.storehouse ? input.storehouse.stone : 0,
+      storehouseIron: input.storehouse ? (input.storehouse.iron ?? 0) : 0,
       storehouseLabel: input.storehouse ? (input.storehouse.state === 'done' ? 'done' : input.storehouse.state === 'building' ? input.storehouse.progress + '/6' : '—') : '—',
       depositsWood: input.deposits.wood,
       depositsStone: input.deposits.stone,

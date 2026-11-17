@@ -76,6 +76,22 @@
  *   it never steals a chop, a harvest, or a quarry on a tie.
  * - BUILD 1088 bridge branch: build scores for a startable bridge
  *   site once housing AND the storehouse are done (bridges third).
+ * - BUILD 1089 mine term: work = max(..., 0.45 x (1 - iron/20))
+ *   when a mine job is open, the storehouse is done, the day is
+ *   >= 3, the storehouse holds less than MINE_IRON_TARGET iron,
+ *   and there is NO wood work at all (woodWork == 0 — the chop /
+ *   lumber terms are both 0, the pile is full). The miner works
+ *   the stockpile on spare capacity: it beats idle rest (~0.14)
+ *   and loses to night sleep (0.81), to a hungry founder's eat,
+ *   and to the food term (0.65) — iron never steals from the
+ *   wood/food loop, and the 24h window (day < 3) never sees it.
+ * - BUILD 1089 lumber term: the chop formula WITHOUT the distance
+ *   penalty (the lumber site is a planned destination, not a
+ *   nearest-tree search) — when the site is designated and has
+ *   trees, lumber is the preferred wood source (it wins ties over
+ *   chop). It is the wood term, not a separate need: the pile /
+ *   construction logic is the chop formula's, so the wood loop's
+ *   24h numbers are the chop numbers (the site opens day 3).
  * - build = 0 unless construction is pending (state !== 'done') AND
  *   the pile holds a step's wood (≥ 2) AND nobody else is building
  *   (one builder — the site has one work tile). Then 0.80 - 0.02 x
@@ -110,6 +126,7 @@ import { QUARRY_STONE_TARGET } from './quarry';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
 import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
 import { WELL_START_DAY } from './paths';
+import { MINE_IRON_TARGET, MINE_START_DAY } from './mines';
 import type { ConstructionState } from './construction';
 
 /** The five scored activities — the 1057 four plus 'build'. */
@@ -199,6 +216,24 @@ export type UtilityWorldContext = {
    *  Optional: absent means false (the 1059/1067/1069/1086 callers)
    *  and the stone term is unboosted, so old scores are unchanged. */
   storehouseStoneNeed?: boolean;
+  /** BUILD 1089: open mine jobs on the board — the mine term only
+   *  fires when there is a mine to work. Optional: absent means no
+   *  mine data and the mine term is 0. */
+  readyMineJobs?: number;
+  /** BUILD 1089: another founder is already mining (walking to the
+   *  mine, working a shift, or carrying ore back) — the mine term
+   *  is 0 for this founder, so only one miner works at a time.
+   *  Optional: absent means the slot is free. */
+  mineTaken?: boolean;
+  /** BUILD 1089: iron in the storehouse store — the mine term only
+   *  fires while the stockpile is below MINE_IRON_TARGET.
+   *  Optional: absent means 0. */
+  storehouseIron?: number;
+  /** BUILD 1089: open lumber jobs on the board (trees in the
+   *  designated rect) — the lumber term only fires when there is
+   *  a tree to fell in the rotation. Optional: absent means no
+   *  lumber data and the lumber term is 0. */
+  readyLumberJobs?: number;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -222,8 +257,9 @@ export type ScoredDecision = {
   runnerUpScore: number;
   /** BUILD 1086: which work the founder should do when the
    *  activity is 'work' — the argmax of the chop / food / stone
-   *  terms (null when no work is worth doing). */
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null;
+   *  terms (null when no work is worth doing). BUILD 1089: the
+   *  mine and the lumber join the argmax (see workTermsFor). */
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -274,6 +310,14 @@ export const UTILITY_STONE_TERM_MAX = 0.03;
  *  gated on day 3 by the job, so the 24h window never sees it. */
 export const UTILITY_WATER_TERM_MAX = 0.25;
 
+/** BUILD 1089: the mine term — the most work is worth for iron
+ *  alone (an open mine job, the storehouse done, day 3+, the
+ *  stockpile below target, no wood work). Below night sleep
+ *  (0.81) and a hungry founder's eat, above idle rest — the
+ *  miner works the stockpile on spare capacity, and the term
+ *  fades as the storehouse fills (iron 20 → 0). */
+export const UTILITY_MINE_TERM_MAX = 0.45;
+
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
   return Math.max(0, Math.min(1, (100 - value) / 100));
@@ -302,8 +346,10 @@ function workTermsFor(ctx: UtilityContext): {
   foodTerm: number;
   stoneTerm: number;
   waterTerm: number;
+  mineTerm: number;
+  lumberTerm: number;
   work: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -347,11 +393,34 @@ function workTermsFor(ctx: UtilityContext): {
   // and food loops keep their 24h numbers. It never beats night
   // sleep or a hungry founder's eat, and it never steals a chop or
   // a harvest on a tie (the work kind below is the STRICT argmax).
+  // BUILD 1089: the lumber term — the chop formula WITHOUT the
+  // distance penalty (the site is a planned destination, not a
+  // nearest-tree search). When the site is designated and has
+  // trees, lumber is the preferred wood source: it wins ties over
+  // chop (the argmax below). It is the wood term — the pile /
+  // construction logic is the chop formula's, so the wood loop
+  // reads the same numbers (the site opens day 3, so the 24h
+  // window never sees it: readyLumberJobs is 0 there).
+  const readyLumber = ctx.readyLumberJobs ?? 0;
+  let lumberTerm = 0;
+  if (readyLumber > 0) {
+    if (construction.state !== 'done') {
+      const needWood = Math.max(0, HUT_COST_WOOD - construction.spentWood - stockpileWood);
+      lumberTerm = clamp01(0.25 + 0.4 * Math.min(1, needWood / HUT_COST_WOOD));
+    } else {
+      lumberTerm = clamp01(0.45 * Math.max(0, 1 - stockpileWood / UTILITY_PILE_FULL));
+    }
+  }
   const stoneStock = ctx.stoneStock ?? 0;
   const readyQuarry = ctx.readyQuarryJobs ?? 0;
   const quarryTaken = ctx.quarryTaken ?? false;
+  // BUILD 1089: the stone gate is NO wood work (chop OR lumber) —
+  // the lumber term is the wood term once the site is designated,
+  // so stone must not fire while the crew is lumbering. In the
+  // 24h window the lumber term is 0, so the gate is exactly
+  // chopWork === 0 and the M1069 guard is unchanged.
   const stoneTermRaw =
-    readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && chopWork === 0
+    readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && chopWork === 0 && lumberTerm === 0
       ? UTILITY_STONE_TERM_MAX * Math.max(0, 1 - stoneStock / QUARRY_STONE_TARGET)
       : 0;
   // BUILD 1087: while the settlement needs stone for (or in) the
@@ -381,13 +450,41 @@ function workTermsFor(ctx: UtilityContext): {
     ctx.well && readyWater > 0 && (ctx.day ?? 0) >= WELL_START_DAY && foodStock < FARM_FOOD_THRESHOLD
       ? UTILITY_WATER_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
       : 0;
-  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm);
-  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null = null;
-  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm) workKind = 'water';
-  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm) workKind = 'quarry';
-  else if (foodTerm > 0 && foodTerm >= chopWork) workKind = 'harvest';
+  // The wood work is the max of the two wood terms (ad-hoc chop
+  // vs the designated lumber site) — the stone and mine terms
+  // gate on NO wood work at all, so neither steals from the wood
+  // loop. In the 24h window the lumber term is 0, so woodWork is
+  // exactly chopWork and the stone gate is unchanged.
+  const woodWork = Math.max(chopWork, lumberTerm);
+  // BUILD 1089: the mine term — when a mine job is open, the
+  // storehouse is done (ore has somewhere to go), the settlement
+  // is old enough (day 3 — the job's own gate, mirrored here so
+  // the term can never fire in the 24h window), the storehouse
+  // holds less than the iron target, and there is NO wood work
+  // at all (woodWork == 0 — the pile is full, the wood loop is
+  // satisfied). It scales with the stockpile shortage (iron 0 →
+  // UTILITY_MINE_TERM_MAX, iron 20 → 0) and combines by max.
+  // It never beats night sleep or a hungry founder's eat, and it
+  // never steals a chop, a harvest, a quarry, or a lumber on a
+  // tie (the work kind below is the STRICT argmax — mine wins
+  // only outright over the others, and only ties over chop).
+  const readyMine = ctx.readyMineJobs ?? 0;
+  const mineTaken = ctx.mineTaken ?? false;
+  const storehouseIron = ctx.storehouseIron ?? 0;
+  const mineTerm =
+    readyMine > 0 && !mineTaken && ctx.storehouse !== undefined && ctx.storehouse.state === 'done' &&
+    (ctx.day ?? 0) >= MINE_START_DAY && storehouseIron < MINE_IRON_TARGET && woodWork === 0
+      ? UTILITY_MINE_TERM_MAX * Math.max(0, 1 - storehouseIron / MINE_IRON_TARGET)
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | null = null;
+  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm) workKind = 'water';
+  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm) workKind = 'quarry';
+  else if (foodTerm > 0 && foodTerm >= chopWork && foodTerm >= lumberTerm && foodTerm >= mineTerm) workKind = 'harvest';
+  else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm) workKind = 'lumber';
+  else if (mineTerm > 0 && mineTerm >= chopWork) workKind = 'mine';
   else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, waterTerm, work, workKind };
+  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {

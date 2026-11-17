@@ -62,6 +62,7 @@ import {
   createJobBoard,
   discoverJobs,
   claimJob,
+  claimFirstJob,
   claimNearestJob,
   nearestOpenJob,
   openJobs,
@@ -115,9 +116,15 @@ import {
   canStartStorehouse, canBuildStorehouse, spendStorehouseStepFromRegistry, finishStorehouse,
   reconcileStorehouse, storehouseWoodInRegistry, storehouseStoneInRegistry, quarryClaimRadiusForStorehouse,
   deliverFounderCarryToStore, fetchBuildWood, spendBuildStepFromCarried, distToActiveBuildSite,
-  STOREHOUSE_STORE_ID, freshStorehouse, seedStorehouseStore, type StorehouseState,
+  STOREHOUSE_STORE_ID, freshStorehouse, seedStorehouseStore, storehouseOreInRegistry, type StorehouseState,
 } from './storehouse';
 import { QUARRY_STONE_TARGET, QUARRY_CLAIM_RADIUS, quarryWorkTile, quarryTargetFromJob, mineStoneToCarrier } from './quarry';
+import { stampMineralDeposits } from './geology';
+import {
+  MINE_START_DAY, MINE_TICKS_PER_SHIFT, MINE_IRON_TARGET, QUARRY_CREW_SIZE,
+  designateMine, designateQuarry, designateLumber, reconcileMines, mineOreToCarrier,
+  openMineSite, isQuarrySiteRock, quarrySiteRocks, freshMineState, validateMineState, type MineState,
+} from './mines';
 import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
@@ -183,6 +190,18 @@ export type SettlementLedger = {
   bridgesCompleted: number;
   /** Wood spent on bridge steps (BUILD 1088). */
   bridgeWoodSpent: number;
+  /** Iron mined by the mine shift (BUILD 1089). */
+  oreMined: number;
+  /** Iron delivered to the storehouse (BUILD 1089). */
+  oreDelivered: number;
+  /** Mine shifts completed (BUILD 1089). */
+  mineShifts: number;
+  /** Stone mined at the designated quarry site (BUILD 1089). */
+  quarrySiteStone: number;
+  /** Lumber trees felled at the designated site (BUILD 1089). */
+  lumberTreesFelled: number;
+  /** Iron delivered into the storehouse store (BUILD 1089). */
+  storehouseOreDelivered: number;
   arrivals: string[];
   /** Founder-ticks spent at hunger 0 (starving). */
   starvedTicks: number;
@@ -201,7 +220,7 @@ export function freshSettlementLedger(): SettlementLedger {
     mealsMilled: 0,
     grainMilled: 0,
     mealsEaten: 0,
-    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0 },
+    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0 },
     stoneMined: 0,
     stoneDelivered: 0,
     jobsFailed: {},
@@ -220,6 +239,12 @@ export function freshSettlementLedger(): SettlementLedger {
     waterSpilled: 0,
     bridgesCompleted: 0,
     bridgeWoodSpent: 0,
+    oreMined: 0,
+    oreDelivered: 0,
+    mineShifts: 0,
+    quarrySiteStone: 0,
+    lumberTreesFelled: 0,
+    storehouseOreDelivered: 0,
     arrivals: [],
     starvedTicks: 0,
     minHealth: 100,
@@ -243,6 +268,9 @@ export type SettlementSim = {
    *  round-trip through serialize/restore. NOTE: `paths` (below)
    *  is the founder path CACHE (per-founder A* state), not this. */
   pathState: PathState;
+  /** The mine / quarry / lumber sites (BUILD 1089 — saved in the
+   *  founders save, v11, and round-tripped by serialize/restore). */
+  mines: MineState;
   /** Absolute game-minutes (float — the clock advances 0.9/tick). */
   abs: number;
   ledger: SettlementLedger;
@@ -293,6 +321,15 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
   // day 3, and the dirt paths are laid by their traffic from the
   // first tick (the path layer starts empty — no pre-painted paths).
   seedWell(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, (x, y) => npcWalkable(world, x, y));
+  // BUILD 1089 (2.4): stamp the mineral deposits into the sim world
+  // too — the view's loadInitialWorld does this for the live game
+  // (worldSync3d.ts), and without it the sim world has no deposits
+  // at all, so the mine could never open in the sim. The stamp is
+  // once-only and deterministic, like the rivers/landforms above;
+  // the stone deposit at (112,167) is unreachable, so it is never
+  // claimed in the 24h window (it is outside the 30-tile claim
+  // radius there) and the M1069 numbers cannot move.
+  stampMineralDeposits(world);
   return {
     world,
     founders,
@@ -304,13 +341,14 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
     ledger: freshSettlementLedger(),
     paths: new Map(),
     pathState: freshPathState(),
+    mines: freshMineState(),
   };
 }
 
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines),
   );
 }
 
@@ -327,7 +365,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
   if (!save) throw new Error('settlementSim: the save does not migrate');
   const founders = foundersStateOf(save);
   let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock, save.stoneStock);
-  registry = seedStorehouseStore(registry, save.storehouseWood, save.storehouseStone);
+  registry = seedStorehouseStore(registry, save.storehouseWood, save.storehouseStone, save.storehouseOre);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   return {
     world,
@@ -340,6 +378,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
     ledger,
     paths: new Map(),
     pathState: { ...freshPathState(), bridges: save.bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })) },
+    mines: validateMineState(save.mines),
   };
 }
 
@@ -377,12 +416,31 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // bridge whose placement is gone rebuilds from the pile; a
   // 'building' site with a placement present is done.
   sim.pathState = { ...sim.pathState, bridges: reconcileBridges(sim.pathState.bridges, world) };
+  // BUILD 1089: reconcile the mine / quarry / lumber sites the same
+  // way (see worldSimulation3d.ts) — a mine whose deposit is mined
+  // out flips to 'exhausted'; a quarry with no rocks flips; a lumber
+  // site with no trees flips (and flips back when saplings mature).
+  sim.mines = reconcileMines(sim.mines, world);
   const hutDone = !hasUnfinishedSite(construction);
 
   // BUILD 1087: the quarry claim radius this tick — computed BEFORE the
   // board rebuild, so discovery creates rock jobs out to the widened
   // radius while the storehouse needs stone (see storehouse.ts).
   const quarryRadius = quarryClaimRadiusForStorehouse(sim.storehouse, hutDone, day, campStoneInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry));
+  // BUILD 1089: the claim radius widens to cover the designated
+  // quarry site's rocks (the mirror of the view tick — the site
+  // centre is up to 72 out, past the storehouse radius once it is
+  // done). The storehouseStoneNeed proxy below keeps using
+  // quarryRadius (the storehouse need), not this widened radius.
+  const siteQuarryRadius = sim.mines.quarry ? quarrySiteRocks(world, sim.mines.quarry).reduce((m, r) => Math.max(m, Math.abs(r.tx - FOUNDER_CAMP.x) + Math.abs(r.ty - FOUNDER_CAMP.y)), 0) : 0;
+  const claimQuarryRadius = Math.max(quarryRadius, siteQuarryRadius);
+  // BUILD 1089: the wood level that gates chopping — once the
+  // storehouse is done, the lower of the camp pile and the
+  // storehouse wood, so a full camp pile does not starve the
+  // storehouse (the mirror of the view tick). Evaluated FRESH at
+  // each use (a function, not a once-per-tick value — a stale low
+  // pile makes every founder chop and moves the 24h pins).
+  const pileForWood = () => sim.storehouse.state === 'done' ? Math.min(campWoodInRegistry(sim.registry), storehouseWoodInRegistry(sim.registry)) : campWoodInRegistry(sim.registry);
 
   // BUILD 1088: the once-a-day bridge scan — paths laid before the
   // day-3 gate (the arrival corridor's river crossing, laid day
@@ -392,13 +450,35 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   if (day >= BRIDGE_START_DAY && sim.pathState.lastBridgeScanDay < day) {
     scanForBridgeSites(world, sim.pathState, day);
   }
+  // BUILD 1089: designate the mine / quarry / lumber sites — once
+  // per day at most (the lastDesignateDay gate, the bridge scan's
+  // pattern). The mine opens over the nearest live iron deposit;
+  // the quarry over the best reachable rock cluster; the lumber
+  // over the surveyed forest-edge rect. All three gate on day 3,
+  // so the 24h window never sees a site.
+  if (day >= MINE_START_DAY && sim.mines.lastDesignateDay < day) {
+    let nextMines = sim.mines;
+    if (!openMineSite(nextMines)) {
+      const site = designateMine(world, day, sim.storehouse.state === 'done', nextMines.mines);
+      if (site) nextMines = { ...nextMines, mines: [...nextMines.mines, site] };
+    }
+    if (!nextMines.quarry) {
+      const q = designateQuarry(world, day, nextMines.quarry);
+      if (q) nextMines = { ...nextMines, quarry: q };
+    }
+    if (!nextMines.lumber) {
+      const l = designateLumber(world, day, nextMines.lumber);
+      if (l) nextMines = { ...nextMines, lumber: l };
+    }
+    sim.mines = { ...nextMines, lastDesignateDay: day };
+  }
   // BUILD 1088: the camp well this tick (null before the seed, or
   // if the placement was removed) — fed to discovery and the
   // scorer, so both read the same well.
   const well = wellTile(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
 
   // Rebuild the job board from the world.
-  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), storehouse: sim.storehouse, day, quarryRadius, well, bridges: sim.pathState.bridges });
+  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines });
 
   // BUILD 1069: the ready farm tiles this tick — computed once and
   // fed to every founder's scorer, so food drives work.
@@ -409,7 +489,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // BUILD 1086: only quarry jobs inside the claim radius count — the
   // stone term must not fire when only far (unclaimable) jobs remain.
   // BUILD 1087: quarryRadius is computed above, before the board rebuild.
-  const readyQuarryCount = openJobs(sim.board, 'quarry').filter((j) => Math.abs(j.tile.x - FOUNDER_CAMP.x) + Math.abs(j.tile.y - FOUNDER_CAMP.y) <= quarryRadius).length;
+  const readyQuarryCount = openJobs(sim.board, 'quarry').filter((j) => Math.abs(j.tile.x - FOUNDER_CAMP.x) + Math.abs(j.tile.y - FOUNDER_CAMP.y) <= claimQuarryRadius).length;
   // BUILD 1088: the waterable farm tiles this tick — the same feed
   // as the real-time tick, so the mirror never re-chooses by a
   // different rule. Gated on the well + day 3 (the discovery gate,
@@ -417,6 +497,18 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   const readyWaterCount = well && day >= WELL_START_DAY
     ? waterableFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS, (tx, ty) => growthFactorAt(world, day, tx, ty)).length
     : 0;
+  // BUILD 1089: the open mine + lumber jobs this tick — the same
+  // feed as the real-time tick, so the mirror never re-chooses by
+  // a different rule. Both are 0 in the 24h window (the sites
+  // open day 3).
+  const readyMineCount = openJobs(sim.board, 'mine').length;
+  const readyLumberCount = openJobs(sim.board, 'lumber').length;
+  // BUILD 1089: the quarry crew cap — 2 when a site quarry job is
+  // open (the crew works the designated site in parallel), 1
+  // otherwise (the ad-hoc rule). In the 24h window there is no
+  // site, so the cap is 1 and the guard is the 1086 rule.
+  const siteQuarryOpen = openJobs(sim.board, 'quarry').some((j) => isQuarrySiteRock(sim.mines.quarry, j.tile.x, j.tile.y));
+  const quarryCrewCap = siteQuarryOpen ? QUARRY_CREW_SIZE : 1;
 
   // A newcomer arrives when a finished hut leaves a free bed, the camp
   // holds food, and the settlement is old enough. One at a time.
@@ -458,6 +550,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.workState = 'toTree';
         f.mineTicks = 0;
         f.quarryTarget = null;
+      } else if (f.workState === 'toMine' || f.workState === 'miningOre') {
+        f.workState = 'toTree';
+        f.mineTicks = 0;
+        f.mineTarget = null;
       } else if (f.workState === 'toWell' || f.workState === 'toWater') {
         // BUILD 1088: the water job vanished (the tile was watered
         // by another founder, or grew ready) — spill the carried
@@ -472,8 +568,8 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.treeTarget = null;
         f.workTile = null;
       }
-      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0)) {
-        const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingBuild, nowAbs);
+      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0)) {
+        const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingBuild + f.carryingOre, nowAbs);
         sim.board = dc.board;
         if (dc.job) myJob = dc.job;
       }
@@ -518,7 +614,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         needs: f.needs,
         minutes,
         foodStock: campFoodInRegistry(sim.registry),
-        stockpileWood: campWoodInRegistry(sim.registry),
+        stockpileWood: pileForWood(),
         construction,
         nearestTreeDist: scorerTreeDist(sim.board, f.id, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS),
         distToSite: distToActiveBuildSite({ x: Math.round(f.x), y: Math.round(f.y) }, construction, sim.storehouse, day),
@@ -535,10 +631,14 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         // BUILD 1086: the quarry slot is live — a founder scored
         // after another founder claimed the slot rests instead of
         // standing idle on the camp centre (see utility.ts).
-        quarryTaken: sim.founders.some((o) => o !== f && (o.workState === 'toQuarry' || o.workState === 'mining' || o.carryingStone > 0)),
+        quarryTaken: sim.founders.filter((o) => o !== f && (o.workState === 'toQuarry' || o.workState === 'mining' || o.carryingStone > 0)).length >= quarryCrewCap,
         storehouse: sim.storehouse,
         storehouseWood: storehouseWoodInRegistry(sim.registry),
         day,
+        readyMineJobs: readyMineCount,
+        mineTaken: sim.founders.some((o) => o !== f && (o.workState === 'toMine' || o.workState === 'miningOre' || o.carryingOre > 0)),
+        storehouseIron: storehouseOreInRegistry(sim.registry, 'iron'),
+        readyLumberJobs: readyLumberCount,
       });
       f.activity = decision.activity;
       f.lastDecision = decision;
@@ -739,13 +839,58 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           myJob = wc.job;
         }
       }
+      // BUILD 1089: the mine — the mirror of the real-time tick
+      // (same gate: workKind 'mine' and the storehouse below its
+      // iron target). One miner at a time (the mineTaken guard).
+      // The claim checks the path from the founder's own position;
+      // when no path exists the founder falls through to chopping
+      // and the job stays open (never failed — the site is real).
+      const mineTaken = sim.founders.some((o) => o !== f && (o.workState === 'toMine' || o.workState === 'miningOre' || o.carryingOre > 0));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'mine' && !mineTaken && storehouseOreInRegistry(sim.registry, 'iron') < MINE_IRON_TARGET) {
+        const mc = claimNearestJob(sim.board, f.id, 'mine', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS);
+        sim.board = mc.board;
+        if (mc.job) {
+          const mJob = mc.job;
+          const site = sim.mines.mines.find((s) => s.id === 'mine:' + mJob.targetId) ?? openMineSite(sim.mines);
+          if (site && planPathNpc(world, { x: Math.round(f.x), y: Math.round(f.y) }, site.workTile)) {
+            f.workState = 'toMine';
+            f.mineTarget = { id: site.id, x: site.x, y: site.y };
+            f.workTile = { ...site.workTile };
+            myJob = mJob;
+          } else {
+            sim.board = releaseJob(sim.board, mJob.id);
+          }
+        }
+      }
+      // BUILD 1089: the lumber — the mirror of the real-time tick
+      // (same gate: workKind 'lumber'). The claim is first-in-
+      // board-order (claimFirstJob) — discovery inserts the rect
+      // row-major, so the crew fells section by section. The
+      // execution is the chop path (treeTarget / workTile /
+      // 'chopping' / fellTreeToCarrier — which plants the sapling),
+      // so the site thins and regrows through the 1.6 path.
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'lumber') {
+        const lc = claimFirstJob(sim.board, f.id, 'lumber');
+        sim.board = lc.board;
+        if (lc.job) {
+          const wt = treeWorkTile(world, lc.job.tile.x, lc.job.tile.y);
+          if (wt) {
+            f.treeTarget = { x: lc.job.tile.x, y: lc.job.tile.y };
+            f.workTile = wt;
+            myJob = lc.job;
+          } else {
+            sim.board = failJob(sim.board, lc.job.id, 'no-work-tile');
+            ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
+          }
+        }
+      }
       // BUILD 1086: quarrying — the mirror of the real-time tick
       // (same gate: workKind 'quarry' and the pile below target).
-      // One founder quarries at a time — the rest of the workforce
-      // keeps the wood/food loop on schedule, so the 24h numbers
-      // stay put (six founders fanning out to far rocks missed
-      // meals and stalled the last deliveries).
-      const quarryTaken = sim.founders.some((o) => o !== f && (o.workState === 'toQuarry' || o.workState === 'mining' || o.carryingStone > 0));
+      // BUILD 1089: the crew cap — up to QUARRY_CREW_SIZE founders
+      // quarry at once when a site quarry job is open (the crew
+      // works the designated site in parallel), else one (the
+      // ad-hoc rule). In the 24h window the cap is 1.
+      const quarryTaken = sim.founders.filter((o) => o !== f && (o.workState === 'toQuarry' || o.workState === 'mining' || o.carryingStone > 0)).length >= quarryCrewCap;
       if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'quarry' && !quarryTaken && campStoneInRegistry(sim.registry) < QUARRY_STONE_TARGET) {
         // Nearest-first, but only a REACHABLE rock/deposit is claimed:
         // a rock across a river has a walkable work tile yet no path
@@ -757,7 +902,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         // is tried; when none is reachable the founder falls through
         // to chopping (the pile gate below).
         for (;;) {
-          const cand = nearestOpenJob(sim.board, 'quarry', Math.round(f.x), Math.round(f.y), quarryRadius);
+          const cand = nearestOpenJob(sim.board, 'quarry', Math.round(f.x), Math.round(f.y), claimQuarryRadius);
           if (!cand) break;
           const wt = quarryWorkTile(world, cand.tile.x, cand.tile.y);
           // BUILD 1087: a round trip, not a one-way ticket — rock
@@ -798,9 +943,9 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       // 48→50 after the radius cap).
       const woodInFlight1086 = sim.founders.reduce((sum, o) => {
         const oj = jobForFounder(sim.board, o.id);
-        return sum + o.carrying + (oj && oj.kind === 'chop' && o.carrying === 0 ? 2 : 0);
+        return sum + o.carrying + (oj && (oj.kind === 'chop' || oj.kind === 'lumber') && o.carrying === 0 ? 2 : 0);
       }, 0);
-      if (f.workState === 'toTree' && !f.treeTarget && campWoodInRegistry(sim.registry) + woodInFlight1086 < UTILITY_PILE_FULL) {
+      if (f.workState === 'toTree' && !f.treeTarget && pileForWood() + woodInFlight1086 < UTILITY_PILE_FULL) {
         const cc = claimNearestJob(sim.board, f.id, 'chop', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS);
         sim.board = cc.board;
         if (cc.job) {
@@ -893,7 +1038,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       // activity — the driver mirrors the view's fix. A founder who
       // flips to rest/eat/sleep while carrying must still deliver
       // when they reach their destination (see worldSimulation3d.ts).
-      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0)) {
+      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0)) {
         // The delivery runs only on a held deliver job — the transfer
         // IS the job's completion. Without the job (claimed next tick)
         // the founder waits at camp; the wood never moves without a job.
@@ -904,24 +1049,30 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           // store; grain always goes to camp. The ledger splits by
           // destination, so the M1087 section can prove the
           // storehouse actually received wood/stone.
+          // BUILD 1089: the delivery moves ore too (iron to the
+          // storehouse store — the mine's yield).
           const res = deliverFounderCarryToStore(sim.registry, f, sim.storehouse);
           sim.registry = res.registry;
           f.carrying -= res.movedWood;
           f.carryingGrain -= res.movedGrain;
           f.carryingStone -= res.movedStone;
           f.carryingBuild -= res.movedBuildWood;
+          f.carryingOre -= res.movedOre;
           ledger.woodDelivered += res.movedWood;
           ledger.grainDelivered += res.movedGrain;
           ledger.stoneDelivered += res.movedStone;
+          ledger.oreDelivered += res.movedOre;
           if (res.dest === STOREHOUSE_STORE_ID) {
             ledger.storehouseWoodDelivered += res.movedWood + res.movedBuildWood;
             ledger.storehouseStoneDelivered += res.movedStone;
+            ledger.storehouseOreDelivered += res.movedOre;
           }
-          if (f.carrying <= 0 && f.carryingGrain <= 0 && f.carryingStone <= 0 && f.carryingBuild <= 0) {
+          if (f.carrying <= 0 && f.carryingGrain <= 0 && f.carryingStone <= 0 && f.carryingBuild <= 0 && f.carryingOre <= 0) {
             f.carrying = 0;
             f.carryingGrain = 0;
             f.carryingStone = 0;
             f.carryingBuild = 0;
+            f.carryingOre = 0;
             f.workState = 'toTree';
             ledger.jobsCompleted.deliver++;
             sim.board = completeJob(sim.board, myJob.id);
@@ -1181,15 +1332,24 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             if (fell.yield > 0) {
               f.carrying = fell.yield;
               ledger.woodChopped += fell.yield;
-              if (myJob && myJob.kind === 'chop') {
-                ledger.jobsCompleted.chop++;
+              // BUILD 1089: a lumber job completes the same way
+              // (the fell is the same — the tree was a rect tree,
+              // and the sapling is planted by the fell).
+              if (myJob && (myJob.kind === 'chop' || myJob.kind === 'lumber')) {
+                if (myJob.kind === 'lumber') {
+                  ledger.jobsCompleted.lumber++;
+                  ledger.lumberTreesFelled++;
+                  if (sim.mines.lumber) sim.mines = { ...sim.mines, lumber: { ...sim.mines.lumber, treesFelled: sim.mines.lumber.treesFelled + 1 } };
+                } else {
+                  ledger.jobsCompleted.chop++;
+                }
                 sim.board = completeJob(sim.board, myJob.id);
                 myJob = undefined;
               }
               const dc = claimDeliverJobFor(sim.board, f.id, f.carrying, nowAbs);
               sim.board = dc.board;
               if (dc.job) myJob = dc.job;
-            } else if (myJob && myJob.kind === 'chop') {
+            } else if (myJob && (myJob.kind === 'chop' || myJob.kind === 'lumber')) {
               ledger.jobsFailed['target-gone'] = (ledger.jobsFailed['target-gone'] ?? 0) + 1;
               sim.board = failJob(sim.board, myJob.id, 'target-gone');
               myJob = undefined;
@@ -1227,6 +1387,46 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             f.harvestTicks = 0;
             f.workState = 'toStockpile';
           }
+        } else if (f.workState === 'toMine' && f.mineTarget) {
+          // At the mine's work tile: start the shift (the arrival
+          // gate — no ore moves while walking).
+          f.workState = 'miningOre';
+          f.mineTicks = 0;
+        } else if (f.workState === 'miningOre' && f.mineTarget) {
+          f.mineTicks++;
+          if (f.mineTicks >= MINE_TICKS_PER_SHIFT) {
+            // BUILD 1089: the shift goes through the registry — the
+            // deposit depletes and the yield lands in the founder's
+            // carrier store (capacity 2), with the deposit as its
+            // source. The deposit's remaining count is the site's
+            // inventory — the shift's ore is its depletion.
+            const site = sim.mines.mines.find((s) => s.id === f.mineTarget!.id) ?? null;
+            const mined = site
+              ? mineOreToCarrier(sim.registry, world, f, site)
+              : { registry: sim.registry, yield: 0, sourceId: null };
+            sim.registry = mined.registry;
+            if (mined.yield > 0) {
+              f.carryingOre += mined.yield;
+              ledger.oreMined += mined.yield;
+              ledger.mineShifts++;
+              if (site) sim.mines = { ...sim.mines, mines: sim.mines.mines.map((m) => (m.id === site.id ? { ...m, shiftsCompleted: m.shiftsCompleted + 1, oreMined: m.oreMined + mined.yield } : m)) };
+              if (myJob && myJob.kind === 'mine') {
+                ledger.jobsCompleted.mine++;
+                sim.board = completeJob(sim.board, myJob.id);
+                myJob = undefined;
+              }
+              const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingOre, nowAbs);
+              sim.board = dc.board;
+              if (dc.job) myJob = dc.job;
+            } else if (myJob && myJob.kind === 'mine') {
+              ledger.jobsFailed['target-gone'] = (ledger.jobsFailed['target-gone'] ?? 0) + 1;
+              sim.board = failJob(sim.board, myJob.id, 'target-gone');
+              myJob = undefined;
+            }
+            f.mineTarget = null;
+            f.mineTicks = 0;
+            f.workState = 'toStockpile';
+          }
         } else if (f.workState === 'toQuarry' && f.quarryTarget) {
           // At the quarry's work tile: start mining (the arrival gate).
           f.workState = 'mining';
@@ -1245,6 +1445,12 @@ export function advanceSettlementTick(sim: SettlementSim): void {
               // a work tile AT camp) keeps the stone they hold — the
               // carrier store accumulates the same way, so the two
               // stay in step and no stone is orphaned.
+              // BUILD 1089: a site rock counts toward the quarry
+              // site's stone (the crew's measured yield).
+              if (qt && qt.kind === 'rock' && sim.mines.quarry && isQuarrySiteRock(sim.mines.quarry, qt.x, qt.y)) {
+                ledger.quarrySiteStone += mined.yield;
+                sim.mines = { ...sim.mines, quarry: { ...sim.mines.quarry, stonesMined: sim.mines.quarry.stonesMined + mined.yield } };
+              }
               f.carryingStone += mined.yield;
               ledger.stoneMined += mined.yield;
               if (myJob && myJob.kind === 'quarry') {
