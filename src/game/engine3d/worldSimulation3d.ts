@@ -472,7 +472,8 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // (the scorer picks it at epsilon when all scores are ~0) and
         // consumes a meal EVERY tick at hunger 93-100, draining the
         // camp food to 0. Legitimate eating (hunger < 50) is untouched.
-        if(f.activity==='eat'&&f.needs.hunger<90&&Math.round(f.x)===FOUNDER_EAT_TILE.x&&Math.round(f.y)===FOUNDER_EAT_TILE.y){
+        // BUILD 1091 (0x1A): eat from the campfire ring (the 3x3 around the eat tile), not just the exact tile — six founders converging on one tile deadlock and starve beside full stores (see settlementSim.ts).
+        if(f.activity==='eat'&&f.needs.hunger<90&&Math.abs(Math.round(f.x)-FOUNDER_EAT_TILE.x)<=1&&Math.abs(Math.round(f.y)-FOUNDER_EAT_TILE.y)<=1){
           const res=eatFounderMealFromRegistry(registryRef.current,f.needs);
           if(res.ate){registryRef.current=res.registry;f.needs=res.needs;stockChanged=true;
             // BUILD 1060: a shared meal — record 'eat' with every
@@ -657,6 +658,8 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             // path forever (see settlementSim.ts). Unreachable jobs are failed
             // off the board ('no-path'); when none is reachable the founder
             // falls through to chopping (the pile gate below).
+            // BUILD 1091 (0x1A): the return is verified to BOTH delivery destinations (camp and the storehouse approach) — the storehouse finishes after the claim, so a rock claimed to camp must also return to the approach once the storehouse is done (a rock whose return to the approach needs >4000 A* nodes strands its miner carrying stone).
+            const returnOk=(wt:{x:number;y:number})=>planPathNpc(world,wt,FOUNDER_CAMP)&&planPathNpc(world,wt,STOREHOUSE_APPROACH);
             for(;;){
               const cand=nearestOpenJob(jobBoardRef.current,'quarry',Math.round(f.x),Math.round(f.y),claimQuarryRadius);
               if(!cand)break;
@@ -668,7 +671,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
               // forever carrying it (diag D/E). A candidate is claimable
               // only when the return to camp also plans inside the
               // default budget.
-              if(wt&&planPathNpc(world,{x:Math.round(f.x),y:Math.round(f.y)},wt)&&planPathNpc(world,wt,FOUNDER_CAMP)){
+              if(wt&&planPathNpc(world,{x:Math.round(f.x),y:Math.round(f.y)},wt)&&returnOk(wt)){
                 const claimed=claimJob(jobBoardRef.current,f.id,cand.id);
                 jobBoardRef.current=claimed.board;
                 if(claimed.job){f.workState='toQuarry';f.quarryTarget={id:claimed.job.targetId,x:claimed.job.tile.x,y:claimed.job.tile.y};f.workTile=wt;myJob=claimed.job;}
@@ -727,8 +730,9 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         if(f.workState==='toStorehouse'&&(f.activity==='work'||f.activity==='build'))dest={...STOREHOUSE_APPROACH};
         else if(f.workState==='toWell'&&(f.activity==='work'||f.activity==='build')){const approach=well?wellApproachFor(world,well,FOUNDER_CAMP.x,FOUNDER_CAMP.y):null;if(approach)dest=approach;}
         else if(f.workState==='toWater'&&f.waterTarget&&(f.activity==='work'||f.activity==='build'))dest={...f.waterTarget};
-        else if(f.workState==='toStockpile'&&storehouseRef.current.state==='done')dest={...STOREHOUSE_APPROACH};
-        else if(myJob&&myJob.kind==='build')dest=myJob.tile;
+        // BUILD 1091 (0x1A): the delivery and build dests apply ONLY while the founder is working/building — the mirror of the driver fix. A carrier who flips to eat/rest/sleep must LEAVE the storehouse approach (a carrier whose delivery cannot complete is pinned there starving beside full stores).
+        else if(f.workState==='toStockpile'&&storehouseRef.current.state==='done'&&(f.activity==='work'||f.activity==='build'))dest={...STOREHOUSE_APPROACH};
+        else if(myJob&&myJob.kind==='build'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
         else if(myJob&&myJob.kind==='harvest'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
         else if(myJob&&myJob.kind==='plant'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
         else if(f.activity==='sleep'&&hutPlaced)dest=(HUT_SITES[f.bed.hut]?.approach??HUT_APPROACH);

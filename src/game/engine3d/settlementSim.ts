@@ -738,7 +738,14 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     // worldSimulation3d.ts. Without the guard a founder with nothing
     // to do idles in 'eat' and consumes a meal every tick at hunger
     // 93-100, draining the camp food to 0 (measured ticks 1400-1600).
-    if (f.activity === 'eat' && f.needs.hunger < 90 && Math.round(f.x) === FOUNDER_EAT_TILE.x && Math.round(f.y) === FOUNDER_EAT_TILE.y) {
+    // BUILD 1091 (0x1A): eat from the campfire ring (the 3x3 around
+    // the eat tile), not just the exact tile — six founders
+    // converging on one tile deadlock (the `occupied` check + A*
+    // replan loop), and a hungry founder starves beside 15 meals
+    // while queued for the single tile (day 6 ran 565 starved
+    // ticks). The shared-meal social radius below already treats
+    // the 3x3 as the eating area.
+    if (f.activity === 'eat' && f.needs.hunger < 90 && Math.abs(Math.round(f.x) - FOUNDER_EAT_TILE.x) <= 1 && Math.abs(Math.round(f.y) - FOUNDER_EAT_TILE.y) <= 1) {
       const res = eatFounderMealFromRegistry(sim.registry, f.needs);
       if (res.ate) {
         sim.registry = res.registry;
@@ -928,6 +935,18 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         // is failed off the board ('no-path') and the next-nearest
         // is tried; when none is reachable the founder falls through
         // to chopping (the pile gate below).
+        // BUILD 1091 (0x1A): the return is verified to the ACTUAL
+        // delivery destination — the storehouse approach once the
+        // storehouse is done, camp before that — not just to camp.
+        // The return to camp plans fine from rock (158,61) (123
+        // steps) but the return to the approach needs >4000 A* nodes,
+        // so a founder who claims it mines the stone and then stands
+        // at the work tile forever carrying it (the week-health
+        // failure: Perrin starved at (157,60) for 4 days). Both
+        // returns are verified: the storehouse finishes after the
+        // claim, so a rock claimed to camp must also return to the
+        // approach once the storehouse is done.
+        const returnOk = (wt: { x: number; y: number }) => planPathNpc(world, wt, FOUNDER_CAMP) && planPathNpc(world, wt, STOREHOUSE_APPROACH);
         for (;;) {
           const cand = nearestOpenJob(sim.board, 'quarry', Math.round(f.x), Math.round(f.y), claimQuarryRadius);
           if (!cand) break;
@@ -939,7 +958,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           // forever carrying it (diag D/E). A candidate is claimable
           // only when the return to camp also plans inside the
           // default budget.
-          if (wt && planPathNpc(world, { x: Math.round(f.x), y: Math.round(f.y) }, wt) && planPathNpc(world, wt, FOUNDER_CAMP)) {
+          if (wt && planPathNpc(world, { x: Math.round(f.x), y: Math.round(f.y) }, wt) && returnOk(wt)) {
             const claimed = claimJob(sim.board, f.id, cand.id);
             sim.board = claimed.board;
             if (claimed.job) {
@@ -1013,8 +1032,19 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       const approach = well ? wellApproachFor(world, well, FOUNDER_CAMP.x, FOUNDER_CAMP.y) : null;
       if (approach) dest = approach;
     } else if (f.workState === 'toWater' && f.waterTarget && (f.activity === 'work' || f.activity === 'build')) dest = { ...f.waterTarget };
-    else if (f.workState === 'toStockpile' && sim.storehouse.state === 'done') dest = { ...STOREHOUSE_APPROACH };
-    else if (myJob && myJob.kind === 'build') dest = myJob.tile;
+    // BUILD 1091 (0x1A): the delivery and build dests apply ONLY
+    // while the founder is working/building — the same rule the
+    // fetch/well/water/harvest/plant overrides already follow. A
+    // carrier who flips to eat/rest/sleep must LEAVE the storehouse
+    // approach (and a builder must leave the site): without the
+    // gate a carrier whose delivery cannot complete — a far quarry
+    // rock whose return to the approach needs >4000 A* nodes, or a
+    // full granary (grain has no camp overflow) — is pinned at the
+    // approach carrying goods, starving beside 15 meals. Perrin
+    // sat at (157,60) for 4 days and five founders piled up at the
+    // approach on day 7; the week ran 11,315 starved ticks.
+    else if (f.workState === 'toStockpile' && sim.storehouse.state === 'done' && (f.activity === 'work' || f.activity === 'build')) dest = { ...STOREHOUSE_APPROACH };
+    else if (myJob && myJob.kind === 'build' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'harvest' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'plant' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (f.activity === 'sleep' && hutPlaced) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;

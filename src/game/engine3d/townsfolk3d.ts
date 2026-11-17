@@ -277,7 +277,16 @@ export function planPathNpc(
   world: IsoWorld,
   from: { x: number; y: number },
   to: { x: number; y: number },
-  maxNodes = 4000,
+  // BUILD 1091 (0x1A): 4000 → 8000. The quarry radius is 100
+  // Manhattan, so a return from a far rock is a ~130-step path
+  // through mountain terrain that needs ~5000 A* nodes — at 4000
+  // it returns null and the founder retries every 11 ticks forever
+  // (Perrin starved at (157,60) for 4 days; the week ran 11,315
+  // starved ticks, 597 even with the claim check). A successful
+  // 8000-node plan (~500ms, once, then cached) is far cheaper
+  // than failing at 4000 forever. Short routes are unaffected
+  // (they succeed well inside either budget).
+  maxNodes = 8000,
   extraBlocked?: ReadonlySet<string>,
   // BUILD 1000: optional per-tile step cost (travelers pass a
   // road-biased cost so routes follow dirt over grass). Default 1
