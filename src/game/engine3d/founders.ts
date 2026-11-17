@@ -1320,7 +1320,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         ? (s.activity as FounderActivity)
         : 'work';
     let workState: FounderWorkState =
-      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building' || s?.workState === 'arriving' || s?.workState === 'toFarm' || s?.workState === 'harvesting' || s?.workState === 'toStorehouse'
+      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building' || s?.workState === 'arriving' || s?.workState === 'toFarm' || s?.workState === 'harvesting' || s?.workState === 'toStorehouse' || s?.workState === 'toQuarry' || s?.workState === 'mining' || s?.workState === 'toMine' || s?.workState === 'miningOre' || s?.workState === 'toWell' || s?.workState === 'toWater' || s?.workState === 'toPlant' || s?.workState === 'planting' || s?.workState === 'chopping'
         ? (s.workState as FounderWorkState)
         : 'toTree';
     if (construction.sites[0].state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
@@ -1385,7 +1385,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         ? (r.activity as FounderActivity)
         : 'work';
     let rWorkState: FounderWorkState =
-      r.workState === 'toTree' || r.workState === 'toStockpile' || r.workState === 'idle' || r.workState === 'toSite' || r.workState === 'building' || r.workState === 'arriving' || r.workState === 'toFarm' || r.workState === 'harvesting' || r.workState === 'toStorehouse'
+      r.workState === 'toTree' || r.workState === 'toStockpile' || r.workState === 'idle' || r.workState === 'toSite' || r.workState === 'building' || r.workState === 'arriving' || r.workState === 'toFarm' || r.workState === 'harvesting' || r.workState === 'toStorehouse' || r.workState === 'toQuarry' || r.workState === 'mining' || r.workState === 'toMine' || r.workState === 'miningOre' || r.workState === 'toWell' || r.workState === 'toWater' || r.workState === 'toPlant' || r.workState === 'planting' || r.workState === 'chopping'
         ? (r.workState as FounderWorkState)
         : 'toTree';
     if (construction.sites[0].state === 'done' && (rWorkState === 'toSite' || rWorkState === 'building')) rWorkState = 'toTree';

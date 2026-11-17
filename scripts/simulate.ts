@@ -13367,18 +13367,28 @@ console.log('Testing regrowth + ecosystems (BUILD 1085)...');
   // quarry loop is proven by the directed run and the week run.
   // Conservation holds everywhere (wood 48-24=24, grain 50-48=2
   // carried, food 0+24-13=11).
-  assert(L1085.woodChopped === 48 && L1085.woodDelivered === 48 && L1085.woodSpent === 24, 'M1085: wood chopped/delivered/spent 48/48/24');
-  assert(L1085.grainHarvested === 50 && L1085.grainDelivered === 48, 'M1085: grain harvested/delivered 50/48');
-  assert(L1085.mealsMilled === 24 && L1085.mealsEaten === 13, 'M1085: meals milled/eaten 24/13');
+  // BUILD 1091 (0x1A, week-health fix): the numbers move again — the
+  // fix reallocates founder time to quarry trips (the claim now
+  // verifies the return to BOTH camp and the storehouse approach, so
+  // far rocks are claimed) and to ring-eating, so wood drops (chopped
+  // 48 -> 46, delivered 48 -> 42, final 24 -> 18) while grain rises
+  // (harvested 50 -> 58, delivered 48 -> 58) because more harvests
+  // complete (harvest jobs 25 -> 29, deliver jobs 48 -> 50) and meals
+  // rise (milled 24 -> 29, eaten 13 -> 14, final food 11 -> 15).
+  // The settlement stays healthy (starved 0, health 100, pop 6);
+  // conservation holds (grain 58-58=0 carried, food 0+29-14=15).
+  assert(L1085.woodChopped === 46 && L1085.woodDelivered === 42 && L1085.woodSpent === 24, 'M1085: wood chopped/delivered/spent 46/42/24');
+  assert(L1085.grainHarvested === 58 && L1085.grainDelivered === 58, 'M1085: grain harvested/delivered 58/58');
+  assert(L1085.mealsMilled === 29 && L1085.mealsEaten === 14, 'M1085: meals milled/eaten 29/14');
   // BUILD 1088: the deliver count is the 27 wood/grain deliveries
   // (20 wood + 7 grain — the well detour costs 2 chops a day)
   // PLUS one per completed quarry job, minus any founder still
   // carrying stone when the run ends (28 + 1 = 27 + 2).
   const inFlightStone1085 = sim1085.founders.filter((f: any) => f.carryingStone > 0).length;
-  assert(L1085.jobsCompleted.chop === 24 && L1085.jobsCompleted.build === 2 && L1085.jobsCompleted.deliver + inFlightStone1085 === 48 + L1085.jobsCompleted.quarry && L1085.jobsCompleted.harvest === 25, 'M1085: jobs chop/build/deliver/harvest 24/2/48/25 (+quarry deliveries)');
+  assert(L1085.jobsCompleted.chop === 23 && L1085.jobsCompleted.build === 2 && L1085.jobsCompleted.deliver + inFlightStone1085 === 50 + L1085.jobsCompleted.quarry && L1085.jobsCompleted.harvest === 29, 'M1085: jobs chop/build/deliver/harvest 23/2/50/29 (+quarry deliveries)');
   assert(L1085.hutsCompleted === 2 && L1085.arrivals.join(',') === 'Bram,Fern,Silas', 'M1085: 2 huts, arrivals Bram, Fern, Silas');
   assert(L1085.starvedTicks === 0 && L1085.minHealth === 100, 'M1085: starvedTicks 0, minHealth 100');
-  assert(F.campWoodInRegistry(sim1085.registry) === 24 && F.campFoodInRegistry(sim1085.registry) === 11 && SS.settlementGrain(sim1085) === 0, 'M1085: final wood/food/grain 24/11/0');
+  assert(F.campWoodInRegistry(sim1085.registry) === 18 && F.campFoodInRegistry(sim1085.registry) === 15 && SS.settlementGrain(sim1085) === 0, 'M1085: final wood/food/grain 18/15/0');
   assert(sim1085.founders.length === 6, 'M1085: population 6');
   assert((sim1085.world.saplings ?? []).length === L1085.woodChopped / 2, 'M1085: every felled tree left a sapling');
   assert((sim1085.world.saplings ?? []).every((s: any) => s.growth === 0 || s.growth === 1.0), 'M1085: no sapling matured in 24h');
@@ -13562,20 +13572,20 @@ console.log('Testing stone gathering + the quarry loop (BUILD 1086)...');
   const sim24_1086 = SS.createSettlementSim(W.defaultWorld());
   SS.advanceSettlement(sim24_1086, 1600);
   const L24 = sim24_1086.ledger;
-  assert(L24.woodChopped === 48 && L24.woodDelivered === 48 && L24.woodSpent === 24, 'M1086: wood chopped/delivered/spent 48/48/24');
-  assert(L24.grainHarvested === 50 && L24.grainDelivered === 48, 'M1086: grain harvested/delivered 50/48');
-  assert(L24.mealsMilled === 24 && L24.mealsEaten === 13, 'M1086: meals milled/eaten 24/13');
-  assert(L24.jobsCompleted.chop === 24 && L24.jobsCompleted.build === 2 && L24.jobsCompleted.harvest === 25, 'M1086: jobs chop/build/harvest 24/2/25');
+  assert(L24.woodChopped === 46 && L24.woodDelivered === 42 && L24.woodSpent === 24, 'M1086: wood chopped/delivered/spent 46/42/24');
+  assert(L24.grainHarvested === 58 && L24.grainDelivered === 58, 'M1086: grain harvested/delivered 58/58');
+  assert(L24.mealsMilled === 29 && L24.mealsEaten === 14, 'M1086: meals milled/eaten 29/14');
+  assert(L24.jobsCompleted.chop === 23 && L24.jobsCompleted.build === 2 && L24.jobsCompleted.harvest === 29, 'M1086: jobs chop/build/harvest 23/2/29');
   assert(L24.hutsCompleted === 2 && L24.arrivals.join(',') === 'Bram,Fern,Silas', 'M1086: 2 huts, arrivals Bram, Fern, Silas');
   assert(L24.starvedTicks === 0 && L24.minHealth === 100, 'M1086: starvedTicks 0, minHealth 100');
-  assert(F.campWoodInRegistry(sim24_1086.registry) === 24 && F.campFoodInRegistry(sim24_1086.registry) === 11 && SS.settlementGrain(sim24_1086) === 0, 'M1086: final wood/food/grain 24/11/0');
+  assert(F.campWoodInRegistry(sim24_1086.registry) === 18 && F.campFoodInRegistry(sim24_1086.registry) === 15 && SS.settlementGrain(sim24_1086) === 0, 'M1086: final wood/food/grain 18/15/0');
   assert(sim24_1086.founders.length === 6, 'M1086: population 6');
   assert(L24.stoneMined === 0 && L24.stoneDelivered === 0, 'M1086: no stone is mined in the first 24h (the founders plant + harvest first — food work outranks the ad-hoc quarry stone term on day 1; the quarry loop is proven by the directed run and the week run)');
   assert(L24.stoneMined === L24.stoneDelivered + sim24_1086.founders.reduce((n: number, f: any) => n + f.carryingStone, 0), 'M1086: every mined stone is delivered or still carried');
   assert(F.campStoneInRegistry(sim24_1086.registry) === L24.stoneDelivered, 'M1086: every delivered stone is in the camp store');
   assert(L24.jobsCompleted.quarry === 0, 'M1086: no quarry job completes in 24h (food work first; the quarry crew works from day 2 — see the week run)');
   const inFlightStone24 = sim24_1086.founders.filter((f: any) => f.carryingStone > 0).length;
-  assert(L24.jobsCompleted.deliver + inFlightStone24 === 48 + L24.jobsCompleted.quarry, 'M1086: deliver jobs are the 48 wood/grain deliveries plus one per quarry job');
+  assert(L24.jobsCompleted.deliver + inFlightStone24 === 50 + L24.jobsCompleted.quarry, 'M1086: deliver jobs are the 50 wood/grain deliveries plus one per quarry job');
   console.log('M1086: stone gathering + the quarry loop verified (sites, discovery, mining/conservation, mined-out, scorer gate, persistence, arrival gate, 24h)');
 }
 
@@ -13796,12 +13806,16 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   assert(rediscover1087.jobs[J.quarryJobIdFor(rockBlocked1087)] === undefined, 'M1087: discovery never recreates a blocked rock job');
 
   // --- The round-trip rule: a quarry candidate is claimable only when
-  // the return to camp also plans (rock (150,77) has an outbound path
-  // but its return needs >4000 A* nodes — a founder who claims it
-  // strands the stone at the work tile).
+  // the return to camp also plans. BUILD 1091 raised the A* budget
+  // 4000 -> 8000, so the return from the distant rock (150,77) now
+  // plans (it needs ~5000 nodes — between the old 4000 and the new
+  // 8000) and the rock is claimable; the old 4000 budget still fails
+  // it, which pins the raise. A founder who claims a rock with no
+  // return strands the stone at the work tile.
   const rtWorld1087 = SS.createSettlementSim(W.defaultWorld()).world;
   assert(T3.planPathNpc(rtWorld1087, { x: 124, y: 120 }, { x: 149, y: 76 }) !== null, 'M1087: the outbound path to the distant rock (150,77) exists');
-  assert(T3.planPathNpc(rtWorld1087, { x: 149, y: 76 }, { x: 124, y: 120 }) === null, 'M1087: the return from the distant rock (150,77) does NOT plan inside the default budget');
+  assert(T3.planPathNpc(rtWorld1087, { x: 149, y: 76 }, { x: 124, y: 120 }) !== null, 'M1087: the return from the distant rock (150,77) plans inside the default budget (8000 — the 1091 raise)');
+  assert(T3.planPathNpc(rtWorld1087, { x: 149, y: 76 }, { x: 124, y: 120 }, 4000) === null, 'M1087: the return from the distant rock (150,77) does NOT plan inside the old 4000 budget (the far-rock return needs ~5000 nodes)');
   assert(T3.planPathNpc(rtWorld1087, { x: 157, y: 80 }, { x: 124, y: 120 }) !== null, 'M1087: the return from the next rock (157,81) plans fine');
 
   // --- The ready-site fix: a site at full progress whose placement has
@@ -13879,13 +13893,13 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   SS.advanceSettlement(sim1087, 1600);
   const L1600 = sim1087.ledger;
   const inFlightStone1600 = sim1087.founders.reduce((n: number, f: any) => n + f.carryingStone, 0);
-  assert(L1600.woodChopped === 48 && L1600.woodDelivered === 48 && L1600.woodSpent === 24, 'M1087: 24h wood 48/48/24 — the 1090 numbers (see the note at the M1085 pins); the storehouse (day 3+) does not move them');
-  assert(L1600.grainHarvested === 50 && L1600.grainDelivered === 48, 'M1087: 24h grain 50/48');
-  assert(L1600.mealsMilled === 24 && L1600.mealsEaten === 13, 'M1087: 24h meals 24/13');
-  assert(L1600.jobsCompleted.chop === 24 && L1600.jobsCompleted.build === 2 && L1600.jobsCompleted.harvest === 25, 'M1087: 24h jobs chop/build/harvest 24/2/25');
-  assert(L1600.jobsCompleted.deliver + inFlightStone1600 === 48 + L1600.jobsCompleted.quarry, 'M1087: 24h deliver jobs 48 (plus quarry, minus stone still carried)');
+  assert(L1600.woodChopped === 46 && L1600.woodDelivered === 42 && L1600.woodSpent === 24, 'M1087: 24h wood 46/42/24 — the 1091 numbers (see the note at the M1085 pins); the storehouse (day 3+) does not move them');
+  assert(L1600.grainHarvested === 58 && L1600.grainDelivered === 58, 'M1087: 24h grain 58/58');
+  assert(L1600.mealsMilled === 29 && L1600.mealsEaten === 14, 'M1087: 24h meals 29/14');
+  assert(L1600.jobsCompleted.chop === 23 && L1600.jobsCompleted.build === 2 && L1600.jobsCompleted.harvest === 29, 'M1087: 24h jobs chop/build/harvest 23/2/29');
+  assert(L1600.jobsCompleted.deliver + inFlightStone1600 === 50 + L1600.jobsCompleted.quarry, 'M1087: 24h deliver jobs 50 (plus quarry, minus stone still carried)');
   assert(L1600.hutsCompleted === 2 && L1600.arrivals.join(',') === 'Bram,Fern,Silas', 'M1087: 24h huts 2, arrivals Bram, Fern, Silas');
-  assert(F.campWoodInRegistry(sim1087.registry) === 24 && F.campFoodInRegistry(sim1087.registry) === 11 && SS.settlementGrain(sim1087) === 0, 'M1087: 24h final wood/food/grain 24/11/0');
+  assert(F.campWoodInRegistry(sim1087.registry) === 18 && F.campFoodInRegistry(sim1087.registry) === 15 && SS.settlementGrain(sim1087) === 0, 'M1087: 24h final wood/food/grain 18/15/0');
   assert(sim1087.founders.length === 6, 'M1087: 24h population 6');
   assert(sim1087.storehouse.state === 'none' && L1600.storehouseCompleted === 0, 'M1087: the storehouse has not started at hour 24 (day 2 — housing first)');
   let storehouseDone1087 = false;
@@ -13899,8 +13913,12 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   assert(SH.storehousePlacementExists(sim1087.world) === true, 'M1087: the storehouse placement landed on its rect');
   // Let deliveries land in the finished storehouse, then prove the
   // acceptance test: wood/stone gathered anywhere ends up counted
-  // in the storehouse.
-  SS.advanceSettlement(sim1087, 1000);
+  // in the storehouse. BUILD 1091: the window is 2000 ticks, not
+  // 1000 — the quarry site moved to (150,77) and the trips are
+  // longer, so stone deliveries need more time to land (at 1000 the
+  // 1091 run has 2 stones still carried; at 2000, 5 have landed in
+  // the storehouse). The acceptance test is unchanged.
+  SS.advanceSettlement(sim1087, 2000);
   assert(sim1087.ledger.storehouseWoodDelivered > 0, 'M1087: wood gathered anywhere ended up counted in the storehouse');
   assert(sim1087.ledger.storehouseStoneDelivered > 0, 'M1087: stone gathered anywhere ended up counted in the storehouse');
   const finalCampWood1087 = F.campWoodInRegistry(sim1087.registry);
@@ -13911,7 +13929,7 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   const carriedBuild1087 = sim1087.founders.reduce((n: number, f: any) => n + f.carryingBuild, 0);
   const carriedStone1087 = sim1087.founders.reduce((n: number, f: any) => n + f.carryingStone, 0);
   const L1087 = sim1087.ledger;
-  assert(L1087.woodChopped === finalCampWood1087 + finalStoreWood1087 + L1087.woodSpent + L1087.storehouseWoodSpent + carriedWood1087 + carriedBuild1087, 'M1087: every chopped log is in a store, spent on a building, or still carried');
+  assert(L1087.woodChopped === finalCampWood1087 + finalStoreWood1087 + L1087.woodSpent + L1087.storehouseWoodSpent + L1087.bridgeWoodSpent + carriedWood1087 + carriedBuild1087, 'M1087: every chopped log is in a store, spent on a building, or still carried');
   assert(L1087.stoneMined === finalCampStone1087 + finalStoreStone1087 + L1087.storehouseStoneSpent + carriedStone1087, 'M1087: every mined stone is in a store, spent on the storehouse, or still carried');
   console.log('M1087 long run: ticks=' + sim1087.tick + ' storehouse wood/stone delivered=' + L1087.storehouseWoodDelivered + '/' + L1087.storehouseStoneDelivered + ' spent=' + L1087.storehouseWoodSpent + '/' + L1087.storehouseStoneSpent + ' fetched=' + L1087.buildWoodFetched + ' carriedSteps=' + L1087.carriedStepsSpent + ' final camp wood/storehouse wood=' + finalCampWood1087 + '/' + finalStoreWood1087);
 
@@ -14143,13 +14161,13 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   SS.advanceSettlement(sim1088, 1600);
   const L1088 = sim1088.ledger;
   const inFlightStone1088 = sim1088.founders.reduce((n: number, f: { carryingStone: number }) => n + f.carryingStone, 0);
-  assert(L1088.woodChopped === 48 && L1088.woodDelivered === 48 && L1088.woodSpent === 24, 'M1088: 24h wood 48/48/24 — the 1090 numbers (see the note at the M1085 pins); the well at (121,120) still blocks the west chop route, the paths alone do not move it');
-  assert(L1088.grainHarvested === 50 && L1088.grainDelivered === 48, 'M1088: 24h grain 50/48');
-  assert(L1088.mealsMilled === 24 && L1088.mealsEaten === 13, 'M1088: 24h meals 24/13');
-  assert(L1088.jobsCompleted.chop === 24 && L1088.jobsCompleted.build === 2 && L1088.jobsCompleted.harvest === 25, 'M1088: 24h jobs chop/build/harvest 24/2/25');
-  assert(L1088.jobsCompleted.deliver === 48 && L1088.jobsCompleted.quarry === 0 && inFlightStone1088 === 0, 'M1088: 24h deliver 48, quarry 0, no stone carried');
+  assert(L1088.woodChopped === 46 && L1088.woodDelivered === 42 && L1088.woodSpent === 24, 'M1088: 24h wood 46/42/24 — the 1091 numbers (see the note at the M1085 pins); the well at (121,120) still blocks the west chop route, the paths alone do not move it');
+  assert(L1088.grainHarvested === 58 && L1088.grainDelivered === 58, 'M1088: 24h grain 58/58');
+  assert(L1088.mealsMilled === 29 && L1088.mealsEaten === 14, 'M1088: 24h meals 29/14');
+  assert(L1088.jobsCompleted.chop === 23 && L1088.jobsCompleted.build === 2 && L1088.jobsCompleted.harvest === 29, 'M1088: 24h jobs chop/build/harvest 23/2/29');
+  assert(L1088.jobsCompleted.deliver === 50 && L1088.jobsCompleted.quarry === 0 && inFlightStone1088 === 0, 'M1088: 24h deliver 50, quarry 0, no stone carried');
   assert(L1088.hutsCompleted === 2 && L1088.arrivals.join(',') === 'Bram,Fern,Silas', 'M1088: 24h huts 2, arrivals Bram, Fern, Silas');
-  assert(F.campWoodInRegistry(sim1088.registry) === 24 && F.campFoodInRegistry(sim1088.registry) === 11 && SS.settlementGrain(sim1088) === 0, 'M1088: 24h final wood/food/grain 24/11/0');
+  assert(F.campWoodInRegistry(sim1088.registry) === 18 && F.campFoodInRegistry(sim1088.registry) === 15 && SS.settlementGrain(sim1088) === 0, 'M1088: 24h final wood/food/grain 18/15/0');
   assert(sim1088.founders.length === 6, 'M1088: 24h population 6');
   assert(sim1088.storehouse.state === 'none' && L1088.storehouseCompleted === 0, 'M1088: the storehouse has not started at hour 24 (day 2)');
   assert(L1088.pathTilesPlaced > 0, 'M1088: dirt paths are laid in the first 24h (founder traffic)');
@@ -14167,11 +14185,11 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   const restoredReload1088 = SS.restoreSettlement(simReload1088.world, SS.serializeSettlement(simReload1088), simReload1088.abs, simReload1088.ledger);
   SS.advanceSettlement(restoredReload1088, 800);
   const LReload1088 = restoredReload1088.ledger;
-  assert(LReload1088.woodChopped === 48 && LReload1088.woodDelivered === 48 && LReload1088.woodSpent === 24, 'M1088: 24h with reload — wood 48/48/24 (the 1090 baseline)');
-  assert(LReload1088.grainHarvested === 58 && LReload1088.grainDelivered === 58, 'M1088: 24h with reload — grain 58/58');
-  assert(LReload1088.mealsMilled === 29 && LReload1088.mealsEaten === 15, 'M1088: 24h with reload — meals 29/15');
-  assert(LReload1088.jobsCompleted.chop === 24 && LReload1088.jobsCompleted.build === 2 && LReload1088.jobsCompleted.deliver === 53 && LReload1088.jobsCompleted.harvest === 29, 'M1088: 24h with reload — jobs chop/build/deliver/harvest 24/2/53/29');
-  assert(F.campWoodInRegistry(restoredReload1088.registry) === 24 && F.campFoodInRegistry(restoredReload1088.registry) === 14 && SS.settlementGrain(restoredReload1088) === 0, 'M1088: 24h with reload — final wood/food/grain 24/14/0');
+  assert(LReload1088.woodChopped === 44 && LReload1088.woodDelivered === 40 && LReload1088.woodSpent === 24, 'M1088: 24h with reload — wood 44/40/24 (the 1091 numbers)');
+  assert(LReload1088.grainHarvested === 56 && LReload1088.grainDelivered === 56, 'M1088: 24h with reload — grain 56/56');
+  assert(LReload1088.mealsMilled === 28 && LReload1088.mealsEaten === 15, 'M1088: 24h with reload — meals 28/15');
+  assert(LReload1088.jobsCompleted.chop === 22 && LReload1088.jobsCompleted.build === 2 && LReload1088.jobsCompleted.deliver === 48 && LReload1088.jobsCompleted.harvest === 28, 'M1088: 24h with reload — jobs chop/build/deliver/harvest 22/2/48/28');
+  assert(F.campWoodInRegistry(restoredReload1088.registry) === 16 && F.campFoodInRegistry(restoredReload1088.registry) === 13 && SS.settlementGrain(restoredReload1088) === 0, 'M1088: 24h with reload — final wood/food/grain 16/13/0');
   assert(restoredReload1088.founders.length === 6, 'M1088: 24h with reload — population 6');
   assert(LReload1088.hutsCompleted === 2 && LReload1088.arrivals.join(',') === 'Bram,Fern,Silas', 'M1088: 24h with reload — huts 2, arrivals Bram, Fern, Silas');
   assert(LReload1088.starvedTicks === 0 && LReload1088.minHealth === 100, 'M1088: 24h with reload — starvedTicks 0, minHealth 100');
@@ -14250,7 +14268,7 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   const wQuarry1089 = SS.createSettlementSim(W.defaultWorld()).world;
   stripNearRocks1089(wQuarry1089);
   const quarrySite1089 = MN.designateQuarry(wQuarry1089, 3, null);
-  assert(quarrySite1089 !== null && quarrySite1089.centre.x === 157 && quarrySite1089.centre.y === 81, 'M1089: the quarry opens over the best reachable rock cluster (157,81) — 3 reachable rocks within 25, the most of any cluster');
+  assert(quarrySite1089 !== null && quarrySite1089.centre.x === 150 && quarrySite1089.centre.y === 77, 'M1089: the quarry opens over the best reachable rock cluster (150,77) — 4 reachable rocks within 25, the most of any cluster');
   assert(quarrySite1089 !== null && quarrySite1089.state === 'open' && quarrySite1089.stonesMined === 0, 'M1089: the quarry is an open site with no stone yet');
   assert(quarrySite1089 !== null && MN.quarrySiteRocks(wQuarry1089, quarrySite1089).length === 4, 'M1089: the quarry site holds 4 rocks within its radius ((148,94) + (150,77) + (157,81) + (158,61); (150,77) is unreachable, so the crew works the 3 reachable ones)');
   assert(MN.designateQuarry(wQuarry1089, 2, null) === null, 'M1089: no quarry before day 3');
@@ -14300,19 +14318,22 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   // --- The quarry crew A/B: two founders in parallel beat one
   // founder working ad-hoc, for the same 2 stone. The path length IS
   // the time (one step per tick): the crew's parallel round trips
-  // cost max(252, 208) = 252 ticks for 2 stone; a single founder
-  // mining the two nearest ad-hoc rocks sequentially costs 114 + 252
-  // = 366 ticks for the same 2 stone. The crew is faster because the
-  // work is parallel, not because the rocks are nearer.
+  // cost max(252, 266) = 266 ticks for 2 stone (the 2 nearest
+  // reachable rocks are (148,94) at 252 and (150,77) at 266 — the
+  // 1091 budget raise made (150,77) round-trip reachable); a single
+  // founder mining the two nearest ad-hoc rocks sequentially costs
+  // 114 + 252 = 366 ticks for the same 2 stone. The crew is faster
+  // because the work is parallel, not because the rocks are nearer.
   const wCrew1089 = SS.createSettlementSim(W.defaultWorld()).world;
   stripNearRocks1089(wCrew1089);
   const qCrew1089 = MN.designateQuarry(wCrew1089, 3, null)!;
   const rocksCrew1089 = MN.quarrySiteRocks(wCrew1089, qCrew1089);
-  assert(rocksCrew1089.length === 4, 'M1089: the crew A/B starts from the 4-rock site (3 reachable)');
+  assert(rocksCrew1089.length === 4, 'M1089: the crew A/B starts from the 4-rock site (4 reachable)');
   // (The round-trip lengths are measured below, via planPathNpc,
   // from the quarry's own work tiles — the same tiles the tick
   // claims, so the A/B measures the real trips. The crew claims the
-  // 2 nearest REACHABLE site rocks; (150,77) has no round trip.)
+  // 2 nearest REACHABLE site rocks; (150,77) now has a round trip
+  // (the 1091 budget raise), so all 4 site rocks are reachable.)
   const roundTrip = (x: number, y: number) => {
     const wt = Q.quarryWorkTile(wCrew1089, x, y);
     if (!wt) return null;
@@ -14324,7 +14345,7 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
     .map((r: { tx: number; ty: number }) => ({ ...r, rt: roundTrip(r.tx, r.ty), dist: Math.abs(r.tx - F.FOUNDER_CAMP.x) + Math.abs(r.ty - F.FOUNDER_CAMP.y) }))
     .filter((r: { rt: number | null }) => r.rt !== null)
     .sort((a: { dist: number }, b: { dist: number }) => a.dist - b.dist);
-  assert(reachableCrew1089.length === 3, 'M1089: the crew A/B site has 3 reachable rocks ((148,94) + (157,81) + (158,61))');
+  assert(reachableCrew1089.length === 4, 'M1089: the crew A/B site has 4 reachable rocks ((148,94) + (150,77) + (157,81) + (158,61))');
   const rt1 = reachableCrew1089[0].rt!;
   const rt2 = reachableCrew1089[1].rt!;
   const rtAdhoc = roundTrip(87, 102);
@@ -14398,7 +14419,7 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   assert(rt1089 !== null && rt1089.founders[0].carryingOre === 2, 'M1089: carried ore survives a save/reload');
   assert(rt1089 !== null && rt1089.storehouseOre === 8, 'M1089: stored iron survives a save/reload');
   assert(rt1089 !== null && rt1089.mines.mines.length === 1 && rt1089.mines.mines[0].x === 84 && rt1089.mines.mines[0].y === 111, 'M1089: the mine site survives a save/reload');
-  assert(rt1089 !== null && rt1089.mines.quarry !== null && rt1089.mines.quarry.centre.x === 157 && rt1089.mines.quarry.centre.y === 81, 'M1089: the quarry site survives a save/reload');
+  assert(rt1089 !== null && rt1089.mines.quarry !== null && rt1089.mines.quarry.centre.x === 150 && rt1089.mines.quarry.centre.y === 77, 'M1089: the quarry site survives a save/reload');
   assert(rt1089 !== null && rt1089.mines.lumber !== null && rt1089.mines.lumber.rect.x0 === 130, 'M1089: the lumber site survives a save/reload');
   const v10Save1089 = { version: 10, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, carryingStone: 0, carryingBuild: 0, carryingWater: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 10, foodStock: 25, grainStock: 4, stoneStock: 6, storehouse: { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, storehouseWood: 40, storehouseStone: 20, bridges: [], construction: C.freshConstruction() };
   const m101089 = F.migrateFoundersSave(v10Save1089);
@@ -14417,13 +14438,13 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   SS.advanceSettlement(sim1089, 1600);
   const L1089 = sim1089.ledger;
   const inFlightStone1089 = sim1089.founders.reduce((n: number, f: { carryingStone: number }) => n + f.carryingStone, 0);
-  assert(L1089.woodChopped === 48 && L1089.woodDelivered === 48 && L1089.woodSpent === 24, 'M1089: 24h wood 48/48/24 (the M1088 1090 no-reload pins)');
-  assert(L1089.grainHarvested === 50 && L1089.grainDelivered === 48, 'M1089: 24h grain 50/48');
-  assert(L1089.mealsMilled === 24 && L1089.mealsEaten === 13, 'M1089: 24h meals 24/13');
-  assert(L1089.jobsCompleted.chop === 24 && L1089.jobsCompleted.build === 2 && L1089.jobsCompleted.harvest === 25, 'M1089: 24h jobs chop/build/harvest 24/2/25');
-  assert(L1089.jobsCompleted.deliver === 48 && L1089.jobsCompleted.quarry === 0 && inFlightStone1089 === 0, 'M1089: 24h deliver 48, quarry 0, no stone carried');
+  assert(L1089.woodChopped === 46 && L1089.woodDelivered === 42 && L1089.woodSpent === 24, 'M1089: 24h wood 46/42/24 (the M1088 1091 no-reload pins)');
+  assert(L1089.grainHarvested === 58 && L1089.grainDelivered === 58, 'M1089: 24h grain 58/58');
+  assert(L1089.mealsMilled === 29 && L1089.mealsEaten === 14, 'M1089: 24h meals 29/14');
+  assert(L1089.jobsCompleted.chop === 23 && L1089.jobsCompleted.build === 2 && L1089.jobsCompleted.harvest === 29, 'M1089: 24h jobs chop/build/harvest 23/2/29');
+  assert(L1089.jobsCompleted.deliver === 50 && L1089.jobsCompleted.quarry === 0 && inFlightStone1089 === 0, 'M1089: 24h deliver 50, quarry 0, no stone carried');
   assert(L1089.hutsCompleted === 2 && L1089.arrivals.join(',') === 'Bram,Fern,Silas', 'M1089: 24h huts 2, arrivals Bram, Fern, Silas');
-  assert(F.campWoodInRegistry(sim1089.registry) === 24 && F.campFoodInRegistry(sim1089.registry) === 11 && SS.settlementGrain(sim1089) === 0, 'M1089: 24h final wood/food/grain 24/11/0');
+  assert(F.campWoodInRegistry(sim1089.registry) === 18 && F.campFoodInRegistry(sim1089.registry) === 15 && SS.settlementGrain(sim1089) === 0, 'M1089: 24h final wood/food/grain 18/15/0');
   assert(sim1089.founders.length === 6, 'M1089: 24h population 6');
   assert(sim1089.storehouse.state === 'none' && L1089.storehouseCompleted === 0, 'M1089: the storehouse has not started at hour 24 (day 2)');
   assert(L1089.oreMined === 0 && L1089.mineShifts === 0 && L1089.jobsCompleted.mine === 0, 'M1089: no mining in 24h (the mine opens day 3)');
@@ -14438,11 +14459,11 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   const restoredReload1089 = SS.restoreSettlement(simReload1089.world, SS.serializeSettlement(simReload1089), simReload1089.abs, simReload1089.ledger);
   SS.advanceSettlement(restoredReload1089, 800);
   const LReload1089 = restoredReload1089.ledger;
-  assert(LReload1089.woodChopped === 48 && LReload1089.woodDelivered === 48 && LReload1089.woodSpent === 24, 'M1089: 24h with reload — wood 48/48/24 (the 1090 baseline)');
-  assert(LReload1089.grainHarvested === 58 && LReload1089.grainDelivered === 58, 'M1089: 24h with reload — grain 58/58');
-  assert(LReload1089.mealsMilled === 29 && LReload1089.mealsEaten === 15, 'M1089: 24h with reload — meals 29/15');
-  assert(LReload1089.jobsCompleted.chop === 24 && LReload1089.jobsCompleted.build === 2 && LReload1089.jobsCompleted.deliver === 53 && LReload1089.jobsCompleted.harvest === 29, 'M1089: 24h with reload — jobs chop/build/deliver/harvest 24/2/53/29');
-  assert(F.campWoodInRegistry(restoredReload1089.registry) === 24 && F.campFoodInRegistry(restoredReload1089.registry) === 14 && SS.settlementGrain(restoredReload1089) === 0, 'M1089: 24h with reload — final wood/food/grain 24/14/0');
+  assert(LReload1089.woodChopped === 44 && LReload1089.woodDelivered === 40 && LReload1089.woodSpent === 24, 'M1089: 24h with reload — wood 44/40/24 (the 1091 numbers)');
+  assert(LReload1089.grainHarvested === 56 && LReload1089.grainDelivered === 56, 'M1089: 24h with reload — grain 56/56');
+  assert(LReload1089.mealsMilled === 28 && LReload1089.mealsEaten === 15, 'M1089: 24h with reload — meals 28/15');
+  assert(LReload1089.jobsCompleted.chop === 22 && LReload1089.jobsCompleted.build === 2 && LReload1089.jobsCompleted.deliver === 48 && LReload1089.jobsCompleted.harvest === 28, 'M1089: 24h with reload — jobs chop/build/deliver/harvest 22/2/48/28');
+  assert(F.campWoodInRegistry(restoredReload1089.registry) === 16 && F.campFoodInRegistry(restoredReload1089.registry) === 13 && SS.settlementGrain(restoredReload1089) === 0, 'M1089: 24h with reload — final wood/food/grain 16/13/0');
   assert(restoredReload1089.founders.length === 6, 'M1089: 24h with reload — population 6');
   assert(LReload1089.hutsCompleted === 2 && LReload1089.arrivals.join(',') === 'Bram,Fern,Silas', 'M1089: 24h with reload — huts 2, arrivals Bram, Fern, Silas');
   assert(LReload1089.starvedTicks === 0 && LReload1089.minHealth === 100, 'M1089: 24h with reload — starvedTicks 0, minHealth 100');
@@ -14463,7 +14484,7 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   assert(LWeek1089.oreDelivered > 0, 'M1089: the mined ore was delivered (the acceptance test: a miner shift ends with the storehouse gaining iron)');
   assert(SH.storehouseOreInRegistry(simWeek1089.registry, 'iron') > 0, 'M1089: the storehouse holds iron at the end of the week');
   assert(LWeek1089.oreMined === LWeek1089.oreDelivered + simWeek1089.founders.reduce((n: number, f: { carryingOre: number }) => n + f.carryingOre, 0), 'M1089: every mined iron is delivered or still carried (conservation)');
-  assert(simWeek1089.mines.quarry !== null && simWeek1089.mines.quarry.state === 'open', 'M1089: the quarry site opened');
+  assert(simWeek1089.mines.quarry !== null && (simWeek1089.mines.quarry.state === 'open' || simWeek1089.mines.quarry.state === 'exhausted'), 'M1089: the quarry site opened (and worked — the 1091 crew mines all 4 reachable rocks, so the site may read exhausted by the week run)');
   assert(LWeek1089.quarrySiteStone > 0, 'M1089: the quarry crew mined stone at the designated site');
   assert(simWeek1089.mines.lumber !== null && simWeek1089.mines.lumber.state === 'open', 'M1089: the lumber site opened');
   assert(LWeek1089.lumberTreesFelled > 0 && LWeek1089.jobsCompleted.lumber > 0, 'M1089: the lumber crew felled rect trees (the forest thinned)');
@@ -14586,12 +14607,12 @@ console.log('Testing farms that feed — the granary + NPC-planted farms (BUILD 
   const sim1090 = SS.createSettlementSim(W.defaultWorld());
   SS.advanceSettlement(sim1090, 1600);
   const L1090 = sim1090.ledger;
-  assert(L1090.woodChopped === 48 && L1090.woodDelivered === 48 && L1090.woodSpent === 24, 'M1090: 24h wood 48/48/24 (the 1090 baseline)');
-  assert(L1090.grainHarvested === 50 && L1090.grainDelivered === 48, 'M1090: 24h grain 50/48 (the field is 8 tiles now — 4 seeded + 4 planted)');
-  assert(L1090.mealsMilled === 24 && L1090.mealsEaten === 13, 'M1090: 24h meals 24/13');
+  assert(L1090.woodChopped === 46 && L1090.woodDelivered === 42 && L1090.woodSpent === 24, 'M1090: 24h wood 46/42/24 (the 1091 numbers)');
+  assert(L1090.grainHarvested === 58 && L1090.grainDelivered === 58, 'M1090: 24h grain 58/58 (the field is 8 tiles now — 4 seeded + 4 planted)');
+  assert(L1090.mealsMilled === 29 && L1090.mealsEaten === 14, 'M1090: 24h meals 29/14');
   assert(L1090.plantsPlanted === 4, 'M1090: the founders planted 4 farm tiles in 24h (the field reaches its 8-tile target)');
   assert(L1090.jobsCompleted.plant === 4, 'M1090: 4 plant jobs completed in 24h');
-  assert(GR.granaryFoodInRegistry(sim1090.registry) === 11 && GR.granaryGrainInRegistry(sim1090.registry) === 0, 'M1090: the granary holds the 24h result (11 meals, grain milled as fast as it arrives)');
+  assert(GR.granaryFoodInRegistry(sim1090.registry) === 15 && GR.granaryGrainInRegistry(sim1090.registry) === 0, 'M1090: the granary holds the 24h result (15 meals, grain milled as fast as it arrives)');
   assert(L1090.starvedTicks === 0 && L1090.minHealth === 100, 'M1090: the settlement stayed healthy through the first 24h (the acceptance test: the camp eats from its own harvest)');
   console.log('M1090 24h: wood=' + L1090.woodChopped + '/' + L1090.woodDelivered + '/' + L1090.woodSpent + ' grain=' + L1090.grainHarvested + '/' + L1090.grainDelivered + ' meals=' + L1090.mealsMilled + '/' + L1090.mealsEaten + ' plants=' + L1090.plantsPlanted + ' granary food/grain=' + GR.granaryFoodInRegistry(sim1090.registry) + '/' + GR.granaryGrainInRegistry(sim1090.registry));
 
@@ -14602,26 +14623,27 @@ console.log('Testing farms that feed — the granary + NPC-planted farms (BUILD 
   const restoredReload1090 = SS.restoreSettlement(simReload1090.world, SS.serializeSettlement(simReload1090), simReload1090.abs, simReload1090.ledger);
   SS.advanceSettlement(restoredReload1090, 800);
   const LReload1090 = restoredReload1090.ledger;
-  assert(LReload1090.grainHarvested === 58 && LReload1090.grainDelivered === 58, 'M1090: 24h with reload — grain 58/58');
-  assert(LReload1090.mealsMilled === 29 && LReload1090.mealsEaten === 15, 'M1090: 24h with reload — meals 29/15');
+  assert(LReload1090.grainHarvested === 56 && LReload1090.grainDelivered === 56, 'M1090: 24h with reload — grain 56/56');
+  assert(LReload1090.mealsMilled === 28 && LReload1090.mealsEaten === 15, 'M1090: 24h with reload — meals 28/15');
   assert(LReload1090.plantsPlanted === 4, 'M1090: the reload keeps the planted farms (4 planted across the reload)');
-  assert(GR.granaryFoodInRegistry(restoredReload1090.registry) === 14 && GR.granaryGrainInRegistry(restoredReload1090.registry) === 0, 'M1090: the reload keeps the granary (14 meals, 0 grain)');
+  assert(GR.granaryFoodInRegistry(restoredReload1090.registry) === 13 && GR.granaryGrainInRegistry(restoredReload1090.registry) === 0, 'M1090: the reload keeps the granary (13 meals, 0 grain)');
   assert(P.placedFarmTiles(restoredReload1090.world).length === 8, 'M1090: the reload keeps the farm tiles (the 4 seeded + the 4 planted)');
 
-  // --- The week-long run: the field feeds all week, the granary
-  // grain reaches its 200 cap — and the week-health failure is
-  // still open (the field feeds ~8 meals/day against ~15-20 eaten;
-  // the M1088 assert still fails on it, this pins the measured
-  // number so the next build can see it move). ---
+  // --- The week-long run: the field feeds all week. BUILD 1091:
+  // the granary grain no longer reaches its 200 cap (the founders
+  // mill/eat faster than they harvest now, so the grain does not
+  // pile up) and the week-health failure is nearly closed (6 ticks,
+  // not 11315 — the M1088 assert still fails on the 6, this pins
+  // the measured number so the next build can see it move). ---
   const simWeek1090 = SS.createSettlementSim(W.defaultWorld());
   SS.advanceSettlement(simWeek1090, 11200);
   const LWeek1090 = simWeek1090.ledger;
-  assert(LWeek1090.grainHarvested === 530 && LWeek1090.grainDelivered === 520, 'M1090: the week harvests 530 grain / delivers 520 (10 still carried)');
-  assert(LWeek1090.mealsMilled === 160 && LWeek1090.mealsEaten === 145, 'M1090: the week mills 160 meals / eats 145');
+  assert(LWeek1090.grainHarvested === 480 && LWeek1090.grainDelivered === 478, 'M1090: the week harvests 480 grain / delivers 478 (2 still carried)');
+  assert(LWeek1090.mealsMilled === 177 && LWeek1090.mealsEaten === 162, 'M1090: the week mills 177 meals / eats 162');
   assert(LWeek1090.plantsPlanted === 4, 'M1090: the field stays at its 8-tile target through the week (4 planted, none re-planted)');
-  assert(GR.granaryGrainInRegistry(simWeek1090.registry) === 200, 'M1090: the week ends with the granary grain at its 200 cap (the harvest outpaces the mill)');
+  assert(GR.granaryGrainInRegistry(simWeek1090.registry) === 124, 'M1090: the week ends with 124 grain in the granary (below the 200 cap — the 1091 founders mill/eat faster than they harvest, so the grain does not pile up)');
   assert(GR.granaryFoodInRegistry(simWeek1090.registry) === 15, 'M1090: the week ends with 15 meals in the granary (the mill caps at 15)');
-  assert(LWeek1090.starvedTicks === 11315 && LWeek1090.minHealth === 0, 'M1090: the week-health failure is still open (starvedTicks 11315 — the field feeds ~8 meals/day against ~15-20 eaten; a second harvester is the follow-up, not this build)');
+  assert(LWeek1090.starvedTicks === 6 && Math.round(LWeek1090.minHealth) === 100, 'M1090: the week-health failure is nearly closed (starvedTicks 6, minHealth 100 — Fern on day 4, 2 tiles short of the campfire ring after a far quarry trip; the strict M1088 assertion still fails at 6)');
   console.log('M1090 week run: ticks=' + LWeek1090.ticks + ' grain=' + LWeek1090.grainHarvested + '/' + LWeek1090.grainDelivered + ' meals=' + LWeek1090.mealsMilled + '/' + LWeek1090.mealsEaten + ' plants=' + LWeek1090.plantsPlanted + ' granary food/grain=' + GR.granaryFoodInRegistry(simWeek1090.registry) + '/' + GR.granaryGrainInRegistry(simWeek1090.registry) + ' starvedTicks=' + LWeek1090.starvedTicks + ' minHealth=' + Math.round(LWeek1090.minHealth) + ' population=' + simWeek1090.founders.length);
   console.log('M1090: the granary + the planted farms verified (store, mill/eat/delivery, plantable tiles, planting, growth, plant jobs, scorer, save v12 + migration, 24h pins, week run)');
 }
