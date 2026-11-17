@@ -69,6 +69,13 @@
  *     argmax of the three terms — stone wins only outright, food
  *     wins ties over chop, chop wins ties over stone — so stone
  *     never steals a chop or a harvest on a tie.
+ * - BUILD 1088 water term: work = max(..., 0.25 x (1 - food/20))
+ *   when the well stands, a water job is open, the day is >= 3,
+ *   and food < 20 (food 0 → 0.25, food 10 → 0.125, food 20+ →
+ *   0). Watering wins only outright in the work-kind argmax, so
+ *   it never steals a chop, a harvest, or a quarry on a tie.
+ * - BUILD 1088 bridge branch: build scores for a startable bridge
+ *   site once housing AND the storehouse are done (bridges third).
  * - build = 0 unless construction is pending (state !== 'done') AND
  *   the pile holds a step's wood (≥ 2) AND nobody else is building
  *   (one builder — the site has one work tile). Then 0.80 - 0.02 x
@@ -102,6 +109,7 @@ import { FARM_FOOD_THRESHOLD, healthWorkFactor } from './food';
 import { QUARRY_STONE_TARGET } from './quarry';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
 import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
+import { WELL_START_DAY } from './paths';
 import type { ConstructionState } from './construction';
 
 /** The five scored activities — the 1057 four plus 'build'. */
@@ -171,6 +179,20 @@ export type UtilityWorldContext = {
   /** BUILD 1087: the settlement day (the storehouse project only
    *  starts on STOREHOUSE_START_DAY). Optional: absent means 0. */
   day?: number;
+  /** BUILD 1088: open water jobs on the board — the water term
+   *  only fires when there is a growing tile to water. Optional:
+   *  absent means no water data and the water term is 0. */
+  readyWaterJobs?: number;
+  /** BUILD 1088: the camp well (paths.ts wellTile) — the water term
+   *  only fires when the well stands. Optional: absent means no
+   *  well and the water term is 0. */
+  well?: { x: number; y: number } | null;
+  /** BUILD 1088: the bridge the founder would build — its distance
+   *  (Manhattan to the bank tile) and whether it is startable
+   *  (paths.ts bridgeBuildContext). Optional: absent means no
+   *  bridge data and the bridge build branch stays off, so old
+   *  scores are unchanged. */
+  bridge?: { dist: number; ready: boolean } | null;
   /** BUILD 1087: the settlement still needs stone for (or in) the
    *  storehouse (the tick's quarry-radius gate is open) — the stone
    *  term rises to building urgency so it can beat the food term.
@@ -201,7 +223,7 @@ export type ScoredDecision = {
   /** BUILD 1086: which work the founder should do when the
    *  activity is 'work' — the argmax of the chop / food / stone
    *  terms (null when no work is worth doing). */
-  workKind: 'chop' | 'harvest' | 'quarry' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -244,6 +266,14 @@ export const UTILITY_FOOD_TERM_MAX = 0.65;
  *  wood/food loop, so the 24h numbers stay byte-identical. */
 export const UTILITY_STONE_TERM_MAX = 0.03;
 
+/** BUILD 1088: the water term — the most work is worth for
+ *  watering alone (food 0 with an open water job and a well).
+ *  Below night sleep (0.81) and a hungry founder's eat, above
+ *  idle rest (~0.14 at social 60) — watering is real work with a
+ *  real payoff (a tile ready sooner), done on spare capacity, and
+ *  gated on day 3 by the job, so the 24h window never sees it. */
+export const UTILITY_WATER_TERM_MAX = 0.25;
+
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
   return Math.max(0, Math.min(1, (100 - value) / 100));
@@ -271,8 +301,9 @@ function workTermsFor(ctx: UtilityContext): {
   chopWork: number;
   foodTerm: number;
   stoneTerm: number;
+  waterTerm: number;
   work: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -334,12 +365,29 @@ function workTermsFor(ctx: UtilityContext): {
   // Gated on the tick's storehouse-need flag, so the 24h window
   // (storehouse 'none', day < 3) never sees it.
   const stoneTerm = (ctx.storehouseStoneNeed ?? false) && stoneTermRaw > 0 ? Math.max(stoneTermRaw, UTILITY_BUILD_BASE) : stoneTermRaw;
-  const work = Math.max(chopWork, foodTerm, stoneTerm);
-  let workKind: 'chop' | 'harvest' | 'quarry' | null = null;
-  if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm) workKind = 'quarry';
+  // BUILD 1088: the water term — when the camp is short of food
+  // (below FARM_FOOD_THRESHOLD) and a water job is open and the
+  // well stands and the settlement is old enough (day >= 3 — the
+  // job's own gate, mirrored here so the term can never fire in
+  // the 24h window), work is worth doing for the water alone. It
+  // scales with the shortage like the food term (food 0 →
+  // UTILITY_WATER_TERM_MAX, food 10 → half, food 20+ → 0) and
+  // combines by max, not addition. It never beats night sleep or
+  // a hungry founder's eat, and it never steals a chop, a harvest,
+  // or a quarry on a tie (the work kind below is the STRICT
+  // argmax — water wins only outright).
+  const readyWater = ctx.readyWaterJobs ?? 0;
+  const waterTerm =
+    ctx.well && readyWater > 0 && (ctx.day ?? 0) >= WELL_START_DAY && foodStock < FARM_FOOD_THRESHOLD
+      ? UTILITY_WATER_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | null = null;
+  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm) workKind = 'water';
+  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm) workKind = 'quarry';
   else if (foodTerm > 0 && foodTerm >= chopWork) workKind = 'harvest';
   else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, work, workKind };
+  return { chopWork, foodTerm, stoneTerm, waterTerm, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
@@ -394,6 +442,19 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
           (ctx.stoneStock ?? 0) >= STOREHOUSE_STONE_PER_STEP))
     ) {
       build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
+    } else if (
+      construction.state === 'done' &&
+      ctx.storehouse !== undefined &&
+      ctx.storehouse.state === 'done' &&
+      ctx.bridge !== undefined &&
+      ctx.bridge !== null &&
+      ctx.bridge.ready
+    ) {
+      // BUILD 1088: the bridge build — housing done, storage done,
+      // a bridge site startable (paths.ts bridgeBuildContext).
+      // The distance is the bridge's own (to its bank tile), not
+      // the hut/storehouse distance.
+      build = clamp01(UTILITY_BUILD_BASE - distPenalty(ctx.bridge.dist));
     }
   }
 

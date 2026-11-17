@@ -884,7 +884,7 @@ export class WorldRenderer {
     // function of (plantedAt, clock), so a harvest or a reload
     // changes the field with no world rebuild.
     const nowAbs=absMinutes(clockRef.current.day,clockRef.current.minutes);
-    const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs,growthFactorAt(world,clockRef.current.day,t.tx,t.ty)) as FarmStage}));
+    const wheatInputs=placedFarmTiles(world).map(t=>({tx:t.tx,ty:t.ty,baseY:surfaceElevation(effTerrainDraw,t.tx+.5,t.ty+.5),stage:farmStageAt(t.plantedAt,nowAbs,growthFactorAt(world,clockRef.current.day,t.tx,t.ty),t.wateredAt) as FarmStage}));
     // BUILD 1057: the founders' log pile rides the same fx call as
     // the wheat — the pile is per-frame fx (it grows with
     // deliveries), so it needs no world rebuild. The input is the

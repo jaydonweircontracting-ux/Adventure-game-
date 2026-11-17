@@ -124,6 +124,7 @@ import { ControlCenterPanel } from './ControlCenterPanel';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
 import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, reconcileExtraSites, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite, sitesOf, constructionFromSites, type ConstructionState } from './construction';
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
+import { freshPathState, pathTiles, reconcileBridges, wellTile, type PathState } from './paths';
 // BUILD 1064 (R-1): the unified resource registry — the one
 // authoritative record of what exists, where it is, and where it
 // came from. The view owns the ref; the E-key gather, the founder
@@ -688,6 +689,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // wood/stone spent). The tick owns it; the founders save persists
   // it (v9) alongside the camp pile.
   const storehouseRef=useRef<StorehouseState>(freshStorehouse());
+  // BUILD 1088 (2.3): the path layer — the traffic counts, the
+  // bridge sites, and the last bridge-scan day. The tick owns it;
+  // the founders save persists the bridges (v10). The traffic is
+  // session-only (the dirt path tiles persist via the world save).
+  const pathsRef=useRef<PathState>(freshPathState());
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
   // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
@@ -792,6 +798,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         founders: foundersRef,
         construction: constructionRef,
         storehouse: storehouseRef,
+        paths: pathsRef,
         registry: registryRef,
         jobBoard: jobBoardRef,
         syncLivingWorld,
@@ -1502,6 +1509,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     farm:{label:'Farm Land',swatch:'linear-gradient(135deg,#593d24 0 50%,#d9a833 50% 100%)'},
     // BUILD 1042 swatch: fence timber browns (posts + rails).
     fence:{label:'Fence',swatch:'linear-gradient(135deg,#7a5a30 0 50%,#5a3d1e 50% 100%)'},
+    // BUILD 1088 swatch: well stone grey / water blue. The well is
+    // NOT offered in any catalog section (the settlement seeds it) —
+    // the entry exists only because KIND_META is total over
+    // PaletteKind, so a moved/selected well still reads a label.
+    well:{label:'Well',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#3a6a8a 50% 100%)'},
     tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
     stall:{label:'Market Stall',swatch:'#914f29'},
     // BUILD 1025: Rock — the generated rock's own grey (seeded cube
@@ -1682,11 +1694,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // mid-fetch walks to a site again; the carried build wood
         // rides in the carrier store and is returned on delivery.
         if(f.workState==='toStorehouse')f.workState='toTree';
+        // BUILD 1088: 'toWell'/'toWater' are session-only too (the
+        // well approach / the farm tile) — a founder reloaded
+        // mid-watering walks to a site again; the carried water is
+        // spilled (it is never stocked).
+        if(f.workState==='toWell'||f.workState==='toWater'){f.workState='toTree';f.carryingWater=0;}
         // BUILD 1058: a founder reloaded at the build site resumes
         // the step from 0 ticks (like the chop reset above); a
         // founder reloaded mid-build whose hut finished while they
         // were away goes back to chopping.
-        f.treeTarget=null;f.farmTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;f.harvestTicks=0;
+        f.treeTarget=null;f.farmTarget=null;f.waterTarget=null;f.workTile=null;f.chopTicks=0;f.buildTicks=0;f.harvestTicks=0;
         f.restTile=null;
         f.lastAbs=clockAbs;
       }
@@ -1726,6 +1743,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // but the world has no storehouse placement, reconcile: the
       // founders rebuild from the pile.
       storehouseRef.current=saved&&saved.storehouse?reconcileStorehouse(saved.storehouse,world):freshStorehouse();
+      // BUILD 1088: the bridge sites load from the v10 founders save
+      // (v9 saves migrate to an empty list). If the save says 'done'
+      // but the world has no bridge placement, reconcile: the
+      // founders rebuild from the pile. The traffic resets — the
+      // dirt path tiles persist via the world save.
+      pathsRef.current=saved&&saved.bridges?{...freshPathState(),bridges:reconcileBridges(saved.bridges,world)}:freshPathState();
       // BUILD 1062: the living-world coordinator (F-0) — load the saved
       // adapter state, or fresh from the live world (real trees, real
       // founders, real day). A corrupt/unknown save starts fresh; the
@@ -2569,7 +2592,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingBuild:f.carryingBuild,mineTicks:f.mineTicks,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),stoneStock:campStoneInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
+      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingBuild:f.carryingBuild,carryingWater:f.carryingWater,mineTicks:f.mineTicks,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),stoneStock:campStoneInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
       // BUILD 1065 (J-1): the job board for the probe — the summary
       // counts plus every live job (id, kind, target, tile, state,
       // claim). Read-only.
@@ -2599,6 +2622,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // from the storehouse). The reset is probe-only: a removed hut
       // leaves its residents' beds in the open until it rebuilds.
       getStorehouse:()=>({state:storehouseRef.current.state,progress:storehouseRef.current.progress,spentWood:storehouseRef.current.spentWood,spentStone:storehouseRef.current.spentStone,wood:storehouseWoodInRegistry(registryRef.current),stone:storehouseStoneInRegistry(registryRef.current),placed:storehousePlacementExists(stateRef.current.world),placedId:storehousePlacementId(stateRef.current.world),centre:{...STOREHOUSE_CENTRE},rect:{...STOREHOUSE_RECT},door:{...STOREHOUSE_DOOR},approach:{...STOREHOUSE_APPROACH}}),
+      // BUILD 1088 (2.3): the path layer (probes only) — the dirt path
+      // tiles on the world, the camp well, the bridge sites, and how
+      // many tiles have any traffic (the session-only counts).
+      getPaths:()=>({tiles:pathTiles(stateRef.current.world),well:wellTile(stateRef.current.world,FOUNDER_CAMP.x,FOUNDER_CAMP.y),bridges:pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),trafficTiles:Object.keys(pathsRef.current.traffic).length}),
       setStorehouseWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_WOOD});refreshResourceUi();return storehouseWoodInRegistry(registryRef.current);},
       setStorehouseStone:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'stone',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_STONE});refreshResourceUi();return storehouseStoneInRegistry(registryRef.current);},
       resetHutForTest:(siteId:string)=>{const w=stateRef.current.world;const idx=HUT_SITES.findIndex(s=>s.id===siteId);if(idx<0)return false;const site=HUT_SITES[idx];w.placements=(w.placements??[]).filter(p=>!(p.kind==='house'&&p.x0===site.rect.x0&&p.y0===site.rect.y0&&p.x1===site.rect.x1&&p.y1===site.rect.y1));const sites=sitesOf(constructionRef.current).map((s,j)=>j===idx?{state:'none' as const,progress:0,spentWood:0}:{...s});constructionRef.current=constructionFromSites(sites);for(const f of foundersRef.current)if(f.workState==='toSite'||f.workState==='building'){f.workState='toTree';f.buildTicks=0;}commitWorld(worldSyncCtx,w);refreshResourceUi();return true;},
@@ -2718,6 +2745,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       founders: foundersRef,
       construction: constructionRef,
       storehouse: storehouseRef,
+      paths: pathsRef,
       registry: registryRef,
       jobBoard: jobBoardRef,
       founderPath,

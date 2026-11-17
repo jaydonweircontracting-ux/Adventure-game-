@@ -28,7 +28,7 @@ import {
   hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite,
   type ConstructionState,
 } from './construction';
-import { readyFarmTiles, FARM_VILLAGER_RADIUS } from './farm';
+import { readyFarmTiles, FARM_VILLAGER_RADIUS, waterFarmTile, waterableFarmTiles } from './farm';
 import { growthFactorAt } from './livingWorld';
 import { millGrainToMeals, campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import { advanceClock } from './worldclock';
@@ -52,6 +52,13 @@ import {
   STOREHOUSE_STORE_ID, type StorehouseState,
 } from './storehouse';
 import { addPlacement, validatePlacement } from './placements';
+import {
+  BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
+  bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
+  finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
+  spendBridgeStepFromRegistry, wellApproachFor, wellTile,
+  type BridgeSite, type PathState,
+} from './paths';
 import type { ResourceRegistry } from './resourceRegistry';
 
 // The mutable simulation state the tick needs. The fields are the
@@ -66,6 +73,9 @@ export interface FounderSimContext {
   construction: { current: ConstructionState };
   // BUILD 1087: the storehouse state (the view's storehouseRef).
   storehouse: { current: StorehouseState };
+  // BUILD 1088: the path layer (the view's pathsRef) — the traffic
+  // counts, the bridge sites, and the last bridge-scan day.
+  paths: { current: PathState };
   registry: { current: ResourceRegistry };
   jobBoard: { current: JobBoard };
   founderPath: Map<string, FounderPathState>;
@@ -89,6 +99,9 @@ export interface WaitSimContext {
   construction: { current: ConstructionState };
   // BUILD 1087: the storehouse state (the view's storehouseRef).
   storehouse: { current: StorehouseState };
+  // BUILD 1088: the path layer (the view's pathsRef) — the wait
+  // step reads it for the same-rule scorer feeds.
+  paths: { current: PathState };
   registry: { current: ResourceRegistry };
   jobBoard: { current: JobBoard };
   syncLivingWorld: (world: IsoWorld) => boolean;
@@ -140,6 +153,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
   const foundersRef = ctx.founders;
   const constructionRef = ctx.construction;
   const storehouseRef = ctx.storehouse;
+  const pathsRef = ctx.paths;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const waitingRef = ctx.waiting;
@@ -171,17 +185,35 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // storehouse (progress 6, placement blocked) is NOT reset.
       const reconciledStorehouse=reconcileStorehouse(storehouseRef.current,world);
       if(reconciledStorehouse!==storehouseRef.current){storehouseRef.current=reconciledStorehouse;hutChanged=true;}
+      // BUILD 1088: reconcile the bridge sites the same way — a
+      // 'done' bridge whose placement is gone rebuilds from the
+      // pile; a 'building' site with a placement present is done.
+      // reconcileBridges always returns a new array, so the change
+      // is detected element-wise (same site objects = unchanged).
+      const reconciledBridges=reconcileBridges(pathsRef.current.bridges,world);
+      const bridgesChanged=reconciledBridges.length!==pathsRef.current.bridges.length||reconciledBridges.some((b,i)=>b!==pathsRef.current.bridges[i]);
+      if(bridgesChanged){pathsRef.current={...pathsRef.current,bridges:reconciledBridges};hutChanged=true;}
       const hutDone=!hasUnfinishedSite(constructionRef.current);
       // BUILD 1087: the quarry claim radius this tick — computed BEFORE
       // the board rebuild, so discovery creates rock jobs out to the
       // widened radius while the storehouse needs stone (see storehouse.ts).
       const quarryRadius=quarryClaimRadiusForStorehouse(storehouseRef.current,hutDone,clock.day,campStoneInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current));
+      // BUILD 1088: the once-a-day bridge scan — paths laid before
+      // the day-3 gate (the arrival corridor's river crossing, laid
+      // day 1–2) are checked for a river neighbour, so a bridge site
+      // opens once the settlement is old enough. Gated on
+      // lastBridgeScanDay so it runs once per day, not every tick.
+      if(clock.day>=BRIDGE_START_DAY&&pathsRef.current.lastBridgeScanDay<clock.day){scanForBridgeSites(world,pathsRef.current,clock.day);}
+      // BUILD 1088: the camp well this tick (null before the seed,
+      // or if the placement was removed) — fed to discovery and the
+      // scorer, so both read the same well.
+      const well=wellTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y);
       // BUILD 1065 (J-1): rebuild the job board from the world —
       // chop jobs for the trees in radius, the build job while the
       // hut is unfinished, deliver jobs for carrying founders.
       // Jobs whose target is gone are removed (open) or failed
       // (claimed — the holder re-targets below).
-      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clock.day,tx,ty),storehouse:storehouseRef.current,day:clock.day,quarryRadius});
+      jobBoardRef.current=discoverJobs(jobBoardRef.current,{world,construction:constructionRef.current,founders,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clock.day,tx,ty),storehouse:storehouseRef.current,day:clock.day,quarryRadius,well,bridges:pathsRef.current.bridges});
       // BUILD 1069: the ready farm tiles this tick — computed once
       // (the scan is over placed farm tiles only, a handful) and
       // fed to every founder's scorer, so food drives work.
@@ -193,6 +225,11 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // stone term must not fire when only far (unclaimable) jobs remain.
       // BUILD 1087: the quarry claim radius widens while the storehouse needs stone (see storehouse.ts) — the 30-tile radius can only supply 3 rocks, and the storehouse needs 6 stone to complete. The gate is closed in the 24h window (the storehouse is 'none' and day < 3), so the M1069 numbers cannot move.
       const readyQuarryCount=openJobs(jobBoardRef.current,'quarry').filter((j)=>Math.abs(j.tile.x-FOUNDER_CAMP.x)+Math.abs(j.tile.y-FOUNDER_CAMP.y)<=quarryRadius).length;
+      // BUILD 1088: the waterable farm tiles this tick — the same
+      // feed as the sim tick, so the mirror never re-chooses by a
+      // different rule. Gated on the well + day 3 (the discovery
+      // gate, mirrored here), so the count is 0 in the 24h window.
+      const readyWaterCount=well&&clock.day>=WELL_START_DAY?waterableFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS,(tx:number,ty:number)=>growthFactorAt(world,clock.day,tx,ty)).length:0;
       // BUILD 1066 (0x06): the chain's closing loop — a newcomer
       // arrives when a finished hut leaves a free bed, the camp holds
       // food, and the settlement is old enough. One at a time (the
@@ -221,6 +258,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         if(!myJob){
           if(f.workState==='toSite'||f.workState==='building'||f.workState==='toStorehouse'||f.workState==='chopping'){f.workState='toTree';f.buildTicks=0;f.chopTicks=0;f.treeTarget=null;f.workTile=null;}
       else if(f.workState==='toFarm'||f.workState==='harvesting'){f.workState='toTree';f.harvestTicks=0;f.farmTarget=null;}
+      else if(f.workState==='toWell'||f.workState==='toWater'){if(f.carryingWater>0)f.carryingWater=0;f.workState='toTree';f.waterTarget=null;}
       else if(f.workState==='toQuarry'||f.workState==='mining'){f.workState='toTree';f.mineTicks=0;f.quarryTarget=null;}
           else if(f.workState==='toTree'){f.treeTarget=null;f.workTile=null;}
           if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0||f.carryingStone>0||f.carryingBuild>0)){
@@ -229,6 +267,10 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             if(dc.job)myJob=dc.job;
           }
         }
+        // BUILD 1088: a bridge builder whose site vanished (reconciled
+        // away while the job was held) releases the job and re-targets
+        // — the site no longer exists to build on.
+        if(myJob&&myJob.kind==='build'&&myJob.targetId.startsWith('bridge-')&&!bridgeSiteById(pathsRef.current.bridges,myJob.targetId)){jobBoardRef.current=releaseJob(jobBoardRef.current,myJob.id);myJob=undefined;f.workState='toTree';f.buildTicks=0;f.treeTarget=null;f.workTile=null;}
         // BUILD 1059: the activity is the utility scorer's choice —
         // needs + context (time, food, pile, construction, distances,
         // who is building, current job). The 1057 fixed priority is
@@ -243,7 +285,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // in range is claimed, so work scores 0 for the founder
         // with nothing left to chop.
         const buildSite=nearestUnfinishedSite(constructionRef.current,f);
-        const builderTaken=(()=>{const b=buildSite?buildJobClaimedBy(jobBoardRef.current,buildSite.id):null;const bs=buildJobClaimedBy(jobBoardRef.current,STOREHOUSE_SITE_ID);return (b!==null&&b!==f.id)||(bs!==null&&bs!==f.id);})();
+        const builderTaken=(()=>{const b=buildSite?buildJobClaimedBy(jobBoardRef.current,buildSite.id):null;const bs=buildJobClaimedBy(jobBoardRef.current,STOREHOUSE_SITE_ID);const bb=pathsRef.current.bridges.some((s)=>{const c=buildJobClaimedBy(jobBoardRef.current,s.id);return c!==null&&c!==f.id;});return (b!==null&&b!==f.id)||(bs!==null&&bs!==f.id)||bb;})();
         const currentJob=myJob?(myJob.kind==='build'?'build':'chop'):null;
         // BUILD 1060: the companion context for the scorer — the
         // founder's closest founder (highest effective affinity)
@@ -260,7 +302,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)),storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),day:clock.day});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:campWoodInRegistry(registryRef.current),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)),storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,hutDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -315,7 +357,11 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           // old enough, camp pile holds a step) — the same rule as
           // a hut builder, so a 'work' flip does not strand the
           // storehouse mid-build.
-          const keepSite=f.activity==='work'&&(canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))||(storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP)||canStartStorehouse(storehouseRef.current,clock.day,hutDone,campWoodInRegistry(registryRef.current),campStoneInRegistry(registryRef.current)));
+          // BUILD 1088: a bridge builder keeps the site while the
+          // bridge step is startable — the same rule, third in line.
+          const bridgeSite=myJob&&myJob.kind==='build'&&myJob.targetId.startsWith('bridge-')?bridgeSiteById(pathsRef.current.bridges,myJob.targetId):undefined;
+          const keepBridge=!!bridgeSite&&canStartBridge(bridgeSite,clock.day,hutDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current));
+          const keepSite=f.activity==='work'&&(canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))||(storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP)||canStartStorehouse(storehouseRef.current,clock.day,hutDone,campWoodInRegistry(registryRef.current),campStoneInRegistry(registryRef.current))||keepBridge);
           if(!keepSite){
             // BUILD 1065 (J-1): leaving the site releases the build
             // job — another founder can take it when wood is
@@ -333,6 +379,10 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // itself ('toStorehouse') is exempt — the wood is on its
         // way to a site.
         if(f.carryingBuild>0&&f.workState!=='toSite'&&f.workState!=='building'&&f.workState!=='toStorehouse')f.workState='toStockpile';
+        // BUILD 1088: a founder carrying WATER who is not heading to
+        // (or at) a farm tile spills it — the water is never stocked,
+        // so it cannot be carried into the next job.
+        if(f.carryingWater>0&&f.workState!=='toWater'&&f.workState!=='toWell'){f.carryingWater=0;f.waterTarget=null;}
         // Eat: at the eat tile, one meal from the shared camp stock.
         // BUILD 1064 (R-1): the meal is withdrawn from the
         // registry's camp store — only a whole meal taken restores
@@ -415,6 +465,16 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             jobBoardRef.current=sc.board;
             if(sc.job){f.workState='toSite';myJob=sc.job;}
           }
+          // BUILD 1088: the bridge build — claimed the same way as a
+          // hut (one builder, the claim IS the site), only once the
+          // huts and the storehouse are done and the settlement is old
+          // enough (bridges third), and only when the camp pile holds
+          // a step's wood. The nearest startable site wins.
+          if(f.workState==='toTree'&&!f.treeTarget&&hutDone&&storehouseRef.current.state==='done'&&!builderTaken){
+            let bestSite:BridgeSite|null=null;let bestDist=Infinity;
+            for(const s of pathsRef.current.bridges){if(!canStartBridge(s,clock.day,hutDone,true,campWoodInRegistry(registryRef.current)))continue;const d=Math.abs(s.workTile.x-Math.round(f.x))+Math.abs(s.workTile.y-Math.round(f.y));if(d<bestDist){bestDist=d;bestSite=s;}}
+            if(bestSite){const brc=claimJob(jobBoardRef.current,f.id,buildJobIdFor(bestSite.id));jobBoardRef.current=brc.board;if(brc.job){f.workState='toSite';myJob=brc.job;}}
+          }
           // BUILD 1067: farming — a 'work' founder farms while the
           // camp is short of food (below FARM_FOOD_THRESHOLD) and a
           // ready farm tile is open. The build job still comes
@@ -424,6 +484,18 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             const hc=claimNearestJob(jobBoardRef.current,f.id,'harvest',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FARM_VILLAGER_RADIUS);
             jobBoardRef.current=hc.board;
             if(hc.job){f.workState='toFarm';f.farmTarget={x:hc.job.tile.x,y:hc.job.tile.y};myJob=hc.job;}
+          }
+          // BUILD 1088: watering — the mirror of the sim tick (same
+          // gate: workKind 'water' and food below the threshold).
+          // The claim is nearest-first; the job's tile is the farm tile
+          // to water, and the founder draws from the well on the way
+          // (the 'toWell' leg). The farm is 2 tiles from camp, so no
+          // one-founder-at-a-time guard is needed (unlike the quarry
+          // — watering never strands a founder far away).
+          if(f.workState==='toTree'&&!f.treeTarget&&f.activity==='work'&&f.lastDecision?.workKind==='water'&&campFoodInRegistry(registryRef.current)<FARM_FOOD_THRESHOLD){
+            const wc=claimNearestJob(jobBoardRef.current,f.id,'water',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FARM_VILLAGER_RADIUS);
+            jobBoardRef.current=wc.board;
+            if(wc.job){f.workState='toWell';f.waterTarget={x:wc.job.tile.x,y:wc.job.tile.y};myJob=wc.job;}
           }
           // BUILD 1086: quarrying — a 'work' founder mines stone
           // when the scorer says stone is the work that matters
@@ -509,6 +581,8 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // deliverFounderCarryToStore).
         // BUILD 1087: the fetch dest applies only while the founder is working/building (the 1067 harvest guard, same class) — a founder who flips to eat/rest/sleep while fetching must leave the approach (they pin the tile otherwise, and no carrier can arrive to deliver behind them).
         if(f.workState==='toStorehouse'&&(f.activity==='work'||f.activity==='build'))dest={...STOREHOUSE_APPROACH};
+        else if(f.workState==='toWell'&&(f.activity==='work'||f.activity==='build')){const approach=well?wellApproachFor(world,well,FOUNDER_CAMP.x,FOUNDER_CAMP.y):null;if(approach)dest=approach;}
+        else if(f.workState==='toWater'&&f.waterTarget&&(f.activity==='work'||f.activity==='build'))dest={...f.waterTarget};
         else if(f.workState==='toStockpile'&&storehouseRef.current.state==='done')dest={...STOREHOUSE_APPROACH};
         else if(myJob&&myJob.kind==='build')dest=myJob.tile;
         else if(myJob&&myJob.kind==='harvest'&&(f.activity==='work'||f.activity==='build'))dest=myJob.tile;
@@ -525,6 +599,12 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             founderPath.set(f.name,res.path);
             if(res.pos.x!==cx||res.pos.y!==cy){f.x=res.pos.x;f.y=res.pos.y;}
             if(res.arrived)founderPath.delete(f.name);
+            // BUILD 1088: the path layer — every founder step is
+            // traffic; at 8 passes a walkable tile becomes a dirt
+            // path (the founders lay the path by walking it), and a
+            // new path tile beside a river opens a bridge site. A
+            // placed path dirties the world (the save + the rebuild).
+            if(res.pos.x!==cx||res.pos.y!==cy){const placedPath=recordTraffic(pathsRef.current,world,res.pos.x,res.pos.y);if(placedPath){const placePath=validatePlacement(world,'path',placedPath.x,placedPath.y,{x:0,y:0},[],0);if(placePath.ok){addPlacement(world,placePath.item);worldDirty=true;detectBridgeSite(world,pathsRef.current,placedPath,clock.day);}}}
           }
         }
         if(atDest||(Math.round(f.x)===dest.x&&Math.round(f.y)===dest.y)){
@@ -591,6 +671,24 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
               f.carryingBuild=fetched.moved;
               stockChanged=true;
               f.workState='toSite';
+            }else if(f.workState==='toWell'){
+              // BUILD 1088: at the well approach — draw one bucket of
+              // water, then walk to the farm tile to pour it. The draw
+              // is instant (the fetch leg's precedent) — the trip is
+              // the work, not the drawing. If the well is gone, the
+              // founder re-targets with nothing carried.
+              if(well){f.carryingWater=1;f.workState='toWater';}else{f.carryingWater=0;f.waterTarget=null;f.workState='toTree';}
+            }else if(f.workState==='toWater'){
+              // BUILD 1088: at the farm tile — pour the bucket (the
+              // tile grows 60 game-minutes faster) and complete the
+              // water job. A tile that is no longer waterable spills
+              // the bucket and fails the job — the water never strands
+              // in the carrier.
+              if(f.waterTarget&&waterFarmTile(world,f.waterTarget.x,f.waterTarget.y,nowAbs).ok){
+                worldDirty=true;
+                if(myJob&&myJob.kind==='water'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+              }else if(myJob&&myJob.kind==='water'){jobBoardRef.current=failJob(jobBoardRef.current,myJob.id,'target-gone');myJob=undefined;}
+              f.carryingWater=0;f.waterTarget=null;f.workState='toTree';
             }else if(f.workState==='toSite'){
               // At the approach tile: start building.
               f.workState='building';f.buildTicks=0;
@@ -609,7 +707,20 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                 // ever spent twice.
                 let step: { registry: ResourceRegistry; construction: ConstructionState; storehouse: StorehouseState; completed: boolean; spent: boolean } | null = null;
                 const isStorehouseJob=myJob&&myJob.kind==='build'&&myJob.targetId===STOREHOUSE_SITE_ID;
-                if(isStorehouseJob){
+                const isBridgeJob=myJob&&myJob.kind==='build'&&myJob.targetId.startsWith('bridge-');
+                if(isBridgeJob){
+                  // BUILD 1088: a bridge step — 2 wood from the camp
+                  // pile, the progress rises by 1; at the last step the
+                  // bridge is READY but the state stays 'building'
+                  // until the placement actually lands (finishBridge,
+                  // below) — the hut and storehouse's ready/done split.
+                  const site=bridgeSiteById(pathsRef.current.bridges,myJob!.targetId);
+                  if(site&&canBuildBridge(site,campWoodInRegistry(registryRef.current))){
+                    const brRes=spendBridgeStepFromRegistry(registryRef.current,pathsRef.current.bridges,myJob!.targetId);
+                    pathsRef.current={...pathsRef.current,bridges:brRes.bridges};
+                    if(brRes.spent||brRes.completed)step={registry:brRes.registry,construction:constructionRef.current,storehouse:storehouseRef.current,completed:brRes.completed,spent:brRes.spent};
+                  }
+                }else if(isStorehouseJob){
                   if(canBuildStorehouse(storehouseRef.current,campWoodInRegistry(registryRef.current),campStoneInRegistry(registryRef.current))){
                     const shRes=spendStorehouseStepFromRegistry(registryRef.current,storehouseRef.current);
                     if(shRes.spent||shRes.completed)step={registry:shRes.registry,construction:constructionRef.current,storehouse:shRes.storehouse,completed:shRes.completed,spent:shRes.spent};
@@ -654,7 +765,28 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                   if(step.completed){
                     const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
                     const npcTiles=founders.map(o=>({x:Math.round(o.x),y:Math.round(o.y)}));
-                    if(isStorehouseJob){
+                    if(isBridgeJob){
+                      // BUILD 1088: stamp the bridge through the same
+                      // placement path the player uses (validatePlacement
+                      // 'bridge' requires a water tile — the river tile
+                      // the site spans). The tile may be occupied this
+                      // tick (a founder crossing it) — then the builder
+                      // waits at the site and retries next cycle; the
+                      // progress is banked, no wood is spent twice (the
+                      // ready-site rule).
+                      const site=bridgeSiteById(pathsRef.current.bridges,myJob!.targetId);
+                      const placed=site?validatePlacement(world,'bridge',site.x,site.y,playerTile,npcTiles,0):{ok:false as const,reason:'no site'};
+                      if(placed.ok){
+                        addPlacement(world,placed.item);
+                        saveWorld(world);worldDirty=true;
+                        pathsRef.current={...pathsRef.current,bridges:finishBridge(pathsRef.current.bridges,myJob!.targetId)};
+                        if(myJob&&myJob.kind==='build'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}
+                        f.workState='toTree';
+                        setMessage('The founders finished a bridge!');
+                      }else if(step.spent){
+                        setMessage('The bridge is ready — waiting for a clear spot');
+                      }
+                    }else if(isStorehouseJob){
                       // Stamp the storehouse through the same
                       // placement path the player uses. The rect may
                       // be occupied this tick (a founder crossing
@@ -695,7 +827,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                       }
                     }
                   }
-                }else if(!isStorehouseJob&&storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP){
+                }else if(!isBridgeJob&&!isStorehouseJob&&storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP){
                   // BUILD 1087: the step's wood is in the storehouse,
                   // not the camp pile — walk back and fetch it instead
                   // of releasing the site (deliveries land in the
@@ -846,6 +978,7 @@ export function runFounderSimInterval(ctx: FounderSimContext): void {
   const foundersRef = ctx.founders;
   const constructionRef = ctx.construction;
   const storehouseRef = ctx.storehouse;
+  const pathsRef = ctx.paths;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const waitingRef = ctx.waiting;
@@ -860,7 +993,7 @@ export function runFounderSimInterval(ctx: FounderSimContext): void {
       // the registry (the camp store's numbers), not from the plain
       // refs — the registry is the authority, the save is its
       // serialization (v4 shape preserved).
-      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current));
+      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges));
 }
 
 // One wait step: advance the clock, sync the living world, rebuild the
@@ -875,6 +1008,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
   const foundersRef = ctx.founders;
   const constructionRef = ctx.construction;
   const storehouseRef = ctx.storehouse;
+  const pathsRef = ctx.paths;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const { syncLivingWorld, setClockUi } = ctx;
@@ -903,7 +1037,12 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // the board is frozen, and the re-choice reads it.
         // BUILD 1087: the same widened radius as the real-time tick (see above).
         const wQuarryRadius=quarryClaimRadiusForStorehouse(storehouseRef.current,!hasUnfinishedSite(constructionRef.current),clockRef.current.day,campStoneInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current));
-        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty),storehouse:storehouseRef.current,day:clockRef.current.day,quarryRadius:wQuarryRadius});
+        // BUILD 1088: the well + the water feed this wait step — the
+        // same rule as the real-time tick (the discovery gate, day 3,
+        // mirrored here), so a wait never re-chooses by a different rule.
+        const wWell=wellTile(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y);
+        const wReadyWater=wWell&&clockRef.current.day>=WELL_START_DAY?waterableFarmTiles(world,FOUNDER_CAMP.x,FOUNDER_CAMP.y,nowAbs,FARM_VILLAGER_RADIUS,(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty)).length:0;
+        jobBoardRef.current=discoverJobs(jobBoardRef.current,{world:world,construction:constructionRef.current,founders:foundersRef.current,nowAbs,growthFactorAt:(tx:number,ty:number)=>growthFactorAt(world,clockRef.current.day,tx,ty),storehouse:storehouseRef.current,day:clockRef.current.day,quarryRadius:wQuarryRadius,well:wWell,bridges:pathsRef.current.bridges});
         // BUILD 1069: the ready farm tiles this wait step — the
         // same feed as the real-time tick, so a wait never
         // re-chooses by a different rule.
@@ -937,6 +1076,9 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
             closestAffinity:wClosest?wClosest.affinity:50,
             companionAtCamp:wCompanionAtCamp,
             readyFarmTiles:wReadyFarm,
+            readyWaterJobs:wReadyWater,
+            well:wWell,
+            bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(wf.x),y:Math.round(wf.y)},clockRef.current.day,!hasUnfinishedSite(constructionRef.current),storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),
             stoneStock:campStoneInRegistry(registryRef.current),
             readyQuarryJobs:wReadyQuarry,
             storehouse:storehouseRef.current,
@@ -951,6 +1093,6 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // the registry (the camp store's numbers), not from the
         // plain refs — the registry is the authority, the save is
         // its serialization (v4 shape preserved).
-        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current));
+        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges));
       }
 }

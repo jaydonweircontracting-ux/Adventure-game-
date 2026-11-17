@@ -105,12 +105,13 @@ import { STOREHOUSE_APPROACH, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type Sto
 import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
-import { FARM_VILLAGER_RADIUS, readyFarmTiles } from './farm';
+import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm';
+import { WELL_START_DAY, type BridgeSite } from './paths';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -211,6 +212,11 @@ export function harvestJobIdFor(tx: number, ty: number): string {
   return jobIdFor('harvest', farmTileId(tx, ty));
 }
 
+/** The job id for watering the farm tile at (tx, ty). */
+export function waterJobIdFor(tx: number, ty: number): string {
+  return jobIdFor('water', farmTileId(tx, ty));
+}
+
 /** What discovery needs: the world (trees), the construction
  *  (the hut), the founders' carried wood, and the clock (for
  *  createdAbs). The registry is NOT an input — a job's existence
@@ -234,6 +240,17 @@ export type JobDiscoveryInput = {
    *  means FOUNDER_WORK_RADIUS (the 1086 behaviour). Deposits stay
    *  at FOUNDER_WORK_RADIUS (ore mining is Phase 2.4). */
   quarryRadius?: number;
+  /** BUILD 1088: the camp well + the settlement day — a water job
+   *  exists only once the well stands and the day is old enough
+   *  (WELL_START_DAY — the 24h window never sees one). Absent
+   *  means no well data (the old callers) and no water job, so old
+   *  boards are unchanged. */
+  well?: { x: number; y: number } | null;
+  /** BUILD 1088: the open bridge sites — one build job per
+   *  unfinished site (the builder-placed bridge, through the
+   *  construction path). Absent means no bridge data (the old
+   *  callers) and no bridge job, so old boards are unchanged. */
+  bridges?: BridgeSite[];
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -382,6 +399,44 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     }
   }
 
+  // --- Bridge build jobs: one per unfinished bridge site (BUILD
+  // 1088) — created while the site is unfinished and completing
+  // when the site is done (the placement landed, finishBridge).
+  // A claimed job whose site vanished (reconciled away) fails —
+  // the holder re-targets. The day/housing gates live in the
+  // site's creation (paths.ts detect/scan), not here: a site only
+  // exists once the settlement is old enough.
+  for (const site of input.bridges ?? []) {
+    const id = buildJobIdFor(site.id);
+    if (site.state !== 'done') {
+      if (!next.jobs[id]) {
+        next.jobs[id] = {
+          id,
+          kind: 'build',
+          targetId: site.id,
+          tile: { ...site.workTile },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[id]) {
+      next = completeJob(next, id);
+      changed = true;
+    }
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'build' || !job.targetId.startsWith('bridge-')) continue;
+    if ((input.bridges ?? []).some((s) => s.id === job.targetId)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
   // --- Harvest jobs: one per READY farm tile within the farmer
   // radius of the camp (BUILD 1067). A tile that is no longer
   // ready (harvested by the player or another founder first) is
@@ -407,6 +462,41 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   }
   for (const job of Object.values(next.jobs)) {
     if (job.kind !== 'harvest' || liveHarvestIds.has(job.id)) continue;
+    if (job.state === 'claimed') {
+      next = failJob(next, job.id, 'target-gone');
+    } else {
+      delete next.jobs[job.id];
+    }
+    changed = true;
+  }
+
+  // --- Water jobs: one per waterable farm tile (BUILD 1088) — a
+  // planted/growing tile not yet watered this cycle, within the
+  // farmer radius, once the well exists and the settlement is old
+  // enough (WELL_START_DAY — the 24h window never sees a water
+  // job). A tile that is no longer waterable (watered by another
+  // founder first, or grown ready) is removed (open) or failed
+  // (claimed — 'target-gone').
+  const liveWaterIds = new Set<string>();
+  if (input.well && input.day !== undefined && input.day >= WELL_START_DAY) {
+    for (const t of waterableFarmTiles(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, nowAbs, FARM_VILLAGER_RADIUS, input.growthFactorAt)) {
+      const id = waterJobIdFor(t.tx, t.ty);
+      liveWaterIds.add(id);
+      if (next.jobs[id]) continue;
+      next.jobs[id] = {
+        id,
+        kind: 'water',
+        targetId: farmTileId(t.tx, t.ty),
+        tile: { x: t.tx, y: t.ty },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
+      changed = true;
+    }
+  }
+  for (const job of Object.values(next.jobs)) {
+    if (job.kind !== 'water' || liveWaterIds.has(job.id)) continue;
     if (job.state === 'claimed') {
       next = failJob(next, job.id, 'target-gone');
     } else {
@@ -728,6 +818,8 @@ export function jobSummary(board: JobBoard): {
   harvestClaimed: number;
   quarryOpen: number;
   quarryClaimed: number;
+  waterOpen: number;
+  waterClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -744,6 +836,8 @@ export function jobSummary(board: JobBoard): {
   let harvestClaimed = 0;
   let quarryOpen = 0;
   let quarryClaimed = 0;
+  let waterOpen = 0;
+  let waterClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
@@ -751,6 +845,7 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'build') buildOpen++;
       else if (job.kind === 'harvest') harvestOpen++;
       else if (job.kind === 'quarry') quarryOpen++;
+      else if (job.kind === 'water') waterOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
@@ -758,8 +853,9 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'build') buildClaimed++;
       else if (job.kind === 'harvest') harvestClaimed++;
       else if (job.kind === 'quarry') quarryClaimed++;
+      else if (job.kind === 'water') waterClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

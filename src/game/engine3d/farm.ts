@@ -24,6 +24,13 @@ import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 export const FARM_GROW_MIN = 60;
 /** Growing -> ready wheat: 3 in-game hours total (3 real minutes). */
 export const FARM_READY_MIN = 180;
+/** BUILD 1088 (2.3): game-minutes of growth a watering buys — a
+ *  watered tile is effectively this much older (planted -> growing
+ *  is 60 min, so a watered planted tile is growing at once; growing
+ *  -> ready is 180, so watering saves a third of the wait). The
+ *  boost is a real effect on the food loop, gated on day 3 by the
+ *  water job, so the 24h window never sees it. */
+export const WATER_BOOST_MIN = 60;
 /** Wheat the player collects per harvest (E key). */
 export const FARM_HARVEST_WHEAT = 2;
 /** Farmers detour to a ready wheat tile within this many tiles. */
@@ -48,9 +55,14 @@ export function absMinutes(day: number, minutes: number): number {
  *  shortens them). It defaults to 1 (neutral spring), so
  *  callers that do not know the factor keep the exact old
  *  thresholds. */
-export function farmStageAt(plantedAt: number | undefined, nowAbs: number, growthFactor = 1): FarmStage {
+export function farmStageAt(plantedAt: number | undefined, nowAbs: number, growthFactor = 1, wateredAt?: number): FarmStage {
   if (plantedAt === undefined) return 'planted';
-  const age = (nowAbs - plantedAt) * growthFactor;
+  // BUILD 1088 (2.3): a tile watered after planting (waterFarmTile)
+  // is effectively WATER_BOOST_MIN older — the well's real effect
+  // on growth. A stamp before planting (a re-planted tile keeps a
+  // stale stamp until harvest clears it) buys nothing.
+  const waterBonus = wateredAt !== undefined && wateredAt >= plantedAt ? WATER_BOOST_MIN * growthFactor : 0;
+  const age = (nowAbs - plantedAt) * growthFactor + waterBonus;
   if (age < FARM_GROW_MIN) return 'planted';
   if (age < FARM_READY_MIN) return 'growing';
   return 'ready';
@@ -58,7 +70,7 @@ export function farmStageAt(plantedAt: number | undefined, nowAbs: number, growt
 
 /** Stage of one placed farm item, observed at `nowAbs`. */
 export function farmStageOf(item: PlacedItem, nowAbs: number, growthFactor = 1): FarmStage {
-  return farmStageAt(item.farmPlantedAt, nowAbs, growthFactor);
+  return farmStageAt(item.farmPlantedAt, nowAbs, growthFactor, item.farmWateredAt);
 }
 
 /** Harvest the farm tile at (tx, ty) if it is ready wheat: the tile
@@ -78,11 +90,65 @@ export function harvestFarmTile(
     (p) => p.kind === 'farm' && tx >= p.x0 && tx <= p.x1 && ty >= p.y0 && ty <= p.y1,
   );
   if (!item) return { ok: false, reason: 'no farm here' };
-  if (farmStageAt(item.farmPlantedAt, nowAbs, growthFactor) !== 'ready') {
+  if (farmStageAt(item.farmPlantedAt, nowAbs, growthFactor, item.farmWateredAt) !== 'ready') {
     return { ok: false, reason: 'still growing' };
   }
   item.farmPlantedAt = nowAbs;
+  // BUILD 1088 (2.3): a harvested tile is re-planted, unwatered —
+  // the next growth cycle can be watered again.
+  delete item.farmWateredAt;
   return { ok: true, wheat: FARM_HARVEST_WHEAT };
+}
+
+/** Water the farm tile at (tx, ty) if it is planted or growing and
+ *  not yet watered this cycle: the tile keeps its planting stamp
+ *  and gains a watered stamp (farmStageAt reads it as bonus age).
+ *  A ready tile has nothing to gain; an already-watered tile is
+ *  not watered twice. Not a farm tile fails without touching the
+ *  world. */
+export function waterFarmTile(
+  w: IsoWorld,
+  tx: number,
+  ty: number,
+  nowAbs: number,
+  growthFactor = 1,
+): { ok: true } | { ok: false; reason: string } {
+  const list = w.placements;
+  if (!list) return { ok: false, reason: 'no farm here' };
+  const item = list.find(
+    (p) => p.kind === 'farm' && tx >= p.x0 && tx <= p.x1 && ty >= p.y0 && ty <= p.y1,
+  );
+  if (!item) return { ok: false, reason: 'no farm here' };
+  const stage = farmStageAt(item.farmPlantedAt, nowAbs, growthFactor, item.farmWateredAt);
+  if (stage === 'ready') return { ok: false, reason: 'already ready' };
+  if (item.farmWateredAt !== undefined && item.farmPlantedAt !== undefined && item.farmWateredAt >= item.farmPlantedAt) {
+    return { ok: false, reason: 'already watered' };
+  }
+  item.farmWateredAt = nowAbs;
+  return { ok: true };
+}
+
+/** Every planted/growing farm tile within `maxDist` (Manhattan) of
+ *  (x, y) that has not been watered this cycle — the tiles a founder
+ *  can water now. The water job's discovery input (jobs.ts): one
+ *  water job per tile here, like readyFarmTiles is for harvests.
+ *  Pure read (never mutates the world). */
+export function waterableFarmTiles(
+  w: IsoWorld,
+  x: number,
+  y: number,
+  nowAbs: number,
+  maxDist: number = FARM_VILLAGER_RADIUS,
+  growthFactorAt?: (tx: number, ty: number) => number,
+): { tx: number; ty: number }[] {
+  const out: { tx: number; ty: number }[] = [];
+  for (const t of placedFarmTiles(w)) {
+    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1, t.wateredAt) === 'ready') continue;
+    if (t.wateredAt !== undefined && t.plantedAt !== undefined && t.wateredAt >= t.plantedAt) continue;
+    if (Math.abs(t.tx - x) + Math.abs(t.ty - y) > maxDist) continue;
+    out.push({ tx: t.tx, ty: t.ty });
+  }
+  return out;
 }
 
 /** Nearest ready wheat tile within `maxDist` (Manhattan) of (x, y),
@@ -100,7 +166,7 @@ export function nearestReadyFarmTile(
   let best: { tx: number; ty: number } | null = null;
   let bestD = Infinity;
   for (const t of placedFarmTiles(w)) {
-    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
+    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1, t.wateredAt) !== 'ready') continue;
     const d = Math.abs(t.tx - x) + Math.abs(t.ty - y);
     if (d <= maxDist && d < bestD) {
       bestD = d;
@@ -125,7 +191,7 @@ export function readyFarmTiles(
 ): { tx: number; ty: number }[] {
   const out: { tx: number; ty: number }[] = [];
   for (const t of placedFarmTiles(w)) {
-    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1) !== 'ready') continue;
+    if (farmStageAt(t.plantedAt, nowAbs, growthFactorAt ? growthFactorAt(t.tx, t.ty) : 1, t.wateredAt) !== 'ready') continue;
     if (Math.abs(t.tx - x) + Math.abs(t.ty - y) > maxDist) continue;
     out.push({ tx: t.tx, ty: t.ty });
   }

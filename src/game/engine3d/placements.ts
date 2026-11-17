@@ -26,7 +26,7 @@ import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
-  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm' | 'fence'
+  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm' | 'fence' | 'well'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
@@ -104,6 +104,17 @@ export function addPlacement(w: IsoWorld, item: PlacedItem): void {
   // id) gets a fresh derived one.
   ensurePlacementId(item, w.placements);
   w.placements.push(item);
+  // BUILD 1088: a structure replaces the ground it stands on — a
+  // dirt path under it is no longer a path, so the path map stays
+  // truthful (no route through a hut). Ground cover stacks instead
+  // (grass/bush/farm already stack on paths by design).
+  if (item.kind !== 'path' && item.kind !== 'grass' && item.kind !== 'bush' && item.kind !== 'farm') {
+    for (let i = w.placements.length - 1; i >= 0; i--) {
+      const p = w.placements[i];
+      if (p === item) continue;
+      if (p.kind === 'path' && p.x0 >= item.x0 && p.x1 <= item.x1 && p.y0 >= item.y0 && p.y1 <= item.y1) w.placements.splice(i, 1);
+    }
+  }
 }
 
 /** Remove the placed item covering (x, y), if any. Returns it plus its
@@ -932,6 +943,12 @@ function generatedBlock(w: IsoWorld, x: number, y: number): string | null {
 
 function placedBlock(w: IsoWorld, x: number, y: number): string | null {
   for (const p of placementsOf(w)) {
+    // BUILD 1088: a dirt path is worn ground, not a structure — a
+    // building places over it. The hut site is the founders'
+    // busiest ground; a path there must never block the hut (the
+    // 1088 regression: site 0 sat at 6/6 forever because nine path
+    // tiles paved its rect, so no second hut, no arrivals, no mill).
+    if (p.kind === 'path') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return 'something you already placed';
   }
   return null;
@@ -1738,10 +1755,12 @@ export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number }
  *  movement. It carries the growth stamp (farmPlantedAt) so the
  *  renderer, the E-key harvest, and the farmer detour can read the
  *  stage without re-deriving it. */
-export function placedFarmTiles(w: IsoWorld): Array<{ tx: number; ty: number; plantedAt: number | undefined }> {
+export function placedFarmTiles(w: IsoWorld): Array<{ tx: number; ty: number; plantedAt: number | undefined; wateredAt: number | undefined }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'farm')
-    .map((p) => ({ tx: p.x0, ty: p.y0, plantedAt: p.farmPlantedAt }));
+    // BUILD 1088 (2.3): the watered stamp rides along (farm.ts
+    // waterFarmTile) so the stage + the wheat render read it.
+    .map((p) => ({ tx: p.x0, ty: p.y0, plantedAt: p.farmPlantedAt, wateredAt: p.farmWateredAt }));
 }
 
 /** Terrain keys of placed path tiles, for the terrain loop's effective terrain. */

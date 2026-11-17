@@ -12,6 +12,7 @@ import { loadWorld, saveWorld, type IsoWorld, type PlacedItem } from '../iso/iso
 import { seedCampFarmPlot } from './farm';
 import { stampMineralDeposits } from './geology';
 import { stampRivers } from './rivers';
+import { seedWell } from './paths';
 import { stampLandforms } from './landforms';
 import { applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
@@ -73,6 +74,12 @@ export function loadInitialWorld(
   // moves or vanishes on reload). After the deposits stamp, so the
   // river routing sees the real deposit tiles and routes around them.
   if (stampRivers(world)) saveWorld(world);
+  // BUILD 1088 (2.3): seed the camp well (the 'well' placement, 3
+  // tiles west of camp on the camp row) — idempotent (the seed
+  // checks for an existing well first); the world is saved when it
+  // lands, so the well survives reload. After the rivers stamp, so
+  // the well's tile is chosen on the real world (never on a river).
+  if (seedWell(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y, (x, y) => walkable(world, x, y))) saveWorld(world);
   // BUILD 1083 (1.4): stamp the landform map on a world that has
   // none (the stamp never re-derives a stamped world, so a mountain
   // never moves or vanishes on reload). After the rivers stamp, so
