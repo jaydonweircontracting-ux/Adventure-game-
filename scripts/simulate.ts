@@ -14289,14 +14289,7 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   const buildingBridgeWood1088 = simWeek1088.pathState.bridges.filter((b: { state: string }) => b.state === 'building').reduce((n: number, b: { spentWood: number }) => n + b.spentWood, 0);
   assert(LWeek1088.bridgeWoodSpent === 4 * LWeek1088.bridgesCompleted + buildingBridgeWood1088, 'M1088: each bridge cost exactly 4 wood (a bridge still building at week end holds its 2 spent wood — 5 done x 4 + 1 building x 2 = 22)');
   assert(!simWeek1088.pathState.bridges.some((b: { state: string }) => b.state === 'done'), 'M1088: no bridge site is done in the chain week (same mechanism — the chain takes the build capacity; the bridge system is unchanged)');
-  // BUILD 1096 (week pin): starvedTicks 569, minHealth 96 —
-  // MOVED from 0/100. Mechanism: worker housing opens a 4th bed
-  // and Tessa arrives (pop 7), so the week carries one more mouth
-  // and the single baker (~19 meals/day) sits at max capacity;
-  // the residual is the same far-from-campfire class as the
-  // 1091/1094/1095 residuals (food never runs out for long, no
-  // deaths, health recovers to 96). The 24h run is still clean.
-  assert(LWeek1088.starvedTicks === 569 && Math.round(LWeek1088.minHealth) === 96, 'M1088: the week-health residual is 569 starved ticks, minHealth 96 (moved from 0/100 — Tessa arrives, pop 7, the bake ceiling binds)');
+  assert(LWeek1088.starvedTicks === 0 && LWeek1088.minHealth === 100, 'M1088: the settlement stayed healthy through the week');
   assert(simWeek1088.founders.length >= 6, 'M1088: the population never shrank over the week');
   const weekRestored1088 = SS.restoreSettlement(simWeek1088.world, SS.serializeSettlement(simWeek1088), simWeek1088.abs, simWeek1088.ledger);
   assert(weekRestored1088.pathState.bridges.length === simWeek1088.pathState.bridges.length, 'M1088: the reload keeps the bridge sites');
