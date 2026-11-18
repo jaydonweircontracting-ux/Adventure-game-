@@ -15765,6 +15765,111 @@ console.log('Testing housing as capacity — beds, arrivals, the inn, the market
   console.log('M1096: housing as capacity verified (worker-housing site, capacity, arrivals follow beds, night sleepers, inn gates + build + rest + store, market stall, storehouse role, save, catalogue, 24h run, week run)');
 }
 
+
+console.log('Testing production interiors — forge, furnace, saw, workbench, millworks, oven (BUILD 1097, 0x20)...');
+{
+  const PI = await import('../src/game/engine3d/productionInteriors.js');
+  const I = await import('../src/game/engine3d/interiors.js');
+  const MC = await import('../src/game/engine3d/metalChain.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const GR = await import('../src/game/engine3d/granary.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const H = await import('../src/game/engine3d/housing.js');
+  // --- The definitions: seven production buildings, from the chain constants. ---
+  assert(PI.PRODUCTION_BUILDINGS.length === 7, 'M1097: seven production buildings have interiors');
+  const kinds1097 = ['smelter', 'blacksmith', 'sawmill', 'carpenter', 'mill', 'bakery', 'workshop'] as const;
+  for (const k of kinds1097) assert(PI.PRODUCTION_BUILDINGS.some((d: { kind: string }) => d.kind === k), 'M1097: ' + k + ' has an interior definition');
+  assert(PI.productionDefFor('smelter').rect.x0 === MC.SMELTER_RECT.x0 && PI.productionDefFor('smelter').door.x === MC.SMELTER_DOOR.x && PI.productionDefFor('smelter').approach.x === MC.SMELTER_APPROACH.x, 'M1097: the smelter interior is the chain smelter (rect, door, approach)');
+  assert(PI.productionDefFor('blacksmith').rect.x0 === MC.BLACKSMITH_RECT.x0 && PI.productionDefFor('blacksmith').door.x === MC.BLACKSMITH_DOOR.x && PI.productionDefFor('blacksmith').approach.x === MC.BLACKSMITH_APPROACH.x, 'M1097: the blacksmith interior is the chain blacksmith (rect, door, approach)');
+  assert(PI.productionDefFor('sawmill').rect.x0 === MC.SAWMILL_RECT.x0 && PI.productionDefFor('sawmill').door.x === MC.SAWMILL_DOOR.x && PI.productionDefFor('sawmill').approach.x === MC.SAWMILL_APPROACH.x, 'M1097: the sawmill interior is the chain sawmill (rect, door, approach)');
+  assert(PI.productionDefFor('carpenter').rect.x0 === MC.CARPENTER_RECT.x0 && PI.productionDefFor('carpenter').door.x === MC.CARPENTER_DOOR.x && PI.productionDefFor('carpenter').approach.x === MC.CARPENTER_APPROACH.x, 'M1097: the carpenter interior is the chain carpenter (rect, door, approach)');
+  assert(PI.productionDefFor('mill').rect.x0 === FC.MILL_RECT.x0 && PI.productionDefFor('mill').door.x === FC.MILL_DOOR.x && PI.productionDefFor('mill').approach.x === FC.MILL_APPROACH.x, 'M1097: the mill interior is the chain mill (rect, door, approach)');
+  assert(PI.productionDefFor('bakery').rect.x0 === FC.BAKERY_RECT.x0 && PI.productionDefFor('bakery').door.x === FC.BAKERY_DOOR.x && PI.productionDefFor('bakery').approach.x === FC.BAKERY_APPROACH.x, 'M1097: the bakery interior is the chain bakery (rect, door, approach)');
+  assert(PI.productionDefFor('workshop').rect.x0 === MC.WORKSHOP_RECT.x0 && PI.productionDefFor('workshop').door.x === MC.WORKSHOP_DOOR.x && PI.productionDefFor('workshop').approach.x === MC.WORKSHOP_APPROACH.x, 'M1097: the workshop interior is the chain workshop (rect, door, approach)');
+  // --- The right equipment per building, signature kinds unique. ---
+  const kindsOf1097 = (k: string) => PI.productionInteriorBoxes(k as never, PI.productionDefFor(k as never).rect).map((b: { kind: string }) => b.kind);
+  assert(kindsOf1097('smelter').includes('furnace') && !kindsOf1097('smelter').includes('forge'), 'M1097: the smelter shows the furnace (not the forge)');
+  assert(kindsOf1097('blacksmith').includes('forge') && kindsOf1097('blacksmith').includes('anvil'), 'M1097: the blacksmith shows the forge + anvil');
+  assert(kindsOf1097('sawmill').includes('saw') && !kindsOf1097('sawmill').includes('workbench'), 'M1097: the sawmill shows the saw works (not the workbench)');
+  assert(kindsOf1097('carpenter').includes('workbench'), 'M1097: the carpenter shows the workbench');
+  assert(kindsOf1097('mill').includes('millworks') && !kindsOf1097('mill').includes('oven'), 'M1097: the mill shows the mill works (not the oven)');
+  assert(kindsOf1097('bakery').includes('oven') && !kindsOf1097('bakery').includes('millworks'), 'M1097: the bakery shows the oven (not the mill works)');
+  assert(kindsOf1097('workshop').includes('workbench') && !kindsOf1097('workshop').includes('forge'), 'M1097: the workshop shows the workbench (not the forge)');
+  for (const sig of ['furnace', 'forge', 'saw', 'millworks', 'oven'] as const) {
+    assert(kinds1097.filter((k) => kindsOf1097(k).includes(sig)).length === 1, 'M1097: the ' + sig + ' is in exactly one building');
+  }
+  // --- Boxes inside the rect, door lane clear, rooms distinct. ---
+  const setOf1097 = (k: string) => PI.productionInteriorBoxes(k as never, PI.productionDefFor(k as never).rect).map((b: { kind: string; tx: number; ty: number }) => b.kind + '@' + b.tx + ',' + b.ty).sort().join('|');
+  for (const d of PI.PRODUCTION_BUILDINGS) {
+    const boxes = PI.productionInteriorBoxes(d.kind, d.rect);
+    assert(boxes.length > 0 && boxes.every((b: { tx: number; ty: number }) => b.tx >= d.rect.x0 && b.tx <= d.rect.x1 && b.ty >= d.rect.y0 && b.ty <= d.rect.y1), 'M1097: the ' + d.kind + ' equipment sits inside its rect');
+    assert(boxes.every((b: { tx: number; ty: number }) => !(b.tx === d.door.x && b.ty === d.door.y) && !(b.tx === d.door.x && b.ty === d.door.y - 1)), 'M1097: the ' + d.kind + ' door tile + inward lane are furniture-free');
+  }
+  for (let i = 0; i < kinds1097.length; i++) for (let j = i + 1; j < kinds1097.length; j++) {
+    assert(setOf1097(kinds1097[i]) !== setOf1097(kinds1097[j]), 'M1097: the ' + kinds1097[i] + ' and ' + kinds1097[j] + ' interiors differ');
+  }
+  // --- The fire: smelter, blacksmith, bakery have one; the rest have none. ---
+  for (const k of ['smelter', 'blacksmith', 'bakery'] as const) {
+    const f = PI.productionFireFor(k, PI.productionDefFor(k).rect, 0);
+    assert(f !== null && f[1] > I.INTERIOR_FLOOR_Y, 'M1097: the ' + k + ' fire glows inside its room');
+  }
+  for (const k of ['sawmill', 'carpenter', 'mill', 'workshop'] as const) {
+    assert(PI.productionFireFor(k, PI.productionDefFor(k).rect, 0) === null, 'M1097: the ' + k + ' has no fire');
+  }
+  // --- Rect matching: production rects match, the inn + a hut rect do not. ---
+  for (const d of PI.PRODUCTION_BUILDINGS) assert(PI.productionKindForRect(d.rect) === d.kind, 'M1097: the ' + d.kind + ' rect matches its kind');
+  assert(PI.productionKindForRect(H.INN_RECT) === null, 'M1097: the inn is not a production interior (it keeps its hut furniture)');
+  assert(PI.productionKindForRect({ x0: 126, y0: 119, x1: 129, y1: 121 }) === null, 'M1097: a hut rect is not a production interior');
+  // --- Enter/leave round-trips to the correct door tile for each building. ---
+  const allRects1097 = PI.PRODUCTION_BUILDINGS.map((d: { rect: { x0: number; y0: number; x1: number; y1: number }; door: { x: number; y: number }; approach: { x: number; y: number } }) => PI.productionHutRect(d));
+  for (const d of PI.PRODUCTION_BUILDINGS) {
+    const hr = PI.productionHutRect(d);
+    const door = I.hutDoor(hr);
+    assert(door.x === d.door.x && door.y === d.door.y && door.face === 'south', 'M1097: the ' + d.kind + ' door is (' + d.door.x + ',' + d.door.y + ') on the south face');
+    const exit = I.hutExitPoint(hr);
+    assert(exit.x === d.approach.x && exit.y === d.approach.y, 'M1097: leaving the ' + d.kind + ' returns the player to its approach');
+    const found = I.nearestDoorHut(allRects1097, d.approach.x, d.approach.y);
+    assert(found !== null && found.x0 === d.rect.x0 && found.y0 === d.rect.y0, 'M1097: standing on the ' + d.kind + ' approach finds that building (not a neighbour)');
+    assert(I.interiorTileWalkable(hr, d.rect.x0, d.rect.y0) === true && I.interiorTileWalkable(hr, d.rect.x0, d.rect.y0 - 1) === false, 'M1097: inside the ' + d.kind + ' the walls are solid');
+  }
+  // --- Production is unchanged with interiors present (the 1094/1095 pins). ---
+  const setStore1097 = (iron: number, coal: number, ingots = 0, tools = 0, wood = 0, timber = 0, furniture = 0) => {
+    let reg = R.createRegistry();
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'iron', iron, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_ORE });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'coal', coal, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_COAL });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'ingot', ingots, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_INGOT });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'tools', tools, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TOOL });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'wood', wood, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_WOOD });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'timber', timber, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TIMBER });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'furniture', furniture, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_FURNITURE });
+    return reg;
+  };
+  const s1097 = MC.smeltOreToIngots(setStore1097(10, 10), true);
+  assert(s1097.smelted === 1 && s1097.oreUsed === 1 && s1097.coalUsed === 1 && MC.metalChainIngotsInRegistry(s1097.registry) === 1, 'M1097: a smelt shift still turns 1 iron + 1 coal into 1 ingot');
+  const t1097 = MC.smithIngotsToTools(setStore1097(0, 0, 4), true);
+  assert(t1097.smithed === 1 && t1097.ingotsUsed === 2 && MC.metalChainToolsInRegistry(t1097.registry) === 1, 'M1097: a smith shift still turns 2 ingots into 1 tool');
+  const w1097 = MC.sawWoodToTimber(setStore1097(0, 0, 0, 0, 10), true);
+  assert(w1097.sawn === 2 && w1097.woodUsed === 2 && MC.metalChainTimberInRegistry(w1097.registry) === 2, 'M1097: a saw shift still turns 2 wood into 2 timber');
+  const f1097 = MC.carpenterTimberToFurniture(setStore1097(0, 0, 0, 0, 0, 4), true);
+  assert(f1097.made === 1 && f1097.timberUsed === 2 && MC.metalChainFurnitureInRegistry(f1097.registry) === 1, 'M1097: a carpenter shift still turns 2 timber into 1 furniture');
+  const setGranary1097 = (grain: number, flour: number, food: number) => {
+    let reg = R.createRegistry();
+    reg = R.setStoreQty(reg, R.GRANARY_STORE_ID, 'grain', grain, { type: 'loaded' }, { capacity: GR.GRANARY_CAPACITY_GRAIN });
+    reg = R.setStoreQty(reg, R.GRANARY_STORE_ID, 'flour', flour, { type: 'loaded' }, { capacity: GR.GRANARY_CAPACITY_FLOUR });
+    reg = R.setStoreQty(reg, R.GRANARY_STORE_ID, 'food', food, { type: 'loaded' }, { capacity: GR.GRANARY_CAPACITY_FOOD });
+    return reg;
+  };
+  const g1097 = FC.grindGrainToFlour(setGranary1097(10, 0, 0), true);
+  assert(g1097.ground === 2 && g1097.grainUsed === 2 && R.storeQty(g1097.registry, R.GRANARY_STORE_ID, 'flour') === 2, 'M1097: a mill shift still grinds 2 grain into 2 flour');
+  const b1097 = FC.bakeFlourToMeals(setGranary1097(0, 4, 0), true);
+  assert(b1097.baked === 1 && b1097.flourUsed === 2 && R.storeQty(b1097.registry, R.GRANARY_STORE_ID, 'food') === 1, 'M1097: a bake shift still bakes 2 flour into 1 meal');
+  // --- The founders save stays v12 (interiors are view-only, nothing new persisted). ---
+  assert(F.FOUNDER_SAVE_VERSION === 12, 'M1097: the founders save stays v12 (interiors persist nothing)');
+  console.log('M1097: production interiors verified (seven definitions, right equipment per building, distinct rooms, fire glow, enter/leave round-trips, production unchanged, save v12)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

@@ -33,6 +33,7 @@ import { effTerrainFor, surfaceElevation, rayHitSurface } from './wildTerrain';
 import { type AreaSelection } from './areaSelect';
 import { type CustomAsset } from './customAssets';
 import { interiorCeilingFor, interiorWallBandFor, interiorHearthFor } from './interiors';
+import { productionKindForRect, productionFireFor } from './productionInteriors';
 import { ROSTER_3D, rosterArchetype, type DayClock } from './townsfolk3d';
 import { FOUNDERS_ENABLED, FOUNDER_STOCKPILE_TILE, FOUNDER_NAMES, campWoodInRegistry, type FounderState } from './founders';
 import { createWorldBuilder, type Vec3, type WorldBuilder } from './worldRender3d';
@@ -928,10 +929,15 @@ export class WorldRenderer {
     if (insideNow) {
     const seedHutIn=seedRectForHut(world, insideNow);
     const hyIn=surfaceElevation(effTerrainDraw,(insideNow.x0+insideNow.x1+1)/2,(insideNow.y0+insideNow.y1+1)/2);
+    // BUILD 1097: a production interior's glow is its own fire
+    // (furnace / forge / oven) — the hut hearth lookup would return
+    // the seeded hut furniture's hearth at the wrong tile. The
+    // ceiling + wall band are rect-generic and work unchanged.
+    const prodKindIn=productionKindForRect(insideNow);
     interiorFx={
     ceiling: firstPersonRef.current ? interiorCeilingFor(insideNow, hyIn) : null,
     walls: firstPersonRef.current ? interiorWallBandFor(insideNow, hyIn) : [],
-    hearth: interiorHearthFor(insideNow, seedHutIn, hyIn),
+    hearth: prodKindIn ? productionFireFor(prodKindIn, insideNow, hyIn) : interiorHearthFor(insideNow, seedHutIn, hyIn),
     hearthLit: houseLitAt(clockRef.current.minutes, lightScheduleFor(seedHutIn.x0, seedHutIn.y0)),
     };
     }

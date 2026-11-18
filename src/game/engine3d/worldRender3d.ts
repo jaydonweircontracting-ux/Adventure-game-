@@ -49,6 +49,7 @@ import {
 } from './wildTerrain';
 import { rotateCustomXZ, type CustomAsset } from './customAssets';
 import { sameHut, interiorBoxes, interiorFloorColor, INTERIOR_FLOOR_Y } from './interiors';
+import { productionKindForRect, productionInteriorBoxes } from './productionInteriors';
 
 export type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -808,7 +809,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         const fc=interiorFloorColor(fx,fy);
         quad([fx,INTERIOR_FLOOR_Y+hy,fy],[fx+1,INTERIOR_FLOOR_Y+hy,fy],[fx+1,INTERIOR_FLOOR_Y+hy,fy+1],[fx,INTERIOR_FLOOR_Y+hy,fy+1],fc);
       }
-      for(const b of interiorBoxes(hut, seedHut)) box(b.x,b.z,b.w,b.h,b.d,b.y0+hy,b.color);
+      for(const b of (productionKindForRect(hut)?productionInteriorBoxes(productionKindForRect(hut)!,hut):interiorBoxes(hut, seedHut))) box(b.x,b.z,b.w,b.h,b.d,b.y0+hy,b.color);
       continue;
     }
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);

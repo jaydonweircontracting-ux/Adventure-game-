@@ -140,7 +140,12 @@ export function rescuePosition(
   return null;
 }
 
-export type FurnitureKind = 'bed' | 'table' | 'chair' | 'counter' | 'shelf' | 'hearth' | 'rug';
+export type FurnitureKind = 'bed' | 'table' | 'chair' | 'counter' | 'shelf' | 'hearth' | 'rug'
+  // BUILD 1097: production equipment kinds (productionInteriors.ts).
+  // The signature kinds (furnace, forge, saw, millworks, oven) are
+  // unique per building; the workbench is shared by the carpenter
+  // and the workshop (their rooms differ by tile + second piece).
+  | 'forge' | 'anvil' | 'furnace' | 'saw' | 'workbench' | 'millworks' | 'oven';
 
 export interface InteriorBox {
   kind: FurnitureKind;
