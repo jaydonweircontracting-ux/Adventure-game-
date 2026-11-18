@@ -38,6 +38,7 @@ import { FOUNDERS_ENABLED, FOUNDER_STOCKPILE_TILE, FOUNDER_NAMES, campWoodInRegi
 import { createWorldBuilder, type Vec3, type WorldBuilder } from './worldRender3d';
 import { HUT_SITES, sitesOf, type ConstructionState } from './construction';
 import { STOREHOUSE_HUT_SITE, type StorehouseState } from './storehouse';
+import { MILL_HUT_SITE, BAKERY_HUT_SITE, type FoodChainState } from './foodChain';
 import { type ResourceRegistry } from './resourceRegistry';
 import { maxVillagerVerts, MAX_TRANSIENTS, type TransientActor } from './transients';
 import { emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, BIRD_FLIGHT_HEIGHT, MAX_ANIMALS, type AnimalActor } from './animals';
@@ -162,6 +163,9 @@ export interface WorldRendererDeps {
   // BUILD 1087: the storehouse state (its build site renders through
   // the same per-frame fx path as a hut site, below).
   storehouseRef: { current: StorehouseState };
+  // BUILD 1094: the food chain (its build sites render through the
+  // same per-frame fx path as a hut/storehouse site, below).
+  foodChainRef: { current: FoodChainState };
   staminaPublishCountRef: { current: number };
   areaSelectionRef: { current: AreaSelection | null };
   buildRef: { current: { palette: PaletteKind | null; removeMode: boolean; moveMode: boolean; saveAreaMode: boolean; pasteName: string | null; customAssetId: string | null; areaSelectMode: boolean; areaMoveArmed: boolean; areaDuplicateArmed: boolean } };
@@ -513,6 +517,7 @@ export class WorldRenderer {
     const registryRef = this.deps.registryRef;
     const constructionRef = this.deps.constructionRef;
     const storehouseRef = this.deps.storehouseRef;
+    const foodChainRef = this.deps.foodChainRef;
     const staminaPublishCountRef = this.deps.staminaPublishCountRef;
     const areaSelectionRef = this.deps.areaSelectionRef;
     const buildRef = this.deps.buildRef;
@@ -899,7 +904,9 @@ export class WorldRenderer {
     // as the huts — per-frame fx (foundation + frame grow with the
     // real storehouse progress), so it needs no world rebuild. At
     // progress 6 the real storehouse placement renders instead.
-    const siteInputs=FOUNDERS_ENABLED?[...sitesOf(constructionRef.current).flatMap((s,i)=>{const site=HUT_SITES[i];return s.state==='building'&&site?[{baseY:surfaceElevation(effTerrainDraw,site.centre.x+.5,site.centre.y+.5),progress:s.progress,site}]:[];}),...(storehouseRef.current.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,STOREHOUSE_HUT_SITE.centre.x+.5,STOREHOUSE_HUT_SITE.centre.y+.5),progress:storehouseRef.current.progress,site:STOREHOUSE_HUT_SITE}]:[])]:[];
+    // BUILD 1094: the mill + the bakery ride the same fx call — at
+    // progress 6 the real mill/bakery placement renders instead.
+    const siteInputs=FOUNDERS_ENABLED?[...sitesOf(constructionRef.current).flatMap((s,i)=>{const site=HUT_SITES[i];return s.state==='building'&&site?[{baseY:surfaceElevation(effTerrainDraw,site.centre.x+.5,site.centre.y+.5),progress:s.progress,site}]:[];}),...(storehouseRef.current.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,STOREHOUSE_HUT_SITE.centre.x+.5,STOREHOUSE_HUT_SITE.centre.y+.5),progress:storehouseRef.current.progress,site:STOREHOUSE_HUT_SITE}]:[]),...(foodChainRef.current.mill.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,MILL_HUT_SITE.centre.x+.5,MILL_HUT_SITE.centre.y+.5),progress:foodChainRef.current.mill.progress,site:MILL_HUT_SITE}]:[]),...(foodChainRef.current.bakery.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,BAKERY_HUT_SITE.centre.x+.5,BAKERY_HUT_SITE.centre.y+.5),progress:foodChainRef.current.bakery.progress,site:BAKERY_HUT_SITE}]:[])]:[];
     // BUILD 1050: the entered hut's interior shell + hearth — the
     // ceiling and wall band render only in first-person inside (the
     // orbit view keeps its cutaway so the room stays visible from

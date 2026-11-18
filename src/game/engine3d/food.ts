@@ -10,14 +10,13 @@
  *   deliverFounderCarryToRegistry). The camp's field is seeded at
  *   load (farm.ts seedCampFarmPlot) so a fresh world can feed
  *   itself; the player can expand it in Build mode.
- * - MILLING turns grain into meals: 2 grain → 1 meal, a production
- *   step through the registry (millGrainToMeals below) — the grain
- *   is consumed, the meal is produced, and grain + 2×food is
- *   constant across the conversion (no fake food, no lost grain).
- *   The mill runs in the founder tick while the camp is short of
- *   food (below MILL_FOOD_THRESHOLD), up to MILL_MEALS_PER_TICK
- *   meals per tick. It is the camp's oven, not a founder's job —
- *   the founders' job is the harvest.
+ * - MILLING + BAKING (BUILD 1094, foodChain.ts) turn grain into
+ *   meals through the real chain: the mill grinds 2 grain -> 2
+ *   flour (a founder's milling job), the bakery bakes 2 flour ->
+ *   1 meal (a founder's baking job), and grain + flour + 2xfood
+ *   is constant across every step (no fake food, no lost grain).
+ *   The old direct grain -> meals path (millGrainToMeals) is
+ *   removed — the bakery is the only way grain becomes meals.
  * - EATING consumes meals (eatFounderMealFromRegistry, unchanged):
  *   hunger to 100, food −1. The stock now replenishes, so the camp
  *   can sustain itself on its fields.
@@ -34,14 +33,8 @@
  * the standalone asserts can import it directly.
  */
 
-import { GRANARY_STORE_ID, depositInto, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
+import { GRANARY_STORE_ID, storeQty, type ResourceRegistry } from './resourceRegistry';
 
-/** Grain milled into one meal (the recipe: 2 wheat → 1 meal). */
-export const MILL_GRAIN_PER_MEAL = 2;
-/** The mill runs while the camp holds fewer meals than this. */
-export const MILL_FOOD_THRESHOLD = 15;
-/** Most meals the mill makes in one 900ms tick. */
-export const MILL_MEALS_PER_TICK = 2;
 /** The camp farms while it holds fewer meals than this — the
  *  farming threshold sits above the mill's, so the founders
  *  harvest into a grain buffer the mill draws down (food 15..20:
@@ -53,37 +46,6 @@ export const FARM_FOOD_THRESHOLD = 20;
  *  "the camp's grain"). Pure. */
 export function campGrainInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, GRANARY_STORE_ID, 'grain');
-}
-
-/**
- * Mill granary grain into meals: 2 grain → 1 meal, a production step
- * (source 'production', settlement 'camp' — the camp settlement id
- * in livingWorld.ts). Runs only while the camp is short of food
- * (below MILL_FOOD_THRESHOLD) and holds grain; makes at most
- * MILL_MEALS_PER_TICK meals, and never mills past the threshold.
- * BUILD 1090: the grain + the meals both live in the granary store
- * now, not the camp store. Conservative: if a meal cannot be
- * deposited (the granary is capped, so this never happens today),
- * the grain for the un-made meals goes back to the granary — grain
- * + 2×food is constant across the call. Pure.
- */
-export function millGrainToMeals(registry: ResourceRegistry): { registry: ResourceRegistry; milled: number; grainUsed: number } {
-  const food = storeQty(registry, GRANARY_STORE_ID, 'food');
-  const grain = storeQty(registry, GRANARY_STORE_ID, 'grain');
-  if (food >= MILL_FOOD_THRESHOLD || grain < MILL_GRAIN_PER_MEAL) return { registry, milled: 0, grainUsed: 0 };
-  const meals = Math.max(0, Math.min(MILL_MEALS_PER_TICK, MILL_FOOD_THRESHOLD - food, Math.floor(grain / MILL_GRAIN_PER_MEAL)));
-  if (meals <= 0) return { registry, milled: 0, grainUsed: 0 };
-  const want = meals * MILL_GRAIN_PER_MEAL;
-  const withdrawn = withdrawFrom(registry, GRANARY_STORE_ID, 'grain', want);
-  const make = Math.floor(withdrawn.taken / MILL_GRAIN_PER_MEAL);
-  const deposited = depositInto(withdrawn.registry, GRANARY_STORE_ID, 'food', make, { type: 'production', settlementId: 'camp' });
-  const made = Math.floor(deposited.added);
-  const leftoverGrain = withdrawn.taken - made * MILL_GRAIN_PER_MEAL;
-  let next = deposited.registry;
-  if (leftoverGrain > 0) {
-    next = depositInto(next, GRANARY_STORE_ID, 'grain', leftoverGrain, { type: 'loaded' }).registry;
-  }
-  return { registry: next, milled: made, grainUsed: withdrawn.taken - leftoverGrain };
 }
 
 // --- Health: the shortage consequence ---

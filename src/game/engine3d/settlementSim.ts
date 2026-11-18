@@ -5,7 +5,9 @@
  * using the SAME pure functions — decayFounderNeeds, chooseScoredActivity,
  * discoverJobs / claimJob / claimNearestJob / claimDeliverJobFor,
  * fellTreeToCarrier, harvestFarmTileToCarrier, deliverFounderCarryToStore,
- * spendBuildStepFromRegistry, millGrainToMeals, arrivalCheck, stepFounderMove
+ * spendBuildStepFromRegistry, grindGrainToFlour / bakeFlourToMeals
+ * (the 1094 food chain — the old direct millGrainToMeals is removed),
+ * arrivalCheck, stepFounderMove
  * — it does NOT re-implement them. The view's React refs, timers, setMessage
  * and saveWorld are replaced by plain state + a ledger that records the
  * actual flows (wood chopped/delivered/spent, grain harvested/delivered,
@@ -74,6 +76,8 @@ import {
   jobForFounder,
   buildJobIdFor,
   buildJobClaimedBy,
+  millJobIdFor,
+  bakeJobIdFor,
   scorerTreeDist,
   scorerQuarryDist,
   jobSummary,
@@ -102,12 +106,12 @@ import {
   insideHutRect,
   type ConstructionState,
 } from './construction';
-import { FARM_FOOD_THRESHOLD, millGrainToMeals, campGrainInRegistry } from './food';
+import { FARM_FOOD_THRESHOLD, campGrainInRegistry } from './food';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot, waterFarmTile, waterableFarmTiles } from './farm';
 import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
 import { forestBaselineTrees, forestDensity, growthFactorAt, soilFactorAt } from './livingWorld';
-import { FOUNDER_PLANT_TICKS, plantFarmTile } from './granary';
+import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './granary';
 import { advanceEcosystemDay, applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
@@ -120,6 +124,14 @@ import {
   STOREHOUSE_STORE_ID, freshStorehouse, seedStorehouseStore, storehouseOreInRegistry, type StorehouseState,
 } from './storehouse';
 import { QUARRY_STONE_TARGET, QUARRY_CLAIM_RADIUS, quarryWorkTile, quarryTargetFromJob, mineStoneToCarrier } from './quarry';
+import {
+  BAKERY_APPROACH, BAKERY_CENTRE, BAKERY_SITE_ID, BAKE_TICKS_PER_SHIFT,
+  MILL_APPROACH, MILL_CENTRE, MILL_SITE_ID, MILL_TICKS_PER_SHIFT, MILL_WOOD_PER_STEP, BAKERY_WOOD_PER_STEP,
+  bakeFlourToMeals, canBuildBakery, canBuildMill, canStartBakery, canStartMill,
+  finishBakery, finishMill, foodChainFlourInRegistry, freshFoodChain, grindGrainToFlour,
+  reconcileFoodChain, spendBakeryStepFromRegistry, spendMillStepFromRegistry,
+  type FoodChainState,
+} from './foodChain';
 import { stampMineralDeposits } from './geology';
 import {
   MINE_START_DAY, MINE_TICKS_PER_SHIFT, MINE_IRON_TARGET, QUARRY_CREW_SIZE,
@@ -158,8 +170,15 @@ export type SettlementLedger = {
   stoneMined: number;
   /** Stone delivered to the camp stockpile. */
   stoneDelivered: number;
-  mealsMilled: number;
-  grainMilled: number;
+  /** Flour ground by the mill (BUILD 1094 — the chain replaces
+   *  the old direct mill, so mealsMilled/grainMilled are gone). */
+  flourMilled: number;
+  /** Grain ground into flour (BUILD 1094). */
+  grainGround: number;
+  /** Meals baked by the bakery (BUILD 1094). */
+  mealsBaked: number;
+  /** Flour baked into meals (BUILD 1094). */
+  flourBaked: number;
   mealsEaten: number;
   jobsCompleted: Record<JobKind, number>;
   jobsFailed: Record<string, number>;
@@ -205,6 +224,14 @@ export type SettlementLedger = {
   lumberTreesFelled: number;
   /** Iron delivered into the storehouse store (BUILD 1089). */
   storehouseOreDelivered: number;
+  /** Wood spent on the mill's construction (BUILD 1094). */
+  millWoodSpent: number;
+  /** Wood spent on the bakery's construction (BUILD 1094). */
+  bakeryWoodSpent: number;
+  /** Mills completed (0/1 in a run — BUILD 1094). */
+  millsCompleted: number;
+  /** Bakeries completed (0/1 in a run — BUILD 1094). */
+  bakeriesCompleted: number;
   arrivals: string[];
   /** Founder-ticks spent at hunger 0 (starving). */
   starvedTicks: number;
@@ -220,10 +247,12 @@ export function freshSettlementLedger(): SettlementLedger {
     woodSpent: 0,
     grainHarvested: 0,
     grainDelivered: 0,
-    mealsMilled: 0,
-    grainMilled: 0,
+    flourMilled: 0,
+    grainGround: 0,
+    mealsBaked: 0,
+    flourBaked: 0,
     mealsEaten: 0,
-    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0, plant: 0 },
+    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0, plant: 0, mill: 0, bake: 0 },
     stoneMined: 0,
     stoneDelivered: 0,
     jobsFailed: {},
@@ -249,6 +278,10 @@ export function freshSettlementLedger(): SettlementLedger {
     quarrySiteStone: 0,
     lumberTreesFelled: 0,
     storehouseOreDelivered: 0,
+    millWoodSpent: 0,
+    bakeryWoodSpent: 0,
+    millsCompleted: 0,
+    bakeriesCompleted: 0,
     arrivals: [],
     starvedTicks: 0,
     minHealth: 100,
@@ -265,6 +298,9 @@ export type SettlementSim = {
   /** The storehouse state (BUILD 1087 — saved in the founders
    *  save, v9, and round-tripped by serialize/restore). */
   storehouse: StorehouseState;
+  /** The food chain (BUILD 1094 — the mill + the bakery, saved in
+   *  the founders save, v12, and round-tripped by serialize/restore). */
+  foodChain: FoodChainState;
   /** The path layer (BUILD 1088): the traffic counts, the bridge
    *  sites, and the last bridge-scan day. The traffic is
    *  session-only (never saved — the tiles persist via the world
@@ -341,6 +377,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
     board: createJobBoard(),
     construction: freshConstruction(),
     storehouse: freshStorehouse(),
+    foodChain: freshFoodChain(),
     abs: SETTLEMENT_START_ABS,
     ledger: freshSettlementLedger(),
     paths: new Map(),
@@ -352,7 +389,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain),
   );
 }
 
@@ -368,7 +405,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
   const save = migrateFoundersSave(JSON.parse(saveJson));
   if (!save) throw new Error('settlementSim: the save does not migrate');
   const founders = foundersStateOf(save);
-  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock, save.stoneStock);
+  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock, save.stoneStock, save.flourStock);
   registry = seedStorehouseStore(registry, save.storehouseWood, save.storehouseStone, save.storehouseOre);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   return {
@@ -378,6 +415,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
     board: createJobBoard(),
     construction: save.construction,
     storehouse: save.storehouse,
+    foodChain: save.foodChain,
     abs,
     ledger,
     paths: new Map(),
@@ -416,6 +454,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // storehouse whose placement is gone resets to 'none', so the
   // founders rebuild from the pile.
   sim.storehouse = reconcileStorehouse(sim.storehouse, world);
+  // BUILD 1094: reconcile the mill + the bakery the same way — a
+  // 'done' building whose placement is gone resets to 'none', so
+  // the founders rebuild from the pile.
+  sim.foodChain = reconcileFoodChain(sim.foodChain, world);
   // BUILD 1088: reconcile the bridge sites the same way — a 'done'
   // bridge whose placement is gone rebuilds from the pile; a
   // 'building' site with a placement present is done.
@@ -482,7 +524,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   const well = wellTile(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
 
   // Rebuild the job board from the world.
-  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines });
+  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines, foodChain: sim.foodChain, granary: { grain: campGrainInRegistry(sim.registry), flour: foodChainFlourInRegistry(sim.registry), food: campFoodInRegistry(sim.registry) } });
 
   // BUILD 1069: the ready farm tiles this tick — computed once and
   // fed to every founder's scorer, so food drives work.
@@ -510,6 +552,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // BUILD 1090: the open plant jobs this tick — the same feed as
   // the real-time tick. 0 once the field is at target.
   const readyPlantCount = openJobs(sim.board, 'plant').length;
+  // BUILD 1094: the open mill + bake jobs this tick — the same feed
+  // as the real-time tick. 0 until the buildings are done.
+  const readyMillCount = openJobs(sim.board, 'mill').length;
+  const readyBakeCount = openJobs(sim.board, 'bake').length;
   // BUILD 1089: the quarry crew cap — 2 when a site quarry job is
   // open (the crew works the designated site in parallel), 1
   // otherwise (the ad-hoc rule). In the 24h window there is no
@@ -611,7 +657,10 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         const c = buildJobClaimedBy(sim.board, s.id);
         return c !== null && c !== f.id;
       });
-      return (b !== null && b !== f.id) || (bs !== null && bs !== f.id) || bb;
+      // BUILD 1094: a claimed mill/bakery build counts the same way.
+      const bm = buildJobClaimedBy(sim.board, MILL_SITE_ID);
+      const bba = buildJobClaimedBy(sim.board, BAKERY_SITE_ID);
+      return (b !== null && b !== f.id) || (bs !== null && bs !== f.id) || bb || (bm !== null && bm !== f.id) || (bba !== null && bba !== f.id);
     })();
     const currentJob = myJob ? (myJob.kind === 'build' ? 'build' : 'chop') : null;
     const prevActivity = f.activity;
@@ -651,6 +700,12 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         storehouseIron: storehouseOreInRegistry(sim.registry, 'iron'),
         readyLumberJobs: readyLumberCount,
         readyPlantJobs: readyPlantCount,
+        readyMillJobs: readyMillCount,
+        millTaken: sim.founders.some((o) => o !== f && (o.workState === 'toMill' || o.workState === 'milling')),
+        readyBakeJobs: readyBakeCount,
+        bakeTaken: sim.founders.some((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking')),
+        campGrain: campGrainInRegistry(sim.registry),
+        campFlour: foodChainFlourInRegistry(sim.registry),
       });
       f.activity = decision.activity;
       f.lastDecision = decision;
@@ -701,12 +756,21 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         ? bridgeSiteById(sim.pathState.bridges, myJob.targetId)
         : undefined;
       const keepBridge = !!bridgeSite && canStartBridge(bridgeSite, day, hutDone, sim.storehouse.state === 'done', campWoodInRegistry(sim.registry));
+      // BUILD 1094: a mill/bakery builder keeps the site while the
+      // step is startable — the same rule as a hut/storehouse/
+      // bridge builder (the view already had this; the sim did not,
+      // so the sim released the mill builder every tick and the
+      // mill never rose past progress 0 — see worldSimulation3d.ts).
+      const keepMill = !!(myJob && myJob.kind === 'build' && myJob.targetId === MILL_SITE_ID) && canStartMill(sim.foodChain, campGrainInRegistry(sim.registry), campWoodInRegistry(sim.registry));
+      const keepBakery = !!(myJob && myJob.kind === 'build' && myJob.targetId === BAKERY_SITE_ID) && canStartBakery(sim.foodChain, campWoodInRegistry(sim.registry));
       const keepSite =
         f.activity === 'work' &&
         (canBuild(construction, campWoodInRegistry(sim.registry)) ||
           (sim.storehouse.state === 'done' && storehouseWoodInRegistry(sim.registry) >= HUT_WOOD_PER_STEP) ||
           canStartStorehouse(sim.storehouse, day, hutDone, campWoodInRegistry(sim.registry), campStoneInRegistry(sim.registry)) ||
-          keepBridge);
+          keepBridge ||
+          keepMill ||
+          keepBakery);
       if (!keepSite) {
         if (myJob && myJob.kind === 'build') {
           sim.board = releaseJob(sim.board, myJob.id);
@@ -833,6 +897,31 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           }
         }
       }
+      // BUILD 1094: the mill build — claimed the same way as a hut
+      // (one builder, the claim IS the site), only once hut 0 is done
+      // (the housing-first rule — the mill must not steal the first
+      // hut's wood) and the first grain has landed (there is something
+      // to mill), and only when the camp pile holds a step's wood
+      // (see worldSimulation3d.ts).
+      if (f.workState === 'toTree' && !f.treeTarget && construction.sites[0] && construction.sites[0].state === 'done' && !builderTaken && canStartMill(sim.foodChain, campGrainInRegistry(sim.registry), campWoodInRegistry(sim.registry))) {
+        const mc = claimJob(sim.board, f.id, buildJobIdFor(MILL_SITE_ID));
+        sim.board = mc.board;
+        if (mc.job) {
+          f.workState = 'toSite';
+          myJob = mc.job;
+        }
+      }
+      // BUILD 1094: the bakery build — claimed the same way, only
+      // once the mill is done (the bakery needs flour) and only when
+      // the camp pile holds a step's wood.
+      if (f.workState === 'toTree' && !f.treeTarget && !builderTaken && canStartBakery(sim.foodChain, campWoodInRegistry(sim.registry))) {
+        const bc2 = claimJob(sim.board, f.id, buildJobIdFor(BAKERY_SITE_ID));
+        sim.board = bc2.board;
+        if (bc2.job) {
+          f.workState = 'toSite';
+          myJob = bc2.job;
+        }
+      }
       if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && campFoodInRegistry(sim.registry) < FARM_FOOD_THRESHOLD) {
         const hc = claimNearestJob(sim.board, f.id, 'harvest', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FARM_VILLAGER_RADIUS);
         sim.board = hc.board;
@@ -916,6 +1005,34 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             sim.board = failJob(sim.board, lc.job.id, 'no-work-tile');
             ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
           }
+        }
+      }
+      // BUILD 1094: milling — the mirror of the real-time tick
+      // (same gate: workKind 'mill'). One miller at a time (the
+      // millTaken guard). The claim is the mill job (one job, the
+      // mill approach as the tile); the founder walks to the mill
+      // ('toMill'), works a 3-tick shift ('milling', grinding per
+      // tick), and the job completes at the shift end.
+      const millTaken = sim.founders.some((o) => o !== f && (o.workState === 'toMill' || o.workState === 'milling'));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'mill' && !millTaken) {
+        const mc = claimJob(sim.board, f.id, millJobIdFor(MILL_SITE_ID));
+        sim.board = mc.board;
+        if (mc.job) {
+          f.workState = 'toMill';
+          f.millTicks = 0;
+          myJob = mc.job;
+        }
+      }
+      // BUILD 1094: baking — the mirror of the real-time tick
+      // (same gate: workKind 'bake'). One baker at a time.
+      const bakeTaken = sim.founders.some((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking'));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'bake' && !bakeTaken) {
+        const bc = claimJob(sim.board, f.id, bakeJobIdFor(BAKERY_SITE_ID));
+        sim.board = bc.board;
+        if (bc.job) {
+          f.workState = 'toBakery';
+          f.bakeTicks = 0;
+          myJob = bc.job;
         }
       }
       // BUILD 1086: quarrying — the mirror of the real-time tick
@@ -1032,6 +1149,8 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       const approach = well ? wellApproachFor(world, well, FOUNDER_CAMP.x, FOUNDER_CAMP.y) : null;
       if (approach) dest = approach;
     } else if (f.workState === 'toWater' && f.waterTarget && (f.activity === 'work' || f.activity === 'build')) dest = { ...f.waterTarget };
+    else if ((f.workState === 'toMill' || f.workState === 'milling') && (f.activity === 'work' || f.activity === 'build')) dest = { ...MILL_APPROACH };
+    else if ((f.workState === 'toBakery' || f.workState === 'baking') && (f.activity === 'work' || f.activity === 'build')) dest = { ...BAKERY_APPROACH };
     // BUILD 1091 (0x1A): the delivery and build dests apply ONLY
     // while the founder is working/building — the same rule the
     // fetch/well/water/harvest/plant overrides already follow. A
@@ -1047,6 +1166,8 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     else if (myJob && myJob.kind === 'build' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'harvest' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'plant' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
+    else if (myJob && myJob.kind === 'mill' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
+    else if (myJob && myJob.kind === 'bake' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (f.activity === 'sleep' && hutPlaced) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;
     else if ((f.activity === 'work' || f.activity === 'build') && (f.workState === 'toSite' || f.workState === 'building'))
       dest = buildSite ? buildSite.approach : HUT_APPROACH;
@@ -1212,9 +1333,11 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             // (see worldSimulation3d.ts) — the storehouse's own step
             // draws from the camp pile; a hut step spends the CARRIED
             // wood when the builder fetched it, else the camp pile.
-            let step: { registry: ResourceRegistry; construction: ConstructionState; storehouse: StorehouseState; completed: boolean; spent: boolean } | null = null;
+            let step: { registry: ResourceRegistry; construction: ConstructionState; storehouse: StorehouseState; foodChain: FoodChainState; completed: boolean; spent: boolean } | null = null;
             const isStorehouseJob = myJob && myJob.kind === 'build' && myJob.targetId === STOREHOUSE_SITE_ID;
             const isBridgeJob = myJob && myJob.kind === 'build' && myJob.targetId.startsWith('bridge-');
+            const isMillJob = myJob && myJob.kind === 'build' && myJob.targetId === MILL_SITE_ID;
+            const isBakeryJob = myJob && myJob.kind === 'build' && myJob.targetId === BAKERY_SITE_ID;
             if (isBridgeJob) {
               // BUILD 1088: a bridge step — 2 wood from the camp
               // pile, the progress rises by 1 (spendBridgeStepFrom-
@@ -1228,14 +1351,37 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                 sim.pathState = { ...sim.pathState, bridges: brRes.bridges };
                 if (brRes.spent || brRes.completed) {
                   if (brRes.spent) ledger.bridgeWoodSpent += BRIDGE_WOOD_PER_STEP;
-                  step = { registry: brRes.registry, construction, storehouse: sim.storehouse, completed: brRes.completed, spent: brRes.spent };
+                  step = { registry: brRes.registry, construction, storehouse: sim.storehouse, foodChain: sim.foodChain, completed: brRes.completed, spent: brRes.spent };
+                }
+              }
+            } else if (isMillJob) {
+              // BUILD 1094: a mill step — 1 wood from the camp pile,
+              // the progress rises by 1 (spendMillStepFromRegistry);
+              // at the last step the mill is READY but the state
+              // stays 'building' until the placement actually lands
+              // (finishMill, below) — the hut and storehouse's
+              // ready/done split.
+              if (canBuildMill(sim.foodChain, campWoodInRegistry(sim.registry))) {
+                const mRes = spendMillStepFromRegistry(sim.registry, sim.foodChain);
+                if (mRes.spent || mRes.completed) {
+                  if (mRes.spent) ledger.millWoodSpent += MILL_WOOD_PER_STEP;
+                  step = { registry: mRes.registry, construction, storehouse: sim.storehouse, foodChain: mRes.foodChain, completed: mRes.completed, spent: mRes.spent };
+                }
+              }
+            } else if (isBakeryJob) {
+              // BUILD 1094: a bakery step — same shape as the mill.
+              if (canBuildBakery(sim.foodChain, campWoodInRegistry(sim.registry))) {
+                const bRes = spendBakeryStepFromRegistry(sim.registry, sim.foodChain);
+                if (bRes.spent || bRes.completed) {
+                  if (bRes.spent) ledger.bakeryWoodSpent += BAKERY_WOOD_PER_STEP;
+                  step = { registry: bRes.registry, construction, storehouse: sim.storehouse, foodChain: bRes.foodChain, completed: bRes.completed, spent: bRes.spent };
                 }
               }
             } else if (isStorehouseJob) {
               if (canBuildStorehouse(sim.storehouse, campWoodInRegistry(sim.registry), campStoneInRegistry(sim.registry))) {
                 const shRes = spendStorehouseStepFromRegistry(sim.registry, sim.storehouse);
                 if (shRes.spent || shRes.completed) {
-                  step = { registry: shRes.registry, construction, storehouse: shRes.storehouse, completed: shRes.completed, spent: shRes.spent };
+                  step = { registry: shRes.registry, construction, storehouse: shRes.storehouse, foodChain: sim.foodChain, completed: shRes.completed, spent: shRes.spent };
                   if (shRes.spent) {
                     ledger.storehouseWoodSpent += STOREHOUSE_WOOD_PER_STEP;
                     ledger.storehouseStoneSpent += STOREHOUSE_STONE_PER_STEP;
@@ -1252,7 +1398,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                   ledger.woodSpent += HUT_WOOD_PER_STEP;
                   ledger.carriedStepsSpent++;
                 }
-                step = { registry: res.registry, construction: res.construction, storehouse: sim.storehouse, completed: res.completed, spent: res.spent };
+                step = { registry: res.registry, construction: res.construction, storehouse: sim.storehouse, foodChain: sim.foodChain, completed: res.completed, spent: res.spent };
               }
             } else if (campWoodInRegistry(sim.registry) >= HUT_WOOD_PER_STEP || hasReadyHutSite(construction)) {
               // BUILD 1087 (ready-site fix, part 2): the placement-retry
@@ -1264,7 +1410,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
               const res = spendBuildStepFromRegistry(sim.registry, construction, jobSiteIndex >= 0 ? jobSiteIndex : undefined);
               if (res.spent || res.completed) {
                 if (res.spent) ledger.woodSpent += HUT_WOOD_PER_STEP;
-                step = { registry: res.registry, construction: res.construction, storehouse: sim.storehouse, completed: res.completed, spent: res.spent };
+                step = { registry: res.registry, construction: res.construction, storehouse: sim.storehouse, foodChain: sim.foodChain, completed: res.completed, spent: res.spent };
               }
             }
             if (step) {
@@ -1272,6 +1418,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
               construction = step.construction;
               sim.construction = construction;
               sim.storehouse = step.storehouse;
+              sim.foodChain = step.foodChain;
               // A shared build step — the builder plus every founder
               // chopping for the hut built it together.
               for (const o of sim.founders) {
@@ -1299,6 +1446,45 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                     addPlacement(world, placed.item);
                     sim.pathState = { ...sim.pathState, bridges: finishBridge(sim.pathState.bridges, myJob!.targetId) };
                     ledger.bridgesCompleted++;
+                    if (myJob && myJob.kind === 'build') {
+                      ledger.jobsCompleted.build++;
+                      sim.board = completeJob(sim.board, myJob.id);
+                      myJob = undefined;
+                    }
+                    f.workState = 'toTree';
+                  } else {
+                    ledger.placementRetries++;
+                  }
+                } else if (isMillJob) {
+                  // Stamp the mill through the same placement path
+                  // the player uses (the 'house-windmill' kind, the
+                  // surveyed centre). The rect may be occupied this
+                  // tick — then the builder waits and retries next
+                  // cycle; the progress is banked, no wood is spent
+                  // twice (the ready-site rule).
+                  const placed = validatePlacement(world, 'house-windmill', MILL_CENTRE.x, MILL_CENTRE.y, { x: 0, y: 0 }, npcTiles, 0);
+                  if (placed.ok) {
+                    addPlacement(world, placed.item);
+                    sim.foodChain = finishMill(sim.foodChain);
+                    ledger.millsCompleted++;
+                    if (myJob && myJob.kind === 'build') {
+                      ledger.jobsCompleted.build++;
+                      sim.board = completeJob(sim.board, myJob.id);
+                      myJob = undefined;
+                    }
+                    f.workState = 'toTree';
+                  } else {
+                    ledger.placementRetries++;
+                  }
+                } else if (isBakeryJob) {
+                  // Stamp the bakery the same way (the 'house' kind
+                  // on the surveyed centre — there is no
+                  // 'house-bakery' palette kind).
+                  const placed = validatePlacement(world, 'house', BAKERY_CENTRE.x, BAKERY_CENTRE.y, { x: 0, y: 0 }, npcTiles, 0);
+                  if (placed.ok) {
+                    addPlacement(world, placed.item);
+                    sim.foodChain = finishBakery(sim.foodChain);
+                    ledger.bakeriesCompleted++;
                     if (myJob && myJob.kind === 'build') {
                       ledger.jobsCompleted.build++;
                       sim.board = completeJob(sim.board, myJob.id);
@@ -1508,6 +1694,58 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             f.mineTicks = 0;
             f.workState = 'toStockpile';
           }
+        } else if (f.workState === 'toMill') {
+          // At the mill approach: start the milling shift (the
+          // arrival gate — no flour moves while walking).
+          f.workState = 'milling';
+          f.millTicks = 0;
+        } else if (f.workState === 'milling') {
+          // The shift grinds per tick (2 grain -> 2 flour a tick) —
+          // a mill with no grain grinds nothing, and the flour
+          // store caps the grind (the cap binds at 100). The job
+          // completes at the shift end; the founder returns to
+          // chopping (the grain keeps coming from the farm).
+          const ground = grindGrainToFlour(sim.registry, true);
+          sim.registry = ground.registry;
+          if (ground.ground > 0) {
+            ledger.flourMilled += ground.ground;
+            ledger.grainGround += ground.grainUsed;
+          }
+          f.millTicks++;
+          if (f.millTicks >= MILL_TICKS_PER_SHIFT) {
+            if (myJob && myJob.kind === 'mill') {
+              ledger.jobsCompleted.mill++;
+              sim.board = completeJob(sim.board, myJob.id);
+              myJob = undefined;
+            }
+            f.millTicks = 0;
+            f.workState = 'toTree';
+          }
+        } else if (f.workState === 'toBakery') {
+          // At the bakery approach: start the baking shift.
+          f.workState = 'baking';
+          f.bakeTicks = 0;
+        } else if (f.workState === 'baking') {
+          // The shift bakes per tick (2 flour -> 1 meal a tick) —
+          // a bakery with no flour bakes nothing, and the bake
+          // stops when the camp holds 15 meals. The job completes
+          // at the shift end.
+          const baked = bakeFlourToMeals(sim.registry, true);
+          sim.registry = baked.registry;
+          if (baked.baked > 0) {
+            ledger.mealsBaked += baked.baked;
+            ledger.flourBaked += baked.flourUsed;
+          }
+          f.bakeTicks++;
+          if (f.bakeTicks >= BAKE_TICKS_PER_SHIFT) {
+            if (myJob && myJob.kind === 'bake') {
+              ledger.jobsCompleted.bake++;
+              sim.board = completeJob(sim.board, myJob.id);
+              myJob = undefined;
+            }
+            f.bakeTicks = 0;
+            f.workState = 'toTree';
+          }
         } else if (f.workState === 'toQuarry' && f.quarryTarget) {
           // At the quarry's work tile: start mining (the arrival gate).
           f.workState = 'mining';
@@ -1560,15 +1798,11 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     if ((f.activity === 'work' || f.activity === 'build') && f.workState === 'idle') f.workState = 'toTree';
   }
 
-  // The mill — while the camp is short of food and holds grain, mill
-  // grain into meals (2 grain → 1 meal, a production step through the
-  // registry). The grain the founders harvested becomes the meals they eat.
-  const milled = millGrainToMeals(sim.registry);
-  if (milled.milled > 0) {
-    sim.registry = milled.registry;
-    ledger.mealsMilled += milled.milled;
-    ledger.grainMilled += milled.grainUsed;
-  }
+  // BUILD 1094: the old direct mill (grain -> meals, no worker, no
+  // building) is REMOVED — the chain replaces it. Grain becomes meals
+  // only through the mill (a founder's milling shift, grain -> flour)
+  // and the bakery (a founder's baking shift, flour -> meals), above.
+  // Nothing runs here: a mill with no worker produces nothing.
 }
 
 /** Run N founder ticks (0.9 game-min each) — the accelerated clock. */

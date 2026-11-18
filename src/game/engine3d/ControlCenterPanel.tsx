@@ -144,7 +144,7 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
           <div data-testid="cc-resources" style={sectionStyle}>
             <div style={headingStyle}>🪵 Resources + shortages</div>
             <div>
-              Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · Granary {d.resources.campFood} meals · {d.resources.campGrain} grain
+              Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · Granary {d.resources.campFood} meals · {d.resources.campGrain} grain · {d.resources.campFlour} flour
             </div>
             <div>
               Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone} · iron {d.resources.storehouseIron}
@@ -182,11 +182,11 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
           <div data-testid="cc-food" style={sectionStyle}>
             <div style={headingStyle}>🌾 Food (Granary) — production + consumption</div>
             <div>
-              Granary {d.food.food} meals · {d.food.grain} grain · farm: {d.food.farmPlanted} planted / {d.food.farmGrowing} growing / {d.food.farmReady} ready
+              Granary {d.food.food} meals · {d.food.grain} grain · {d.food.flour} flour · farm: {d.food.farmPlanted} planted / {d.food.farmGrowing} growing / {d.food.farmReady} ready
             </div>
             <div>
               Average health {d.food.healthAvg}
-              {d.food.weakCount > 0 ? ` · ${d.food.weakCount} weak (health under 30)` : ' · nobody weak'} · mill {d.food.millReady ? 'ready — grain can become meals' : 'idle'}
+              {d.food.weakCount > 0 ? ` · ${d.food.weakCount} weak (health under 30)` : ' · nobody weak'} · mill {d.food.millState}{d.food.millReady ? ' ready — grain becomes flour' : ''} · bakery {d.food.bakeryState}{d.food.bakeryReady ? ' ready — flour becomes meals' : ''}
             </div>
           </div>
 

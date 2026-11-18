@@ -106,15 +106,16 @@ import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm';
-import { plantableFarmTiles } from './granary';
+import { GRANARY_CAPACITY_FLOUR, plantableFarmTiles } from './granary';
 import { npcWalkable } from './townsfolk3d';
 import { WELL_START_DAY, type BridgeSite } from './paths';
 import { lumberTreesInRect, openMineSite, type MineState } from './mines';
+import { BAKERY_APPROACH, BAKERY_SITE_ID, BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH, MILL_APPROACH, MILL_SITE_ID, isBakeryUsable, isMillUsable, type FoodChainState } from './foodChain';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -230,6 +231,16 @@ export function mineJobIdFor(depositId: string): string {
   return jobIdFor('mine', depositId);
 }
 
+/** The job id for the mill site (BUILD 1094 — one mill job). */
+export function millJobIdFor(siteId: string): string {
+  return jobIdFor('mill', siteId);
+}
+
+/** The job id for the bakery site (BUILD 1094 — one bake job). */
+export function bakeJobIdFor(siteId: string): string {
+  return jobIdFor('bake', siteId);
+}
+
 /** The job id for a lumber tree at (tx, ty). */
 export function lumberJobIdFor(tx: number, ty: number): string {
   return jobIdFor('lumber', treeId(tx, ty));
@@ -276,6 +287,15 @@ export type JobDiscoveryInput = {
    *  data (the old callers) and no mine/lumber jobs, so old
    *  boards are unchanged. */
   mines?: MineState;
+  /** BUILD 1094: the food-chain state + the granary numbers — a
+   *  mill job exists only once the mill is done and there is
+   *  grain to grind (and room in the flour store); a bake job
+   *  only once the bakery is done and there is flour to bake
+   *  (and the camp is short of food). Absent means no food-chain
+   *  data (the old callers) and no mill/bake jobs, so old boards
+   *  are unchanged. */
+  foodChain?: FoodChainState;
+  granary?: { grain: number; flour: number; food: number };
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -302,8 +322,9 @@ export function quarryJobIdFor(targetId: string): string {
  *   tile (a tree nobody can stand beside is not work). The
  *   work-tile check runs only for NEW trees (the board already
  *   holds the rest), so discovery stays one tree scan per tick.
- * - build: one job while the hut is unfinished; completing it
- *   when the construction is done.
+ * - build: one job while a hut / the storehouse / a bridge / the
+ *   mill / the bakery is unfinished and startable; completing it
+ *   when the building is done.
  * - harvest (BUILD 1067): one job per READY farm tile within the
  *   farmer radius of the camp; completing it when the tile is
  *   harvested (the grain is in the carrier).
@@ -313,6 +334,16 @@ export function quarryJobIdFor(targetId: string): string {
  *   stone is in the carrier (the deposit depletes / the rock is
  *   consumed). A mined-out deposit leaves the board (open) or
  *   fails (claimed — 'target-gone').
+ * - mill (BUILD 1094): one job while the mill is done and there
+ *   is grain to grind (and room in the flour store) — the job's
+ *   tile is the mill approach; completing it when the founder's
+ *   3-tick shift ends (the shift grinds per tick). A claimed job
+ *   whose grain ran out mid-shift is NOT failed (the founder
+ *   finishes the shift); an open job whose grain ran out is
+ *   removed silently.
+ * - bake (BUILD 1094): one job while the bakery is done and there
+ *   is flour to bake (and the camp is short of food) — same shape
+ *   as the mill job, the bakery approach as the tile.
  * - deliver: one job per founder carrying wood; completing it
  *   when the carrier empties (the work is done — the wood is
  *   in the camp store). BUILD 1067: a founder carrying GRAIN
@@ -432,6 +463,71 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
         next = failJob(next, shId, 'not-startable');
       } else {
         delete next.jobs[shId];
+      }
+      changed = true;
+    }
+  }
+
+  // --- Mill + bakery build jobs (BUILD 1094): one job per
+  // food-chain building while it is unfinished and startable —
+  // the mill once hut 0 is done and the first grain has landed
+  // (the housing-first rule + something to mill), the bakery
+  // once the mill is done (the bakery needs flour). The job's
+  // tile is the building's approach; completing it when the
+  // building is done. A claimed job whose startability vanished
+  // (the grain ran out mid-build) fails — the holder re-targets
+  // and the building waits for grain again. The wood gate lives
+  // in the claim (canStartMill/canStartBakery check the camp
+  // pile), not here: a job may exist while the pile is empty.
+  if (input.foodChain !== undefined) {
+    const fc1094 = input.foodChain;
+    const millBuildId = buildJobIdFor(MILL_SITE_ID);
+    const millBuildable = fc1094.mill.state !== 'done' && sites[0] !== undefined && sites[0].state === 'done' && input.granary !== undefined && input.granary.grain >= 1;
+    if (millBuildable) {
+      if (!next.jobs[millBuildId]) {
+        next.jobs[millBuildId] = {
+          id: millBuildId,
+          kind: 'build',
+          targetId: MILL_SITE_ID,
+          tile: { ...MILL_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[millBuildId]) {
+      if (fc1094.mill.state === 'done') {
+        next = completeJob(next, millBuildId);
+      } else if (next.jobs[millBuildId].state === 'claimed') {
+        next = failJob(next, millBuildId, 'not-startable');
+      } else {
+        delete next.jobs[millBuildId];
+      }
+      changed = true;
+    }
+    const bakeryBuildId = buildJobIdFor(BAKERY_SITE_ID);
+    const bakeryBuildable = fc1094.bakery.state !== 'done' && fc1094.mill.state === 'done';
+    if (bakeryBuildable) {
+      if (!next.jobs[bakeryBuildId]) {
+        next.jobs[bakeryBuildId] = {
+          id: bakeryBuildId,
+          kind: 'build',
+          targetId: BAKERY_SITE_ID,
+          tile: { ...BAKERY_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[bakeryBuildId]) {
+      if (fc1094.bakery.state === 'done') {
+        next = completeJob(next, bakeryBuildId);
+      } else if (next.jobs[bakeryBuildId].state === 'claimed') {
+        next = failJob(next, bakeryBuildId, 'not-startable');
+      } else {
+        delete next.jobs[bakeryBuildId];
       }
       changed = true;
     }
@@ -612,6 +708,78 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
       delete next.jobs[job.id];
     }
     changed = true;
+  }
+
+  // --- Mill + bake jobs (BUILD 1094): one job per food-chain
+  // building, while the building is done and there is input to
+  // process. The mill job is open while the mill is done and
+  // there is grain to grind (and room in the flour store); the
+  // bake job while the bakery is done and there is flour to bake
+  // (and the camp is short of food). The job's tile is the
+  // building's approach; the job completes when the founder's
+  // 3-tick shift ends (the shift produces per tick). A claimed
+  // job whose input ran out mid-shift is NOT failed — the founder
+  // finishes the shift (grinding/baking 0 on the dry ticks) and
+  // the job completes; only a claimed job whose BUILDING is gone
+  // fails ('target-gone'). An open job whose input ran out is
+  // removed silently (nobody was doing it).
+  const millId = millJobIdFor(MILL_SITE_ID);
+  const millDone = input.foodChain ? isMillUsable(input.foodChain) : false;
+  const millWorkable =
+    millDone &&
+    input.granary !== undefined &&
+    input.granary.grain >= GRIND_GRAIN_PER_BATCH &&
+    input.granary.flour < GRANARY_CAPACITY_FLOUR;
+  if (millWorkable && !next.jobs[millId]) {
+    next.jobs[millId] = {
+      id: millId,
+      kind: 'mill',
+      targetId: MILL_SITE_ID,
+      tile: { ...MILL_APPROACH },
+      state: 'open',
+      claimedBy: null,
+      createdAbs: nowAbs,
+    };
+    changed = true;
+  } else if (!millWorkable && next.jobs[millId]) {
+    const job = next.jobs[millId];
+    if (job.state === 'open') {
+      delete next.jobs[millId];
+      changed = true;
+    } else if (!millDone) {
+      next = failJob(next, millId, 'target-gone');
+      changed = true;
+    }
+    // claimed + mill done: the grain ran out mid-shift — leave
+    // it, the shift completes.
+  }
+  const bakeId = bakeJobIdFor(BAKERY_SITE_ID);
+  const bakeryDone = input.foodChain ? isBakeryUsable(input.foodChain) : false;
+  const bakeWorkable =
+    bakeryDone &&
+    input.granary !== undefined &&
+    input.granary.flour >= BAKE_FLOUR_PER_MEAL &&
+    input.granary.food < BAKE_FOOD_THRESHOLD;
+  if (bakeWorkable && !next.jobs[bakeId]) {
+    next.jobs[bakeId] = {
+      id: bakeId,
+      kind: 'bake',
+      targetId: BAKERY_SITE_ID,
+      tile: { ...BAKERY_APPROACH },
+      state: 'open',
+      claimedBy: null,
+      createdAbs: nowAbs,
+    };
+    changed = true;
+  } else if (!bakeWorkable && next.jobs[bakeId]) {
+    const job = next.jobs[bakeId];
+    if (job.state === 'open') {
+      delete next.jobs[bakeId];
+      changed = true;
+    } else if (!bakeryDone) {
+      next = failJob(next, bakeId, 'target-gone');
+      changed = true;
+    }
   }
 
   // --- Lumber jobs: one per tree in the designated lumber rect
@@ -1018,6 +1186,10 @@ export function jobSummary(board: JobBoard): {
   lumberClaimed: number;
   plantOpen: number;
   plantClaimed: number;
+  millOpen: number;
+  millClaimed: number;
+  bakeOpen: number;
+  bakeClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -1042,6 +1214,10 @@ export function jobSummary(board: JobBoard): {
   let lumberClaimed = 0;
   let plantOpen = 0;
   let plantClaimed = 0;
+  let millOpen = 0;
+  let millClaimed = 0;
+  let bakeOpen = 0;
+  let bakeClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
       open++;
@@ -1053,6 +1229,8 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'mine') mineOpen++;
       else if (job.kind === 'lumber') lumberOpen++;
       else if (job.kind === 'plant') plantOpen++;
+      else if (job.kind === 'mill') millOpen++;
+      else if (job.kind === 'bake') bakeOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
@@ -1064,8 +1242,10 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'mine') mineClaimed++;
       else if (job.kind === 'lumber') lumberClaimed++;
       else if (job.kind === 'plant') plantClaimed++;
+      else if (job.kind === 'mill') millClaimed++;
+      else if (job.kind === 'bake') bakeClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, plantOpen, plantClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, plantOpen, plantClaimed, millOpen, millClaimed, bakeOpen, bakeClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

@@ -7,7 +7,8 @@
 // session-only (it resets to 1x on reload).
 
 import { HUT_COST_WOOD } from './construction';
-import { FARM_FOOD_THRESHOLD, HEALTH_WEAK_BELOW, MILL_GRAIN_PER_MEAL } from './food';
+import { FARM_FOOD_THRESHOLD, HEALTH_WEAK_BELOW } from './food';
+import { BAKE_FLOUR_PER_MEAL, GRIND_GRAIN_PER_BATCH } from './foodChain';
 import { SETTLEMENT_ARRIVAL_FOOD_MIN } from './settlementGrowth';
 import type { LivingWorldSummary } from './livingWorld';
 
@@ -115,7 +116,10 @@ export type ControlCenterInput = {
   founders: ControlCenterFounderRow[];
   sites: ControlCenterSiteRow[];
   hutDone: boolean;
-  camp: { wood: number; food: number; grain: number; stone: number };
+  camp: { wood: number; food: number; grain: number; flour: number; stone: number };
+  /** BUILD 1094: the mill + the bakery states (optional — the old
+   *  callers pass none and the panel shows 'none'). */
+  foodChain?: { mill: { state: string; progress: number }; bakery: { state: string; progress: number } };
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
   storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number };
@@ -144,6 +148,9 @@ export type ControlCenterData = {
     campWood: number;
     campFood: number;
     campGrain: number;
+    /** BUILD 1094: the flour in the granary (0 when the mill
+     *  has never ground). */
+    campFlour: number;
     campStone: number;
     playerWood: number;
     playerStone: number;
@@ -170,6 +177,8 @@ export type ControlCenterData = {
   employment: ControlCenterJobs & { perFounder: { name: string; jobKind: string | null; jobTarget: string | null }[] };
   food: {
     grain: number;
+    /** BUILD 1094: the flour in the granary. */
+    flour: number;
     food: number;
     farmPlanted: number;
     farmGrowing: number;
@@ -177,6 +186,11 @@ export type ControlCenterData = {
     healthAvg: number;
     weakCount: number;
     millReady: boolean;
+    /** BUILD 1094: the mill / bakery states ('none' / 'building' /
+     *  'done') + the bakery's own readiness. */
+    millState: string;
+    bakeryState: string;
+    bakeryReady: boolean;
   };
   construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number };
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
@@ -200,7 +214,7 @@ export type ControlCenterData = {
 
 /** Shortages, from the live numbers — never invented. A shortage is a
  *  real condition the player (or the sim) can act on. */
-export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone'>): string[] {
+export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone' | 'foodChain'>): string[] {
   const out: string[] = [];
   if (!input.hutDone && input.camp.wood < HUT_COST_WOOD) {
     out.push(`Wood short: ${input.camp.wood}/${HUT_COST_WOOD} for the hut`);
@@ -208,8 +222,22 @@ export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDon
   if (input.camp.food < SETTLEMENT_ARRIVAL_FOOD_MIN) {
     out.push(`Food low: ${input.camp.food} meals (a new resident needs ${SETTLEMENT_ARRIVAL_FOOD_MIN})`);
   }
-  if (input.camp.food < FARM_FOOD_THRESHOLD && input.camp.grain < MILL_GRAIN_PER_MEAL) {
-    out.push(`No grain to mill: ${input.camp.grain} grain, food ${input.camp.food} < ${FARM_FOOD_THRESHOLD}`);
+  // BUILD 1094: the chain names its broken link — a mill that was
+  // never built, a mill with no grain, a bakery that was never
+  // built, a bakery with no flour. A mill with no worker and no
+  // grain produces nothing, and the panel says so.
+  if (input.camp.food < FARM_FOOD_THRESHOLD) {
+    const millState = input.foodChain?.mill.state ?? 'none';
+    const bakeryState = input.foodChain?.bakery.state ?? 'none';
+    if (millState !== 'done') {
+      out.push(`Mill not built: food ${input.camp.food} < ${FARM_FOOD_THRESHOLD}, mill ${millState}`);
+    } else if (input.camp.grain < GRIND_GRAIN_PER_BATCH) {
+      out.push(`No grain to mill: ${input.camp.grain} grain, food ${input.camp.food} < ${FARM_FOOD_THRESHOLD}`);
+    } else if (bakeryState !== 'done') {
+      out.push(`Bakery not built: ${input.camp.flour} flour waiting, bakery ${bakeryState}`);
+    } else if (input.camp.flour < BAKE_FLOUR_PER_MEAL) {
+      out.push(`No flour to bake: ${input.camp.flour} flour, food ${input.camp.food} < ${FARM_FOOD_THRESHOLD}`);
+    }
   }
   return out;
 }
@@ -246,6 +274,7 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       campWood: input.camp.wood,
       campFood: input.camp.food,
       campGrain: input.camp.grain,
+      campFlour: input.camp.flour,
       campStone: input.camp.stone,
       playerWood: input.player.wood,
       playerStone: input.player.stone,
@@ -271,13 +300,22 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
     },
     food: {
       grain: input.camp.grain,
+      flour: input.camp.flour,
       food: input.camp.food,
       farmPlanted: input.farm.planted,
       farmGrowing: input.farm.growing,
       farmReady: input.farm.ready,
       healthAvg,
       weakCount,
-      millReady: input.camp.grain >= MILL_GRAIN_PER_MEAL && input.camp.food < FARM_FOOD_THRESHOLD,
+      // BUILD 1094: the mill is ready when it is DONE and holds
+      // grain to grind (2 grain a batch) while the camp is short
+      // of food — a mill with no grain is not ready. The bakery
+      // is ready when it is DONE and holds flour to bake (2 flour
+      // a meal) while the camp is short of food.
+      millReady: (input.foodChain?.mill.state ?? 'none') === 'done' && input.camp.grain >= GRIND_GRAIN_PER_BATCH && input.camp.food < FARM_FOOD_THRESHOLD,
+      millState: input.foodChain?.mill.state ?? 'none',
+      bakeryState: input.foodChain?.bakery.state ?? 'none',
+      bakeryReady: (input.foodChain?.bakery.state ?? 'none') === 'done' && input.camp.flour >= BAKE_FLOUR_PER_MEAL && input.camp.food < FARM_FOOD_THRESHOLD,
     },
     construction: {
       sites: input.sites,

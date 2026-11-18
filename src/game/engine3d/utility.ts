@@ -127,6 +127,8 @@ import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, neares
 import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
 import { WELL_START_DAY } from './paths';
 import { MINE_IRON_TARGET, MINE_START_DAY } from './mines';
+import { BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH } from './foodChain';
+import { GRANARY_CAPACITY_FLOUR } from './granary';
 import type { ConstructionState } from './construction';
 
 /** The five scored activities — the 1057 four plus 'build'. */
@@ -238,6 +240,31 @@ export type UtilityWorldContext = {
    *  only fires when there is a tile to plant. Optional: absent
    *  means no plant data and the plant term is 0. */
   readyPlantJobs?: number;
+  /** BUILD 1094: open mill jobs on the board — the mill term only
+   *  fires when there is grain to grind. Optional: absent means
+   *  no mill data and the mill term is 0. */
+  readyMillJobs?: number;
+  /** BUILD 1094: open bake jobs on the board — the bake term only
+   *  fires when there is flour to bake. Optional: absent means
+   *  no bake data and the bake term is 0. */
+  readyBakeJobs?: number;
+  /** BUILD 1094: another founder is already milling — the mill
+   *  term is 0 for this founder, so only one founder ever mills
+   *  at a time. Optional: absent means the slot is free. */
+  millTaken?: boolean;
+  /** BUILD 1094: another founder is already baking — the bake
+   *  term is 0 for this founder, so only one founder ever bakes
+   *  at a time. Optional: absent means the slot is free. */
+  bakeTaken?: boolean;
+  /** BUILD 1094: grain in the granary store — the mill term only
+   *  fires while there is grain to grind. Optional: absent
+   *  means 0. */
+  campGrain?: number;
+  /** BUILD 1094: flour in the granary store — the mill term only
+   *  fires while there is room in the flour store, and the bake
+   *  term only while there is flour to bake. Optional: absent
+   *  means 0. */
+  campFlour?: number;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -264,7 +291,7 @@ export type ScoredDecision = {
    *  terms (null when no work is worth doing). BUILD 1089: the
    *  mine and the lumber join the argmax (see workTermsFor).
    *  BUILD 1090: planting joins it too. */
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -332,6 +359,49 @@ export const UTILITY_MINE_TERM_MAX = 0.45;
  *  (food 20 → 0). */
 export const UTILITY_PLANT_TERM_MAX = 0.45;
 
+/** BUILD 1094: the mill term — the most work is worth for milling
+ *  alone (an open mill job, grain to grind, room in the flour
+ *  store). A background task: above idle chopping (a full pile),
+ *  below the hut build (chopWork up to 0.65 when the hut needs
+ *  wood), below night sleep (0.81) and a hungry founder's eat —
+ *  milling never steals a harvest, a bake, or a lumber on a tie.
+ *  It fades when the grain runs out or the flour store fills.
+ *  WEEK FIX: the term RISES as the bakery runs out of flour AND
+ *  the camp runs out of food (UTILITY_MILL_URGENCY) — a flat 0.55
+ *  loses to the food term (0.65 at food 0) exactly when the chain
+ *  is the bottleneck, so the founders harvest grain they cannot
+ *  eat while the mill sits idle (day 6: flour 90, grain 102, mill
+ *  jobs +0). Capped at 0.75, still below night sleep (0.81). */
+export const UTILITY_MILL_TERM_MAX = 0.55;
+
+/** BUILD 1094 (week fix): the mill urgency — how much the mill
+ *  term rises when the bakery is short of flour and the camp is
+ *  short of food. 0.2: 0.55 + 0.2 = 0.75 at flour 0 + food 0,
+ *  back to 0.55 when the camp is fed (food 20+) or the flour
+ *  store is full. */
+export const UTILITY_MILL_URGENCY = 0.2;
+
+/** BUILD 1094: the bake term — the most work is worth for baking
+ *  alone (an open bake job, flour to bake, food below 15). The
+ *  direct path to food: above chopping and lumber when the pile
+ *  is satisfied, below night sleep (0.81) and a hungry founder's
+ *  eat. It fades when the flour runs out or the camp is fed.
+ *  WEEK FIX: the term RISES as the camp runs out of food
+ *  (UTILITY_BAKE_URGENCY) — a flat 0.6 loses to the food term
+ *  (0.65 at food 0) exactly when baking matters most, so the
+ *  founders harvest grain they cannot eat while the bakery sits
+ *  idle and the settlement starves (day 6: food 0, flour 90,
+ *  bake jobs +1). Capped at 0.8, still below night sleep (0.81).
+ *  Baking now BEATS a ready harvest when food is short: harvest
+ *  grows grain, bake grows meals, and meals are what the camp
+ *  eats. */
+export const UTILITY_BAKE_TERM_MAX = 0.6;
+
+/** BUILD 1094 (week fix): the bake urgency — how much the bake
+ *  term rises as the camp runs out of food. 0.2: 0.6 + 0.2 = 0.8
+ *  at food 0, back to 0.6 when the camp is fed (food 15). */
+export const UTILITY_BAKE_URGENCY = 0.2;
+
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
   return Math.max(0, Math.min(1, (100 - value) / 100));
@@ -364,7 +434,9 @@ function workTermsFor(ctx: UtilityContext): {
   lumberTerm: number;
   plantTerm: number;
   work: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null;
+  millTerm: number;
+  bakeTerm: number;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -507,16 +579,52 @@ function workTermsFor(ctx: UtilityContext): {
     readyPlant > 0 && foodStock < FARM_FOOD_THRESHOLD
       ? UTILITY_PLANT_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
       : 0;
-  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm);
-  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | null = null;
-  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm && waterTerm > plantTerm) workKind = 'water';
-  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm && stoneTerm > plantTerm) workKind = 'quarry';
-  else if (plantTerm > 0 && plantTerm > chopWork && plantTerm > foodTerm && plantTerm >= lumberTerm && plantTerm >= mineTerm) workKind = 'plant';
+  // BUILD 1094: the mill term — when a mill job is open (the mill
+  // is done and there is grain to grind and room in the flour
+  // store) and no other founder is milling, work is worth doing
+  // for the flour alone. Flat (0.55): milling is a background
+  // task — it beats idle chopping (a full pile) but never beats
+  // the hut build (chopWork up to 0.65 when the hut needs wood),
+  // night sleep (0.81), or a hungry founder's eat. It never
+  // steals a harvest, a bake, or a lumber on a tie (the argmax
+  // below puts it after those, before the mine — food before iron).
+  const readyMill = ctx.readyMillJobs ?? 0;
+  const millTaken = ctx.millTaken ?? false;
+  const campGrain = ctx.campGrain ?? 0;
+  const campFlour = ctx.campFlour ?? 0;
+  const millTerm =
+    readyMill > 0 && !millTaken && campGrain >= GRIND_GRAIN_PER_BATCH && campFlour < GRANARY_CAPACITY_FLOUR
+      ? UTILITY_MILL_TERM_MAX +
+        UTILITY_MILL_URGENCY *
+          Math.max(0, 1 - campFlour / GRANARY_CAPACITY_FLOUR) *
+          Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
+      : 0;
+  // BUILD 1094: the bake term — when a bake job is open (the
+  // bakery is done and there is flour to bake and the camp is
+  // short of food) and no other founder is baking, work is worth
+  // doing for the meals alone. Flat (0.6): baking is the direct
+  // path to food — it beats chopping and lumber when the pile is
+  // satisfied, but never beats a ready harvest (the food term
+  // wins first — harvest the tile, then bake), night sleep, or a
+  // hungry founder's eat.
+  const readyBake = ctx.readyBakeJobs ?? 0;
+  const bakeTaken = ctx.bakeTaken ?? false;
+  const bakeTerm =
+    readyBake > 0 && !bakeTaken && campFlour >= BAKE_FLOUR_PER_MEAL && foodStock < BAKE_FOOD_THRESHOLD
+      ? UTILITY_BAKE_TERM_MAX + UTILITY_BAKE_URGENCY * Math.max(0, 1 - foodStock / BAKE_FOOD_THRESHOLD)
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null = null;
+  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm && waterTerm > plantTerm && waterTerm > millTerm && waterTerm > bakeTerm) workKind = 'water';
+  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm && stoneTerm > plantTerm && stoneTerm > millTerm && stoneTerm > bakeTerm) workKind = 'quarry';
+  else if (plantTerm > 0 && plantTerm > chopWork && plantTerm > foodTerm && plantTerm >= lumberTerm && plantTerm >= mineTerm && plantTerm >= millTerm && plantTerm >= bakeTerm) workKind = 'plant';
+  else if (bakeTerm > 0 && bakeTerm >= chopWork && bakeTerm >= lumberTerm && bakeTerm >= mineTerm && bakeTerm >= millTerm && bakeTerm >= foodTerm) workKind = 'bake';
+  else if (millTerm > 0 && millTerm >= chopWork && millTerm >= lumberTerm && millTerm >= mineTerm && millTerm >= foodTerm) workKind = 'mill';
   else if (foodTerm > 0 && foodTerm >= chopWork && foodTerm >= lumberTerm && foodTerm >= mineTerm) workKind = 'harvest';
-  else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm) workKind = 'lumber';
+  else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm && lumberTerm >= millTerm) workKind = 'lumber';
   else if (mineTerm > 0 && mineTerm >= chopWork) workKind = 'mine';
   else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, work, workKind };
+  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {

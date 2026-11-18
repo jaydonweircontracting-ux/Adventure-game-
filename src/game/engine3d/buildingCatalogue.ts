@@ -64,7 +64,9 @@ export type CatalogueCostStatus =
  * hut = founder-built huts (1058); storehouse (1087); well (1088);
  * bridge / path = the 1088 path + bridge sites; mine / quarry /
  * lumber = the 1089 designated sites; granary = the 1090 registry
- * store; farm = the planted wheat (1067/1090).
+ * store; farm = the planted wheat (1067/1090); mill = the 1094
+ * food-chain mill (grinds grain -> flour); bakery = the 1094
+ * food-chain bakery (bakes flour -> meals).
  */
 export type CatalogueSystem =
   | 'hut'
@@ -76,11 +78,14 @@ export type CatalogueSystem =
   | 'quarry'
   | 'lumber'
   | 'granary'
-  | 'farm';
+  | 'farm'
+  | 'mill'
+  | 'bakery';
 
 export const CATALOGUE_SYSTEMS: CatalogueSystem[] = [
   'hut', 'storehouse', 'well', 'bridge', 'path',
   'mine', 'quarry', 'lumber', 'granary', 'farm',
+  'mill', 'bakery',
 ];
 
 /**
@@ -88,7 +93,7 @@ export const CATALOGUE_SYSTEMS: CatalogueSystem[] = [
  * plus the registry's carried currencies (gold is not a civilization
  * Resource, but the bank genuinely needs gold to open).
  */
-export type CatalogueResource = Resource | 'gold' | 'copper' | 'silver';
+export type CatalogueResource = Resource | 'gold' | 'copper' | 'silver' | 'flour';
 
 /** What an entry needs before it can exist. */
 export type CataloguePrerequisite =
@@ -479,13 +484,13 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'windmills', name: 'Windmills', category: 'food',
-    blurb: 'A stone tower with sails that mills grain into meals: the settlement\'s flour supply. Placed freely from the Build menu today (no cost enforced yet); the materials below are the design cost for the construction build.',
-    materials: [],
-    costStatus: 'none', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 1,
-    produces: { resource: 'food', perHour: 2 }, maintenance: { resource: 'wood', qtyPerDay: 1 },
+    blurb: 'A stone tower with sails that grinds grain into flour: the mill is the first link of the food chain (BUILD 1094 — grain -> flour -> bakery -> meals). Founder-built through the staged construction path (6 wood, 6 steps, foundation -> frame -> finished); a mill with no worker or no grain produces nothing. Also placeable freely from the Build menu (a player-placed windmill does not mill — milling is tied to the founder-built mill site).',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 1,
+    produces: { resource: 'flour', perHour: 2 }, maintenance: { resource: 'wood', qtyPerDay: 1 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'farms' }],
-    system: null, paletteKind: 'house-windmill',
+    system: 'mill', paletteKind: 'house-windmill',
   },
   {
     id: 'watermills', name: 'Watermills', category: 'food',
@@ -619,13 +624,13 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'bakeries', name: 'Bakeries', category: 'food',
-    blurb: 'An oven that never cools: grain from the farms and flour from the mill become bread for the whole settlement.',
-    materials: [{ resource: 'wood', qty: 10 }, { resource: 'stone', qty: 8 }, { resource: 'tools', qty: 1 }],
-    costStatus: 'planned', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
+    blurb: 'An oven that never cools: flour from the mill becomes bread for the whole settlement (BUILD 1094 — the bakery is the only way grain becomes meals; the old direct grain -> meals path is removed). Founder-built through the staged construction path (6 wood, 6 steps, foundation -> frame -> finished) once the mill is done; a bakery with no worker or no flour produces nothing. Wood-only cost — no stone or tools, so day-1/2 construction is not blocked.',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
     produces: { resource: 'food', perHour: 3 }, maintenance: { resource: 'wood', qtyPerDay: 1 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'farms' }, { kind: 'building', id: 'windmills' }],
-    system: null, paletteKind: null,
+    system: 'bakery', paletteKind: null,
   },
   {
     id: 'breweries', name: 'Breweries', category: 'food',
