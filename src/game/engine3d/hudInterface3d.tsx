@@ -296,7 +296,7 @@ export function WorldMap3D({ world, playerX, playerY, day, onClose, onTapTravel 
   );
 }
 
-export interface HudCampUi { wood: number; stone: number; food: number; grain: number; flour: number; iron: number; ingots: number; tools: number; timber: number; furniture: number; hut: string; storehouse: string; forest: string; }
+export interface HudCampUi { wood: number; stone: number; food: number; grain: number; flour: number; iron: number; ingots: number; tools: number; timber: number; furniture: number; hut: string; storehouse: string; forest: string; beds: string; }
 
 export interface HudStripProps {
   message: string;
@@ -340,7 +340,7 @@ export function HudStrip(props: HudStripProps) {
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}
-      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Stone {campUi.stone} · Granary {campUi.food} meals · {campUi.grain} grain · {campUi.flour} flour · Iron {campUi.iron} · Ingots {campUi.ingots} · Tools {campUi.tools} · Timber {campUi.timber} · Furniture {campUi.furniture} · Hut {campUi.hut} · Storehouse {campUi.storehouse} · Forest {campUi.forest}%</span></div>
+      <div style={{marginTop:2}}><span data-testid="camp-stockpile">🏕️ Camp · Wood {campUi.wood} · Stone {campUi.stone} · Granary {campUi.food} meals · {campUi.grain} grain · {campUi.flour} flour · Iron {campUi.iron} · Ingots {campUi.ingots} · Tools {campUi.tools} · Timber {campUi.timber} · Furniture {campUi.furniture} · Hut {campUi.hut} · Storehouse {campUi.storehouse} · Forest {campUi.forest}% · Beds {campUi.beds}</span></div>
     </div>
   );
 }

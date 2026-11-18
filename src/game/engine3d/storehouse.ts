@@ -865,7 +865,9 @@ export function distToActiveBuildSite(
   storehouse: StorehouseState | null | undefined,
   day: number,
 ): number {
-  const site = nearestUnfinishedSite(construction, pos);
+  // BUILD 1096: pass the day — nearestUnfinishedSite skips a
+  // gated worker-housing site (see construction.ts).
+  const site = nearestUnfinishedSite(construction, pos, day);
   if (site) return Math.abs(site.approach.x - pos.x) + Math.abs(site.approach.y - pos.y);
   if (storehouse && storehouse.state !== 'done' && day >= STOREHOUSE_START_DAY) {
     return Math.abs(STOREHOUSE_APPROACH.x - pos.x) + Math.abs(STOREHOUSE_APPROACH.y - pos.y);

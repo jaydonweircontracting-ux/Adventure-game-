@@ -10,6 +10,7 @@ import { HUT_COST_WOOD } from './construction';
 import { FARM_FOOD_THRESHOLD, HEALTH_WEAK_BELOW } from './food';
 import { BAKE_FLOUR_PER_MEAL, GRIND_GRAIN_PER_BATCH } from './foodChain';
 import { SMELT_ORE_PER_BATCH, SMELT_COAL_PER_BATCH, SMITH_INGOT_PER_TOOL, SAW_WOOD_PER_BATCH, CARPENTER_TIMBER_PER_BATCH } from './metalChain';
+import type { MarketStallLine } from './housing';
 import { SETTLEMENT_ARRIVAL_FOOD_MIN } from './settlementGrowth';
 import type { LivingWorldSummary } from './livingWorld';
 
@@ -124,6 +125,10 @@ export type ControlCenterInput = {
   /** BUILD 1095: the chain's five building states (optional — the
    *  old callers pass none and the panel shows 'none'). */
   metalChain?: { smelter: { state: string; progress: number }; blacksmith: { state: string; progress: number }; sawmill: { state: string; progress: number }; carpenter: { state: string; progress: number }; workshop: { state: string; progress: number }; workshopStall: string | null };
+  // BUILD 1096 (3.5): the housing — the capacity (beds free/total),
+  // the inn (state + progress + the food in its store), and the
+  // market-stall listing (the settlement store, read-only).
+  housing?: { capacity: number; bedsFree: number; inn: { state: string; progress: number; food: number }; stall: MarketStallLine[] };
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
   storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number; coal: number; ingots: number; tools: number; timber: number; furniture: number };
@@ -223,6 +228,10 @@ export type ControlCenterData = {
     sawmillReady: boolean;
     carpenterReady: boolean;
   };
+  /** BUILD 1096: the housing — the capacity (beds free/total),
+   *  the inn (state + the food in its store + readiness), and the
+   *  market-stall listing (the settlement store, read-only). */
+  housing: { capacity: number; bedsFree: number; innState: string; innFood: number; innReady: boolean; stall: MarketStallLine[] };
   construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number };
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
   environment: {
@@ -245,7 +254,7 @@ export type ControlCenterData = {
 
 /** Shortages, from the live numbers — never invented. A shortage is a
  *  real condition the player (or the sim) can act on. */
-export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone' | 'foodChain' | 'metalChain' | 'storehouse'>): string[] {
+export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone' | 'foodChain' | 'metalChain' | 'storehouse' | 'housing'>): string[] {
   const out: string[] = [];
   if (!input.hutDone && input.camp.wood < HUT_COST_WOOD) {
     out.push(`Wood short: ${input.camp.wood}/${HUT_COST_WOOD} for the hut`);
@@ -280,6 +289,12 @@ export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDon
   const bakeryDone = (input.foodChain?.bakery.state ?? 'none') === 'done';
   if (workshopState !== 'done' && bakeryDone && input.metalChain?.workshopStall) {
     out.push(input.metalChain.workshopStall);
+  }
+  // BUILD 1096: no free bed — a new resident cannot arrive even
+  // when food and day allow it, and the panel says so (the housing
+  // check is the arrival gate, settlementGrowth.canArrive).
+  if (input.housing && input.housing.bedsFree === 0 && input.housing.capacity > 0) {
+    out.push(`No free bed: ${input.housing.capacity}/${input.housing.capacity} beds full — a new resident cannot arrive`);
   }
   return out;
 }
@@ -383,6 +398,17 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       blacksmithReady: (input.metalChain?.blacksmith.state ?? 'none') === 'done' && (input.storehouse?.ingots ?? 0) >= SMITH_INGOT_PER_TOOL,
       sawmillReady: (input.metalChain?.sawmill.state ?? 'none') === 'done' && (input.storehouse?.wood ?? 0) >= SAW_WOOD_PER_BATCH,
       carpenterReady: (input.metalChain?.carpenter.state ?? 'none') === 'done' && (input.storehouse?.timber ?? 0) >= CARPENTER_TIMBER_PER_BATCH,
+    },
+    housing: {
+      capacity: input.housing?.capacity ?? 0,
+      bedsFree: input.housing?.bedsFree ?? 0,
+      innState: input.housing?.inn.state ?? 'none',
+      innFood: input.housing?.inn.food ?? 0,
+      // BUILD 1096: the inn is ready when it is DONE and holds food
+      // for a traveler — a finished inn with an empty store is not
+      // ready, and the panel says so.
+      innReady: (input.housing?.inn.state ?? 'none') === 'done' && (input.housing?.inn.food ?? 0) > 0,
+      stall: input.housing?.stall ?? [],
     },
     construction: {
       sites: input.sites,

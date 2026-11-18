@@ -123,7 +123,7 @@ import { isFounderNight } from './founders';
 import type { FounderNeeds, FounderActivity } from './founders';
 import { FARM_FOOD_THRESHOLD, healthWorkFactor } from './food';
 import { QUARRY_STONE_TARGET } from './quarry';
-import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
+import { HUT_APPROACH, HUT_COST_WOOD, HUT_SITES, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
 import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
 import { WELL_START_DAY } from './paths';
 import { MINE_COAL_TARGET, MINE_IRON_TARGET, MINE_START_DAY } from './mines';
@@ -519,6 +519,26 @@ export function utilityNeed(value: number): number {
  * the decision both read it, so they never disagree about which
  * work wins.
  */
+/**
+ * BUILD 1096 (0x1F): is there a hut site the founders can build
+ * NOW? The mirror `construction.state` is the first non-done site,
+ * and with a 3rd (worker-housing) site it stays pending while site
+ * 2 is gated (day < HOUSING_START_DAY) — so the build/chop terms
+ * fire for a hut with no job and the founders chop instead of
+ * harvesting (the 24h grain fell 74 -> 48). A real multi-site
+ * state uses nearestUnfinishedSite (which skips a gated site 2);
+ * a mirror-only literal (the M1058/M1059 scorer tests, no
+ * `sites`) falls back to the mirror state, so the old scores are
+ * unchanged. Pure.
+ */
+function hutSitePending(construction: ConstructionState, day?: number): boolean {
+  const sites = (construction as { sites?: unknown }).sites;
+  if (Array.isArray(sites) && sites.length === HUT_SITES.length) {
+    return nearestUnfinishedSite(construction, { x: 0, y: 0 }, day) !== null;
+  }
+  return construction.state !== 'done';
+}
+
 function workTermsFor(ctx: UtilityContext): {
   chopWork: number;
   foodTerm: number;
@@ -537,11 +557,15 @@ function workTermsFor(ctx: UtilityContext): {
   workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
+  // BUILD 1096: "a hut is pending" means a BUILDABLE hut site
+  // (see hutSitePending above) — not the mirror state, which
+  // stays pending while the gated worker-housing site is unfinished.
+  const hutPending = hutSitePending(construction, ctx.day);
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
   const distPenalty = (d: number): number => UTILITY_DIST_PENALTY * Math.min(8, Math.max(0, d));
   let chopWork = 0;
   if (nearestTreeDist !== null) {
-    if (construction.state !== 'done') {
+    if (hutPending) {
       const needWood = Math.max(0, HUT_COST_WOOD - construction.spentWood - stockpileWood);
       chopWork = clamp01(0.25 + 0.4 * Math.min(1, needWood / HUT_COST_WOOD) - distPenalty(nearestTreeDist));
     } else {
@@ -589,7 +613,7 @@ function workTermsFor(ctx: UtilityContext): {
   const readyLumber = ctx.readyLumberJobs ?? 0;
   let lumberTerm = 0;
   if (readyLumber > 0) {
-    if (construction.state !== 'done') {
+    if (hutPending) {
       const needWood = Math.max(0, HUT_COST_WOOD - construction.spentWood - stockpileWood);
       lumberTerm = clamp01(0.25 + 0.4 * Math.min(1, needWood / HUT_COST_WOOD));
     } else {
@@ -799,6 +823,11 @@ function workTermsFor(ctx: UtilityContext): {
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
   const { needs, minutes, foodStock, stockpileWood, construction, nearestTreeDist, distToSite, builderTaken, currentJob } = ctx;
+  // BUILD 1096: "a hut is pending" means a BUILDABLE hut site
+  // (see hutSitePending above) — the mirror state stays pending
+  // while the gated worker-housing site is unfinished, which made
+  // the build term fire for a hut with no job.
+  const hutPending = hutSitePending(construction, ctx.day);
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
   const distPenalty = (d: number): number => UTILITY_DIST_PENALTY * Math.min(8, Math.max(0, d));
 
@@ -837,10 +866,10 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
   // project: the builder releases the job, the score stays 0,
   // nobody re-claims it, and the job sits open forever (diag F).
   if (!builderTaken) {
-    if (construction.state !== 'done' && (stockpileWood >= HUT_WOOD_PER_STEP || (ctx.storehouseWood ?? 0) >= HUT_WOOD_PER_STEP || hasReadyHutSite(construction))) {
+    if (hutPending && (stockpileWood >= HUT_WOOD_PER_STEP || (ctx.storehouseWood ?? 0) >= HUT_WOOD_PER_STEP || hasReadyHutSite(construction))) {
       build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
     } else if (
-      construction.state === 'done' &&
+      !hutPending &&
       ctx.storehouse !== undefined &&
       ctx.storehouse.state !== 'done' &&
       (storehouseReadyForPlacement(ctx.storehouse) ||
@@ -850,7 +879,7 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
     ) {
       build = clamp01(UTILITY_BUILD_BASE - distPenalty(distToSite));
     } else if (
-      construction.state === 'done' &&
+      !hutPending &&
       ctx.storehouse !== undefined &&
       ctx.storehouse.state === 'done' &&
       ctx.bridge !== undefined &&
@@ -917,9 +946,11 @@ export function founderTileDist(a: { x: number; y: number }, b: { x: number; y: 
  *  approach — the old behaviour. When every site is done there is
  *  nothing to build, so the distance is far (the build score is 0
  *  then anyway, gated on the construction being pending). */
-export function founderDistToSite(pos: { x: number; y: number }, construction?: ConstructionState): number {
+export function founderDistToSite(pos: { x: number; y: number }, construction?: ConstructionState, day?: number): number {
   if (construction) {
-    const site = nearestUnfinishedSite(construction, pos);
+    // BUILD 1096: pass the day — nearestUnfinishedSite skips a
+    // gated worker-housing site (see construction.ts).
+    const site = nearestUnfinishedSite(construction, pos, day);
     if (site) return founderTileDist(pos, site.approach);
     return 999;
   }

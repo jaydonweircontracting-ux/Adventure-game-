@@ -136,6 +136,26 @@ export const HUT_SITES: HutSite[] = [
       { x: 125, y: 115 },
     ],
   },
+  // BUILD 1096 (0x1F): worker housing — the third hut site (the
+  // catalogue's worker-housing variant, 4 beds: the north row minus
+  // the door lane x=120, plus the west middle tile). Centre (120,117)
+  // surveyed clear: 5 steps from camp, approach (120,119) clear of
+  // every building rect + approach tile (see verify1096). Start gate:
+  // sites 0+1 done + day >= HOUSING_START_DAY (jobs.ts) — the 24h
+  // run is day 1 only, so M1069 cannot move.
+  {
+    id: 'hut-site-2',
+    centre: { x: 120, y: 117 },
+    rect: { x0: 118, y0: 116, x1: 121, y1: 118 },
+    door: { x: 120, y: 118 },
+    approach: { x: 120, y: 119 },
+    sleepTiles: [
+      { x: 118, y: 116 },
+      { x: 119, y: 116 },
+      { x: 121, y: 116 },
+      { x: 118, y: 117 },
+    ],
+  },
 ];
 /** A hut site by its id, or undefined when unknown. */
 export function hutSiteById(id: string): HutSite | undefined {
@@ -155,6 +175,11 @@ export const HUT_KIND = 'house-cottage' as const;
 
 /** Wood the hut costs in total. */
 export const HUT_COST_WOOD = 12;
+/** BUILD 1096 (0x1F): the earliest day hut-site-2 (worker housing)
+ *  may start — the same day the storehouse opens (STOREHOUSE_START_DAY),
+ *  so the week builds it from day 3 while the 24h run (day 1) never sees it. */
+export const HOUSING_START_DAY = 3;
+
 /** Work steps to finish the hut (each spends HUT_WOOD_PER_STEP). */
 export const HUT_WORK_STEPS = 6;
 /** Wood spent per completed work step. */
@@ -386,9 +411,18 @@ export function sitesOf(c: ConstructionState): SiteState[] {
   if (Array.isArray((c as { sites?: unknown }).sites) && (c.sites as SiteState[]).length === HUT_SITES.length) {
     return c.sites;
   }
-  // Old shape (no `sites`, or a short list): site 0 is the
-  // top-level fields, the rest are fresh — so an old save that says
-  // "hut done" means hut 1 is done and hut 2 is still to build.
+  // BUILD 1096 (0x1F): a SHORT list is an old save (2 sites) — PAD
+  // it, preserving the existing entries. The mirror fallback below
+  // would LOSE site-1 progress when both huts are done (the mirror
+  // is the last site, so site 0 would be "done" and site 1 fresh).
+  if (Array.isArray((c as { sites?: unknown }).sites) && (c.sites as SiteState[]).length > 0) {
+    const out: SiteState[] = (c.sites as SiteState[]).map((s) => ({ ...s }));
+    while (out.length < HUT_SITES.length) out.push({ state: 'none', progress: 0, spentWood: 0 });
+    return out;
+  }
+  // Old shape (no `sites`): site 0 is the top-level fields, the
+  // rest are fresh — so an old save that says "hut done" means hut
+  // 1 is done and hut 2 is still to build.
   const out: SiteState[] = [{ state: c.state, progress: c.progress, spentWood: c.spentWood }];
   while (out.length < HUT_SITES.length) out.push({ state: 'none', progress: 0, spentWood: 0 });
   return out;
@@ -426,14 +460,36 @@ export function hasUnfinishedSite(c: ConstructionState): boolean {
   return activeSiteIndex(c) !== null;
 }
 
-/** The nearest unfinished site to a position (Manhattan to its
- *  approach tile), or null when every site is done. Pure. */
-export function nearestUnfinishedSite(c: ConstructionState, pos: { x: number; y: number }): HutSite | null {
+/**
+ * The nearest unfinished site to a position (Manhattan to its
+ * approach tile), or null when every site is done. Pure.
+ * BUILD 1096 (0x1F): hut-site-2 (worker housing) is SKIPPED while
+ * its build gate is closed — it is the nearest unfinished site to
+ * camp (approach (120,119), 5 steps) and shadows hut 0 (6 steps),
+ * so a founder asking for the nearest site to build gets a site
+ * with no build job, the claim returns null, and hut 0 never gets
+ * claimed (the 24h run starved: hut 0 a step late at hour 12,
+ * capacity 3, no arrival, harvest 14 vs 37). The gate is the same
+ * as the job gate in jobs.ts: sites 0+1 done + day >=
+ * HOUSING_START_DAY. Without a day the day-half of the gate cannot
+ * be evaluated, so only the sites-half applies (a gated site 2 is
+ * still skipped while 0+1 are unfinished — the shadowing case).
+ */
+export function nearestUnfinishedSite(c: ConstructionState, pos: { x: number; y: number }, day?: number): HutSite | null {
   const sites = sitesOf(c);
+  // BUILD 1096: worker housing is buildable only once sites 0+1
+  // are done and (when the day is known) day >= HOUSING_START_DAY.
+  // Without a day the day-half cannot be evaluated, so it is
+  // assumed open once 0+1 are done (the shadowing case — 0+1
+  // unfinished — is still skipped).
+  const site2Open = sites[0] !== undefined && sites[0].state === 'done' && sites[1] !== undefined && sites[1].state === 'done' && (day === undefined || day >= HOUSING_START_DAY);
   let best: HutSite | null = null;
   let bestD = Infinity;
   for (let i = 0; i < sites.length; i++) {
     if (sites[i].state === 'done') continue;
+    // BUILD 1096: a gated worker-housing site is not a buildable
+    // site — skip it (see above).
+    if (i === 2 && !site2Open) continue;
     const d = Math.abs(HUT_SITES[i].approach.x - pos.x) + Math.abs(HUT_SITES[i].approach.y - pos.y);
     if (d < bestD) {
       bestD = d;
@@ -443,9 +499,29 @@ export function nearestUnfinishedSite(c: ConstructionState, pos: { x: number; y:
   return best;
 }
 
-/** Housing capacity: beds in completed huts (3 per hut). Pure. */
+/** Housing capacity: beds in completed huts — the SUM of each done
+ *  site's sleep tiles (BUILD 1096: hut-site-2 has 4 beds, not 3, so
+ *  the per-site count replaces the 3-per-hut multiply). A half-built
+ *  house adds nothing. Pure. */
 export function housingCapacity(c: ConstructionState): number {
-  return sitesOf(c).filter((s) => s.state === 'done').length * HUT_SLEEP_TILES.length;
+  const sites = sitesOf(c);
+  let n = 0;
+  for (let i = 0; i < sites.length; i++) {
+    if (sites[i].state === 'done') n += HUT_SITES[i].sleepTiles.length;
+  }
+  return n;
+}
+
+/**
+ * The FOUNDING huts are done (sites 0+1) — the settlement's core
+ * infrastructure gate (BUILD 1096: worker housing is a 3rd site,
+ * but the storehouse / bridge / quarry open on the founding huts,
+ * the 1095 schedule — they must not wait for worker housing).
+ * Pure.
+ */
+export function foundingHutsDone(c: ConstructionState): boolean {
+  const sites = sitesOf(c);
+  return sites[0] !== undefined && sites[0].state === 'done' && sites[1] !== undefined && sites[1].state === 'done';
 }
 
 /** Fresh construction: nothing started, on any site. */

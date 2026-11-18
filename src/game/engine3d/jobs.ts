@@ -103,7 +103,7 @@
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
 import { STOREHOUSE_APPROACH, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type StorehouseState } from './storehouse';
 import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
-import { HUT_SITES, sitesOf } from './construction';
+import { HOUSING_START_DAY, HUT_SITES, foundingHutsDone, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
 import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm';
 import { GRANARY_CAPACITY_FLOUR, plantableFarmTiles } from './granary';
@@ -112,6 +112,7 @@ import { WELL_START_DAY, type BridgeSite } from './paths';
 import { lumberTreesInRect, openMineSite, openMineSites, type MineState } from './mines';
 import { BAKERY_APPROACH, BAKERY_SITE_ID, BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH, MILL_APPROACH, MILL_SITE_ID, isBakeryUsable, isMillUsable, type FoodChainState } from './foodChain';
 import { BLACKSMITH_APPROACH, BLACKSMITH_SITE_ID, CARPENTER_APPROACH, CARPENTER_SITE_ID, CARPENTER_TIMBER_PER_BATCH, SAWMILL_APPROACH, SAWMILL_SITE_ID, SAW_WOOD_PER_BATCH, SMELT_COAL_PER_BATCH, SMELT_ORE_PER_BATCH, SMELTER_APPROACH, SMELTER_SITE_ID, SMITH_INGOT_PER_TOOL, WORKSHOP_APPROACH, WORKSHOP_SITE_ID, isBlacksmithUsable, isCarpenterUsable, isSawmillUsable, isSmelterUsable, type MetalChainState } from './metalChain';
+import { INN_APPROACH, INN_SITE_ID, INN_START_DAY, isWorkerHousingDone, type HousingState } from './housing';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
@@ -332,6 +333,12 @@ export type JobDiscoveryInput = {
    *  callers) and no chain jobs, so old boards are unchanged. */
   metalChain?: MetalChainState;
   storehouseMaterials?: { iron: number; coal: number; ingots: number; tools: number; wood: number; timber: number; furniture: number };
+  /** BUILD 1096 (0x1F): the housing state — an inn build job
+   *  exists only once worker housing is done and the settlement
+   *  is old enough (INN_START_DAY). Absent means no housing data
+   *  (the old callers) and no inn job, so old boards are
+   *  unchanged. */
+  housing?: HousingState;
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -456,7 +463,14 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   for (let i = 0; i < sites.length; i++) {
     const site = HUT_SITES[i];
     const id = buildJobIdFor(site.id);
-    if (sites[i].state !== 'done') {
+    // BUILD 1096 (0x1F): hut-site-2 (worker housing) opens only
+    // once sites 0+1 are done and the settlement is old enough
+    // (day >= HOUSING_START_DAY) — the 24h run is day 1 only, so
+    // M1069 cannot move. Before the gate, no job exists (nobody
+    // can claim a build that has not opened — claimJob on a
+    // missing job returns null, so the claim fails gracefully).
+    const gated = i === 2 && !(sites[0] !== undefined && sites[0].state === 'done' && sites[1] !== undefined && sites[1].state === 'done' && input.day !== undefined && input.day >= HOUSING_START_DAY);
+    if (sites[i].state !== 'done' && !gated) {
       if (!next.jobs[id]) {
         next.jobs[id] = {
           id,
@@ -470,7 +484,13 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
         changed = true;
       }
     } else if (next.jobs[id]) {
-      next = completeJob(next, id);
+      if (sites[i].state === 'done') {
+        next = completeJob(next, id);
+      } else if (next.jobs[id].state === 'claimed') {
+        next = failJob(next, id, 'not-startable');
+      } else {
+        delete next.jobs[id];
+      }
       changed = true;
     }
   }
@@ -485,7 +505,11 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   if (input.storehouse !== undefined && input.day !== undefined) {
     const sh = input.storehouse;
     const shId = buildJobIdFor(STOREHOUSE_SITE_ID);
-    const shStartable = sites.every((s) => s.state === 'done') && input.day >= STOREHOUSE_START_DAY;
+    // BUILD 1096: the storehouse opens on the FOUNDING huts
+    // (0+1) — it must not wait for worker housing (a 3rd site),
+    // or the storehouse + the sawmill + the chain all shift a day
+    // later in the week (the 1095 schedule).
+    const shStartable = foundingHutsDone(construction) && input.day >= STOREHOUSE_START_DAY;
     if (sh.state !== 'done' && shStartable) {
       if (!next.jobs[shId]) {
         next.jobs[shId] = {
@@ -621,6 +645,45 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     syncChainBuild(SAWMILL_SITE_ID, SAWMILL_APPROACH, mc.sawmill.state !== 'done' && sites[0] !== undefined && sites[0].state === 'done' && input.storehouse !== undefined && input.storehouse.state === 'done', mc.sawmill.state === 'done');
     syncChainBuild(CARPENTER_SITE_ID, CARPENTER_APPROACH, mc.carpenter.state !== 'done' && mc.sawmill.state === 'done', mc.carpenter.state === 'done');
     syncChainBuild(WORKSHOP_SITE_ID, WORKSHOP_APPROACH, mc.workshop.state !== 'done' && input.foodChain !== undefined && input.foodChain.bakery.state === 'done', mc.workshop.state === 'done');
+  }
+
+  // --- Inn build job (BUILD 1096): one job while the inn is
+  // unfinished and startable — once worker housing is done and the
+  // settlement is old enough (day >= INN_START_DAY, the
+  // housing-first rule — hospitality comes after housing). The
+  // job's tile is the inn approach; completing it when the inn is
+  // done. A claimed job whose startability vanished (worker
+  // housing removed mid-build) fails — the holder re-targets and
+  // the inn waits for housing again. The wood gate lives in the
+  // claim (canStartInn/canBuildInn check the pile + storehouse),
+  // not here: a job may exist while the pile is empty.
+  if (input.housing !== undefined && input.day !== undefined) {
+    const hs1096 = input.housing;
+    const innBuildId = buildJobIdFor(INN_SITE_ID);
+    const innBuildable = hs1096.inn.state !== 'done' && isWorkerHousingDone(construction) && input.day >= INN_START_DAY;
+    if (innBuildable) {
+      if (!next.jobs[innBuildId]) {
+        next.jobs[innBuildId] = {
+          id: innBuildId,
+          kind: 'build',
+          targetId: INN_SITE_ID,
+          tile: { ...INN_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[innBuildId]) {
+      if (hs1096.inn.state === 'done') {
+        next = completeJob(next, innBuildId);
+      } else if (next.jobs[innBuildId].state === 'claimed') {
+        next = failJob(next, innBuildId, 'not-startable');
+      } else {
+        delete next.jobs[innBuildId];
+      }
+      changed = true;
+    }
   }
 
   // --- Bridge build jobs: one per unfinished bridge site (BUILD

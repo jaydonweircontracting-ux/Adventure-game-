@@ -90,13 +90,16 @@ export type CatalogueSystem =
   | 'blacksmith'
   | 'sawmill'
   | 'carpenter'
-  | 'workshop';
+  | 'workshop'
+  | 'housing'
+  | 'inn';
 
 export const CATALOGUE_SYSTEMS: CatalogueSystem[] = [
   'hut', 'storehouse', 'well', 'bridge', 'path',
   'mine', 'quarry', 'lumber', 'granary', 'farm',
   'mill', 'bakery',
   'smelter', 'blacksmith', 'sawmill', 'carpenter', 'workshop',
+  'housing', 'inn',
 ];
 
 /**
@@ -213,23 +216,23 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'worker-housing', name: 'Worker housing', category: 'settlement',
-    blurb: 'Plain shared housing beside the work sites: four beds, no garden, a short walk to the quarry, the mill, or the lumber rect.',
-    materials: [{ resource: 'wood', qty: 10 }, { resource: 'stone', qty: 4 }],
-    costStatus: 'planned', footprint: { w: 4, h: 3 }, capacity: 4, capacityUnit: 'residents', workers: 0,
+    blurb: 'Plain shared housing beside the work sites: four beds, no garden, a short walk to the quarry, the mill, or the lumber rect. Founder-built as the third hut site (BUILD 1096 — 12 wood, 6 steps, foundation -> frame -> finished) once the first two huts are done and the settlement is old enough (day 3); its 4 beds join the housing capacity when finished, so a fourth founder can arrive.',
+    materials: [{ resource: 'wood', qty: 12 }],
+    costStatus: 'enforced', footprint: { w: 4, h: 3 }, capacity: 4, capacityUnit: 'residents', workers: 0,
     produces: null, maintenance: null,
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'houses-cottages' }],
-    system: null, paletteKind: null,
+    system: 'housing', paletteKind: null,
   },
   {
     id: 'inns-taverns', name: 'Inns and taverns', category: 'settlement',
-    blurb: 'A warm room, a hot meal, and a bed for travellers: the settlement\'s first hospitality. Travellers who sleep here spread word of the place.',
-    materials: [{ resource: 'wood', qty: 18 }, { resource: 'stone', qty: 10 }],
-    costStatus: 'planned', footprint: { w: 5, h: 4 }, capacity: 8, capacityUnit: 'patrons', workers: 2,
+    blurb: 'A warm room, a hot meal, and a bed for travellers: the settlement\'s first hospitality. Founder-built through the staged construction path (BUILD 1096 — 6 wood, 6 steps, foundation -> frame -> finished) once worker housing is done and the settlement is old enough (day 5); an arriving traveller rests here (energy to full, one meal from the inn store) before walking on to camp. Also placeable freely from the Build menu (a player-placed inn does not rest travellers — rest is tied to the founder-built inn site). Footprint 6x5 — the measured house-inn variant (the catalogue\'s 5x4 was wrong vs the variant).',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 6, h: 5 }, capacity: 8, capacityUnit: 'patrons', workers: 2,
     produces: null, maintenance: { resource: 'food', qtyPerDay: 2 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'houses-cottages' }, { kind: 'building', id: 'farms' }, { kind: 'settlement', minPopulation: 10 }],
-    system: null, paletteKind: 'house-inn',
+    system: 'inn', paletteKind: 'house-inn',
   },
   {
     id: 'guesthouses', name: 'Guesthouses', category: 'settlement',
@@ -666,7 +669,7 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'market-stalls', name: 'Market stalls', category: 'trade',
-    blurb: 'A trader\'s stall on the square: goods on a counter, coins in a box. Placed freely from the Build menu today (no cost enforced yet).',
+    blurb: 'A trader\'s stall on the square: goods on a counter, coins in a box. The stall shows what the settlement has to trade (BUILD 1096 — a read-only listing from the registry: the storehouse + granary stores); trade itself is Phase 5, so nothing is bought or sold here yet. Placed freely from the Build menu today (no cost enforced yet).',
     materials: [],
     costStatus: 'none', footprint: { w: 2, h: 1 }, capacity: 0, capacityUnit: 'none', workers: 1,
     produces: null, maintenance: { resource: 'wood', qtyPerDay: 1 },

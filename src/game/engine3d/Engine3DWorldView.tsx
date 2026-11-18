@@ -24,6 +24,7 @@ import { campGrainInRegistry } from './food';
 import { GRANARY_CAPACITY_FLOUR, granaryFlourInRegistry } from './granary';
 import { MILL_CENTRE, MILL_RECT, MILL_DOOR, MILL_APPROACH, BAKERY_CENTRE, BAKERY_RECT, BAKERY_DOOR, BAKERY_APPROACH, freshFoodChain, reconcileFoodChain, millPlacementExists, bakeryPlacementExists, type FoodChainState } from './foodChain';
 import { SMELTER_CENTRE, SMELTER_RECT, SMELTER_DOOR, SMELTER_APPROACH, BLACKSMITH_CENTRE, BLACKSMITH_RECT, BLACKSMITH_DOOR, BLACKSMITH_APPROACH, SAWMILL_CENTRE, SAWMILL_RECT, SAWMILL_DOOR, SAWMILL_APPROACH, CARPENTER_CENTRE, CARPENTER_RECT, CARPENTER_DOOR, CARPENTER_APPROACH, WORKSHOP_CENTRE, WORKSHOP_RECT, WORKSHOP_DOOR, WORKSHOP_APPROACH, freshMetalChain, reconcileMetalChain, smelterPlacementExists, blacksmithPlacementExists, sawmillPlacementExists, carpenterPlacementExists, workshopPlacementExists, workshopStallReason, metalChainCoalInRegistry, metalChainIngotsInRegistry, metalChainToolsInRegistry, metalChainTimberInRegistry, metalChainFurnitureInRegistry, type MetalChainState } from './metalChain';
+import { INN_APPROACH, INN_CENTRE, INN_RECT, INN_DOOR, INN_SITE_ID, MARKET_STALL_TILE, freshHousing, reconcileHousing, seedInnStore, innFoodInRegistry, innPlacementExists, marketStallListing, nightSleepers, type HousingState } from './housing';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
   alignArea, enhanceArea, adjustSpacing,
@@ -125,7 +126,7 @@ import { WorldRenderer, type Diagnostics3D } from './worldRenderer3d';
 import { createWorldBuilder, type WorldBuilder, type Vec3, type Position } from './worldRender3d';
 import { ControlCenterPanel } from './ControlCenterPanel';
 // BUILD 1058: NPC construction — the first hut from the stockpile.
-import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, reconcileExtraSites, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite, sitesOf, constructionFromSites, type ConstructionState } from './construction';
+import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WOOD_PER_STEP, HUT_TICKS_PER_STEP, canBuild, spendBuildStepFromRegistry, finishConstruction, reconcileConstruction, reconcileExtraSites, hutPlacementExists, hutPlacementId, insideHutRect, hutProgressLabel, freshConstruction, hutSiteById, hutSiteIndexById, nearestUnfinishedSite, hasUnfinishedSite, sitesOf, constructionFromSites, housingCapacity, type ConstructionState } from './construction';
 // BUILD 1092 (0x1B, Phase 3.1): the building catalogue as data — the
 // Build menu lists it (entries with a palette kind arm that tool;
 // the rest are listed, locked, with the reason why).
@@ -713,6 +714,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // camp pile.
   const foodChainRef=useRef<FoodChainState>(freshFoodChain());
   const metalChainRef=useRef<MetalChainState>(freshMetalChain());
+  // BUILD 1096 (3.5): the housing — the inn. The tick owns it;
+  // the founders save persists it (v12, compatible fields — the
+  // housing state + the inn food stock) alongside the camp pile.
+  const housingRef=useRef<HousingState>(freshHousing());
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
   // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
@@ -743,7 +748,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 1058: + the hut progress ('—' / '3/6' / 'done').
   // BUILD 1062: + the forest density % from the living-world adapter
   // (live stored trees / baseline) — '—' until the adapter loads.
-  const [campUi,setCampUi]=useState({wood:0,stone:0,food:FOUNDER_START_FOOD,grain:0,flour:0,iron:0,ingots:0,tools:0,timber:0,furniture:0,hut:'—',storehouse:'—',forest:'—'});
+  const [campUi,setCampUi]=useState({wood:0,stone:0,food:FOUNDER_START_FOOD,grain:0,flour:0,iron:0,ingots:0,tools:0,timber:0,furniture:0,hut:'—',storehouse:'—',forest:'—',beds:'—'});
   // BUILD 1062: the forest % for the Camp line, from the live tree
   // count and the adapter's fixed baseline. '—' when the adapter has
   // not loaded yet (first render, before the mount effect).
@@ -768,7 +773,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     founderFoodRef.current=campFoodInRegistry(reg);
     founderGrainRef.current=campGrainInRegistry(reg);
     founderStoneRef.current=campStoneInRegistry(reg);
-    setCampUi({wood:founderStockpileRef.current,stone:founderStoneRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,flour:granaryFlourInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg),hut:hutProgressLabel(constructionRef.current),storehouse:storehouseLabel(storehouseRef.current),forest:forestPct(stateRef.current.world.trees.length)});
+    setCampUi({wood:founderStockpileRef.current,stone:founderStoneRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,flour:granaryFlourInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg),hut:hutProgressLabel(constructionRef.current),storehouse:storehouseLabel(storehouseRef.current),forest:forestPct(stateRef.current.world.trees.length),beds:foundersRef.current.length+'/'+housingCapacity(constructionRef.current)});
   };
   // BUILD 1078 (0x0D, area 8): the living-world sync lives in
   // worldSync3d.ts now — the view builds the context once and calls
@@ -821,6 +826,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         mines: minesRef,
         foodChain: foodChainRef,
         metalChain: metalChainRef,
+        housing: housingRef,
         registry: registryRef,
         jobBoard: jobBoardRef,
         syncLivingWorld,
@@ -1754,6 +1760,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // everything, the same as before).
       // BUILD 1089: + the stored iron (v11; v10 saves migrate with 0).
       reg=seedStorehouseStore(reg,saved?saved.storehouseWood??0:0,saved?saved.storehouseStone??0:0,saved?saved.storehouseOre??0:0,saved?saved.storehouseCoal??0:0,saved?saved.storehouseIngots??0:0,saved?saved.storehouseTools??0:0,saved?saved.storehouseTimber??0:0,saved?saved.storehouseFurniture??0:0);
+      // BUILD 1096: the inn store seeds from the v12 founders save
+      // (older saves start empty).
+      reg=seedInnStore(reg,saved?saved.innFoodStock??0:0);
       for(const f of states)reg=seedCarrierStore(reg,f);
       reg=loadPlayerInventoryIntoRegistry(reg);
       registryRef.current=reg;
@@ -1791,6 +1800,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // 'done' but the world has no chain placement, reconcile:
       // the founders rebuild from the pile.
       metalChainRef.current=saved&&saved.metalChain?reconcileMetalChain(saved.metalChain,world):freshMetalChain();
+      // BUILD 1096: the housing loads from the v12 founders save
+      // (older saves migrate to a fresh housing). If the save says
+      // 'done' but the world has no inn placement, reconcile: the
+      // founders rebuild from the pile.
+      housingRef.current=saved&&saved.housing?reconcileHousing(saved.housing,world):freshHousing();
       // BUILD 1062: the living-world coordinator (F-0) — load the saved
       // adapter state, or fresh from the live world (real trees, real
       // founders, real day). A corrupt/unknown save starts fresh; the
@@ -2478,7 +2492,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, saveKey: SAVE_KEY,
       isAreaSelectDragging: () => areaSelectDragging !== null,
       isAreaMoveDragging: () => areaMoveDragging !== null,
-      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, staminaPublishCountRef, areaSelectionRef, buildRef,
+      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, staminaPublishCountRef, areaSelectionRef, buildRef,
       setPosition, setMessage, setStaminaUi, setSprintingUi, setSprintLatchedUi, setSprintRearmUi, setFirstPersonOn,
       walkableAt: controls.walkableAt, replanPlayerPath: controls.replanPlayerPath, followPlayerPath: controls.followPlayerPath, positionAreaSelectRect, areaSelectionLabel,
     });
@@ -2685,6 +2699,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // storehouse counts, and the workshop stall reason (null when
       // the workshop is not stalled). Read-only.
       getMetalChain:()=>({smelter:{...metalChainRef.current.smelter,centre:{...SMELTER_CENTRE},rect:{...SMELTER_RECT},door:{...SMELTER_DOOR},approach:{...SMELTER_APPROACH},placed:smelterPlacementExists(stateRef.current.world)},blacksmith:{...metalChainRef.current.blacksmith,centre:{...BLACKSMITH_CENTRE},rect:{...BLACKSMITH_RECT},door:{...BLACKSMITH_DOOR},approach:{...BLACKSMITH_APPROACH},placed:blacksmithPlacementExists(stateRef.current.world)},sawmill:{...metalChainRef.current.sawmill,centre:{...SAWMILL_CENTRE},rect:{...SAWMILL_RECT},door:{...SAWMILL_DOOR},approach:{...SAWMILL_APPROACH},placed:sawmillPlacementExists(stateRef.current.world)},carpenter:{...metalChainRef.current.carpenter,centre:{...CARPENTER_CENTRE},rect:{...CARPENTER_RECT},door:{...CARPENTER_DOOR},approach:{...CARPENTER_APPROACH},placed:carpenterPlacementExists(stateRef.current.world)},workshop:{...metalChainRef.current.workshop,centre:{...WORKSHOP_CENTRE},rect:{...WORKSHOP_RECT},door:{...WORKSHOP_DOOR},approach:{...WORKSHOP_APPROACH},placed:workshopPlacementExists(stateRef.current.world)},ingots:metalChainIngotsInRegistry(registryRef.current),tools:metalChainToolsInRegistry(registryRef.current),timber:metalChainTimberInRegistry(registryRef.current),furniture:metalChainFurnitureInRegistry(registryRef.current),coal:metalChainCoalInRegistry(registryRef.current),iron:storehouseOreInRegistry(registryRef.current,'iron'),stall:workshopStallReason(metalChainRef.current,foodChainRef.current.bakery.state==='done',campWoodInRegistry(registryRef.current),metalChainToolsInRegistry(registryRef.current))}),
+      // BUILD 1096 (3.5): the housing (probes only) — the
+      // capacity (beds free/total), the inn's state + progress +
+      // placement + food, and the market-stall listing. Read-only.
+      getHousing:()=>({capacity:housingCapacity(constructionRef.current),bedsFree:Math.max(0,housingCapacity(constructionRef.current)-foundersRef.current.length),founders:foundersRef.current.length,night:nightSleepers(foundersRef.current,constructionRef.current)}),
+      getInn:()=>({inn:{...housingRef.current.inn,centre:{...INN_CENTRE},rect:{...INN_RECT},door:{...INN_DOOR},approach:{...INN_APPROACH},placed:innPlacementExists(stateRef.current.world)},food:innFoodInRegistry(registryRef.current)}),
+      getMarketStall:()=>({tile:{...MARKET_STALL_TILE},listing:marketStallListing(registryRef.current)}),
       setStorehouseWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_WOOD});refreshResourceUi();return storehouseWoodInRegistry(registryRef.current);},
       setStorehouseStone:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'stone',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_STONE});refreshResourceUi();return storehouseStoneInRegistry(registryRef.current);},
       setStorehouseIron:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'iron',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_ORE});refreshResourceUi();return storehouseOreInRegistry(registryRef.current,'iron');},
@@ -2820,6 +2840,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       mines: minesRef,
       foodChain: foodChainRef,
       metalChain: metalChainRef,
+      housing: housingRef,
       registry: registryRef,
       jobBoard: jobBoardRef,
       founderPath,
@@ -2952,6 +2973,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg),flour:granaryFlourInRegistry(reg),stone:campStoneInRegistry(reg)},
           foodChain:{mill:{state:foodChainRef.current.mill.state,progress:foodChainRef.current.mill.progress},bakery:{state:foodChainRef.current.bakery.state,progress:foodChainRef.current.bakery.progress}},
           metalChain:{smelter:{state:metalChainRef.current.smelter.state,progress:metalChainRef.current.smelter.progress},blacksmith:{state:metalChainRef.current.blacksmith.state,progress:metalChainRef.current.blacksmith.progress},sawmill:{state:metalChainRef.current.sawmill.state,progress:metalChainRef.current.sawmill.progress},carpenter:{state:metalChainRef.current.carpenter.state,progress:metalChainRef.current.carpenter.progress},workshop:{state:metalChainRef.current.workshop.state,progress:metalChainRef.current.workshop.progress},workshopStall:workshopStallReason(metalChainRef.current,foodChainRef.current.bakery.state==='done',campWoodInRegistry(reg),metalChainToolsInRegistry(reg))},
+          housing:{capacity:housingCapacity(constructionRef.current),bedsFree:Math.max(0,housingCapacity(constructionRef.current)-foundersRef.current.length),inn:{state:housingRef.current.inn.state,progress:housingRef.current.inn.progress,food:innFoodInRegistry(reg)},stall:marketStallListing(reg)},
           storehouse:{state:storehouseRef.current.state,progress:storehouseRef.current.progress,wood:storehouseWoodInRegistry(reg),stone:storehouseStoneInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),coal:metalChainCoalInRegistry(reg),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg)},
           player:{wood:storeQty(reg,PLAYER_STORE_ID,'wood'),stone:storeQty(reg,PLAYER_STORE_ID,'stone'),gold:storeQty(reg,PLAYER_STORE_ID,'gold'),grain:storeQty(reg,PLAYER_STORE_ID,'grain')},
           carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain'),stone:storeQty(reg,'carrier:'+f.id,'stone'),iron:storeQty(reg,'carrier:'+f.id,'iron')})),

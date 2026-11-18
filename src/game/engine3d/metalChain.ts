@@ -652,9 +652,11 @@ export function isWorkshopUsable(metalChain: MetalChainState): boolean {
  * settlement's wood stockpile (the sawmill already draws its
  * production wood from it), so a chain step draws from it when
  * the pile is short. The total is checked first, so a short
- * total withdraws nothing (no partial step). Pure.
+ * total withdraws nothing (no partial step). Pure. BUILD 1096
+ * (0x1F): exported — the inn build step (housing.ts) draws the
+ * same way (the pile sits at 0 once the storehouse exists).
  */
-function withdrawChainWood(
+export function withdrawChainWood(
   registry: ResourceRegistry,
   qty: number,
 ): { registry: ResourceRegistry; taken: number } {

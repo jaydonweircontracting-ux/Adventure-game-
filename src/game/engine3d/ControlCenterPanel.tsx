@@ -203,6 +203,19 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
             ) : null}
           </div>
 
+          <div data-testid="cc-housing" style={sectionStyle}>
+            <div style={headingStyle}>🏠 Housing — beds + inn + market stall</div>
+            <div>
+              Beds {d.housing.capacity - d.housing.bedsFree}/{d.housing.capacity} occupied · {d.housing.bedsFree} free{d.housing.bedsFree === 0 && d.housing.capacity > 0 ? ' — no new resident can arrive' : ''}
+            </div>
+            <div>
+              Inn {d.housing.innState}{d.housing.innReady ? ` ready — ${d.housing.innFood} meals for travelers` : d.housing.innState === 'done' ? ' — store empty, topping up at the day boundary' : ''}
+            </div>
+            <div style={dimStyle}>
+              Market stall (read-only — trade is Phase 5): {d.housing.stall.length === 0 ? 'nothing to trade yet' : d.housing.stall.map((l) => `${l.resource} ${l.qty} (${l.store})`).join(' · ')}
+            </div>
+          </div>
+
           <div data-testid="cc-construction" style={sectionStyle}>
             <div style={headingStyle}>🔨 Construction projects</div>
             {d.construction.sites.length === 0 ? (

@@ -114,6 +114,7 @@ import { seedGranaryStore, GRANARY_GRAIN_TILE } from './granary';
 import { freshStorehouse, validateStorehouseState, type StorehouseState } from './storehouse';
 import { freshFoodChain, validateFoodChainState, type FoodChainState } from './foodChain';
 import { freshMetalChain, validateMetalChainState, type MetalChainState } from './metalChain';
+import { freshHousing, validateHousingState, type HousingState } from './housing';
 import type { BridgeSite } from './paths';
 import type { WheatTri } from './farm';
 
@@ -725,6 +726,14 @@ export type FounderState = {
    *  the founder's activity becomes 'rest', cleared when it
    *  changes away. */
   restTile: { x: number; y: number } | null;
+  /** BUILD 1096 (0x1F): whether this founder has rested at the inn
+   *  on their way in (session-only — an arriving founder rests once;
+   *  a reload mid-arrival re-rests, which is harmless). */
+  innRested?: boolean;
+  /** BUILD 1096 (0x1F): inn-rest ticks remaining (session-only) —
+   *  the arriving founder stands at the inn rest tile while this
+   *  counts down, then walks on to camp. */
+  innRestTicks?: number;
 };
 
 /** The first free bed: the first sleep tile in a completed hut
@@ -1229,6 +1238,14 @@ export type FoundersSaveState = {
    *  saves have none and migrate to a fresh chain (nothing
    *  started). No version move (a compatible field). */
   metalChain: MetalChainState;
+  /** BUILD 1096 (0x1F, v12): the inn (housing.ts) — v12 saves
+   *  have none and migrate to a fresh inn (nothing started). No
+   *  version move (a compatible field). */
+  housing: HousingState;
+  /** BUILD 1096 (0x1F, v12): the inn store's food (meals for
+   *  resting travelers) — v12 saves have none and migrate to 0.
+   *  No version move (a compatible field). */
+  innFoodStock: number;
   /** BUILD 1058: the first hut's construction (v2; v1 saves have
    *  none and migrate to a fresh one). */
   construction: ConstructionState;
@@ -1282,6 +1299,8 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     mines: { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 },
     foodChain: freshFoodChain(),
     metalChain: freshMetalChain(),
+    housing: freshHousing(),
+    innFoodStock: 0,
     bridges: [],
     construction: freshConstruction(),
   };
@@ -1613,6 +1632,17 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   // migrate to a fresh chain (nothing started). The deep shape
   // check is validateMetalChainState (metalChain.ts).
   const metalChain: MetalChainState = validateMetalChainState(v.metalChain);
+  // BUILD 1096 (0x1F, v12): the inn — v12 saves have none and
+  // migrate to a fresh inn (nothing started). The deep shape
+  // check is validateHousingState (housing.ts).
+  const housing: HousingState = validateHousingState(v.housing);
+  // BUILD 1096 (0x1F, v12): the inn store's food — v12 saves have
+  // none and migrate to 0 (no data — assume the inn holds no
+  // meals). No version move (a compatible field).
+  const innFoodStock =
+    v.innFoodStock == null || !Number.isFinite(Number(v.innFoodStock))
+      ? 0
+      : Math.max(0, Math.round(Number(v.innFoodStock)));
   // BUILD 1089 (v11): the mines state — v10 saves have none and
   // migrate to fresh (no sites). Carried through as-is; the deep
   // shape check is validateMineState (mines.ts) at the load sites.
@@ -1640,7 +1670,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       bridges.push({ id: 'bridge-' + bx + '-' + by, x: bx, y: by, workTile: { x: bwx, y: bwy }, state: bstate, progress: bprogress, spentWood: bspent });
     }
   }
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, storehouseCoal, storehouseIngots, storehouseTools, storehouseTimber, storehouseFurniture, mines, foodChain, metalChain, bridges, construction };
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, storehouseCoal, storehouseIngots, storehouseTools, storehouseTimber, storehouseFurniture, mines, foodChain, metalChain, housing, innFoodStock, bridges, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -1673,7 +1703,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain(), storehouseCoal = 0, storehouseIngots = 0, storehouseTools = 0, storehouseTimber = 0, storehouseFurniture = 0, metalChain: MetalChainState = freshMetalChain()): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain(), storehouseCoal = 0, storehouseIngots = 0, storehouseTools = 0, storehouseTimber = 0, storehouseFurniture = 0, metalChain: MetalChainState = freshMetalChain(), housing: HousingState = freshHousing(), innFoodStock = 0): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -1727,6 +1757,8 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     },
     foodChain: { mill: { ...foodChain.mill }, bakery: { ...foodChain.bakery } },
     metalChain: { smelter: { ...metalChain.smelter }, blacksmith: { ...metalChain.blacksmith }, sawmill: { ...metalChain.sawmill }, carpenter: { ...metalChain.carpenter }, workshop: { ...metalChain.workshop } },
+    housing: { inn: { ...housing.inn } },
+    innFoodStock,
     bridges: bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })),
     construction: constructionFromSites(sitesOf(construction)),
   };

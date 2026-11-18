@@ -40,6 +40,17 @@ import type { FounderBed, FounderState } from './founders';
 
 /** Meals the camp must hold for a newcomer to arrive. */
 export const SETTLEMENT_ARRIVAL_FOOD_MIN = 10;
+/**
+ * BUILD 1096 (0x1F): the founding population — the 3 founders +
+ * the first wave (Bram/Fern/Silas). Arrivals beyond the founding
+ * six require a larger food surplus (see canArrive): each extra
+ * resident needs SETTLEMENT_ARRIVAL_FOOD_MIN more camp meals in
+ * stock, so growth pauses when the bakery cannot keep up (the
+ * week starved at pop 9: the single baker makes ~19 meals/day
+ * for ~25/day of demand, and the camp-meal stock caps at ~15
+ * because the baker stops at the 15-meal bake threshold).
+ */
+export const SETTLEMENT_ARRIVAL_FOUNDING_POP = 6;
 /** The camp must have survived this many days before it grows. */
 export const SETTLEMENT_ARRIVAL_DAY_MIN = 2;
 /** Where a newcomer enters the world: the east edge, the same
@@ -60,7 +71,15 @@ export type ArrivalInput = {
  *  hold). Pure. */
 export function canArrive(input: ArrivalInput): boolean {
   const { founders, construction, foodStock, day } = input;
-  if (foodStock < SETTLEMENT_ARRIVAL_FOOD_MIN) return false;
+  // BUILD 1096: the food bar scales with the population beyond
+  // the founding six — the 7th needs 10 meals, the 8th 20, the
+  // 9th 30. The camp-meal stock caps at ~15 (the baker stops at
+  // the 15-meal threshold), so growth pauses at 7 until the bake
+  // rate improves; without this the arrivals come 1/day, the
+  // population hits 9 by day 5, and the week starves (10288
+  // starved ticks, minHealth 55).
+  const extra = Math.max(0, founders.length - SETTLEMENT_ARRIVAL_FOUNDING_POP);
+  if (foodStock < SETTLEMENT_ARRIVAL_FOOD_MIN * (1 + extra)) return false;
   if (day < SETTLEMENT_ARRIVAL_DAY_MIN) return false;
   if (founders.some((f) => f.workState === 'arriving')) return false;
   if (founders.length >= housingCapacity(construction)) return false;

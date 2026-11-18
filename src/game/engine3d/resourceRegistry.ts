@@ -166,7 +166,7 @@ export function isValidSource(value: unknown): value is ResourceSource {
 // --- Stores ---
 
 /** A store's kind: what holds the resource. */
-export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier' | 'storehouse' | 'granary';
+export type StoreKind = 'player' | 'camp' | 'settlement' | 'carrier' | 'storehouse' | 'granary' | 'inn';
 
 /** The player's carried store (uncapped, owner 'player'). */
 export const PLAYER_STORE_ID = 'player';
@@ -176,6 +176,11 @@ export const CAMP_STORE_ID = 'camp';
  *  (grain + meals), capped per resource (granary.ts). The camp
  *  store keeps wood + stone; food + grain live here now. */
 export const GRANARY_STORE_ID = 'granary';
+/** BUILD 1096 (0x1F): the inn store — the inn's food store (meals
+ *  for resting travelers), capped at INN_CAPACITY_FOOD (housing.ts).
+ *  Topped up from the granary at the day boundary; a traveler eats
+ *  one meal from it while resting. */
+export const INN_STORE_ID = 'inn';
 
 /** A 2.5D settlement's storage as a registry store. */
 export function settlementStoreId(id: string): string {
@@ -200,6 +205,8 @@ export function storeKindOf(storeId: string): StoreKind | null {
   // BUILD 1090 (2.5): the granary store — the camp's food store,
   // capped per resource (granary.ts).
   if (storeId === GRANARY_STORE_ID) return 'granary';
+  // BUILD 1096 (0x1F): the inn store (housing.ts).
+  if (storeId === INN_STORE_ID) return 'inn';
   if (storeId.startsWith('settlement:')) return 'settlement';
   if (storeId.startsWith('carrier:')) return 'carrier';
   return null;
