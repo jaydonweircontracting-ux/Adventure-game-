@@ -113,6 +113,7 @@ import { harvestFarmTile } from './farm';
 import { seedGranaryStore, GRANARY_GRAIN_TILE } from './granary';
 import { freshStorehouse, validateStorehouseState, type StorehouseState } from './storehouse';
 import { freshFoodChain, validateFoodChainState, type FoodChainState } from './foodChain';
+import { freshMetalChain, validateMetalChainState, type MetalChainState } from './metalChain';
 import type { BridgeSite } from './paths';
 import type { WheatTri } from './farm';
 
@@ -386,7 +387,8 @@ export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): R
   const carrying = Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingBuild ?? 0));
   const carryingGrain = Math.max(0, Math.floor(f.carryingGrain));
   const carryingStone = Math.max(0, Math.floor(f.carryingStone));
-  if (carrying <= 0 && carryingGrain <= 0 && carryingStone <= 0) return registry;
+  const carryingOre = Math.max(0, Math.floor(f.carryingOre ?? 0));
+  if (carrying <= 0 && carryingGrain <= 0 && carryingStone <= 0 && carryingOre <= 0) return registry;
   let next = registry;
   if (carrying > 0) {
     next = setStoreQty(
@@ -414,6 +416,24 @@ export function seedCarrierStore(registry: ResourceRegistry, f: FounderState): R
       carrierStoreId(f.id),
       'stone',
       carryingStone,
+      { type: 'loaded' },
+      { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
+    );
+  }
+  // BUILD 1095: the ore the founder carries from the mine — seeded
+  // with the kind they actually carry (iron or coal; a v12 save
+  // without a kind means iron, the only mineral mined before
+  // 1095). The 1089 code never seeded ore at all, so a founder
+  // saved mid-delivery reloaded with ore in hand but an empty
+  // carrier store, and the delivery moved 0 — the founder pinned
+  // at the approach (a likely contributor to the week-after-reload
+  // divergence). The kind rides in the save (carryingOreKind).
+  if (carryingOre > 0) {
+    next = setStoreQty(
+      next,
+      carrierStoreId(f.id),
+      f.carryingOreKind ?? 'iron',
+      carryingOre,
       { type: 'loaded' },
       { location: { x: Math.round(f.x), y: Math.round(f.y) }, ownerId: f.id },
     );
@@ -587,7 +607,7 @@ export function campStoneInRegistry(registry: ResourceRegistry): number {
 
 // --- Founder state ---
 
-export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting' | 'toQuarry' | 'mining' | 'toStorehouse' | 'toWell' | 'toWater' | 'toMine' | 'miningOre' | 'toPlant' | 'planting' | 'toMill' | 'milling' | 'toBakery' | 'baking';
+export type FounderWorkState = 'toTree' | 'chopping' | 'toStockpile' | 'idle' | 'toSite' | 'building' | 'arriving' | 'toFarm' | 'harvesting' | 'toQuarry' | 'mining' | 'toStorehouse' | 'toWell' | 'toWater' | 'toMine' | 'miningOre' | 'toPlant' | 'planting' | 'toMill' | 'milling' | 'toBakery' | 'baking' | 'toSmelter' | 'smelting' | 'toSmith' | 'smithing' | 'toSawmill' | 'sawing' | 'toCarpenter' | 'carpentering';
 
 /** Runtime founder state (path cache + tree target are session-only,
  *  never saved). */
@@ -634,6 +654,20 @@ export type FounderState = {
   /** Bake ticks spent on the current baking shift (BUILD 1094).
    *  Session-only (reset to 0 on load, like millTicks). */
   bakeTicks: number;
+  /** Smelt ticks spent on the current smelting shift (BUILD 1095).
+   *  Session-only (reset to 0 on load, like millTicks — a founder
+   *  reloaded mid-smelt restarts the shift; nothing is lost, the
+   *  ore and the coal are still in the storehouse). */
+  smeltTicks: number;
+  /** Smith ticks spent on the current smithing shift (BUILD 1095).
+   *  Session-only (reset to 0 on load, like millTicks). */
+  smithTicks: number;
+  /** Saw ticks spent on the current sawing shift (BUILD 1095).
+   *  Session-only (reset to 0 on load, like millTicks). */
+  sawTicks: number;
+  /** Carpenter ticks spent on the current carpentry shift (BUILD
+   *  1095). Session-only (reset to 0 on load, like millTicks). */
+  carpenterTicks: number;
   /** Wood carried FOR a build step (0 or 2 — the storehouse ->
    *  site haul leg, BUILD 1087): fetched from the storehouse
    *  store, spent at the site. Separate from `carrying` (gathered
@@ -648,6 +682,14 @@ export type FounderState = {
   /** Ore currently carried (0 or MINE_ORE_PER_SHIFT — the mine
    *  leg, BUILD 1089, like carryingStone for the quarry). */
   carryingOre: number;
+  /** Which mineral the carried ore is (BUILD 1095 — the coal mine
+   *  is the second mine, so the carrier must know whether it holds
+   *  iron or coal: the delivery moves the kind actually carried,
+   *  and the save seeds the carrier store with it on reload).
+   *  Null when carrying nothing (or when an old save had ore but
+   *  no kind — that ore was iron, the only mineral mined before
+   *  1095). Saved (v12, a compatible field). */
+  carryingOreKind: 'iron' | 'coal' | null;
   /** Quarry site being worked, if any (session-only — the job's
    *  target id + tile; the kind is the id's prefix). */
   quarryTarget: { id: string; x: number; y: number } | null;
@@ -749,6 +791,11 @@ export function spawnResident(
     mineTicks: 0,
     millTicks: 0,
     bakeTicks: 0,
+    smeltTicks: 0,
+    smithTicks: 0,
+    sawTicks: 0,
+    carpenterTicks: 0,
+    carryingOreKind: null,
     treeTarget: null,
     farmTarget: null,
     waterTarget: null,
@@ -792,6 +839,11 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     mineTicks: 0,
     millTicks: 0,
     bakeTicks: 0,
+    smeltTicks: 0,
+    smithTicks: 0,
+    sawTicks: 0,
+    carpenterTicks: 0,
+    carryingOreKind: null,
     treeTarget: null,
     farmTarget: null,
     waterTarget: null,
@@ -1078,6 +1130,10 @@ export type FounderSave = {
   /** BUILD 1089: ore carried (v11; v10 saves have none and
    *  migrate to 0). */
   carryingOre?: number;
+  /** BUILD 1095: which mineral the carried ore is (v12; older
+   *  saves have none and migrate to null — iron, the only mineral
+   *  mined before 1095). */
+  carryingOreKind?: 'iron' | 'coal' | null;
   hunger: number;
   energy: number;
   social: number;
@@ -1142,6 +1198,21 @@ export type FoundersSaveState = {
   /** BUILD 1089 (0x18, v11): iron stored in the storehouse — v10
    *  saves have none and migrate to 0. */
   storehouseOre: number;
+  /** BUILD 1095 (0x1E, v12): coal stored in the storehouse — v12
+   *  saves have none and migrate to 0. */
+  storehouseCoal: number;
+  /** BUILD 1095 (0x1E, v12): ingots stored in the storehouse —
+   *  v12 saves have none and migrate to 0. */
+  storehouseIngots: number;
+  /** BUILD 1095 (0x1E, v12): tools stored in the storehouse — v12
+   *  saves have none and migrate to 0. */
+  storehouseTools: number;
+  /** BUILD 1095 (0x1E, v12): timber stored in the storehouse —
+   *  v12 saves have none and migrate to 0. */
+  storehouseTimber: number;
+  /** BUILD 1095 (0x1E, v12): furniture stored in the storehouse
+   *  — v12 saves have none and migrate to 0. */
+  storehouseFurniture: number;
   /** BUILD 1089 (0x18, v11): the mine sites, the quarry site,
    *  and the lumber site (mines.ts) — v10 saves have none and
    *  migrate to fresh (no sites). The deep shape check is
@@ -1153,6 +1224,11 @@ export type FoundersSaveState = {
    *  — v12 saves have none and migrate to a fresh chain (nothing
    *  started). No version move (a compatible field). */
   foodChain: FoodChainState;
+  /** BUILD 1095 (0x1E, v12): the smelter + the blacksmith + the
+   *  sawmill + the carpenter + the workshop (metalChain.ts) — v12
+   *  saves have none and migrate to a fresh chain (nothing
+   *  started). No version move (a compatible field). */
+  metalChain: MetalChainState;
   /** BUILD 1058: the first hut's construction (v2; v1 saves have
    *  none and migrate to a fresh one). */
   construction: ConstructionState;
@@ -1175,6 +1251,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
       carryingBuild: 0,
     carryingWater: 0,
       carryingOre: 0,
+      carryingOreKind: null,
       hunger: 80,
       energy: 90,
       social: 60,
@@ -1197,8 +1274,14 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     storehouseWood: 0,
     storehouseStone: 0,
     storehouseOre: 0,
+    storehouseCoal: 0,
+    storehouseIngots: 0,
+    storehouseTools: 0,
+    storehouseTimber: 0,
+    storehouseFurniture: 0,
     mines: { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 },
     foodChain: freshFoodChain(),
+    metalChain: freshMetalChain(),
     bridges: [],
     construction: freshConstruction(),
   };
@@ -1352,7 +1435,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         ? (s.activity as FounderActivity)
         : 'work';
     let workState: FounderWorkState =
-      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building' || s?.workState === 'arriving' || s?.workState === 'toFarm' || s?.workState === 'harvesting' || s?.workState === 'toStorehouse' || s?.workState === 'toQuarry' || s?.workState === 'mining' || s?.workState === 'toMine' || s?.workState === 'miningOre' || s?.workState === 'toWell' || s?.workState === 'toWater' || s?.workState === 'toPlant' || s?.workState === 'planting' || s?.workState === 'toMill' || s?.workState === 'milling' || s?.workState === 'toBakery' || s?.workState === 'baking' || s?.workState === 'chopping'
+      s?.workState === 'toTree' || s?.workState === 'toStockpile' || s?.workState === 'idle' || s?.workState === 'toSite' || s?.workState === 'building' || s?.workState === 'arriving' || s?.workState === 'toFarm' || s?.workState === 'harvesting' || s?.workState === 'toStorehouse' || s?.workState === 'toQuarry' || s?.workState === 'mining' || s?.workState === 'toMine' || s?.workState === 'miningOre' || s?.workState === 'toWell' || s?.workState === 'toWater' || s?.workState === 'toPlant' || s?.workState === 'planting' || s?.workState === 'toMill' || s?.workState === 'milling' || s?.workState === 'toBakery' || s?.workState === 'baking' || s?.workState === 'chopping' || s?.workState === 'toSmelter' || s?.workState === 'smelting' || s?.workState === 'toSmith' || s?.workState === 'smithing' || s?.workState === 'toSawmill' || s?.workState === 'sawing' || s?.workState === 'toCarpenter' || s?.workState === 'carpentering'
         ? (s.workState as FounderWorkState)
         : 'toTree';
     if (construction.sites[0].state === 'done' && (workState === 'toSite' || workState === 'building')) workState = 'toTree';
@@ -1367,6 +1450,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       carryingBuild: Math.max(0, Math.round(num('carryingBuild', 0))),
       carryingWater: Math.max(0, Math.round(num('carryingWater', 0))),
       carryingOre: Math.max(0, Math.round(num('carryingOre', 0))),
+      carryingOreKind: s?.carryingOreKind === 'coal' ? 'coal' : s?.carryingOreKind === 'iron' ? 'iron' : null,
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1417,7 +1501,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         ? (r.activity as FounderActivity)
         : 'work';
     let rWorkState: FounderWorkState =
-      r.workState === 'toTree' || r.workState === 'toStockpile' || r.workState === 'idle' || r.workState === 'toSite' || r.workState === 'building' || r.workState === 'arriving' || r.workState === 'toFarm' || r.workState === 'harvesting' || r.workState === 'toStorehouse' || r.workState === 'toQuarry' || r.workState === 'mining' || r.workState === 'toMine' || r.workState === 'miningOre' || r.workState === 'toWell' || r.workState === 'toWater' || r.workState === 'toPlant' || r.workState === 'planting' || r.workState === 'chopping'
+      r.workState === 'toTree' || r.workState === 'toStockpile' || r.workState === 'idle' || r.workState === 'toSite' || r.workState === 'building' || r.workState === 'arriving' || r.workState === 'toFarm' || r.workState === 'harvesting' || r.workState === 'toStorehouse' || r.workState === 'toQuarry' || r.workState === 'mining' || r.workState === 'toMine' || r.workState === 'miningOre' || r.workState === 'toWell' || r.workState === 'toWater' || r.workState === 'toPlant' || r.workState === 'planting' || r.workState === 'chopping' || r.workState === 'toMill' || r.workState === 'milling' || r.workState === 'toBakery' || r.workState === 'baking' || r.workState === 'toSmelter' || r.workState === 'smelting' || r.workState === 'toSmith' || r.workState === 'smithing' || r.workState === 'toSawmill' || r.workState === 'sawing' || r.workState === 'toCarpenter' || r.workState === 'carpentering'
         ? (r.workState as FounderWorkState)
         : 'toTree';
     if (construction.sites[0].state === 'done' && (rWorkState === 'toSite' || rWorkState === 'building')) rWorkState = 'toTree';
@@ -1437,6 +1521,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       carryingBuild: Math.max(0, Math.round(num('carryingBuild', 0))),
       carryingWater: Math.max(0, Math.round(num('carryingWater', 0))),
       carryingOre: Math.max(0, Math.round(num('carryingOre', 0))),
+      carryingOreKind: r.carryingOreKind === 'coal' ? 'coal' : r.carryingOreKind === 'iron' ? 'iron' : null,
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1500,6 +1585,34 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
     v.storehouseOre == null || !Number.isFinite(Number(v.storehouseOre))
       ? 0
       : Math.max(0, Math.round(Number(v.storehouseOre)));
+  // BUILD 1095 (v12): the storehouse's coal / ingots / tools /
+  // timber / furniture — v12 saves have none and migrate to 0
+  // (no data — assume the storehouse holds none). No version
+  // move (compatible fields).
+  const storehouseCoal =
+    v.storehouseCoal == null || !Number.isFinite(Number(v.storehouseCoal))
+      ? 0
+      : Math.max(0, Math.round(Number(v.storehouseCoal)));
+  const storehouseIngots =
+    v.storehouseIngots == null || !Number.isFinite(Number(v.storehouseIngots))
+      ? 0
+      : Math.max(0, Math.round(Number(v.storehouseIngots)));
+  const storehouseTools =
+    v.storehouseTools == null || !Number.isFinite(Number(v.storehouseTools))
+      ? 0
+      : Math.max(0, Math.round(Number(v.storehouseTools)));
+  const storehouseTimber =
+    v.storehouseTimber == null || !Number.isFinite(Number(v.storehouseTimber))
+      ? 0
+      : Math.max(0, Math.round(Number(v.storehouseTimber)));
+  const storehouseFurniture =
+    v.storehouseFurniture == null || !Number.isFinite(Number(v.storehouseFurniture))
+      ? 0
+      : Math.max(0, Math.round(Number(v.storehouseFurniture)));
+  // BUILD 1095 (v12): the metal chain — v12 saves have none and
+  // migrate to a fresh chain (nothing started). The deep shape
+  // check is validateMetalChainState (metalChain.ts).
+  const metalChain: MetalChainState = validateMetalChainState(v.metalChain);
   // BUILD 1089 (v11): the mines state — v10 saves have none and
   // migrate to fresh (no sites). Carried through as-is; the deep
   // shape check is validateMineState (mines.ts) at the load sites.
@@ -1527,7 +1640,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       bridges.push({ id: 'bridge-' + bx + '-' + by, x: bx, y: by, workTile: { x: bwx, y: bwy }, state: bstate, progress: bprogress, spentWood: bspent });
     }
   }
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, mines, foodChain, bridges, construction };
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, storehouseCoal, storehouseIngots, storehouseTools, storehouseTimber, storehouseFurniture, mines, foodChain, metalChain, bridges, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -1560,7 +1673,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain()): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain(), storehouseCoal = 0, storehouseIngots = 0, storehouseTools = 0, storehouseTimber = 0, storehouseFurniture = 0, metalChain: MetalChainState = freshMetalChain()): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -1574,6 +1687,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       carryingBuild: f.carryingBuild,
       carryingWater: f.carryingWater,
       carryingOre: f.carryingOre,
+      carryingOreKind: f.carryingOreKind,
       hunger: Math.round(f.needs.hunger),
       energy: Math.round(f.needs.energy),
       social: Math.round(f.needs.social),
@@ -1600,6 +1714,11 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     storehouseWood,
     storehouseStone,
     storehouseOre,
+    storehouseCoal,
+    storehouseIngots,
+    storehouseTools,
+    storehouseTimber,
+    storehouseFurniture,
     mines: {
       mines: mines.mines.map((m) => ({ ...m, workTile: { ...m.workTile } })),
       quarry: mines.quarry ? { ...mines.quarry, centre: { ...mines.quarry.centre } } : null,
@@ -1607,6 +1726,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       lastDesignateDay: mines.lastDesignateDay,
     },
     foodChain: { mill: { ...foodChain.mill }, bakery: { ...foodChain.bakery } },
+    metalChain: { smelter: { ...metalChain.smelter }, blacksmith: { ...metalChain.blacksmith }, sawmill: { ...metalChain.sawmill }, carpenter: { ...metalChain.carpenter }, workshop: { ...metalChain.workshop } },
     bridges: bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })),
     construction: constructionFromSites(sitesOf(construction)),
   };
@@ -1653,6 +1773,11 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
       plantTicks: 0,
       millTicks: 0,
       bakeTicks: 0,
+      smeltTicks: 0,
+      smithTicks: 0,
+      sawTicks: 0,
+      carpenterTicks: 0,
+      carryingOreKind: s.carryingOreKind ?? null,
       treeTarget: null,
       farmTarget: null,
     waterTarget: null,

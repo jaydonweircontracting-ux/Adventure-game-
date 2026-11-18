@@ -170,6 +170,21 @@ export const STOREHOUSE_CAPACITY_STONE = 60;
 /** Ore capacity of the storehouse store (BUILD 1089 — the mine's
  *  iron; the stone cap's sibling, same size). */
 export const STOREHOUSE_CAPACITY_ORE = 60;
+/** Coal capacity of the storehouse store (BUILD 1095 — the coal
+ *  mine's coal; the ore cap's sibling, same size). */
+export const STOREHOUSE_CAPACITY_COAL = 60;
+/** Ingot capacity of the storehouse store (BUILD 1095 — the
+ *  smelter's ingots; a real cap that binds at 20). */
+export const STOREHOUSE_CAPACITY_INGOT = 20;
+/** Tool capacity of the storehouse store (BUILD 1095 — the
+ *  blacksmith's tools; a real cap that binds at 10). */
+export const STOREHOUSE_CAPACITY_TOOL = 10;
+/** Timber capacity of the storehouse store (BUILD 1095 — the
+ *  sawmill's timber; a real cap that binds at 40). */
+export const STOREHOUSE_CAPACITY_TIMBER = 40;
+/** Furniture capacity of the storehouse store (BUILD 1095 — the
+ *  carpenter's furniture; a real cap that binds at 10). */
+export const STOREHOUSE_CAPACITY_FURNITURE = 10;
 
 /** The storehouse's registry store id (R-1). */
 export const STOREHOUSE_STORE_ID = 'storehouse';
@@ -592,7 +607,7 @@ export function storehouseOreInRegistry(registry: ResourceRegistry, kind: string
  * first deposit, so a fresh storehouse's first delivery creates
  * the capped entry. Pure.
  */
-export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number, ore = 0): ResourceRegistry {
+export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number, ore = 0, coal = 0, ingot = 0, tool = 0, timber = 0, furniture = 0): ResourceRegistry {
   let next = registry;
   if (wood > 0) {
     next = setStoreQty(
@@ -624,6 +639,58 @@ export function seedStorehouseStore(registry: ResourceRegistry, wood: number, st
       ore,
       { type: 'loaded' },
       { capacity: STOREHOUSE_CAPACITY_ORE, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  // BUILD 1095: the storehouse's coal, ingots, tools, timber, and
+  // furniture — seeded from the founders save (v12), like iron.
+  if (coal > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'coal',
+      coal,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_COAL, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  if (ingot > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'ingot',
+      ingot,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_INGOT, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  if (tool > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'tools',
+      tool,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_TOOL, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  if (timber > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'timber',
+      timber,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_TIMBER, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  if (furniture > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'furniture',
+      furniture,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_FURNITURE, location: { ...STOREHOUSE_APPROACH } },
     );
   }
   return next;
@@ -660,7 +727,7 @@ export function deliverFounderCarryToStore(
   registry: ResourceRegistry,
   f: FounderState,
   storehouse: StorehouseState | null | undefined,
-): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; movedOre: number; dest: string } {
+): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; movedOre: number; movedIron: number; movedCoal: number; dest: string } {
   const dest = deliveryStoreId(storehouse);
   const loc = dest === STOREHOUSE_STORE_ID ? { ...STOREHOUSE_APPROACH } : { ...FOUNDER_CAMP_CENTRE };
   const src = { type: 'entity', id: f.id } as const;
@@ -671,11 +738,13 @@ export function deliverFounderCarryToStore(
   const carrying = Math.max(0, Math.floor(f.carrying));
   const carryingStone = Math.max(0, Math.floor(f.carryingStone));
   const carryingBuild = Math.max(0, Math.floor(f.carryingBuild ?? 0));
-  // BUILD 1089: the mine's ore (iron) rides the same delivery — a
-  // real transfer to the delivery store, capacity-capped, with the
+  // BUILD 1089: the mine's ore rides the same delivery — a real
+  // transfer to the delivery store, capacity-capped, with the
   // same overflow-to-camp when the storehouse is full for the kind.
-  const carryingOre = Math.max(0, Math.floor(f.carryingOre ?? 0));
-  const moveToDest = (kind: 'wood' | 'stone' | 'iron', qty: number, capacity: number): number => {
+  // BUILD 1095: iron AND coal (the 1089 code moved 'iron' only,
+  // so a coal miner's coal stranded in the carrier and the deliver
+  // job never completed — the founder pinned at the approach).
+  const moveToDest = (kind: 'wood' | 'stone' | 'iron' | 'coal', qty: number, capacity: number): number => {
     if (qty <= 0) return 0;
     const first = transfer(reg, carrierStoreId(f.id), dest, kind, qty, src, { location: loc, capacity });
     reg = first.registry;
@@ -697,8 +766,15 @@ export function deliverFounderCarryToStore(
   }
   movedStone = moveToDest('stone', carryingStone, STOREHOUSE_CAPACITY_STONE);
   movedBuildWood = moveToDest('wood', carryingBuild, STOREHOUSE_CAPACITY_WOOD);
-  const movedOre = moveToDest('iron', carryingOre, STOREHOUSE_CAPACITY_ORE);
-  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, movedOre, dest };
+  // The quantity moved is read from the carrier store (what the
+  // founder actually holds), each kind with its own cap. The two
+  // kinds are reported apart (movedIron / movedCoal) so the sim
+  // ledgers iron and coal separately; movedOre is their sum (the
+  // view's carrying count reads it). Pure.
+  const movedIron = moveToDest('iron', storeQty(reg, carrierStoreId(f.id), 'iron'), STOREHOUSE_CAPACITY_ORE);
+  const movedCoal = moveToDest('coal', storeQty(reg, carrierStoreId(f.id), 'coal'), STOREHOUSE_CAPACITY_COAL);
+  const movedOre = movedIron + movedCoal;
+  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, movedOre, movedIron, movedCoal, dest };
 }
 
 /**

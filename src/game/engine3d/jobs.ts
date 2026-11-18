@@ -101,7 +101,7 @@
  */
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
-import { STOREHOUSE_APPROACH, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type StorehouseState } from './storehouse';
+import { STOREHOUSE_APPROACH, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type StorehouseState } from './storehouse';
 import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
 import { HUT_SITES, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
@@ -109,13 +109,14 @@ import { FARM_VILLAGER_RADIUS, readyFarmTiles, waterableFarmTiles } from './farm
 import { GRANARY_CAPACITY_FLOUR, plantableFarmTiles } from './granary';
 import { npcWalkable } from './townsfolk3d';
 import { WELL_START_DAY, type BridgeSite } from './paths';
-import { lumberTreesInRect, openMineSite, type MineState } from './mines';
+import { lumberTreesInRect, openMineSite, openMineSites, type MineState } from './mines';
 import { BAKERY_APPROACH, BAKERY_SITE_ID, BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH, MILL_APPROACH, MILL_SITE_ID, isBakeryUsable, isMillUsable, type FoodChainState } from './foodChain';
+import { BLACKSMITH_APPROACH, BLACKSMITH_SITE_ID, CARPENTER_APPROACH, CARPENTER_SITE_ID, CARPENTER_TIMBER_PER_BATCH, SAWMILL_APPROACH, SAWMILL_SITE_ID, SAW_WOOD_PER_BATCH, SMELT_COAL_PER_BATCH, SMELT_ORE_PER_BATCH, SMELTER_APPROACH, SMELTER_SITE_ID, SMITH_INGOT_PER_TOOL, WORKSHOP_APPROACH, WORKSHOP_SITE_ID, isBlacksmithUsable, isCarpenterUsable, isSawmillUsable, isSmelterUsable, type MetalChainState } from './metalChain';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -241,6 +242,26 @@ export function bakeJobIdFor(siteId: string): string {
   return jobIdFor('bake', siteId);
 }
 
+/** The job id for the smelter site (BUILD 1095 — one smelt job). */
+export function smeltJobIdFor(siteId: string): string {
+  return jobIdFor('smelt', siteId);
+}
+
+/** The job id for the blacksmith site (BUILD 1095 — one smith job). */
+export function smithJobIdFor(siteId: string): string {
+  return jobIdFor('smith', siteId);
+}
+
+/** The job id for the sawmill site (BUILD 1095 — one saw job). */
+export function sawJobIdFor(siteId: string): string {
+  return jobIdFor('saw', siteId);
+}
+
+/** The job id for the carpenter site (BUILD 1095 — one carpenter job). */
+export function carpenterJobIdFor(siteId: string): string {
+  return jobIdFor('carpenter', siteId);
+}
+
 /** The job id for a lumber tree at (tx, ty). */
 export function lumberJobIdFor(tx: number, ty: number): string {
   return jobIdFor('lumber', treeId(tx, ty));
@@ -296,6 +317,21 @@ export type JobDiscoveryInput = {
    *  are unchanged. */
   foodChain?: FoodChainState;
   granary?: { grain: number; flour: number; food: number };
+  /** BUILD 1095: the metal-chain state + the storehouse numbers —
+   *  a smelt job exists only once the smelter is done and there is
+   *  ore + coal to smelt (and room in the ingot store); a smith
+   *  job only once the blacksmith is done and there are ingots to
+   *  smith (and room in the tool store); a saw job only once the
+   *  sawmill is done and there is wood to saw (and room in the
+   *  timber store); a carpenter job only once the carpenter is
+   *  done and there is timber to carpenter (and room in the
+   *  furniture store). The five build jobs (smelter, blacksmith,
+   *  sawmill, carpenter, workshop) exist while their building is
+   *  unfinished and startable (the same gates as the mill/bakery
+   *  build jobs). Absent means no metal-chain data (the old
+   *  callers) and no chain jobs, so old boards are unchanged. */
+  metalChain?: MetalChainState;
+  storehouseMaterials?: { iron: number; coal: number; ingots: number; tools: number; wood: number; timber: number; furniture: number };
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -344,6 +380,13 @@ export function quarryJobIdFor(targetId: string): string {
  * - bake (BUILD 1094): one job while the bakery is done and there
  *   is flour to bake (and the camp is short of food) — same shape
  *   as the mill job, the bakery approach as the tile.
+ * - smelt / smith / saw / carpenter (BUILD 1095): one job per
+ *   metal-chain building, while the building is done and there is
+ *   input to process (ore + coal / ingots / wood / timber) and
+ *   room in the output store — the same shape as the mill/bake
+ *   jobs, the building's approach as the tile. A claimed job
+ *   whose input ran out mid-shift is NOT failed; an open job
+ *   whose input ran out is removed silently.
  * - deliver: one job per founder carrying wood; completing it
  *   when the carrier empties (the work is done — the wood is
  *   in the camp store). BUILD 1067: a founder carrying GRAIN
@@ -533,6 +576,53 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     }
   }
 
+  // --- Smelter / blacksmith / sawmill / carpenter / workshop
+  // build jobs (BUILD 1095): one job per metal-chain building
+  // while it is unfinished and startable — the smelter once hut 0
+  // is done and the first iron has landed (the housing-first rule
+  // + something to smelt), the blacksmith once the smelter is
+  // done, the sawmill once hut 0 is done and the storehouse
+  // stands (it draws its wood from the storehouse store), the
+  // carpenter once the sawmill is done, the workshop once the
+  // bakery is done (the settlement's next building after the food
+  // chain — it stalls on tools until the blacksmith makes them).
+  // The job's tile is the building's approach; completing it
+  // when the building is done. A claimed job whose startability
+  // vanished (the iron ran out mid-build, the tools ran out
+  // mid-build) fails — the holder re-targets and the building
+  // waits for inputs again. The wood/tool gates live in the
+  // claim (canStart*/canBuild* check the camp pile and the
+  // storehouse), not here: a job may exist while the pile is
+  // empty. The sync helper below is the mill/bakery build-job
+  // shape, shared so five sites do not repeat it five times.
+  if (input.metalChain !== undefined) {
+    const mc = input.metalChain;
+    const sm = input.storehouseMaterials;
+    const syncChainBuild = (siteId: string, approach: { x: number; y: number }, buildable: boolean, done: boolean): void => {
+      const id = buildJobIdFor(siteId);
+      if (buildable) {
+        if (!next.jobs[id]) {
+          next.jobs[id] = { id, kind: 'build', targetId: siteId, tile: { ...approach }, state: 'open', claimedBy: null, createdAbs: nowAbs };
+          changed = true;
+        }
+      } else if (next.jobs[id]) {
+        if (done) {
+          next = completeJob(next, id);
+        } else if (next.jobs[id].state === 'claimed') {
+          next = failJob(next, id, 'not-startable');
+        } else {
+          delete next.jobs[id];
+        }
+        changed = true;
+      }
+    };
+    syncChainBuild(SMELTER_SITE_ID, SMELTER_APPROACH, mc.smelter.state !== 'done' && sites[0] !== undefined && sites[0].state === 'done' && sm !== undefined && sm.iron >= 1, mc.smelter.state === 'done');
+    syncChainBuild(BLACKSMITH_SITE_ID, BLACKSMITH_APPROACH, mc.blacksmith.state !== 'done' && mc.smelter.state === 'done', mc.blacksmith.state === 'done');
+    syncChainBuild(SAWMILL_SITE_ID, SAWMILL_APPROACH, mc.sawmill.state !== 'done' && sites[0] !== undefined && sites[0].state === 'done' && input.storehouse !== undefined && input.storehouse.state === 'done', mc.sawmill.state === 'done');
+    syncChainBuild(CARPENTER_SITE_ID, CARPENTER_APPROACH, mc.carpenter.state !== 'done' && mc.sawmill.state === 'done', mc.carpenter.state === 'done');
+    syncChainBuild(WORKSHOP_SITE_ID, WORKSHOP_APPROACH, mc.workshop.state !== 'done' && input.foodChain !== undefined && input.foodChain.bakery.state === 'done', mc.workshop.state === 'done');
+  }
+
   // --- Bridge build jobs: one per unfinished bridge site (BUILD
   // 1088) — created while the site is unfinished and completing
   // when the site is done (the placement landed, finishBridge).
@@ -681,10 +771,13 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
   // to the storehouse). The job's tile is the mine's work tile;
   // the job completes when the shift's ore is in the carrier
   // (the deposit depletes / the site exhausts). A claimed job
-  // whose site exhausted fails ('target-gone').
+  // whose site exhausted fails ('target-gone'). BUILD 1095: the
+  // 1089 code used openMineSite (the FIRST open site only), so a
+  // second (coal) mine got no job — this loops over
+  // openMineSites, so the iron mine AND the coal mine each get a
+  // job and two miners work in parallel.
   const liveMineIds = new Set<string>();
-  const openMine = input.mines ? openMineSite(input.mines) : null;
-  if (openMine) {
+  for (const openMine of input.mines ? openMineSites(input.mines) : []) {
     const id = mineJobIdFor(openMine.depositId);
     liveMineIds.add(id);
     if (!next.jobs[id]) {
@@ -780,6 +873,40 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
       next = failJob(next, bakeId, 'target-gone');
       changed = true;
     }
+  }
+
+  // --- Smelt / smith / saw / carpenter jobs (BUILD 1095): one
+  // job per metal-chain building, while the building is done and
+  // there is input to process and room in the output store — the
+  // same shape as the mill/bake jobs, the building's approach as
+  // the tile. A claimed job whose input ran out mid-shift is NOT
+  // failed — the founder finishes the shift and the job
+  // completes; only a claimed job whose BUILDING is gone fails
+  // ('target-gone'). An open job whose input ran out is removed
+  // silently (nobody was doing it). The sync helper is the
+  // mill/bake work-job shape, shared so four buildings do not
+  // repeat it four times.
+  if (input.metalChain !== undefined && input.storehouseMaterials !== undefined) {
+    const sm = input.storehouseMaterials;
+    const syncChainWork = (jobId: string, kind: JobKind, targetId: string, tile: { x: number; y: number }, workable: boolean, done: boolean): void => {
+      if (workable && !next.jobs[jobId]) {
+        next.jobs[jobId] = { id: jobId, kind, targetId, tile: { ...tile }, state: 'open', claimedBy: null, createdAbs: nowAbs };
+        changed = true;
+      } else if (!workable && next.jobs[jobId]) {
+        const job = next.jobs[jobId];
+        if (job.state === 'open') {
+          delete next.jobs[jobId];
+          changed = true;
+        } else if (!done) {
+          next = failJob(next, jobId, 'target-gone');
+          changed = true;
+        }
+      }
+    };
+    syncChainWork(smeltJobIdFor(SMELTER_SITE_ID), 'smelt', SMELTER_SITE_ID, SMELTER_APPROACH, isSmelterUsable(input.metalChain) && sm.iron >= SMELT_ORE_PER_BATCH && sm.coal >= SMELT_COAL_PER_BATCH && sm.ingots < STOREHOUSE_CAPACITY_INGOT, isSmelterUsable(input.metalChain));
+    syncChainWork(smithJobIdFor(BLACKSMITH_SITE_ID), 'smith', BLACKSMITH_SITE_ID, BLACKSMITH_APPROACH, isBlacksmithUsable(input.metalChain) && sm.ingots >= SMITH_INGOT_PER_TOOL && sm.tools < STOREHOUSE_CAPACITY_TOOL, isBlacksmithUsable(input.metalChain));
+    syncChainWork(sawJobIdFor(SAWMILL_SITE_ID), 'saw', SAWMILL_SITE_ID, SAWMILL_APPROACH, isSawmillUsable(input.metalChain) && sm.wood >= SAW_WOOD_PER_BATCH && sm.timber < STOREHOUSE_CAPACITY_TIMBER, isSawmillUsable(input.metalChain));
+    syncChainWork(carpenterJobIdFor(CARPENTER_SITE_ID), 'carpenter', CARPENTER_SITE_ID, CARPENTER_APPROACH, isCarpenterUsable(input.metalChain) && sm.timber >= CARPENTER_TIMBER_PER_BATCH && sm.furniture < STOREHOUSE_CAPACITY_FURNITURE, isCarpenterUsable(input.metalChain));
   }
 
   // --- Lumber jobs: one per tree in the designated lumber rect
@@ -948,6 +1075,36 @@ export function claimNearestJob(
   let bestD = Infinity;
   for (const job of Object.values(board.jobs)) {
     if (job.kind !== kind || job.state !== 'open') continue;
+    const d = Math.abs(job.tile.x - x) + Math.abs(job.tile.y - y);
+    if (d > maxDist || d >= bestD) continue;
+    bestD = d;
+    best = job;
+  }
+  if (!best) return { board, job: null };
+  return claimJob(board, founderId, best.id);
+}
+
+/**
+ * Claim the nearest OPEN mine job for one mineral (iron or coal)
+ * — the miner claims the mineral the settlement is short of (the
+ * scorer's mine term fires for either), not just the nearest mine
+ * of any kind. The job's targetId is the deposit id
+ * ('deposit:<mineral>:<x>,<y>'), so the mineral is the prefix.
+ * Pure.
+ */
+export function claimNearestMineJobForMineral(
+  board: JobBoard,
+  founderId: string,
+  mineral: 'iron' | 'coal',
+  x: number,
+  y: number,
+  maxDist: number,
+): { board: JobBoard; job: Job | null } {
+  let best: Job | null = null;
+  let bestD = Infinity;
+  for (const job of Object.values(board.jobs)) {
+    if (job.kind !== 'mine' || job.state !== 'open') continue;
+    if (!job.targetId.startsWith('deposit:' + mineral + ':')) continue;
     const d = Math.abs(job.tile.x - x) + Math.abs(job.tile.y - y);
     if (d > maxDist || d >= bestD) continue;
     bestD = d;
@@ -1190,6 +1347,14 @@ export function jobSummary(board: JobBoard): {
   millClaimed: number;
   bakeOpen: number;
   bakeClaimed: number;
+  smeltOpen: number;
+  smeltClaimed: number;
+  smithOpen: number;
+  smithClaimed: number;
+  sawOpen: number;
+  sawClaimed: number;
+  carpenterOpen: number;
+  carpenterClaimed: number;
   lastCompletedId: string | null;
   lastFailedId: string | null;
   lastFailedReason: string | null;
@@ -1217,6 +1382,14 @@ export function jobSummary(board: JobBoard): {
   let millOpen = 0;
   let millClaimed = 0;
   let bakeOpen = 0;
+  let smeltOpen = 0;
+  let smeltClaimed = 0;
+  let smithOpen = 0;
+  let smithClaimed = 0;
+  let sawOpen = 0;
+  let sawClaimed = 0;
+  let carpenterOpen = 0;
+  let carpenterClaimed = 0;
   let bakeClaimed = 0;
   for (const job of Object.values(board.jobs)) {
     if (job.state === 'open') {
@@ -1231,6 +1404,10 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'plant') plantOpen++;
       else if (job.kind === 'mill') millOpen++;
       else if (job.kind === 'bake') bakeOpen++;
+      else if (job.kind === 'smelt') smeltOpen++;
+      else if (job.kind === 'smith') smithOpen++;
+      else if (job.kind === 'saw') sawOpen++;
+      else if (job.kind === 'carpenter') carpenterOpen++;
       else deliverOpen++;
     } else if (job.state === 'claimed') {
       claimed++;
@@ -1244,8 +1421,12 @@ export function jobSummary(board: JobBoard): {
       else if (job.kind === 'plant') plantClaimed++;
       else if (job.kind === 'mill') millClaimed++;
       else if (job.kind === 'bake') bakeClaimed++;
+      else if (job.kind === 'smelt') smeltClaimed++;
+      else if (job.kind === 'smith') smithClaimed++;
+      else if (job.kind === 'saw') sawClaimed++;
+      else if (job.kind === 'carpenter') carpenterClaimed++;
       else deliverClaimed++;
     }
   }
-  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, plantOpen, plantClaimed, millOpen, millClaimed, bakeOpen, bakeClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
+  return { open, claimed, completed: board.completed, failed: board.failed, chopOpen, chopClaimed, buildOpen, buildClaimed, deliverOpen, deliverClaimed, harvestOpen, harvestClaimed, quarryOpen, quarryClaimed, waterOpen, waterClaimed, mineOpen, mineClaimed, lumberOpen, lumberClaimed, plantOpen, plantClaimed, millOpen, millClaimed, bakeOpen, bakeClaimed, smeltOpen, smeltClaimed, smithOpen, smithClaimed, sawOpen, sawClaimed, carpenterOpen, carpenterClaimed, lastCompletedId: board.lastCompletedId, lastFailedId: board.lastFailedId, lastFailedReason: board.lastFailedReason };
 }

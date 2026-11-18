@@ -77,17 +77,22 @@ export const MINE_START_DAY = 3;
 export const QUARRY_START_DAY = 3;
 export const LUMBER_START_DAY = 3;
 /** The mine's mineral — the acceptance test names iron, and the
- *  nearest live iron deposit to camp is the first mine. Other
- *  minerals are Phase 3 (smelting picks the mineral). */
+ *  nearest live iron deposit to camp is the first mine. Coal is
+ *  the second mine (Phase 3.4 — the smelter burns it); the
+ *  designation takes the mineral as a parameter. */
 export const MINE_MINERAL: MineralKind = 'iron';
 /** Ore per miner shift — the quarry's deposit visit (2 stone). */
 export const MINE_ORE_PER_SHIFT = 2;
 /** Ticks per miner shift — FOUNDER_MINE_TICKS (the quarry's shift). */
 export const MINE_TICKS_PER_SHIFT = 3;
 /** The storehouse stockpile goal for iron — the miner works until
- *  the storehouse holds this much, then stops (iron has no sink
- *  yet; smelting is Phase 3). */
+ *  the storehouse holds this much, then stops (the smelter is the
+ *  iron sink now; smelting is Phase 3.4). */
 export const MINE_IRON_TARGET = 20;
+/** The storehouse stockpile goal for coal — the coal miner works
+ *  until the storehouse holds this much, then stops (the smelter
+ *  is the coal sink; the same size as the iron target). */
+export const MINE_COAL_TARGET = 20;
 /** The mine claims deposits inside the founder work radius. */
 /** The mine claim radius — the founders' work radius, read at call
  *  time (a module-level `= FOUNDER_WORK_RADIUS` evaluates
@@ -206,8 +211,10 @@ function roundTripReachable(world: IsoWorld, tile: { x: number; y: number }): bo
 }
 
 /**
- * Designate the mine: the nearest live iron deposit inside the
- * claim radius with a walkable work tile and a round-trip path.
+ * Designate the mine for one mineral (iron by default, coal for
+ * the second mine): the nearest live deposit of that mineral
+ * inside the claim radius with a walkable work tile and a
+ * round-trip path.
  * Gated on day 3 + the storehouse done (ore has nowhere to go
  * before storage exists). Idempotent: an open site for the same
  * deposit is returned unchanged; an exhausted site's deposit is
@@ -221,15 +228,16 @@ export function designateMine(
   day: number,
   storehouseDone: boolean,
   existing: MineSite[],
+  mineral: MineralKind = MINE_MINERAL,
 ): MineSite | null {
   if (day < MINE_START_DAY || !storehouseDone) return null;
-  const open = existing.find((s) => s.state === 'open');
+  const open = existing.find((s) => s.state === 'open' && s.mineral === mineral);
   if (open) return open;
   const taken = new Set(existing.map((s) => s.depositId));
   let best: MineralDeposit | null = null;
   let bestWorkTile: { x: number; y: number } | null = null;
   let bestD = Infinity;
-  for (const d of mineralDepositsInRadius(world, MINE_MINERAL, FOUNDER_CAMP.x, FOUNDER_CAMP.y, mineClaimRadius())) {
+  for (const d of mineralDepositsInRadius(world, mineral, FOUNDER_CAMP.x, FOUNDER_CAMP.y, mineClaimRadius())) {
     if (taken.has('deposit:' + d.mineral + ':' + d.x + ',' + d.y)) continue;
     const wt = mineWorkTile(world, d.x, d.y);
     if (!wt || !roundTripReachable(world, wt)) continue;
@@ -414,6 +422,30 @@ export function mineSiteForDeposit(sites: MineSite[], depositId: string): MineSi
 /** The open mine site, or null (the miner's job target). */
 export function openMineSite(state: MineState): MineSite | null {
   return state.mines.find((s) => s.state === 'open') ?? null;
+}
+
+/** All open mine sites — the job board discovers one mine job per
+ *  open site (BUILD 1095: the iron mine AND the coal mine), so
+ *  two miners work in parallel. Pure. */
+export function openMineSites(state: MineState): MineSite[] {
+  return state.mines.filter((s) => s.state === 'open');
+}
+
+/** The mineral a founder is mining (or carrying) — the site's
+ *  mineral when they are walking to / working a mine, the carried
+ *  kind when they are carrying ore back, null when they are not
+ *  mining. The per-mineral taken guards (ironTaken / coalTaken)
+ *  read it, so two miners work in parallel (one per mine). A
+ *  mine site's mineral is iron or coal; anything else reads as
+ *  iron (the pre-1095 default). Pure. */
+export function founderMiningMineral(f: FounderState, mines: MineState): 'iron' | 'coal' | null {
+  if (f.carryingOre > 0) return f.carryingOreKind ?? 'iron';
+  if ((f.workState === 'toMine' || f.workState === 'miningOre') && f.mineTarget) {
+    const site = mines.mines.find((s) => s.id === f.mineTarget!.id);
+    if (site) return site.mineral === 'coal' ? 'coal' : 'iron';
+    return 'iron';
+  }
+  return null;
 }
 
 /**

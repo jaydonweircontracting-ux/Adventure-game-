@@ -126,8 +126,10 @@ import { QUARRY_STONE_TARGET } from './quarry';
 import { HUT_APPROACH, HUT_COST_WOOD, HUT_WOOD_PER_STEP, hasReadyHutSite, nearestUnfinishedSite } from './construction';
 import { STOREHOUSE_START_DAY, STOREHOUSE_STONE_PER_STEP, STOREHOUSE_WOOD_PER_STEP, storehouseReadyForPlacement, type StorehouseState } from './storehouse';
 import { WELL_START_DAY } from './paths';
-import { MINE_IRON_TARGET, MINE_START_DAY } from './mines';
+import { MINE_COAL_TARGET, MINE_IRON_TARGET, MINE_START_DAY } from './mines';
 import { BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH } from './foodChain';
+import { CARPENTER_TIMBER_PER_BATCH, SAW_WOOD_PER_BATCH, SMELT_COAL_PER_BATCH, SMELT_ORE_PER_BATCH, SMITH_INGOT_PER_TOOL } from './metalChain';
+import { STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL } from './storehouse';
 import { GRANARY_CAPACITY_FLOUR } from './granary';
 import type { ConstructionState } from './construction';
 
@@ -231,6 +233,35 @@ export type UtilityWorldContext = {
    *  fires while the stockpile is below MINE_IRON_TARGET.
    *  Optional: absent means 0. */
   storehouseIron?: number;
+  /** BUILD 1095: coal in the storehouse store — the mine term
+   *  fires while EITHER stockpile is below its target (iron or
+   *  coal); the claim picks the mineral that is short. Optional:
+   *  absent means 0. */
+  storehouseCoal?: number;
+  /** BUILD 1095: another founder is already mining COAL (the
+   *  second mine's slot) — the mine term is 0 for this founder
+   *  when the coal slot is taken and iron is not short. Optional:
+   *  absent means the slot is free. */
+  coalTaken?: boolean;
+  /** BUILD 1095: ingots in the storehouse store — the smelt term
+   *  only fires while there is room in the ingot store, and the
+   *  smith term only while there are ingots to smith. Optional:
+   *  absent means 0. */
+  storehouseIngots?: number;
+  /** BUILD 1095: tools in the storehouse store — the smith term
+   *  only fires while there is room in the tool store, and the
+   *  workshop build only while there is a tool to spend.
+   *  Optional: absent means 0. */
+  storehouseTools?: number;
+  /** BUILD 1095: timber in the storehouse store — the saw term
+   *  only fires while there is room in the timber store, and the
+   *  carpenter term only while there is timber to carpenter.
+   *  Optional: absent means 0. */
+  storehouseTimber?: number;
+  /** BUILD 1095: furniture in the storehouse store — the
+   *  carpenter term only fires while there is room in the
+   *  furniture store. Optional: absent means 0. */
+  storehouseFurniture?: number;
   /** BUILD 1089: open lumber jobs on the board (trees in the
    *  designated rect) — the lumber term only fires when there is
    *  a tree to fell in the rotation. Optional: absent means no
@@ -265,6 +296,38 @@ export type UtilityWorldContext = {
    *  term only while there is flour to bake. Optional: absent
    *  means 0. */
   campFlour?: number;
+  /** BUILD 1095: open smelt jobs on the board — the smelt term
+   *  only fires when there is a smelter to work. Optional: absent
+   *  means no smelt data and the smelt term is 0. */
+  readySmeltJobs?: number;
+  /** BUILD 1095: open smith jobs on the board — the smith term
+   *  only fires when there is a blacksmith to work. Optional:
+   *  absent means no smith data and the smith term is 0. */
+  readySmithJobs?: number;
+  /** BUILD 1095: open saw jobs on the board — the saw term only
+   *  fires when there is a sawmill to work. Optional: absent
+   *  means no saw data and the saw term is 0. */
+  readySawJobs?: number;
+  /** BUILD 1095: open carpenter jobs on the board — the carpenter
+   *  term only fires when there is a carpenter to work. Optional:
+   *  absent means no carpenter data and the carpenter term is 0. */
+  readyCarpenterJobs?: number;
+  /** BUILD 1095: another founder is already smelting — the smelt
+   *  term is 0 for this founder, so only one founder ever smelts
+   *  at a time. Optional: absent means the slot is free. */
+  smeltTaken?: boolean;
+  /** BUILD 1095: another founder is already smithing — the smith
+   *  term is 0 for this founder. Optional: absent means the slot
+   *  is free. */
+  smithTaken?: boolean;
+  /** BUILD 1095: another founder is already sawing — the saw term
+   *  is 0 for this founder. Optional: absent means the slot is
+   *  free. */
+  sawTaken?: boolean;
+  /** BUILD 1095: another founder is already carpentering — the
+   *  carpenter term is 0 for this founder. Optional: absent means
+   *  the slot is free. */
+  carpenterTaken?: boolean;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -291,7 +354,7 @@ export type ScoredDecision = {
    *  terms (null when no work is worth doing). BUILD 1089: the
    *  mine and the lumber join the argmax (see workTermsFor).
    *  BUILD 1090: planting joins it too. */
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -402,6 +465,37 @@ export const UTILITY_BAKE_TERM_MAX = 0.6;
  *  at food 0, back to 0.6 when the camp is fed (food 15). */
 export const UTILITY_BAKE_URGENCY = 0.2;
 
+/** BUILD 1095: the smelt term — the most work is worth for
+ *  smelting alone (an open smelt job, ore + coal to smelt, room
+ *  in the ingot store). A background task: above idle chopping
+ *  (a full pile), below the hut build, below night sleep (0.81)
+ *  and a hungry founder's eat — smelting never steals a harvest,
+ *  a bake, or a mill on a tie. It fades when the ore, the coal,
+ *  or the ingot room runs out. */
+export const UTILITY_SMELT_TERM_MAX = 0.55;
+
+/** BUILD 1095: the smith term — the most work is worth for
+ *  smithing alone (an open smith job, ingots to smith, room in
+ *  the tool store). Same shape as the smelt term: a background
+ *  task that never steals a harvest, a bake, a mill, or a smelt
+ *  on a tie. */
+export const UTILITY_SMITH_TERM_MAX = 0.55;
+
+/** BUILD 1095: the saw term — the most work is worth for sawing
+ *  alone (an open saw job, wood to saw, room in the timber
+ *  store). Same shape as the smelt term, one step lower (0.5):
+ *  timber is a bulk good, not a bottleneck — sawing never steals
+ *  a harvest, a bake, a mill, a smelt, or a smith on a tie. */
+export const UTILITY_SAW_TERM_MAX = 0.3;
+
+/** BUILD 1095: the carpenter term — the most work is worth for
+ *  carpentry alone (an open carpenter job, timber to carpenter,
+ *  room in the furniture store). Same shape as the saw term
+ *  (0.5): furniture is a bulk good — carpentry never steals a
+ *  harvest, a bake, a mill, a smelt, a smith, or a saw on a
+ *  tie. */
+export const UTILITY_CARPENTER_TERM_MAX = 0.5;
+
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
   return Math.max(0, Math.min(1, (100 - value) / 100));
@@ -436,7 +530,11 @@ function workTermsFor(ctx: UtilityContext): {
   work: number;
   millTerm: number;
   bakeTerm: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null;
+  smeltTerm: number;
+  smithTerm: number;
+  sawTerm: number;
+  carpenterTerm: number;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -538,30 +636,54 @@ function workTermsFor(ctx: UtilityContext): {
       ? UTILITY_WATER_TERM_MAX * Math.max(0, 1 - foodStock / FARM_FOOD_THRESHOLD)
       : 0;
   // The wood work is the max of the two wood terms (ad-hoc chop
-  // vs the designated lumber site) — the stone and mine terms
-  // gate on NO wood work at all, so neither steals from the wood
-  // loop. In the 24h window the lumber term is 0, so woodWork is
-  // exactly chopWork and the stone gate is unchanged.
-  const woodWork = Math.max(chopWork, lumberTerm);
+  // vs the designated lumber site) — the stone term gates on NO
+  // wood work at all, so it never steals from the wood loop. In
+  // the 24h window the lumber term is 0, so the stone gate is
+  // exactly chopWork === 0 and the M1069 guard is unchanged.
   // BUILD 1089: the mine term — when a mine job is open, the
   // storehouse is done (ore has somewhere to go), the settlement
   // is old enough (day 3 — the job's own gate, mirrored here so
-  // the term can never fire in the 24h window), the storehouse
-  // holds less than the iron target, and there is NO wood work
-  // at all (woodWork == 0 — the pile is full, the wood loop is
-  // satisfied). It scales with the stockpile shortage (iron 0 →
-  // UTILITY_MINE_TERM_MAX, iron 20 → 0) and combines by max.
-  // It never beats night sleep or a hungry founder's eat, and it
-  // never steals a chop, a harvest, a quarry, or a lumber on a
-  // tie (the work kind below is the STRICT argmax — mine wins
-  // only outright over the others, and only ties over chop).
+  // the term can never fire in the 24h window), and the
+  // storehouse holds less than a mineral target. It scales with
+  // the stockpile shortage (iron 0 → UTILITY_MINE_TERM_MAX,
+  // iron 20 → 0) and combines by max. It never beats night sleep
+  // or a hungry founder's eat, and it never steals a chop, a
+  // harvest, a quarry, or a lumber on a tie (the work kind below
+  // is the STRICT argmax — mine wins only outright over the
+  // others, and only over chop when strictly greater, so it never
+  // wins on a tie with an empty pile).
+  // BUILD 1095: the mine term has NO wood-work gate. The 1089
+  // gate (woodWork === 0 — the pile exactly full) is unreachable
+  // once the sawmill runs: the sawmill is a continuous wood sink,
+  // so the pile never sits exactly full, chopWork never hits 0,
+  // and the term is 0 for the whole week — no mining, no ore, no
+  // ingots, no tools, and the settlement starves on the chop load
+  // (the 1095 week run: mine shifts 0, starvedTicks 6155 vs the
+  // 1094 baseline of 63). The argmax already enforces "spare
+  // capacity": mine sits last, it must beat chopWork outright, and
+  // chopWork is 0.45 only when the pile is empty — so mining fires
+  // when the pile is non-empty and nothing else is hotter, which
+  // is the spare-capacity behaviour the gate was meant to encode.
   const readyMine = ctx.readyMineJobs ?? 0;
   const mineTaken = ctx.mineTaken ?? false;
+  const coalTaken = ctx.coalTaken ?? false;
   const storehouseIron = ctx.storehouseIron ?? 0;
+  const storehouseCoal = ctx.storehouseCoal ?? 0;
+  // BUILD 1095: the mine term fires while EITHER stockpile is
+  // below its target (iron or coal) and the slot for the short
+  // mineral is free — the iron slot and the coal slot are
+  // separate, so two miners work in parallel (one iron, one
+  // coal). The term scales with the SCARCEST mineral (the min
+  // of the two ratios), so it stays hot while either is short.
+  // The claim picks the short mineral (see the tick). In the
+  // 24h window the term never fires (day < 3, readyMine 0).
+  const ironNeeded = storehouseIron < MINE_IRON_TARGET;
+  const coalNeeded = storehouseCoal < MINE_COAL_TARGET;
+  const mineSlotFree = (ironNeeded && !mineTaken) || (coalNeeded && !coalTaken);
   const mineTerm =
-    readyMine > 0 && !mineTaken && ctx.storehouse !== undefined && ctx.storehouse.state === 'done' &&
-    (ctx.day ?? 0) >= MINE_START_DAY && storehouseIron < MINE_IRON_TARGET && woodWork === 0
-      ? UTILITY_MINE_TERM_MAX * Math.max(0, 1 - storehouseIron / MINE_IRON_TARGET)
+    readyMine > 0 && mineSlotFree && ctx.storehouse !== undefined && ctx.storehouse.state === 'done' &&
+    (ctx.day ?? 0) >= MINE_START_DAY && (ironNeeded || coalNeeded)
+      ? UTILITY_MINE_TERM_MAX * Math.max(0, 1 - Math.min(storehouseIron / MINE_IRON_TARGET, storehouseCoal / MINE_COAL_TARGET))
       : 0;
   // BUILD 1090: the plant term — when the camp is short of food
   // (below FARM_FOOD_THRESHOLD) and a plant job is open, work is
@@ -613,18 +735,66 @@ function workTermsFor(ctx: UtilityContext): {
     readyBake > 0 && !bakeTaken && campFlour >= BAKE_FLOUR_PER_MEAL && foodStock < BAKE_FOOD_THRESHOLD
       ? UTILITY_BAKE_TERM_MAX + UTILITY_BAKE_URGENCY * Math.max(0, 1 - foodStock / BAKE_FOOD_THRESHOLD)
       : 0;
-  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm);
-  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | null = null;
+  // BUILD 1095: the chain terms — when a chain job is open (the
+  // building is done and there is input to process and room in
+  // the output store) and no other founder is working that
+  // building, work is worth doing for the chain output alone.
+  // Flat (smelt/smith 0.55, carpenter 0.5, saw 0.3): background
+  // tasks — they beat idle chopping (a full pile) but never beat
+  // the hut build, night sleep, or a hungry founder's eat. The
+  // saw is 0.3, BELOW chop's 0.45 max, because sawing consumes
+  // wood: at 0.5 it beat chop whenever wood was on hand, so the
+  // sawmill ran as a continuous wood sink, tripled the chop load,
+  // and starved the settlement (the 1095 week run: meals 115 vs
+  // the 1094 baseline of 152, starvedTicks 6155 vs 63). At 0.3
+  // the saw only wins when the pile is over a third full
+  // (chopWork < 0.3) — it runs on surplus wood. Smelt/smith/
+  // carpenter stay higher (0.55/0.55/0.5) because their inputs
+  // are bounded (ore, ingots, timber) — they cannot run away.
+  // The argmax below puts them after the mill and the bake,
+  // before food — food before iron. In the 24h window every
+  // chain term is 0 (the chain opens day 3+), so the M1069
+  // numbers are unaffected.
+  const readySmelt = ctx.readySmeltJobs ?? 0;
+  const smeltTaken = ctx.smeltTaken ?? false;
+  const smeltTerm =
+    readySmelt > 0 && !smeltTaken && storehouseIron >= SMELT_ORE_PER_BATCH && storehouseCoal >= SMELT_COAL_PER_BATCH && (ctx.storehouseIngots ?? 0) < STOREHOUSE_CAPACITY_INGOT
+      ? UTILITY_SMELT_TERM_MAX
+      : 0;
+  const readySmith = ctx.readySmithJobs ?? 0;
+  const smithTaken = ctx.smithTaken ?? false;
+  const smithTerm =
+    readySmith > 0 && !smithTaken && (ctx.storehouseIngots ?? 0) >= SMITH_INGOT_PER_TOOL && (ctx.storehouseTools ?? 0) < STOREHOUSE_CAPACITY_TOOL
+      ? UTILITY_SMITH_TERM_MAX
+      : 0;
+  const readySaw = ctx.readySawJobs ?? 0;
+  const sawTaken = ctx.sawTaken ?? false;
+  const sawTerm =
+    readySaw > 0 && !sawTaken && (ctx.storehouseWood ?? 0) >= SAW_WOOD_PER_BATCH && (ctx.storehouseTimber ?? 0) < STOREHOUSE_CAPACITY_TIMBER
+      ? UTILITY_SAW_TERM_MAX
+      : 0;
+  const readyCarpenter = ctx.readyCarpenterJobs ?? 0;
+  const carpenterTaken = ctx.carpenterTaken ?? false;
+  const carpenterTerm =
+    readyCarpenter > 0 && !carpenterTaken && (ctx.storehouseTimber ?? 0) >= CARPENTER_TIMBER_PER_BATCH && (ctx.storehouseFurniture ?? 0) < STOREHOUSE_CAPACITY_FURNITURE
+      ? UTILITY_CARPENTER_TERM_MAX
+      : 0;
+  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, smeltTerm, smithTerm, sawTerm, carpenterTerm);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null = null;
   if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm && waterTerm > plantTerm && waterTerm > millTerm && waterTerm > bakeTerm) workKind = 'water';
   else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm && stoneTerm > plantTerm && stoneTerm > millTerm && stoneTerm > bakeTerm) workKind = 'quarry';
   else if (plantTerm > 0 && plantTerm > chopWork && plantTerm > foodTerm && plantTerm >= lumberTerm && plantTerm >= mineTerm && plantTerm >= millTerm && plantTerm >= bakeTerm) workKind = 'plant';
   else if (bakeTerm > 0 && bakeTerm >= chopWork && bakeTerm >= lumberTerm && bakeTerm >= mineTerm && bakeTerm >= millTerm && bakeTerm >= foodTerm) workKind = 'bake';
   else if (millTerm > 0 && millTerm >= chopWork && millTerm >= lumberTerm && millTerm >= mineTerm && millTerm >= foodTerm) workKind = 'mill';
+  else if (smeltTerm > 0 && smeltTerm >= chopWork && smeltTerm >= lumberTerm && smeltTerm >= mineTerm && smeltTerm >= foodTerm) workKind = 'smelt';
+  else if (smithTerm > 0 && smithTerm >= chopWork && smithTerm >= lumberTerm && smithTerm >= mineTerm && smithTerm >= foodTerm) workKind = 'smith';
+  else if (sawTerm > 0 && sawTerm >= chopWork && sawTerm >= lumberTerm && sawTerm >= mineTerm && sawTerm >= foodTerm) workKind = 'saw';
+  else if (carpenterTerm > 0 && carpenterTerm >= chopWork && carpenterTerm >= lumberTerm && carpenterTerm >= mineTerm && carpenterTerm >= foodTerm) workKind = 'carpenter';
   else if (foodTerm > 0 && foodTerm >= chopWork && foodTerm >= lumberTerm && foodTerm >= mineTerm) workKind = 'harvest';
   else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm && lumberTerm >= millTerm) workKind = 'lumber';
-  else if (mineTerm > 0 && mineTerm >= chopWork) workKind = 'mine';
+  else if (mineTerm > 0 && mineTerm > chopWork) workKind = 'mine';
   else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, work, workKind };
+  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, smeltTerm, smithTerm, sawTerm, carpenterTerm, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {

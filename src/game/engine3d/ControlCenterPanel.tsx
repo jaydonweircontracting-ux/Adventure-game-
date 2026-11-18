@@ -147,7 +147,7 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
               Camp — wood {d.resources.campWood} · stone {d.resources.campStone} · Granary {d.resources.campFood} meals · {d.resources.campGrain} grain · {d.resources.campFlour} flour
             </div>
             <div>
-              Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone} · iron {d.resources.storehouseIron}
+              Storehouse {d.resources.storehouseLabel} — wood {d.resources.storehouseWood} · stone {d.resources.storehouseStone} · iron {d.resources.storehouseIron} · coal {d.resources.storehouseCoal} · ingots {d.resources.storehouseIngots} · tools {d.resources.storehouseTools} · timber {d.resources.storehouseTimber} · furniture {d.resources.storehouseFurniture}
             </div>
             <div>
               You — wood {d.resources.playerWood} · stone {d.resources.playerStone} · gold {d.resources.playerGold} · grain {d.resources.playerGrain}
@@ -188,6 +188,19 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
               Average health {d.food.healthAvg}
               {d.food.weakCount > 0 ? ` · ${d.food.weakCount} weak (health under 30)` : ' · nobody weak'} · mill {d.food.millState}{d.food.millReady ? ' ready — grain becomes flour' : ''} · bakery {d.food.bakeryState}{d.food.bakeryReady ? ' ready — flour becomes meals' : ''}
             </div>
+          </div>
+
+          <div data-testid="cc-chain" style={sectionStyle}>
+            <div style={headingStyle}>⛓️ Metal + timber chain — production</div>
+            <div>
+              Storehouse {d.chain.coal} coal · {d.chain.ingots} ingots · {d.chain.tools} tools · {d.chain.timber} timber · {d.chain.furniture} furniture
+            </div>
+            <div>
+              smelter {d.chain.smelterState}{d.chain.smelterReady ? ' ready — ore + coal become ingots' : ''} · blacksmith {d.chain.blacksmithState}{d.chain.blacksmithReady ? ' ready — ingots become tools' : ''} · sawmill {d.chain.sawmillState}{d.chain.sawmillReady ? ' ready — wood becomes timber' : ''} · carpenter {d.chain.carpenterState}{d.chain.carpenterReady ? ' ready — timber becomes furniture' : ''} · workshop {d.chain.workshopState}
+            </div>
+            {d.chain.workshopStall ? (
+              <div style={{ color: '#ffb3a7', marginTop: 4 }}>Stalled: {d.chain.workshopStall}</div>
+            ) : null}
           </div>
 
           <div data-testid="cc-construction" style={sectionStyle}>

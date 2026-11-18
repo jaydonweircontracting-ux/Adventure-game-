@@ -39,6 +39,7 @@ import { createWorldBuilder, type Vec3, type WorldBuilder } from './worldRender3
 import { HUT_SITES, sitesOf, type ConstructionState } from './construction';
 import { STOREHOUSE_HUT_SITE, type StorehouseState } from './storehouse';
 import { MILL_HUT_SITE, BAKERY_HUT_SITE, type FoodChainState } from './foodChain';
+import { SMELTER_HUT_SITE, BLACKSMITH_HUT_SITE, SAWMILL_HUT_SITE, CARPENTER_HUT_SITE, WORKSHOP_HUT_SITE, type MetalChainState } from './metalChain';
 import { type ResourceRegistry } from './resourceRegistry';
 import { maxVillagerVerts, MAX_TRANSIENTS, type TransientActor } from './transients';
 import { emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, BIRD_FLIGHT_HEIGHT, MAX_ANIMALS, type AnimalActor } from './animals';
@@ -166,6 +167,9 @@ export interface WorldRendererDeps {
   // BUILD 1094: the food chain (its build sites render through the
   // same per-frame fx path as a hut/storehouse site, below).
   foodChainRef: { current: FoodChainState };
+  // BUILD 1095: the metal + timber chain (its build sites render
+  // through the same per-frame fx path).
+  metalChainRef: { current: MetalChainState };
   staminaPublishCountRef: { current: number };
   areaSelectionRef: { current: AreaSelection | null };
   buildRef: { current: { palette: PaletteKind | null; removeMode: boolean; moveMode: boolean; saveAreaMode: boolean; pasteName: string | null; customAssetId: string | null; areaSelectMode: boolean; areaMoveArmed: boolean; areaDuplicateArmed: boolean } };
@@ -518,6 +522,7 @@ export class WorldRenderer {
     const constructionRef = this.deps.constructionRef;
     const storehouseRef = this.deps.storehouseRef;
     const foodChainRef = this.deps.foodChainRef;
+    const metalChainRef = this.deps.metalChainRef;
     const staminaPublishCountRef = this.deps.staminaPublishCountRef;
     const areaSelectionRef = this.deps.areaSelectionRef;
     const buildRef = this.deps.buildRef;
@@ -906,7 +911,7 @@ export class WorldRenderer {
     // progress 6 the real storehouse placement renders instead.
     // BUILD 1094: the mill + the bakery ride the same fx call — at
     // progress 6 the real mill/bakery placement renders instead.
-    const siteInputs=FOUNDERS_ENABLED?[...sitesOf(constructionRef.current).flatMap((s,i)=>{const site=HUT_SITES[i];return s.state==='building'&&site?[{baseY:surfaceElevation(effTerrainDraw,site.centre.x+.5,site.centre.y+.5),progress:s.progress,site}]:[];}),...(storehouseRef.current.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,STOREHOUSE_HUT_SITE.centre.x+.5,STOREHOUSE_HUT_SITE.centre.y+.5),progress:storehouseRef.current.progress,site:STOREHOUSE_HUT_SITE}]:[]),...(foodChainRef.current.mill.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,MILL_HUT_SITE.centre.x+.5,MILL_HUT_SITE.centre.y+.5),progress:foodChainRef.current.mill.progress,site:MILL_HUT_SITE}]:[]),...(foodChainRef.current.bakery.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,BAKERY_HUT_SITE.centre.x+.5,BAKERY_HUT_SITE.centre.y+.5),progress:foodChainRef.current.bakery.progress,site:BAKERY_HUT_SITE}]:[])]:[];
+    const siteInputs=FOUNDERS_ENABLED?[...sitesOf(constructionRef.current).flatMap((s,i)=>{const site=HUT_SITES[i];return s.state==='building'&&site?[{baseY:surfaceElevation(effTerrainDraw,site.centre.x+.5,site.centre.y+.5),progress:s.progress,site}]:[];}),...(storehouseRef.current.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,STOREHOUSE_HUT_SITE.centre.x+.5,STOREHOUSE_HUT_SITE.centre.y+.5),progress:storehouseRef.current.progress,site:STOREHOUSE_HUT_SITE}]:[]),...(foodChainRef.current.mill.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,MILL_HUT_SITE.centre.x+.5,MILL_HUT_SITE.centre.y+.5),progress:foodChainRef.current.mill.progress,site:MILL_HUT_SITE}]:[]),...(foodChainRef.current.bakery.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,BAKERY_HUT_SITE.centre.x+.5,BAKERY_HUT_SITE.centre.y+.5),progress:foodChainRef.current.bakery.progress,site:BAKERY_HUT_SITE}]:[]),...(metalChainRef.current.smelter.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,SMELTER_HUT_SITE.centre.x+.5,SMELTER_HUT_SITE.centre.y+.5),progress:metalChainRef.current.smelter.progress,site:SMELTER_HUT_SITE}]:[]),...(metalChainRef.current.blacksmith.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,BLACKSMITH_HUT_SITE.centre.x+.5,BLACKSMITH_HUT_SITE.centre.y+.5),progress:metalChainRef.current.blacksmith.progress,site:BLACKSMITH_HUT_SITE}]:[]),...(metalChainRef.current.sawmill.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,SAWMILL_HUT_SITE.centre.x+.5,SAWMILL_HUT_SITE.centre.y+.5),progress:metalChainRef.current.sawmill.progress,site:SAWMILL_HUT_SITE}]:[]),...(metalChainRef.current.carpenter.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,CARPENTER_HUT_SITE.centre.x+.5,CARPENTER_HUT_SITE.centre.y+.5),progress:metalChainRef.current.carpenter.progress,site:CARPENTER_HUT_SITE}]:[]),...(metalChainRef.current.workshop.state==='building'?[{baseY:surfaceElevation(effTerrainDraw,WORKSHOP_HUT_SITE.centre.x+.5,WORKSHOP_HUT_SITE.centre.y+.5),progress:metalChainRef.current.workshop.progress,site:WORKSHOP_HUT_SITE}]:[])]:[];
     // BUILD 1050: the entered hut's interior shell + hearth — the
     // ceiling and wall band render only in first-person inside (the
     // orbit view keeps its cutaway so the room stays visible from

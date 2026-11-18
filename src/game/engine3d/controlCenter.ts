@@ -9,6 +9,7 @@
 import { HUT_COST_WOOD } from './construction';
 import { FARM_FOOD_THRESHOLD, HEALTH_WEAK_BELOW } from './food';
 import { BAKE_FLOUR_PER_MEAL, GRIND_GRAIN_PER_BATCH } from './foodChain';
+import { SMELT_ORE_PER_BATCH, SMELT_COAL_PER_BATCH, SMITH_INGOT_PER_TOOL, SAW_WOOD_PER_BATCH, CARPENTER_TIMBER_PER_BATCH } from './metalChain';
 import { SETTLEMENT_ARRIVAL_FOOD_MIN } from './settlementGrowth';
 import type { LivingWorldSummary } from './livingWorld';
 
@@ -120,9 +121,12 @@ export type ControlCenterInput = {
   /** BUILD 1094: the mill + the bakery states (optional — the old
    *  callers pass none and the panel shows 'none'). */
   foodChain?: { mill: { state: string; progress: number }; bakery: { state: string; progress: number } };
+  /** BUILD 1095: the chain's five building states (optional — the
+   *  old callers pass none and the panel shows 'none'). */
+  metalChain?: { smelter: { state: string; progress: number }; blacksmith: { state: string; progress: number }; sawmill: { state: string; progress: number }; carpenter: { state: string; progress: number }; workshop: { state: string; progress: number }; workshopStall: string | null };
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
-  storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number };
+  storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number; coal: number; ingots: number; tools: number; timber: number; furniture: number };
   player: { wood: number; stone: number; gold: number; grain: number };
   carried: { id: string; wood: number; grain: number; stone: number; iron: number }[];
   deposits: { wood: number; stone: number };
@@ -166,6 +170,13 @@ export type ControlCenterData = {
     storehouseStone: number;
     /** BUILD 1089: the storehouse's iron (0 when it never held any). */
     storehouseIron: number;
+    /** BUILD 1095: the storehouse's chain counts (0 when it never
+     *  held any). */
+    storehouseCoal: number;
+    storehouseIngots: number;
+    storehouseTools: number;
+    storehouseTimber: number;
+    storehouseFurniture: number;
     /** BUILD 1087: the storehouse label ('—' / '3/6' / 'done'). */
     storehouseLabel: string;
     depositsWood: number;
@@ -192,6 +203,26 @@ export type ControlCenterData = {
     bakeryState: string;
     bakeryReady: boolean;
   };
+  chain: {
+    ingots: number;
+    tools: number;
+    timber: number;
+    furniture: number;
+    coal: number;
+    /** BUILD 1095: the chain's five building states ('none' /
+     *  'building' / 'done') + the workshop's stall reason (null
+     *  when it is not stalled) + each building's readiness. */
+    smelterState: string;
+    blacksmithState: string;
+    sawmillState: string;
+    carpenterState: string;
+    workshopState: string;
+    workshopStall: string | null;
+    smelterReady: boolean;
+    blacksmithReady: boolean;
+    sawmillReady: boolean;
+    carpenterReady: boolean;
+  };
   construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number };
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
   environment: {
@@ -214,7 +245,7 @@ export type ControlCenterData = {
 
 /** Shortages, from the live numbers — never invented. A shortage is a
  *  real condition the player (or the sim) can act on. */
-export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone' | 'foodChain'>): string[] {
+export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDone' | 'foodChain' | 'metalChain' | 'storehouse'>): string[] {
   const out: string[] = [];
   if (!input.hutDone && input.camp.wood < HUT_COST_WOOD) {
     out.push(`Wood short: ${input.camp.wood}/${HUT_COST_WOOD} for the hut`);
@@ -238,6 +269,17 @@ export function detectShortages(input: Pick<ControlCenterInput, 'camp' | 'hutDon
     } else if (input.camp.flour < BAKE_FLOUR_PER_MEAL) {
       out.push(`No flour to bake: ${input.camp.flour} flour, food ${input.camp.food} < ${FARM_FOOD_THRESHOLD}`);
     }
+  }
+  // BUILD 1095: the workshop stall — the first hard dependency.
+  // Once the bakery is done the workshop is the settlement's next
+  // building; when its next step needs a tool and the store holds
+  // none, the shortage names the missing input (the stall is
+  // visible in the panel's shortages line, not just the chain
+  // section).
+  const workshopState = input.metalChain?.workshop.state ?? 'none';
+  const bakeryDone = (input.foodChain?.bakery.state ?? 'none') === 'done';
+  if (workshopState !== 'done' && bakeryDone && input.metalChain?.workshopStall) {
+    out.push(input.metalChain.workshopStall);
   }
   return out;
 }
@@ -287,6 +329,11 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       storehouseWood: input.storehouse ? input.storehouse.wood : 0,
       storehouseStone: input.storehouse ? input.storehouse.stone : 0,
       storehouseIron: input.storehouse ? (input.storehouse.iron ?? 0) : 0,
+      storehouseCoal: input.storehouse ? (input.storehouse.coal ?? 0) : 0,
+      storehouseIngots: input.storehouse ? (input.storehouse.ingots ?? 0) : 0,
+      storehouseTools: input.storehouse ? (input.storehouse.tools ?? 0) : 0,
+      storehouseTimber: input.storehouse ? (input.storehouse.timber ?? 0) : 0,
+      storehouseFurniture: input.storehouse ? (input.storehouse.furniture ?? 0) : 0,
       storehouseLabel: input.storehouse ? (input.storehouse.state === 'done' ? 'done' : input.storehouse.state === 'building' ? input.storehouse.progress + '/6' : '—') : '—',
       depositsWood: input.deposits.wood,
       depositsStone: input.deposits.stone,
@@ -316,6 +363,26 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       millState: input.foodChain?.mill.state ?? 'none',
       bakeryState: input.foodChain?.bakery.state ?? 'none',
       bakeryReady: (input.foodChain?.bakery.state ?? 'none') === 'done' && input.camp.flour >= BAKE_FLOUR_PER_MEAL && input.camp.food < FARM_FOOD_THRESHOLD,
+    },
+    chain: {
+      ingots: input.storehouse?.ingots ?? 0,
+      tools: input.storehouse?.tools ?? 0,
+      timber: input.storehouse?.timber ?? 0,
+      furniture: input.storehouse?.furniture ?? 0,
+      coal: input.storehouse?.coal ?? 0,
+      smelterState: input.metalChain?.smelter.state ?? 'none',
+      blacksmithState: input.metalChain?.blacksmith.state ?? 'none',
+      sawmillState: input.metalChain?.sawmill.state ?? 'none',
+      carpenterState: input.metalChain?.carpenter.state ?? 'none',
+      workshopState: input.metalChain?.workshop.state ?? 'none',
+      workshopStall: input.metalChain?.workshopStall ?? null,
+      // BUILD 1095: a chain building is ready when it is DONE and
+      // holds its input — a smelter with no ore or no coal is not
+      // ready, and the panel says so.
+      smelterReady: (input.metalChain?.smelter.state ?? 'none') === 'done' && (input.storehouse?.iron ?? 0) >= SMELT_ORE_PER_BATCH && (input.storehouse?.coal ?? 0) >= SMELT_COAL_PER_BATCH,
+      blacksmithReady: (input.metalChain?.blacksmith.state ?? 'none') === 'done' && (input.storehouse?.ingots ?? 0) >= SMITH_INGOT_PER_TOOL,
+      sawmillReady: (input.metalChain?.sawmill.state ?? 'none') === 'done' && (input.storehouse?.wood ?? 0) >= SAW_WOOD_PER_BATCH,
+      carpenterReady: (input.metalChain?.carpenter.state ?? 'none') === 'done' && (input.storehouse?.timber ?? 0) >= CARPENTER_TIMBER_PER_BATCH,
     },
     construction: {
       sites: input.sites,

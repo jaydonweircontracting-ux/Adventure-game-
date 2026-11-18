@@ -99,8 +99,8 @@ import type { IsoWorld } from '../iso/isoWorld';
 // BUILD 1081: copper and silver join gold as registry kinds — the
 // 1.2 deposits are the first copper/silver in the game (gold's only
 // 3D source before this was looting dead NPCs).
-export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour';
-export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour'];
+export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture';
+export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour', 'ingot', 'furniture'];
 
 /** The player's inventory key for a registry kind: wheat is grain
  *  (the 3D farm crop is the civilization grain kind — the HUD keeps

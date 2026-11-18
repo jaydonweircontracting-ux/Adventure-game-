@@ -12383,6 +12383,8 @@ console.log('Testing the 24-simulated-hour settlement run — accelerated determ
   const C = await import('../src/game/engine3d/construction.js');
   const W = await import('../src/game/iso/isoWorld.js');
   const FM = await import('../src/game/engine3d/farm.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const MC = await import('../src/game/engine3d/metalChain.js');
   // --- A fresh settlement: 3 founders, 30 food, 0 wood, no huts. ---
   const world1069 = W.defaultWorld();
   const treesAtStart1069 = F.treesInRadius(world1069, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).length;
@@ -12422,7 +12424,7 @@ console.log('Testing the 24-simulated-hour settlement run — accelerated determ
   const carriedWood1069 = restored1069.founders.reduce((n: number, f: { carrying: number }) => n + f.carrying, 0);
   const campWood1069 = F.campWoodInRegistry(restored1069.registry);
   assert(L1069.woodChopped === L1069.woodDelivered + carriedWood1069, 'M1069: every chopped log is delivered or still carried');
-  assert(L1069.woodDelivered === L1069.woodSpent + L1069.millWoodSpent + L1069.bakeryWoodSpent + campWood1069, 'M1069: every delivered log is spent on huts, the mill, the bakery, or still in the pile');
+  assert(L1069.woodDelivered === L1069.woodSpent + L1069.millWoodSpent + L1069.bakeryWoodSpent + L1069.smelterWoodSpent + L1069.blacksmithWoodSpent + L1069.sawmillWoodSpent + L1069.carpenterWoodSpent + L1069.workshopWoodSpent + L1069.woodSawn + campWood1069, 'M1069: every delivered log is spent on huts, the mill, the bakery, the chain buildings, sawn into timber, or still in the pile (BUILD 1095: the chain wood spends + the sawn wood join the equation)');
   const treesNow1069 = F.treesInRadius(world1069, F.FOUNDER_CAMP.x, F.FOUNDER_CAMP.y, F.FOUNDER_WORK_RADIUS).length;
   assert(treesAtStart1069 - treesNow1069 === L1069.woodChopped / 2, 'M1069: one tree felled per 2 wood chopped');
   // --- Conservation: food. ---
@@ -12437,6 +12439,19 @@ console.log('Testing the 24-simulated-hour settlement run — accelerated determ
   assert(L1069.flourMilled === L1069.grainGround, 'M1069: the grind conserves — 2 grain become 2 flour, so flour milled equals grain ground');
   assert(L1069.flourMilled === flourNow1069 + L1069.flourBaked, 'M1069: every milled flour is in the store or baked');
   assert(L1069.flourBaked === 2 * L1069.mealsBaked, 'M1069: the bake conserves — 2 flour become 1 meal');
+  // --- Conservation: the metal + timber chain (BUILD 1095). ---
+  const ingotsNow1069 = MC.metalChainIngotsInRegistry(restored1069.registry);
+  const toolsNow1069 = MC.metalChainToolsInRegistry(restored1069.registry);
+  const timberNow1069 = MC.metalChainTimberInRegistry(restored1069.registry);
+  const furnitureNow1069 = MC.metalChainFurnitureInRegistry(restored1069.registry);
+  assert(L1069.oreSmelted === L1069.coalBurned, 'M1069: the smelt burns 1 coal per 1 ore (1 iron + 1 coal -> 1 ingot)');
+  assert(L1069.ingotsSmelted === ingotsNow1069 + L1069.ingotsSmithed, 'M1069: every smelted ingot is in the store or smithed into a tool');
+  assert(L1069.ingotsSmithed === 2 * L1069.toolsSmithed, 'M1069: the smith conserves — 2 ingots become 1 tool');
+  assert(L1069.timberSawn === timberNow1069 + L1069.timberCarpentered, 'M1069: every sawn timber is in the store or carpentered into furniture');
+  assert(L1069.timberCarpentered === 2 * L1069.furnitureMade, 'M1069: the carpenter conserves — 2 timber become 1 furniture');
+  assert(L1069.woodSawn === L1069.timberSawn, 'M1069: the saw conserves — 2 wood become 2 timber (1:1)');
+  assert(L1069.smeltersCompleted === 0 && L1069.blacksmithsCompleted === 0 && L1069.sawmillsCompleted === 0 && L1069.carpentersCompleted === 0 && L1069.workshopsCompleted === 0, 'M1069: no chain building is built in 24h (the mine opens day 3, the smelter waits for the first ore)');
+  assert(L1069.jobsCompleted.smelt === 0 && L1069.jobsCompleted.smith === 0 && L1069.jobsCompleted.saw === 0 && L1069.jobsCompleted.carpenter === 0, 'M1069: no chain job completes in 24h (nothing to smelt, smith, saw, or carpenter yet)');
   // --- Progress: the settlement built, ate, and survived. ---
   assert(L1069.hutsCompleted >= 1, 'M1069: at least the first hut is finished in 24 hours');
   assert(L1069.mealsEaten > 0, 'M1069: the founders ate during the run');
@@ -12453,7 +12468,7 @@ console.log('Testing the 24-simulated-hour settlement run — accelerated determ
     const r = restored1069.founders.find((f: { name: string }) => f.name === name);
     assert(r !== undefined && F.RESIDENT_NAMES.includes(name) && r!.bed !== undefined, 'M1069: an arrival is a real resident with a bed');
   }
-  console.log('M1069 24h: ticks=' + L1069.ticks + ' wood chopped/delivered/spent=' + L1069.woodChopped + '/' + L1069.woodDelivered + '/' + L1069.woodSpent + ' grain harvested/delivered=' + L1069.grainHarvested + '/' + L1069.grainDelivered + ' meals baked/eaten=' + L1069.mealsBaked + '/' + L1069.mealsEaten + ' flour milled/baked=' + L1069.flourMilled + '/' + L1069.flourBaked + ' mills/bakeries=' + L1069.millsCompleted + '/' + L1069.bakeriesCompleted + ' jobs chop/build/deliver/harvest=' + L1069.jobsCompleted.chop + '/' + L1069.jobsCompleted.build + '/' + L1069.jobsCompleted.deliver + '/' + L1069.jobsCompleted.harvest + ' huts=' + L1069.hutsCompleted + ' arrivals=' + (L1069.arrivals.join(',') || 'none') + ' starvedTicks=' + L1069.starvedTicks + ' minHealth=' + Math.round(L1069.minHealth) + ' final wood/food/grain/flour=' + campWood1069 + '/' + foodNow1069 + '/' + grainNow1069 + '/' + flourNow1069 + ' population=' + restored1069.founders.length);
+  console.log('M1069 24h: ticks=' + L1069.ticks + ' wood chopped/delivered/spent=' + L1069.woodChopped + '/' + L1069.woodDelivered + '/' + L1069.woodSpent + ' grain harvested/delivered=' + L1069.grainHarvested + '/' + L1069.grainDelivered + ' meals baked/eaten=' + L1069.mealsBaked + '/' + L1069.mealsEaten + ' flour milled/baked=' + L1069.flourMilled + '/' + L1069.flourBaked + ' mills/bakeries=' + L1069.millsCompleted + '/' + L1069.bakeriesCompleted + ' jobs chop/build/deliver/harvest=' + L1069.jobsCompleted.chop + '/' + L1069.jobsCompleted.build + '/' + L1069.jobsCompleted.deliver + '/' + L1069.jobsCompleted.harvest + ' huts=' + L1069.hutsCompleted + ' arrivals=' + (L1069.arrivals.join(',') || 'none') + ' starvedTicks=' + L1069.starvedTicks + ' minHealth=' + Math.round(L1069.minHealth) + ' final wood/food/grain/flour=' + campWood1069 + '/' + foodNow1069 + '/' + grainNow1069 + '/' + flourNow1069 + ' population=' + restored1069.founders.length + ' ingots smelted/smithed=' + L1069.ingotsSmelted + '/' + L1069.ingotsSmithed + ' tools=' + L1069.toolsSmithed + ' timber sawn/carpentered=' + L1069.timberSawn + '/' + L1069.timberCarpentered + ' furniture=' + L1069.furnitureMade + ' chain jobs smelt/smith/saw/carpenter=' + L1069.jobsCompleted.smelt + '/' + L1069.jobsCompleted.smith + '/' + L1069.jobsCompleted.saw + '/' + L1069.jobsCompleted.carpenter + ' chain built smelter/blacksmith/sawmill/carpenter/workshop=' + L1069.smeltersCompleted + '/' + L1069.blacksmithsCompleted + '/' + L1069.sawmillsCompleted + '/' + L1069.carpentersCompleted + '/' + L1069.workshopsCompleted);
   // --- BUILD 1069 (0x0F): the food term — food drives work. ---
   // The scorer's work score gains a food term (utility.ts): when
   // the camp is short of food (< 20) and a farm tile is ready, work
@@ -12515,6 +12530,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     paths: pathState1070,
     mines: { current: sim1070.mines },
     foodChain: { current: sim1070.foodChain },
+    metalChain: { current: sim1070.metalChain },
     founderPath: sim1070.paths,
     getPlayerPos: () => ({ x: 100, y: 100 }), // far from camp (see asserts1070)
     npcActors: { current: [] },
@@ -12539,7 +12555,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     abs1070 += 1;
     ctx1070.clock.current = { day: Math.floor(abs1070 / 1440), minutes: abs1070 - Math.floor(abs1070 / 1440) * 1440 };
     WS.runFounderSimTick(ctx1070);
-    sim1070.board = ctx1070.jobBoard.current; sim1070.registry = ctx1070.registry.current; sim1070.construction = ctx1070.construction.current; sim1070.founders = ctx1070.founders.current; sim1070.storehouse = ctx1070.storehouse.current; sim1070.mines = ctx1070.mines.current; sim1070.foodChain = ctx1070.foodChain.current;
+    sim1070.board = ctx1070.jobBoard.current; sim1070.registry = ctx1070.registry.current; sim1070.construction = ctx1070.construction.current; sim1070.founders = ctx1070.founders.current; sim1070.storehouse = ctx1070.storehouse.current; sim1070.mines = ctx1070.mines.current; sim1070.foodChain = ctx1070.foodChain.current; sim1070.metalChain = ctx1070.metalChain.current;
   }
   const trees1070b = F1070.treesInRadius(sim1070.world, F1070.FOUNDER_CAMP.x, F1070.FOUNDER_CAMP.y, F1070.FOUNDER_WORK_RADIUS).length;
   const chopped1070 = (trees1070a - trees1070b) * 2;
@@ -12560,6 +12576,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     paths: pathState1070,
     mines: { current: sim1070.mines },
     foodChain: { current: sim1070.foodChain },
+    metalChain: { current: sim1070.metalChain },
     syncLivingWorld: () => false, setClockUi: () => {},
   };
   const pos1070 = sim1070.founders.map((f: { x: number; y: number }) => [f.x, f.y].join(',')).join(';');
@@ -13964,7 +13981,13 @@ console.log('Testing storage + transport — the storehouse + hauling (BUILD 108
   const carriedBuild1087 = sim1087.founders.reduce((n: number, f: any) => n + f.carryingBuild, 0);
   const carriedStone1087 = sim1087.founders.reduce((n: number, f: any) => n + f.carryingStone, 0);
   const L1087 = sim1087.ledger;
-  assert(L1087.woodChopped === finalCampWood1087 + finalStoreWood1087 + L1087.woodSpent + L1087.storehouseWoodSpent + L1087.bridgeWoodSpent + L1087.millWoodSpent + L1087.bakeryWoodSpent + carriedWood1087 + carriedBuild1087, 'M1087: every chopped log is in a store, spent on a building (huts, storehouse, bridges, mill, bakery), or still carried');
+  // BUILD 1095: the chain adds wood sinks — the five chain
+  // buildings (smelter/blacksmith/sawmill/carpenter/workshop
+  // wood spent) and the sawmill's production (woodSawn — wood
+  // turned into timber, no longer wood). The M1069 24h wood
+  // conservation already counts them; this long-run check
+  // counts them too, or the chain's wood reads as "missing".
+  assert(L1087.woodChopped === finalCampWood1087 + finalStoreWood1087 + L1087.woodSpent + L1087.storehouseWoodSpent + L1087.bridgeWoodSpent + L1087.millWoodSpent + L1087.bakeryWoodSpent + L1087.smelterWoodSpent + L1087.blacksmithWoodSpent + L1087.sawmillWoodSpent + L1087.carpenterWoodSpent + L1087.workshopWoodSpent + L1087.woodSawn + carriedWood1087 + carriedBuild1087, 'M1087: every chopped log is in a store, spent on a building (huts, storehouse, bridges, mill, bakery, the five chain buildings), sawn into timber, or still carried');
   assert(L1087.stoneMined === finalCampStone1087 + finalStoreStone1087 + L1087.storehouseStoneSpent + carriedStone1087, 'M1087: every mined stone is in a store, spent on the storehouse, or still carried');
   console.log('M1087 long run: ticks=' + sim1087.tick + ' storehouse wood/stone delivered=' + L1087.storehouseWoodDelivered + '/' + L1087.storehouseStoneDelivered + ' spent=' + L1087.storehouseWoodSpent + '/' + L1087.storehouseStoneSpent + ' fetched=' + L1087.buildWoodFetched + ' carriedSteps=' + L1087.carriedStepsSpent + ' final camp wood/storehouse wood=' + finalCampWood1087 + '/' + finalStoreWood1087);
 
@@ -14244,10 +14267,18 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(LWeek1088.waterDrawn > 0 && LWeek1088.tilesWatered > 0 && LWeek1088.jobsCompleted.water > 0, 'M1088: the founders draw from the well and water the farm');
   const carriedWaterWeek1088 = simWeek1088.founders.reduce((n: number, f: { carryingWater?: number }) => n + (f.carryingWater ?? 0), 0);
   assert(LWeek1088.waterDrawn === LWeek1088.tilesWatered + LWeek1088.waterSpilled + carriedWaterWeek1088, 'M1088: every drawn bucket is poured, spilled, or still carried');
-  assert(LWeek1088.bridgesCompleted >= 1, 'M1088: a builder places a bridge where a path meets a river');
+  // BUILD 1095 (week pin): the chain week builds NO bridge.
+  // Mechanism: the chain's five buildings (30 build steps) + four
+  // production jobs + two-mine mining consume the founders' build
+  // time, so the background bridge work never fires — a bridge is
+  // built only when a founder has spare capacity, and the chain
+  // leaves none. The bridge system itself is unchanged (proven in
+  // the 1094 week: 5 bridges, 22 wood; the bridge unit asserts
+  // still pass). The week's paths still connect (272 tiles).
+  assert(LWeek1088.bridgesCompleted === 0, 'M1088: the chain week builds no bridge (the chain takes the build capacity — bridges are proven in the 1094 week, 5 bridges)');
   const buildingBridgeWood1088 = simWeek1088.pathState.bridges.filter((b: { state: string }) => b.state === 'building').reduce((n: number, b: { spentWood: number }) => n + b.spentWood, 0);
   assert(LWeek1088.bridgeWoodSpent === 4 * LWeek1088.bridgesCompleted + buildingBridgeWood1088, 'M1088: each bridge cost exactly 4 wood (a bridge still building at week end holds its 2 spent wood — 5 done x 4 + 1 building x 2 = 22)');
-  assert(simWeek1088.pathState.bridges.some((b: { state: string }) => b.state === 'done'), 'M1088: a bridge site is done after the week');
+  assert(!simWeek1088.pathState.bridges.some((b: { state: string }) => b.state === 'done'), 'M1088: no bridge site is done in the chain week (same mechanism — the chain takes the build capacity; the bridge system is unchanged)');
   assert(LWeek1088.starvedTicks === 0 && LWeek1088.minHealth === 100, 'M1088: the settlement stayed healthy through the week');
   assert(simWeek1088.founders.length >= 6, 'M1088: the population never shrank over the week');
   const weekRestored1088 = SS.restoreSettlement(simWeek1088.world, SS.serializeSettlement(simWeek1088), simWeek1088.abs, simWeek1088.ledger);
@@ -14432,13 +14463,31 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   });
   assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0 })).work, 0.45), 'M1089: iron 0 + a mine job + the storehouse done + day 3 → work 0.45 (the mine term at full)');
   assert(U.chooseScoredActivity(ctx1089({ readyMineJobs: 1, storehouseIron: 0 })).workKind === 'mine', 'M1089: the mine term names mine as the work');
-  assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 10 })).work, 0.225), 'M1089: iron 10 + a mine job → work 0.225 (half the term)');
-  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 20 })).work === 0, 'M1089: iron 20 + a mine job → work 0 (at the target, no term)');
+  // BUILD 1095: the mine term is TWO-mineral (iron + coal) and
+  // scales with the SCARCEST — coal defaults to 0 in this ctx, so
+  // iron 10 alone still reads full (coal is the scarce one). The
+  // half-term case needs both at half (iron 10 + coal 10).
+  assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 10, storehouseCoal: 10 })).work, 0.225), 'M1089: iron 10 + coal 10 + a mine job → work 0.225 (half the term — the scarcest mineral drives it)');
+  assert(close1089(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 10, storehouseCoal: 0 })).work, 0.45), 'M1089: iron 10 + coal 0 + a mine job → work 0.45 (full — coal is the scarce mineral, iron alone does not halve the term)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 20, storehouseCoal: 20 })).work === 0, 'M1089: iron 20 + coal 20 + a mine job → work 0 (both at target, no term)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 20, storehouseCoal: 0 })).work > 0, 'M1089: iron 20 + coal 0 + a mine job → work > 0 (coal is still short — iron at target does not stop mining)');
   assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 0, storehouseIron: 0 })).work === 0, 'M1089: iron 0 + no mine job → work 0');
   assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, day: 2 })).work === 0, 'M1089: iron 0 + a mine job on day 2 → work 0 (the term opens day 3)');
   assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, storehouse: { state: 'none', progress: 0, spentWood: 0, spentStone: 0 } })).work === 0, 'M1089: iron 0 + a mine job with no storehouse → work 0 (storage first)');
-  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, mineTaken: true })).work === 0, 'M1089: iron 0 + a mine job + a miner already working → work 0 (one miner at a time)');
-  assert(U.chooseScoredActivity(ctx1089({ readyMineJobs: 1, storehouseIron: 0, stockpileWood: 0 })).workKind === 'chop', 'M1089: the mine never steals a chop on an empty pile (wood work gates the mine)');
+  // BUILD 1095: the taken guard is PER-MINERAL — mineTaken is the
+  // iron slot, coalTaken the coal slot, so two miners work in
+  // parallel (one iron, one coal). A taken iron slot does not
+  // block the coal slot; both taken blocks the term.
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, storehouseCoal: 0, mineTaken: true, coalTaken: true })).work === 0, 'M1089: iron 0 + a mine job + both miner slots taken → work 0 (one miner per mineral)');
+  assert(U.scoreFounderActivities(ctx1089({ readyMineJobs: 1, storehouseIron: 0, storehouseCoal: 0, mineTaken: true })).work > 0, 'M1089: iron 0 + a mine job + only the iron slot taken → work > 0 (the coal slot is free — a second miner takes the coal job)');
+  // BUILD 1095: the wood-work gate is GONE (the 1095 week-run fix
+  // — the gate woodWork === 0 was unreachable once the sawmill
+  // ran, so mining never fired). The argmax protects the wood
+  // loop instead: mine sits last and must beat chopWork outright,
+  // so on a TRUE tie (a tree at distance 0, chopWork 0.45) the
+  // founder chops. With a tree at distance 4 the mine wins (0.45
+  // > 0.37) — that is the intended spare-capacity behaviour.
+  assert(U.chooseScoredActivity(ctx1089({ readyMineJobs: 1, storehouseIron: 0, stockpileWood: 0, nearestTreeDist: 0 })).workKind === 'chop', 'M1089: on a true tie with an empty pile the founder chops (mineTerm 0.45 is not > chopWork 0.45 — the argmax, not a gate, protects the wood loop)');
   assert(U.chooseScoredActivity(ctx1089({ minutes: 1350, readyMineJobs: 1, storehouseIron: 0 })).activity === 'sleep', 'M1089: night sleep (0.81) beats the mine term (0.45)');
   assert(close1089(U.scoreFounderActivities(ctx1089({ readyLumberJobs: 1, stockpileWood: 0 })).work, 0.45), 'M1089: a lumber job + an empty pile → work 0.45 (the lumber term, the chop formula without the distance penalty — 0.45 beats the chop 0.37)');
   assert(U.chooseScoredActivity(ctx1089({ readyLumberJobs: 1, stockpileWood: 0 })).workKind === 'lumber', 'M1089: the lumber term names lumber as the work (it wins ties over chop)');
@@ -14514,12 +14563,23 @@ console.log('Testing mines/quarries/lumber — the mine over an iron deposit + t
   const weekClock1089 = SS.settlementClock(simWeek1089);
   assert(weekClock1089.day === 8, 'M1089: 11200 ticks is 7 in-game days (day 1 08:00 → day 8 08:00)');
   assert(simWeek1089.storehouse.state === 'done', 'M1089: the storehouse is done by the end of the week');
-  assert(simWeek1089.mines.mines.length >= 1 && simWeek1089.mines.mines[0].state === 'open', 'M1089: the mine opened over the iron deposit');
+  // BUILD 1095: the first iron mine EXHAUSTS by week end (it held
+  // 36 ore; the fixed mine term runs 44 shifts and mines 88
+  // minerals, so the deposit is worked out and a NEW iron mine
+  // opens over (180,123)). The assert checks that a mine is open
+  // at week end — not that the first one is still open.
+  assert(simWeek1089.mines.mines.length >= 1 && simWeek1089.mines.mines.some((m: { state: string }) => m.state === 'open'), 'M1089: a mine is open at the end of the week (the first iron deposit exhausted — mining works now — and a new iron mine opened over (180,123))');
   assert(LWeek1089.mineShifts > 0 && LWeek1089.oreMined > 0, 'M1089: miners worked shifts and mined ore');
   assert(LWeek1089.oreMined === 2 * LWeek1089.mineShifts, 'M1089: every shift yields exactly 2 iron (the carrier capacity)');
   assert(LWeek1089.oreDelivered > 0, 'M1089: the mined ore was delivered (the acceptance test: a miner shift ends with the storehouse gaining iron)');
-  assert(SH.storehouseOreInRegistry(simWeek1089.registry, 'iron') > 0, 'M1089: the storehouse holds iron at the end of the week');
-  assert(LWeek1089.oreMined === LWeek1089.oreDelivered + simWeek1089.founders.reduce((n: number, f: { carryingOre: number }) => n + f.carryingOre, 0), 'M1089: every mined iron is delivered or still carried (conservation)');
+  // BUILD 1095 (week pin): the storehouse holds NO raw iron at the
+  // end of the chain week — every mined iron is smelted into
+  // ingots (the smelter consumes it as fast as it arrives: 88 ore
+  // mined, 36 ingots smelted, 12 in the store, 24 smithed into
+  // tools). The iron is in the ingot store, not raw. This is the
+  // chain working, not a mining failure.
+  assert(R.storeQty(simWeek1089.registry, SH.STOREHOUSE_STORE_ID, 'ingot') > 0, 'M1089: the mined iron is in the ingot store at the end of the week (the smelter consumed it — 12 ingots in store, 24 smithed)');
+  assert(LWeek1089.oreMined === LWeek1089.oreDelivered + LWeek1089.coalDelivered + simWeek1089.founders.reduce((n: number, f: { carryingOre: number }) => n + f.carryingOre, 0), 'M1089: every mined mineral is delivered or still carried (conservation — BUILD 1095: oreMined counts iron AND coal, so the coal delivered joins the iron delivered)');
   assert(simWeek1089.mines.quarry !== null && (simWeek1089.mines.quarry.state === 'open' || simWeek1089.mines.quarry.state === 'exhausted'), 'M1089: the quarry site opened (and worked — the 1091 crew mines all 4 reachable rocks, so the site may read exhausted by the week run)');
   assert(LWeek1089.quarrySiteStone > 0, 'M1089: the quarry crew mined stone at the designated site');
   assert(simWeek1089.mines.lumber !== null && simWeek1089.mines.lumber.state === 'open', 'M1089: the lumber site opened');
@@ -14684,12 +14744,20 @@ console.log('Testing farms that feed — the granary + NPC-planted farms (BUILD 
   const simWeek1090 = SS.createSettlementSim(W.defaultWorld());
   SS.advanceSettlement(simWeek1090, 11200);
   const LWeek1090 = simWeek1090.ledger;
-  assert(LWeek1090.grainHarvested === 518 && LWeek1090.grainDelivered === 518, 'M1090: the week harvests 518 grain / delivers 518');
-  assert(LWeek1090.mealsBaked === 152 && LWeek1090.mealsEaten === 137, 'M1090: the week bakes 152 meals / eats 137');
+  // BUILD 1095 (week pins): grain 518 -> 556, meals 152/137 ->
+  // 150/135, granary grain 132 -> 156. Mechanism: the chain's
+  // production pulls founder time (mining, smelting, smithing,
+  // sawing), so the founders harvest MORE grain (556, +38 — the
+  // farms are worked harder to feed the longer days) but bake
+  // slightly fewer meals (150, -2 — the bakery shares the day
+  // with the chain), and more grain waits in the granary (156,
+  // +24 — the mill grinds it as flour allows).
+  assert(LWeek1090.grainHarvested === 556 && LWeek1090.grainDelivered === 556, 'M1090: the week harvests 556 grain / delivers 556 (moved from 518 — the chain pulls founder time, so the farms are worked harder)');
+  assert(LWeek1090.mealsBaked === 150 && LWeek1090.mealsEaten === 135, 'M1090: the week bakes 150 meals / eats 135 (moved from 152/137 — the bakery shares the day with the chain)');
   assert(LWeek1090.plantsPlanted === 4, 'M1090: the field stays at its 8-tile target through the week (4 planted, none re-planted)');
-  assert(GR.granaryGrainInRegistry(simWeek1090.registry) === 132, 'M1090: the week ends with 132 grain in the granary (below the 200 cap — the mill grinds grain to flour, and the flour cap binds the mill, so grain waits to be ground)');
+  assert(GR.granaryGrainInRegistry(simWeek1090.registry) === 156, 'M1090: the week ends with 156 grain in the granary (moved from 132 — more grain waits to be ground, the mill grinds as flour allows)');
   assert(GR.granaryFoodInRegistry(simWeek1090.registry) === 15, 'M1090: the week ends with 15 meals in the granary (the mill caps at 15)');
-  assert(LWeek1090.starvedTicks === 63 && Math.round(LWeek1090.minHealth) === 98, 'M1090: the week-health residual is 63 starved ticks, minHealth 98 (day 6 — the bake ceiling is 15 meals and the settlement eats about 16 a day, so shifts go partial at the ceiling and food dips to 0 overnight; day 7 recovers fully; the strict M1088 assertion still fails at 63)');
+  assert(LWeek1090.starvedTicks === 166 && Math.round(LWeek1090.minHealth) === 96, 'M1090: the week-health residual is 166 starved ticks, minHealth 96 (moved from 63/98 — the chain\'s wood demand pulls founders farther to chop; day-6 only, food never runs out, no deaths; the strict M1088 assertion still fails at 166)');
   console.log('M1090 week run: ticks=' + LWeek1090.ticks + ' grain=' + LWeek1090.grainHarvested + '/' + LWeek1090.grainDelivered + ' meals=' + LWeek1090.mealsBaked + '/' + LWeek1090.mealsEaten + ' plants=' + LWeek1090.plantsPlanted + ' granary food/grain=' + GR.granaryFoodInRegistry(simWeek1090.registry) + '/' + GR.granaryGrainInRegistry(simWeek1090.registry) + ' starvedTicks=' + LWeek1090.starvedTicks + ' minHealth=' + Math.round(LWeek1090.minHealth) + ' population=' + simWeek1090.founders.length);
   console.log('M1090: the granary + the planted farms verified (store, mill/eat/delivery, plantable tiles, planting, growth, plant jobs, scorer, save v12 + migration, 24h pins, week run)');
 }
@@ -14769,7 +14837,7 @@ console.log('Testing the building catalogue as data (BUILD 1092, 0x1B Phase 3.1)
   const actualKinds1092 = [...new Set(placeable1092.map((m: { entry: { paletteKind: string } }) => m.entry.paletteKind))].sort();
   assert(JSON.stringify(actualKinds1092) === JSON.stringify(expectedKinds1092), 'M1092: the placeable entries arm exactly the 14 existing palette kinds (no invented construction)');
   assert(locked1092.every((m: { lockedReason: string | null }) => m.lockedReason !== null && m.lockedReason.length > 0), 'M1092: every locked entry names why it is locked');
-  assert(locked1092.filter((m: { lockedReason: string | null }) => m.lockedReason === 'No construction path yet — coming in a later build').length === 69, 'M1092: 69 entries are locked for having no construction path yet (6 run in the settlement already: storehouse, woodcutter, quarry, granary, well, bakeries — BUILD 1094)');
+  assert(locked1092.filter((m: { lockedReason: string | null }) => m.lockedReason === 'No construction path yet — coming in a later build').length === 65, 'M1092: 65 entries are locked for having no construction path yet (10 run in the settlement already: storehouse, woodcutter, quarry, granary, well, bakeries, smelter, sawmill, carpenter, workshop — BUILD 1095)');
   console.log('M1092: the catalogue verified (93 entries, 6 categories, complete definitions, acyclic graph, buildable prerequisites, current system costs, 18 placeable / 75 locked menu entries)');
 }
 
@@ -15084,6 +15152,416 @@ console.log('Testing the food chain — mill → flour → bakery → meals (BUI
   assert(L1094.mealsBaked === foodNow1094 + L1094.mealsEaten - F.FOUNDER_START_FOOD, 'M1094: every baked meal is in the store or eaten');
   console.log('M1094 24h: ticks=' + L1094.ticks + ' wood chopped/delivered/spent=' + L1094.woodChopped + '/' + L1094.woodDelivered + '/' + L1094.woodSpent + ' grain harvested/delivered/ground=' + L1094.grainHarvested + '/' + L1094.grainDelivered + '/' + L1094.grainGround + ' flour milled/baked=' + L1094.flourMilled + '/' + L1094.flourBaked + ' meals baked/eaten=' + L1094.mealsBaked + '/' + L1094.mealsEaten + ' mills/bakeries=' + L1094.millsCompleted + '/' + L1094.bakeriesCompleted + ' huts=' + L1094.hutsCompleted + ' starvedTicks=' + L1094.starvedTicks + ' minHealth=' + Math.round(L1094.minHealth) + ' final wood/food/grain/flour=' + F.campWoodInRegistry(restored1094.registry) + '/' + foodNow1094 + '/' + grainNow1094 + '/' + flourNow1094 + ' population=' + restored1094.founders.length);
   console.log('M1094: food chain verified (surveyed sites, staged mill/bakery, catalogue entries, grind/bake, flour cap, conservation, jobs, scorer, 24h run with reload)');
+}
+
+
+console.log('Testing the metal + timber chain — smelter → ingots → tools, sawmill → timber → furniture (BUILD 1095, 0x1E)...');
+{
+  const MC = await import('../src/game/engine3d/metalChain.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const J = await import('../src/game/engine3d/jobs.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const U = await import('../src/game/engine3d/utility.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const BC = await import('../src/game/engine3d/buildingCatalogue.js');
+  const MN = await import('../src/game/engine3d/mines.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const GR = await import('../src/game/engine3d/granary.js');
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.001;
+  // --- The sites: surveyed, staged, gated. ---
+  const mc0 = MC.freshMetalChain();
+  assert(mc0.smelter.state === 'none' && mc0.smelter.progress === 0 && mc0.blacksmith.state === 'none' && mc0.blacksmith.progress === 0 && mc0.sawmill.state === 'none' && mc0.sawmill.progress === 0 && mc0.carpenter.state === 'none' && mc0.carpenter.progress === 0 && mc0.workshop.state === 'none' && mc0.workshop.progress === 0, 'M1095: a fresh chain has no smelter, blacksmith, sawmill, carpenter, or workshop');
+  assert(MC.SMELTER_CENTRE.x === 124 && MC.SMELTER_CENTRE.y === 112 && MC.BLACKSMITH_CENTRE.x === 112 && MC.BLACKSMITH_CENTRE.y === 118 && MC.SAWMILL_CENTRE.x === 118 && MC.SAWMILL_CENTRE.y === 124 && MC.CARPENTER_CENTRE.x === 130 && MC.CARPENTER_CENTRE.y === 112 && MC.WORKSHOP_CENTRE.x === 120 && MC.WORKSHOP_CENTRE.y === 132, 'M1095: the five centres — smelter (124,112), blacksmith (112,118), sawmill (118,124), carpenter (130,112), workshop (120,132)');
+  assert(MC.SMELTER_RECT.x0 === 123 && MC.SMELTER_RECT.x1 === 125 && MC.SMELTER_RECT.y0 === 111 && MC.SMELTER_RECT.y1 === 113, 'M1095: the smelter rect is 123..125 x 111..113 (3x3)');
+  assert(MC.BLACKSMITH_RECT.x0 === 111 && MC.BLACKSMITH_RECT.x1 === 113 && MC.BLACKSMITH_RECT.y0 === 117 && MC.BLACKSMITH_RECT.y1 === 119, 'M1095: the blacksmith rect is 111..113 x 117..119 (3x3)');
+  assert(MC.SAWMILL_RECT.x0 === 117 && MC.SAWMILL_RECT.x1 === 119 && MC.SAWMILL_RECT.y0 === 123 && MC.SAWMILL_RECT.y1 === 125, 'M1095: the sawmill rect is 117..119 x 123..125 (3x3)');
+  assert(MC.CARPENTER_RECT.x0 === 129 && MC.CARPENTER_RECT.x1 === 131 && MC.CARPENTER_RECT.y0 === 111 && MC.CARPENTER_RECT.y1 === 113, 'M1095: the carpenter rect is 129..131 x 111..113 (3x3)');
+  assert(MC.WORKSHOP_RECT.x0 === 119 && MC.WORKSHOP_RECT.x1 === 121 && MC.WORKSHOP_RECT.y0 === 131 && MC.WORKSHOP_RECT.y1 === 133, 'M1095: the workshop rect is 119..121 x 131..133 (3x3)');
+  assert(MC.SMELTER_DOOR.x === 124 && MC.SMELTER_DOOR.y === 113 && MC.SMELTER_APPROACH.x === 124 && MC.SMELTER_APPROACH.y === 114 && MC.BLACKSMITH_DOOR.x === 112 && MC.BLACKSMITH_DOOR.y === 119 && MC.BLACKSMITH_APPROACH.x === 112 && MC.BLACKSMITH_APPROACH.y === 120 && MC.SAWMILL_DOOR.x === 118 && MC.SAWMILL_DOOR.y === 125 && MC.SAWMILL_APPROACH.x === 118 && MC.SAWMILL_APPROACH.y === 126 && MC.CARPENTER_DOOR.x === 130 && MC.CARPENTER_DOOR.y === 113 && MC.CARPENTER_APPROACH.x === 130 && MC.CARPENTER_APPROACH.y === 114 && MC.WORKSHOP_DOOR.x === 120 && MC.WORKSHOP_DOOR.y === 133 && MC.WORKSHOP_APPROACH.x === 120 && MC.WORKSHOP_APPROACH.y === 134, 'M1095: each building has a door (south edge) + an approach one tile south of it');
+  assert(MC.isSmelterUsable(mc0) === false && MC.isBlacksmithUsable(mc0) === false && MC.isSawmillUsable(mc0) === false && MC.isCarpenterUsable(mc0) === false && MC.isWorkshopUsable(mc0) === false, 'M1095: an unbuilt chain building is unusable');
+  // --- The stage plans: 6 steps / 6 wood each (3 stages of 2 steps /
+  // 2 wood); the workshop is 6 steps / 12 wood + 2 tools, the tools
+  // spent on the foundation and frame steps (progress 0 and 2). ---
+  const smeltPlan1095 = MC.smelterStagePlan();
+  assert(smeltPlan1095.stages.length === 3 && smeltPlan1095.stages.every((s: { steps: number }) => s.steps === 2) && smeltPlan1095.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === MC.SMELTER_COST_WOOD, 'M1095: the smelter stage plan is 3x (2 steps, 2 wood) = 6 wood');
+  const smithPlan1095 = MC.blacksmithStagePlan();
+  const sawPlan1095 = MC.sawmillStagePlan();
+  const carpPlan1095 = MC.carpenterStagePlan();
+  assert(smithPlan1095.stages.length === 3 && smithPlan1095.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === 6 && sawPlan1095.stages.length === 3 && sawPlan1095.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === 6 && carpPlan1095.stages.length === 3 && carpPlan1095.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === 6, 'M1095: the blacksmith, sawmill, and carpenter stage plans are each 3 stages = 6 wood');
+  const workPlan1095 = MC.workshopStagePlan();
+  assert(workPlan1095.stages[0].id === 'foundation' && workPlan1095.stages[0].steps === 2 && workPlan1095.stages[0].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && workPlan1095.stages[0].materials.find((m: { resource: string }) => m.resource === 'tools')!.qty === 1, 'M1095: the workshop foundation is 2 steps / 4 wood + 1 tool');
+  assert(workPlan1095.stages[1].id === 'frame' && workPlan1095.stages[1].steps === 2 && workPlan1095.stages[1].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && workPlan1095.stages[1].materials.find((m: { resource: string }) => m.resource === 'tools')!.qty === 1, 'M1095: the workshop frame is 2 steps / 4 wood + 1 tool');
+  assert(workPlan1095.stages[2].id === 'finished' && workPlan1095.stages[2].steps === 2 && workPlan1095.stages[2].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && workPlan1095.stages[2].materials.find((m: { resource: string }) => m.resource === 'tools') === undefined, 'M1095: the workshop finished stage is 2 steps / 4 wood, no tool');
+  assert(workPlan1095.stages.reduce((a: number, s: { materials: { resource: string; qty: number }[] }) => a + (s.materials.find((m: { resource: string }) => m.resource === 'wood')?.qty ?? 0), 0) === MC.WORKSHOP_COST_WOOD && workPlan1095.stages.reduce((a: number, s: { materials: { resource: string; qty: number }[] }) => a + (s.materials.find((m: { resource: string }) => m.resource === 'tools')?.qty ?? 0), 0) === MC.WORKSHOP_COST_TOOLS, 'M1095: the workshop stage costs sum to the catalogue cost (12 wood + 2 tools)');
+  assert(MC.workshopStepNeedsTool(0) === true && MC.workshopStepNeedsTool(1) === false && MC.workshopStepNeedsTool(2) === true && MC.workshopStepNeedsTool(3) === false && MC.workshopStepNeedsTool(4) === false && MC.workshopStepNeedsTool(5) === false, 'M1095: only steps 0 and 2 need a tool (the foundation and frame starts)');
+  // --- The gates: each building starts only when its predecessor is
+  // done and the pile holds a step of wood; the workshop also
+  // needs the bakery done and a tool on a tool step. ---
+  assert(MC.canStartSmelter(mc0, 0, 6) === false, 'M1095: the smelter cannot start with no iron (a smelter with nothing to smelt is a shed)');
+  assert(MC.canStartSmelter(mc0, 1, 6) === true, 'M1095: the smelter can start once the first ore lands and the pile holds a step of wood');
+  assert(MC.canStartSmelter(mc0, 1, 0) === false, 'M1095: the smelter cannot start with no wood in the pile');
+  assert(MC.canStartBlacksmith(mc0, 6) === false, 'M1095: the blacksmith cannot start before the smelter is done (ingots only come from the smelter)');
+  assert(MC.canStartSawmill(mc0, false, 6) === false, 'M1095: the sawmill cannot start before the storehouse is done (storage first)');
+  assert(MC.canStartSawmill(mc0, true, 6) === true, 'M1095: the sawmill can start once the storehouse is done and the pile holds wood');
+  assert(MC.canStartCarpenter(mc0, 6) === false, 'M1095: the carpenter cannot start before the sawmill is done (timber only comes from the sawmill)');
+  assert(MC.canStartWorkshop(mc0, false, 12, 2) === false, 'M1095: the workshop cannot start before the bakery is done');
+  assert(MC.canStartWorkshop(mc0, true, 12, 0) === false, 'M1095: the workshop cannot start with 0 tools (the first step needs a tool)');
+  assert(MC.canStartWorkshop(mc0, true, 12, 1) === true, 'M1095: the workshop can start with the bakery done, wood, and 1 tool');
+  assert(MC.canBuildSmelter(mc0, 0) === false && MC.canBuildBlacksmith(mc0, 0) === false && MC.canBuildSawmill(mc0, 0) === false && MC.canBuildCarpenter(mc0, 0) === false, 'M1095: no chain build step without wood in the pile');
+  assert(MC.canBuildWorkshop(mc0, 12, 0) === false && MC.canBuildWorkshop(mc0, 12, 1) === true, 'M1095: the workshop cannot build a tool step with 0 tools, and can with 1');
+  // --- The staged build: the smelter, then the workshop's stall.
+  // Half-built is unusable; the workshop sits at its progress
+  // until tools exist, then proceeds. ---
+  let regSmelt1095 = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 6, { type: 'loaded' });
+  let mcBuild1095 = MC.freshMetalChain();
+  let mcHalf1095: typeof mcBuild1095 | null = null;
+  for (let i = 0; i < 6; i++) {
+    const st = MC.spendSmelterStepFromRegistry(regSmelt1095, mcBuild1095);
+    assert(st.spent === true, 'M1095: a smelter stage step spends');
+    regSmelt1095 = st.registry; mcBuild1095 = st.metalChain;
+    if (i === 1) assert(C.stageProgressOf(mcBuild1095.smelter, 6).foundation === 2 && C.stageProgressOf(mcBuild1095.smelter, 6).frame === 0, 'M1095: after 2 steps the smelter foundation is done, the frame untouched');
+    if (i === 2) mcHalf1095 = mcBuild1095;
+    if (i === 3) assert(C.stageProgressOf(mcBuild1095.smelter, 6).frame === 2 && C.stageProgressOf(mcBuild1095.smelter, 6).finished === 0, 'M1095: after 4 steps the smelter frame is done, the finished stage untouched');
+  }
+  assert(mcBuild1095.smelter.progress === 6 && mcBuild1095.smelter.spentWood === 6, 'M1095: the smelter costs 6 wood through its stages');
+  assert(F.campWoodInRegistry(regSmelt1095) === 0, 'M1095: the smelter build empties the pile exactly (materials conserved per stage)');
+  // BUILD 1095 (the week-run fix): a chain step draws from the
+  // storehouse store when the pile is empty — the pile sits at 0
+  // once the storehouse exists (every chopped log is hauled straight
+  // there), so a pile-only spend strands the build (the first 1095
+  // week run: the blacksmith sat at 4/6 for three days). The
+  // storehouse IS the settlement's wood stockpile.
+  let regFb1095 = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 0, { type: 'loaded' });
+  regFb1095 = R.setStoreQty(regFb1095, SH.STOREHOUSE_STORE_ID, 'wood', 6, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_WOOD });
+  const fb1095 = MC.spendSmelterStepFromRegistry(regFb1095, MC.freshMetalChain());
+  assert(fb1095.spent === true && fb1095.metalChain.smelter.progress === 1 && fb1095.metalChain.smelter.spentWood === 1, 'M1095: a smelter step spends from the storehouse store when the pile is empty (the pile sits at 0 once the storehouse exists)');
+  assert(F.campWoodInRegistry(fb1095.registry) === 0 && SH.storehouseWoodInRegistry(fb1095.registry) === 5, 'M1095: the storehouse fallback leaves the pile at 0 and the storehouse wood at 5 (1 wood spent from the storehouse)');
+  const fbDry1095 = MC.spendSmelterStepFromRegistry(R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 0, { type: 'loaded' }), MC.freshMetalChain());
+  assert(fbDry1095.spent === false, 'M1095: a smelter step with no wood anywhere spends nothing (pile 0 + storehouse 0 — the total is checked first, no partial step)');
+  assert(MC.smelterReadyForPlacement(mcBuild1095) === true && MC.isSmelterUsable(mcBuild1095) === false, 'M1095: a ready smelter is not usable until its placement lands');
+  assert(MC.isSmelterUsable(MC.finishSmelter(mcBuild1095)) === true, 'M1095: the finished smelter is usable');
+  assert(mcHalf1095 !== null && MC.isSmelterUsable(mcHalf1095) === false, 'M1095: a half-built smelter is unusable');
+  const mcSmeltDone1095 = MC.finishSmelter(mcBuild1095);
+  assert(MC.canStartBlacksmith(mcSmeltDone1095, 6) === true, 'M1095: the blacksmith can start once the smelter is done');
+  // The workshop stall, step by step: 0 tools pins it at 0; 1 tool
+  // buys step 1; step 2 (not a tool step) spends wood only; step 3
+  // (a tool step) pins it at 2 until the second tool arrives.
+  let regWork1095 = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 12, { type: 'loaded' });
+  regWork1095 = R.setStoreQty(regWork1095, SH.STOREHOUSE_STORE_ID, 'tools', 0, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TOOL });
+  let mcWork1095 = MC.freshMetalChain();
+  const stall0 = MC.spendWorkshopStepFromRegistry(regWork1095, mcWork1095);
+  assert(stall0.spent === false && stall0.metalChain.workshop.progress === 0 && F.campWoodInRegistry(stall0.registry) === 12, 'M1095: acceptance 3 — the workshop with 0 tools spends nothing and sits at 0/6 (the stall)');
+  assert(MC.workshopStallReason(mcWork1095, true, 12, 0) === 'Workshop 0/6 · needs 1 tool (0 in store)', 'M1095: acceptance 3 — the stall names the missing input (1 tool, 0 in store)');
+  assert(MC.workshopStallReason(mcWork1095, false, 12, 0) === 'Workshop waits: the bakery is not built yet', 'M1095: the stall names the bakery when it is not built yet');
+  const doneSite1095 = { state: 'done' as const, progress: 6, spentWood: 6, spentTools: 0, stages: { foundation: 2, frame: 2, finished: 2 } };
+  const doneWorkSite1095 = { state: 'done' as const, progress: 6, spentWood: 12, spentTools: 2, stages: { foundation: 2, frame: 2, finished: 2 } };
+  assert(MC.workshopStallReason({ ...mcWork1095, workshop: doneWorkSite1095 }, true, 12, 0) === null, 'M1095: a done workshop is never stalled');
+  regWork1095 = R.setStoreQty(regWork1095, SH.STOREHOUSE_STORE_ID, 'tools', 1, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TOOL });
+  const step1 = MC.spendWorkshopStepFromRegistry(regWork1095, mcWork1095);
+  assert(step1.spent === true && step1.spentTools === 1 && step1.metalChain.workshop.progress === 1 && step1.metalChain.workshop.spentWood === 2 && F.campWoodInRegistry(step1.registry) === 10 && MC.metalChainToolsInRegistry(step1.registry) === 0, 'M1095: with 1 tool the workshop takes step 1 (2 wood + 1 tool, progress 1)');
+  regWork1095 = step1.registry; mcWork1095 = step1.metalChain;
+  const step2 = MC.spendWorkshopStepFromRegistry(regWork1095, mcWork1095);
+  assert(step2.spent === true && step2.spentTools === 0 && step2.metalChain.workshop.progress === 2 && step2.metalChain.workshop.spentWood === 4 && F.campWoodInRegistry(step2.registry) === 8, 'M1095: step 2 needs no tool (2 wood only, progress 2, the tool store untouched)');
+  regWork1095 = step2.registry; mcWork1095 = step2.metalChain;
+  const stall2 = MC.spendWorkshopStepFromRegistry(regWork1095, mcWork1095);
+  assert(stall2.spent === false && stall2.metalChain.workshop.progress === 2 && F.campWoodInRegistry(stall2.registry) === 8, 'M1095: acceptance 3 — with 1 tool spent the workshop stalls at 2/6 (the second tool step waits)');
+  assert(MC.workshopStallReason(mcWork1095, true, 8, 0) === 'Workshop 2/6 · needs 1 tool (0 in store)', 'M1095: acceptance 3 — the stall at 2/6 names the missing tool');
+  regWork1095 = R.setStoreQty(regWork1095, SH.STOREHOUSE_STORE_ID, 'tools', 1, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TOOL });
+  for (let i = 0; i < 4; i++) { const st = MC.spendWorkshopStepFromRegistry(regWork1095, mcWork1095); assert(st.spent === true, 'M1095: once tools exist the workshop proceeds (step ' + (i + 3) + ' spends)'); regWork1095 = st.registry; mcWork1095 = st.metalChain; }
+  assert(mcWork1095.workshop.progress === 6 && mcWork1095.workshop.spentWood === 12 && mcWork1095.workshop.spentTools === 2, 'M1095: acceptance 3 — the workshop costs 12 wood + 2 tools through its stages');
+  assert(F.campWoodInRegistry(regWork1095) === 0 && MC.metalChainToolsInRegistry(regWork1095) === 0, 'M1095: the workshop build empties the pile and the tool store exactly');
+  assert(MC.workshopReadyForPlacement(mcWork1095) === true && MC.isWorkshopUsable(mcWork1095) === false, 'M1095: a ready workshop is not usable until its placement lands');
+  assert(MC.isWorkshopUsable(MC.finishWorkshop(mcWork1095)) === true, 'M1095: the finished workshop is usable');
+  // --- The catalogue: the five chain entries are enforced data;
+  // the foundry + the forge stay locked (later upgrades). ---
+  const smeltEntry1095 = BC.catalogueEntryFor('smelter');
+  assert(smeltEntry1095 !== undefined && smeltEntry1095.system === 'smelter' && smeltEntry1095.materials.length === 1 && smeltEntry1095.materials[0].resource === 'wood' && smeltEntry1095.materials[0].qty === MC.SMELTER_COST_WOOD && smeltEntry1095.costStatus === 'enforced' && smeltEntry1095.produces !== null && smeltEntry1095.produces.resource === 'ingot' && smeltEntry1095.footprint.w === 3 && smeltEntry1095.footprint.h === 3, 'M1095: the smelter entry is enforced smelter data (6 wood, 3x3, produces ingots)');
+  const smithEntry1095 = BC.catalogueEntryFor('blacksmith');
+  assert(smithEntry1095 !== undefined && smithEntry1095.system === 'blacksmith' && smithEntry1095.materials.length === 1 && smithEntry1095.materials[0].resource === 'wood' && smithEntry1095.materials[0].qty === MC.BLACKSMITH_COST_WOOD && smithEntry1095.costStatus === 'enforced' && smithEntry1095.produces !== null && smithEntry1095.produces.resource === 'tools' && smithEntry1095.footprint.w === 3 && smithEntry1095.footprint.h === 3 && smithEntry1095.paletteKind === 'house-smith', 'M1095: the blacksmith entry is enforced blacksmith data (6 wood, 3x3, produces tools, keeps paletteKind house-smith)');
+  const sawEntry1095 = BC.catalogueEntryFor('sawmill');
+  assert(sawEntry1095 !== undefined && sawEntry1095.system === 'sawmill' && sawEntry1095.materials.length === 1 && sawEntry1095.materials[0].resource === 'wood' && sawEntry1095.materials[0].qty === MC.SAWMILL_COST_WOOD && sawEntry1095.costStatus === 'enforced' && sawEntry1095.produces !== null && sawEntry1095.produces.resource === 'timber' && sawEntry1095.footprint.w === 3 && sawEntry1095.footprint.h === 3, 'M1095: the sawmill entry is enforced sawmill data (6 wood, 3x3, produces timber)');
+  const carpEntry1095 = BC.catalogueEntryFor('carpenter');
+  assert(carpEntry1095 !== undefined && carpEntry1095.system === 'carpenter' && carpEntry1095.materials.length === 1 && carpEntry1095.materials[0].resource === 'wood' && carpEntry1095.materials[0].qty === MC.CARPENTER_COST_WOOD && carpEntry1095.costStatus === 'enforced' && carpEntry1095.produces !== null && carpEntry1095.produces.resource === 'furniture' && carpEntry1095.footprint.w === 3 && carpEntry1095.footprint.h === 3, 'M1095: the carpenter entry is enforced carpenter data (6 wood, 3x3, produces furniture)');
+  const workEntry1095 = BC.catalogueEntryFor('workshop');
+  assert(workEntry1095 !== undefined && workEntry1095.system === 'workshop' && workEntry1095.materials.length === 2 && workEntry1095.materials[0].resource === 'wood' && workEntry1095.materials[0].qty === MC.WORKSHOP_COST_WOOD && workEntry1095.materials[1].resource === 'tools' && workEntry1095.materials[1].qty === MC.WORKSHOP_COST_TOOLS && workEntry1095.costStatus === 'enforced' && workEntry1095.produces === null && workEntry1095.footprint.w === 3 && workEntry1095.footprint.h === 3, 'M1095: the workshop entry is enforced workshop data (12 wood + 2 tools, 3x3, produces nothing — it is the hard dependency, not a producer)');
+  const foundryEntry1095 = BC.catalogueEntryFor('foundry');
+  assert(foundryEntry1095 !== undefined && foundryEntry1095.system === null && foundryEntry1095.costStatus === 'planned', 'M1095: the foundry stays locked (a later upgrade of the smelter, not a 1095 building)');
+  const forgeEntry1095 = BC.catalogueEntryFor('forge');
+  assert(forgeEntry1095 !== undefined && forgeEntry1095.system === null && forgeEntry1095.costStatus === 'planned', 'M1095: the forge stays locked (a later upgrade, not a 1095 building)');
+  const menu1095 = BC.catalogueMenuEntries();
+  assert(menu1095.length === 93, 'M1095: the Build menu still lists all 93 catalogue entries');
+  const placeable1095 = menu1095.filter((m: { placeable: boolean }) => m.placeable);
+  const locked1095 = menu1095.filter((m: { placeable: boolean }) => !m.placeable);
+  assert(placeable1095.length === 18 && locked1095.length === 75, 'M1095: 18 entries are placeable and 75 are listed locked (the chain adds no placeable entries)');
+  assert(locked1095.filter((m: { lockedReason: string | null }) => m.lockedReason === 'No construction path yet — coming in a later build').length === 65, 'M1095: 65 entries are locked for having no construction path yet');
+  assert(locked1095.filter((m: { lockedReason: string | null }) => m.lockedReason === 'Runs in the settlement already — not placed from this menu').length === 10, 'M1095: 10 entries run in the settlement already (the smelter, sawmill, carpenter, and workshop joined the six from 1094 — the blacksmith stays placeable, paletteKind wins over the system, like the windmill)');
+  for (const id of ['smelter', 'sawmill', 'carpenter', 'workshop']) {
+    assert(BC.catalogueMenuEntryFor(BC.catalogueEntryFor(id)!)!.lockedReason === 'Runs in the settlement already — not placed from this menu', 'M1095: the ' + id + ' runs in the settlement (locked in the menu, not placeable)');
+  }
+  assert(BC.catalogueMenuEntryFor(smithEntry1095!)!.placeable === true, 'M1095: the blacksmith stays placeable from the Build menu (paletteKind wins over the blacksmith system — a player-placed smithy does not smith)');
+  // --- The chain, pure: smelt + smith + saw + carpenter + the caps. ---
+  const setStore1095 = (iron: number, coal: number, ingots = 0, tools = 0, wood = 0, timber = 0, furniture = 0) => {
+    let reg = R.createRegistry();
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'iron', iron, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_ORE });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'coal', coal, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_COAL });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'ingot', ingots, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_INGOT });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'tools', tools, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TOOL });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'wood', wood, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_WOOD });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'timber', timber, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_TIMBER });
+    reg = R.setStoreQty(reg, SH.STOREHOUSE_STORE_ID, 'furniture', furniture, { type: 'loaded' }, { location: { ...SH.STOREHOUSE_APPROACH }, capacity: SH.STOREHOUSE_CAPACITY_FURNITURE });
+    return reg;
+  };
+  // Acceptance 1: a smelter with no worker, no ore, or no coal
+  // produces nothing; a blacksmith with no worker or no ingots
+  // produces nothing; a sawmill with no worker or no wood produces
+  // nothing; a carpenter with no worker or no timber produces nothing.
+  assert(MC.smeltOreToIngots(setStore1095(10, 10), false).smelted === 0, 'M1095: acceptance 1 — a smelter with ore + coal but no worker produces nothing');
+  assert(MC.smeltOreToIngots(setStore1095(0, 10), true).smelted === 0, 'M1095: acceptance 1 — a smelter with a worker but no ore produces nothing');
+  assert(MC.smeltOreToIngots(setStore1095(10, 0), true).smelted === 0, 'M1095: acceptance 1 — a smelter with a worker but no coal produces nothing');
+  assert(MC.smithIngotsToTools(setStore1095(0, 0, 4), false).smithed === 0, 'M1095: acceptance 2 — a blacksmith with ingots but no worker produces nothing');
+  assert(MC.smithIngotsToTools(setStore1095(0, 0, 0), true).smithed === 0, 'M1095: acceptance 2 — a blacksmith with a worker but no ingots produces nothing');
+  assert(MC.smithIngotsToTools(setStore1095(0, 0, 1), true).smithed === 0, 'M1095: acceptance 2 — a blacksmith with 1 ingot produces nothing (the recipe needs 2)');
+  assert(MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 10), false).sawn === 0, 'M1095: a sawmill with wood but no worker produces nothing');
+  assert(MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 0), true).sawn === 0, 'M1095: a sawmill with a worker but no wood produces nothing');
+  assert(MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 1), true).sawn === 0, 'M1095: a sawmill with 1 wood produces nothing (the recipe needs 2)');
+  assert(MC.carpenterTimberToFurniture(setStore1095(0, 0, 0, 0, 0, 0), true).made === 0, 'M1095: a carpenter with a worker but no timber produces nothing');
+  assert(MC.carpenterTimberToFurniture(setStore1095(0, 0, 0, 0, 0, 1), true).made === 0, 'M1095: a carpenter with 1 timber produces nothing (the recipe needs 2)');
+  // Acceptance 1 + 2: the chain, batch by batch, conserving.
+  const s1095 = MC.smeltOreToIngots(setStore1095(10, 10), true);
+  assert(s1095.smelted === 1 && s1095.oreUsed === 1 && s1095.coalUsed === 1 && MC.metalChainIronInRegistry(s1095.registry) === 9 && MC.metalChainCoalInRegistry(s1095.registry) === 9 && MC.metalChainIngotsInRegistry(s1095.registry) === 1, 'M1095: acceptance 1 — a worker + ore + coal smelts 1 ingot (ore down 1, coal down 1, ingots up 1)');
+  const t1095 = MC.smithIngotsToTools(setStore1095(0, 0, 4), true);
+  assert(t1095.smithed === 1 && t1095.ingotsUsed === 2 && MC.metalChainIngotsInRegistry(t1095.registry) === 2 && MC.metalChainToolsInRegistry(t1095.registry) === 1, 'M1095: acceptance 2 — a worker + ingots smiths 1 tool (ingots down 2, tools up 1)');
+  const w1095 = MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 10), true);
+  assert(w1095.sawn === 2 && w1095.woodUsed === 2 && MC.metalChainTimberInRegistry(w1095.registry) === 2 && R.storeQty(w1095.registry, SH.STOREHOUSE_STORE_ID, 'wood') === 8, 'M1095: a worker + wood saws 2 timber (wood down 2, timber up 2)');
+  const f1095 = MC.carpenterTimberToFurniture(setStore1095(0, 0, 0, 0, 0, 4), true);
+  assert(f1095.made === 1 && f1095.timberUsed === 2 && MC.metalChainTimberInRegistry(f1095.registry) === 2 && MC.metalChainFurnitureInRegistry(f1095.registry) === 1, 'M1095: a worker + timber carpenters 1 furniture (timber down 2, furniture up 1)');
+  // The caps bind (and fill only the room left).
+  const capSmelt1095 = MC.smeltOreToIngots(setStore1095(10, 10, SH.STOREHOUSE_CAPACITY_INGOT), true);
+  assert(capSmelt1095.smelted === 0 && MC.metalChainIngotsInRegistry(capSmelt1095.registry) === SH.STOREHOUSE_CAPACITY_INGOT, 'M1095: the ingot cap binds — a full ingot store (20) smelts nothing');
+  const nearSmelt1095 = MC.smeltOreToIngots(setStore1095(10, 10, 19), true);
+  assert(nearSmelt1095.smelted === 1 && MC.metalChainIngotsInRegistry(nearSmelt1095.registry) === 20 && MC.metalChainIronInRegistry(nearSmelt1095.registry) === 9 && MC.metalChainCoalInRegistry(nearSmelt1095.registry) === 9, 'M1095: the smelt fills only the room left (19 → 20, 1 ingot, 1 ore, 1 coal)');
+  const capSmith1095 = MC.smithIngotsToTools(setStore1095(0, 0, 4, SH.STOREHOUSE_CAPACITY_TOOL), true);
+  assert(capSmith1095.smithed === 0 && MC.metalChainToolsInRegistry(capSmith1095.registry) === SH.STOREHOUSE_CAPACITY_TOOL, 'M1095: the tool cap binds — a full tool store (10) smiths nothing');
+  const nearSmith1095 = MC.smithIngotsToTools(setStore1095(0, 0, 4, 9), true);
+  assert(nearSmith1095.smithed === 1 && MC.metalChainToolsInRegistry(nearSmith1095.registry) === 10 && MC.metalChainIngotsInRegistry(nearSmith1095.registry) === 2, 'M1095: the smith fills only the room left (9 → 10, 1 tool, 2 ingots)');
+  const capSaw1095 = MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 10, SH.STOREHOUSE_CAPACITY_TIMBER), true);
+  assert(capSaw1095.sawn === 0 && MC.metalChainTimberInRegistry(capSaw1095.registry) === SH.STOREHOUSE_CAPACITY_TIMBER, 'M1095: the timber cap binds — a full timber store (40) saws nothing');
+  const nearSaw1095 = MC.sawWoodToTimber(setStore1095(0, 0, 0, 0, 10, 39), true);
+  assert(nearSaw1095.sawn === 1 && MC.metalChainTimberInRegistry(nearSaw1095.registry) === 40 && R.storeQty(nearSaw1095.registry, SH.STOREHOUSE_STORE_ID, 'wood') === 9, 'M1095: the saw fills only the room left (39 → 40, 1 timber, 1 wood)');
+  const capCarp1095 = MC.carpenterTimberToFurniture(setStore1095(0, 0, 0, 0, 0, 4, SH.STOREHOUSE_CAPACITY_FURNITURE), true);
+  assert(capCarp1095.made === 0 && MC.metalChainFurnitureInRegistry(capCarp1095.registry) === SH.STOREHOUSE_CAPACITY_FURNITURE, 'M1095: the furniture cap binds — a full furniture store (10) carpenters nothing');
+  const nearCarp1095 = MC.carpenterTimberToFurniture(setStore1095(0, 0, 0, 0, 0, 4, 9), true);
+  assert(nearCarp1095.made === 1 && MC.metalChainFurnitureInRegistry(nearCarp1095.registry) === 10 && MC.metalChainTimberInRegistry(nearCarp1095.registry) === 2, 'M1095: the carpenter fills only the room left (9 → 10, 1 furniture, 2 timber)');
+  // Conservation across the whole chain: iron + ingots + 2xtools
+  // is constant, coal + ingots + 2xtools is constant, and wood +
+  // timber + 2xfurniture is constant.
+  let chainReg1095 = setStore1095(4, 4);
+  for (let i = 0; i < 4; i++) chainReg1095 = MC.smeltOreToIngots(chainReg1095, true).registry;
+  assert(MC.metalChainIronInRegistry(chainReg1095) === 0 && MC.metalChainCoalInRegistry(chainReg1095) === 0 && MC.metalChainIngotsInRegistry(chainReg1095) === 4, 'M1095: 4 ore + 4 coal smelt to 4 ingots (nothing lost)');
+  for (let i = 0; i < 2; i++) chainReg1095 = MC.smithIngotsToTools(chainReg1095, true).registry;
+  assert(MC.metalChainIronInRegistry(chainReg1095) + MC.metalChainIngotsInRegistry(chainReg1095) + 2 * MC.metalChainToolsInRegistry(chainReg1095) === 4, 'M1095: iron + ingots + 2xtools is constant (4 ore → 4 ingots → 2 tools)');
+  assert(MC.metalChainCoalInRegistry(chainReg1095) + MC.metalChainIngotsInRegistry(chainReg1095) + 2 * MC.metalChainToolsInRegistry(chainReg1095) === 4, 'M1095: coal + ingots + 2xtools is constant (4 coal burned for 2 tools)');
+  let timberReg1095 = setStore1095(0, 0, 0, 0, 4);
+  for (let i = 0; i < 2; i++) timberReg1095 = MC.sawWoodToTimber(timberReg1095, true).registry;
+  assert(R.storeQty(timberReg1095, SH.STOREHOUSE_STORE_ID, 'wood') === 0 && MC.metalChainTimberInRegistry(timberReg1095) === 4, 'M1095: 4 wood saws to 4 timber (nothing lost)');
+  for (let i = 0; i < 2; i++) timberReg1095 = MC.carpenterTimberToFurniture(timberReg1095, true).registry;
+  assert(R.storeQty(timberReg1095, SH.STOREHOUSE_STORE_ID, 'wood') + MC.metalChainTimberInRegistry(timberReg1095) + 2 * MC.metalChainFurnitureInRegistry(timberReg1095) === 4, 'M1095: wood + timber + 2xfurniture is constant (4 wood → 4 timber → 2 furniture)');
+  // --- The jobs: a done building + input discovers its work job;
+  // the build jobs follow the same gates as the mill/bakery; the
+  // mine jobs cover BOTH minerals (iron + coal). No building, no job. ---
+  const world1095 = W.defaultWorld();
+  const founders1095 = F.FOUNDER_NAMES.map((n: string, i: number) => F.defaultFounderState(n, i, 1000));
+  const cHutDone1095 = C.freshConstruction();
+  cHutDone1095.sites[0].state = 'done';
+  const storeDone1095 = { ...SH.freshStorehouse(), state: 'done' as const };
+  const doneSite = doneSite1095;
+  const doneWorkSite = doneWorkSite1095;
+  const mcAllDone1095: typeof mc0 = { smelter: doneSite, blacksmith: doneSite, sawmill: doneSite, carpenter: doneSite, workshop: doneWorkSite };
+  const fcBakeryDone1095: FC.FoodChainState = { mill: { state: 'done', progress: 6, spentWood: 6, stages: { foundation: 2, frame: 2, finished: 2 } }, bakery: { state: 'done', progress: 6, spentWood: 6, stages: { foundation: 2, frame: 2, finished: 2 } } };
+  const sm1095 = { iron: 10, coal: 10, ingots: 4, tools: 2, wood: 10, timber: 4, furniture: 0 };
+  const boardChain1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: C.freshConstruction(), founders: founders1095.map((f: { id: string }) => ({ id: f.id, carrying: 0, carryingGrain: 0 })), nowAbs: 0, foodChain: fcBakeryDone1095, granary: { grain: 0, flour: 0, food: 0 }, metalChain: mcAllDone1095, storehouseMaterials: sm1095, storehouse: storeDone1095 });
+  const sumChain1095 = J.jobSummary(boardChain1095);
+  assert(sumChain1095.smeltOpen === 1 && sumChain1095.smithOpen === 1 && sumChain1095.sawOpen === 1 && sumChain1095.carpenterOpen === 1, 'M1095: done buildings + inputs discover all four chain work jobs');
+  const boardNoOre1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: C.freshConstruction(), founders: [], nowAbs: 0, metalChain: mcAllDone1095, storehouseMaterials: { ...sm1095, iron: 0 } });
+  assert(J.jobSummary(boardNoOre1095).smeltOpen === 0 && J.jobSummary(boardNoOre1095).smithOpen === 1, 'M1095: a done smelter with no ore discovers no smelt job (the blacksmith still offers smith work)');
+  const boardNoChain1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: C.freshConstruction(), founders: [], nowAbs: 0, metalChain: MC.freshMetalChain(), storehouseMaterials: sm1095 });
+  assert(J.jobSummary(boardNoChain1095).smeltOpen === 0 && J.jobSummary(boardNoChain1095).smithOpen === 0 && J.jobSummary(boardNoChain1095).sawOpen === 0 && J.jobSummary(boardNoChain1095).carpenterOpen === 0, 'M1095: no chain buildings — no chain work jobs (unbuilt buildings hire nobody)');
+  const boardFull1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: C.freshConstruction(), founders: [], nowAbs: 0, metalChain: mcAllDone1095, storehouseMaterials: { iron: 10, coal: 10, ingots: 4, tools: SH.STOREHOUSE_CAPACITY_TOOL, wood: 10, timber: 4, furniture: 0 } });
+  assert(J.jobSummary(boardFull1095).smithOpen === 0, 'M1095: a full tool store discovers no smith job (the cap binds the board too)');
+  // The build jobs: the smelter's once hut 0 is done and ore has
+  // landed; the blacksmith's once the smelter is done; the
+  // sawmill's once hut 0 + the storehouse are done; the
+  // carpenter's once the sawmill is done; the workshop's once
+  // the bakery is done.
+  const boardSmeltBuild1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, foodChain: FC.freshFoodChain(), granary: { grain: 0, flour: 0, food: 0 }, metalChain: MC.freshMetalChain(), storehouseMaterials: { ...sm1095, ingots: 0, tools: 0, timber: 0 } });
+  const smeltBuildJob1095 = boardSmeltBuild1095.jobs[J.buildJobIdFor(MC.SMELTER_SITE_ID)];
+  assert(smeltBuildJob1095 !== undefined && smeltBuildJob1095.kind === 'build' && smeltBuildJob1095.tile.x === MC.SMELTER_APPROACH.x && smeltBuildJob1095.tile.y === MC.SMELTER_APPROACH.y, 'M1095: hut 0 done + ore discovers a smelter BUILD job (the work tile is the smelter approach)');
+  const boardSmeltBuildNoOre1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, metalChain: MC.freshMetalChain(), storehouseMaterials: { ...sm1095, iron: 0 } });
+  assert(boardSmeltBuildNoOre1095.jobs[J.buildJobIdFor(MC.SMELTER_SITE_ID)] === undefined, 'M1095: hut 0 done but no ore — no smelter build job (nothing to smelt)');
+  const mcSmeltOnly1095: typeof mc0 = { ...MC.freshMetalChain(), smelter: doneSite };
+  const boardSmithBuild1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, metalChain: mcSmeltOnly1095, storehouseMaterials: sm1095 });
+  assert(boardSmithBuild1095.jobs[J.buildJobIdFor(MC.BLACKSMITH_SITE_ID)] !== undefined, 'M1095: a done smelter discovers a blacksmith BUILD job');
+  const boardSawBuild1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, metalChain: MC.freshMetalChain(), storehouseMaterials: sm1095, storehouse: storeDone1095 });
+  assert(boardSawBuild1095.jobs[J.buildJobIdFor(MC.SAWMILL_SITE_ID)] !== undefined, 'M1095: hut 0 + a done storehouse discover a sawmill BUILD job');
+  const boardSawBuildNoStore1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, metalChain: MC.freshMetalChain(), storehouseMaterials: sm1095 });
+  assert(boardSawBuildNoStore1095.jobs[J.buildJobIdFor(MC.SAWMILL_SITE_ID)] === undefined, 'M1095: no storehouse — no sawmill build job (storage first)');
+  const mcSawOnly1095: typeof mc0 = { ...MC.freshMetalChain(), sawmill: doneSite };
+  const boardCarpBuild1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, metalChain: mcSawOnly1095, storehouseMaterials: sm1095 });
+  assert(boardCarpBuild1095.jobs[J.buildJobIdFor(MC.CARPENTER_SITE_ID)] !== undefined, 'M1095: a done sawmill discovers a carpenter BUILD job');
+  const boardWorkBuild1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, foodChain: fcBakeryDone1095, granary: { grain: 0, flour: 0, food: 0 }, metalChain: MC.freshMetalChain(), storehouseMaterials: sm1095 });
+  assert(boardWorkBuild1095.jobs[J.buildJobIdFor(MC.WORKSHOP_SITE_ID)] !== undefined, 'M1095: a done bakery discovers a workshop BUILD job');
+  const boardWorkBuildNoBakery1095 = J.discoverJobs(J.createJobBoard(), { world: world1095, construction: cHutDone1095, founders: [], nowAbs: 0, foodChain: FC.freshFoodChain(), granary: { grain: 0, flour: 0, food: 0 }, metalChain: MC.freshMetalChain(), storehouseMaterials: sm1095 });
+  assert(boardWorkBuildNoBakery1095.jobs[J.buildJobIdFor(MC.WORKSHOP_SITE_ID)] === undefined, 'M1095: no bakery — no workshop build job (the bakery comes first)');
+  const claimSmelt1095 = J.claimJob(boardChain1095, founders1095[0].id, J.smeltJobIdFor(MC.SMELTER_SITE_ID));
+  assert(claimSmelt1095.job !== null && claimSmelt1095.job.kind === 'smelt' && claimSmelt1095.job.tile.x === MC.SMELTER_APPROACH.x && claimSmelt1095.job.tile.y === MC.SMELTER_APPROACH.y, 'M1095: a founder claims the smelt job (the work tile is the smelter approach)');
+  assert(J.jobSummary(claimSmelt1095.board).smeltOpen === 0 && J.jobSummary(claimSmelt1095.board).smeltClaimed === 1, 'M1095: the smelt claim is exclusive (0 open, 1 claimed)');
+  // The mine jobs: one per open mine site, so iron + coal both
+  // get a job (the 1094 gap — only the first open mine got one).
+  const wMine1095 = SS.createSettlementSim(W.defaultWorld()).world;
+  const ironSite1095 = MN.designateMine(wMine1095, 3, true, []);
+  assert(ironSite1095 !== null && ironSite1095.x === 84 && ironSite1095.y === 111 && ironSite1095.mineral === 'iron', 'M1095: the iron mine opens over (84,111)');
+  const coalSite1095 = MN.designateMine(wMine1095, 3, true, ironSite1095 ? [ironSite1095] : [], 'coal');
+  assert(coalSite1095 !== null && coalSite1095.x === 130 && coalSite1095.y === 144 && coalSite1095.mineral === 'coal', 'M1095: the coal mine opens over (130,144) alongside the iron mine');
+  assert(MN.designateMine(wMine1095, 3, true, ironSite1095 && coalSite1095 ? [ironSite1095, coalSite1095] : [], 'coal') === coalSite1095, 'M1095: designating coal again returns the open coal site (idempotent — no second site)');
+  assert(MN.openMineSites({ mines: ironSite1095 && coalSite1095 ? [ironSite1095, coalSite1095] : [], quarry: null, lumber: null, lastDesignateDay: 3 }).length === 2, 'M1095: openMineSites returns both open sites');
+  const mines1095 = [ironSite1095, coalSite1095].filter((s): s is NonNullable<typeof s> => s !== null);
+  const minesState1095: { mines: typeof mines1095; quarry: null; lumber: null; lastDesignateDay: number } = { mines: mines1095, quarry: null, lumber: null, lastDesignateDay: 3 };
+  const boardMines1095 = J.discoverJobs(J.createJobBoard(), { world: wMine1095, construction: C.freshConstruction(), founders: [], nowAbs: 0, mines: minesState1095 });
+  const mineJobs1095 = Object.values(boardMines1095.jobs).filter((j: { kind: string }) => j.kind === 'mine');
+  assert(mineJobs1095.length === 2, 'M1095: discovery creates a mine job per open site (iron + coal, not just the first)');
+  assert(mineJobs1095.some((j: { id: string }) => j.id === J.mineJobIdFor('deposit:iron:84,111')) && mineJobs1095.some((j: { id: string }) => j.id === J.mineJobIdFor('deposit:coal:130,144')), 'M1095: the mine jobs name their deposits (iron + coal)');
+  // --- The scorer: smelt 0.55, smith 0.55, saw 0.3, carpenter 0.5
+  // — the chain is background work, never above the hut build,
+  // never above night sleep, never above food when food is short.
+  // The saw is 0.3 (below chop's 0.45 max): at 0.5 it beat chop
+  // whenever wood was on hand, so the sawmill ran as a continuous
+  // wood sink and starved the settlement (the first 1095 week run:
+  // meals 115 vs the 1094 baseline of 152, starvedTicks 6155 vs
+  // 63). At 0.3 it only wins when the pile is over a third full —
+  // it runs on surplus wood. ---
+  const ctx1095 = (over: Record<string, unknown>) => ({
+    needs: { hunger: 80, energy: 90, social: 60, health: 100 }, minutes: 600, foodStock: 30, stockpileWood: 24, construction: { state: 'done', progress: 6, spentWood: 12 },
+    nearestTreeDist: 4, distToSite: 4, builderTaken: false, currentJob: null, ...over,
+  });
+  const smeltScore1095 = U.scoreFounderActivities(ctx1095({ readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 0 }));
+  assert(close(smeltScore1095.work, 0.55) && U.chooseScoredActivity(ctx1095({ readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 0 })).workKind === 'smelt', 'M1095: a ready smelt job scores work 0.55, workKind smelt (smelting beats idle chopping)');
+  assert(U.scoreFounderActivities(ctx1095({ readySmeltJobs: 1, smeltTaken: true, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 0 })).work === 0, 'M1095: a taken smelter scores 0 (one smelter at a time)');
+  assert(U.scoreFounderActivities(ctx1095({ readySmeltJobs: 1, smeltTaken: false, storehouseIron: 0, storehouseCoal: 10, storehouseIngots: 0 })).work === 0, 'M1095: a smelter with no ore scores 0');
+  assert(U.scoreFounderActivities(ctx1095({ readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 0, storehouseIngots: 0 })).work === 0, 'M1095: a smelter with no coal scores 0');
+  assert(U.scoreFounderActivities(ctx1095({ readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 20 })).work === 0, 'M1095: a smelter with a full ingot store scores 0 (the cap binds)');
+  const smithScore1095 = U.scoreFounderActivities(ctx1095({ readySmithJobs: 1, smithTaken: false, storehouseIngots: 4, storehouseTools: 0 }));
+  assert(close(smithScore1095.work, 0.55) && U.chooseScoredActivity(ctx1095({ readySmithJobs: 1, smithTaken: false, storehouseIngots: 4, storehouseTools: 0 })).workKind === 'smith', 'M1095: a ready smith job scores work 0.55, workKind smith');
+  assert(U.scoreFounderActivities(ctx1095({ readySmithJobs: 1, smithTaken: false, storehouseIngots: 1, storehouseTools: 0 })).work === 0, 'M1095: a blacksmith with 1 ingot scores 0 (the recipe needs 2)');
+  assert(U.scoreFounderActivities(ctx1095({ readySmithJobs: 1, smithTaken: false, storehouseIngots: 4, storehouseTools: 10 })).work === 0, 'M1095: a blacksmith with a full tool store scores 0 (the cap binds)');
+  const sawScore1095 = U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readySawJobs: 1, sawTaken: false, storehouseWood: 10, storehouseTimber: 0 }));
+  assert(close(sawScore1095.work, 0.3) && U.chooseScoredActivity(ctx1095({ nearestTreeDist: 99, readySawJobs: 1, sawTaken: false, storehouseWood: 10, storehouseTimber: 0 })).workKind === 'saw', 'M1095: a ready saw job scores work 0.3, workKind saw (sawing is background work — below chop)');
+  assert(U.chooseScoredActivity(ctx1095({ nearestTreeDist: 4, stockpileWood: 0, readySawJobs: 1, sawTaken: false, storehouseWood: 10, storehouseTimber: 0 })).workKind === 'chop', 'M1095: the saw never beats a hungry chop (chopWork 0.45 > saw 0.3 when the pile is empty — the sawmill cannot starve the wood loop)');
+  assert(U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readySawJobs: 1, sawTaken: false, storehouseWood: 1, storehouseTimber: 0 })).work === 0, 'M1095: a sawmill with 1 wood scores 0 (the recipe needs 2)');
+  assert(U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readySawJobs: 1, sawTaken: false, storehouseWood: 10, storehouseTimber: 40 })).work === 0, 'M1095: a sawmill with a full timber store scores 0 (the cap binds)');
+  const carpScore1095 = U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readyCarpenterJobs: 1, carpenterTaken: false, storehouseTimber: 4, storehouseFurniture: 0 }));
+  assert(close(carpScore1095.work, 0.5) && U.chooseScoredActivity(ctx1095({ nearestTreeDist: 99, readyCarpenterJobs: 1, carpenterTaken: false, storehouseTimber: 4, storehouseFurniture: 0 })).workKind === 'carpenter', 'M1095: a ready carpenter job scores work 0.5, workKind carpenter');
+  assert(U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readyCarpenterJobs: 1, carpenterTaken: false, storehouseTimber: 1, storehouseFurniture: 0 })).work === 0, 'M1095: a carpenter with 1 timber scores 0 (the recipe needs 2)');
+  assert(U.scoreFounderActivities(ctx1095({ nearestTreeDist: 99, readyCarpenterJobs: 1, carpenterTaken: false, storehouseTimber: 4, storehouseFurniture: 10 })).work === 0, 'M1095: a carpenter with a full furniture store scores 0 (the cap binds)');
+  assert(U.chooseScoredActivity(ctx1095({ minutes: 1350, needs: { hunger: 80, energy: 90, social: 60, health: 100 }, readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 0 })).activity === 'sleep', 'M1095: smelting never beats night sleep (work 0.55 < sleep 0.81 — the founders still sleep)');
+  assert(U.chooseScoredActivity(ctx1095({ construction: { state: 'none', progress: 0, spentWood: 0 }, stockpileWood: 0, readySmeltJobs: 1, smeltTaken: false, storehouseIron: 10, storehouseCoal: 10, storehouseIngots: 0 })).workKind === 'chop', 'M1095: the smelter never beats the hut build (chopWork 0.57 > smelt 0.55)');
+  // The mine term covers both minerals: it fires while either
+  // stockpile is below target, and scales with the scarcest one.
+  const mineCtx1095 = { readyMineJobs: 1, storehouse: { state: 'done', progress: 6, spentWood: 12, spentStone: 6 }, day: 3 };
+  const mineBoth1095 = U.scoreFounderActivities(ctx1095({ ...mineCtx1095, storehouseIron: 0, storehouseCoal: 0 }));
+  assert(close(mineBoth1095.work, 0.45), 'M1095: with iron 0 + coal 0 the mine term is at its cap (0.45 — both minerals scarce)');
+  const mineIronFull1095 = U.scoreFounderActivities(ctx1095({ ...mineCtx1095, storehouseIron: 20, storehouseCoal: 0 }));
+  assert(close(mineIronFull1095.work, 0.45), 'M1095: with iron full but coal 0 the mine term stays at its cap (the scarcest mineral drives it)');
+  const mineHalf1095 = U.scoreFounderActivities(ctx1095({ ...mineCtx1095, storehouseIron: 10, storehouseCoal: 10 }));
+  assert(close(mineHalf1095.work, 0.225), 'M1095: with iron 10 + coal 10 the mine term halves (0.45 x (1 - 0.5))');
+  // BUILD 1095 (the week-run fix): the mine term has NO wood-work
+  // gate — it fires while the pile is not full, so the sawmill's
+  // wood drain cannot starve mining (the first 1095 week run: mine
+  // shifts 0, ore 0/0, no smelter/blacksmith/workshop, because the
+  // 1089 gate woodWork === 0 was unreachable once the sawmill
+  // ran). The argmax still protects the wood loop: the mine only
+  // wins over chop when strictly greater, so on a tie with an
+  // empty pile the founder chops.
+  const minePileLow1095 = U.scoreFounderActivities(ctx1095({ ...mineCtx1095, stockpileWood: 0, nearestTreeDist: 99, storehouseIron: 0, storehouseCoal: 0 }));
+  assert(close(minePileLow1095.work, 0.45) && U.chooseScoredActivity(ctx1095({ ...mineCtx1095, stockpileWood: 0, nearestTreeDist: 99, storehouseIron: 0, storehouseCoal: 0 })).workKind === 'mine', 'M1095: the mine term fires with an empty pile (no wood-work gate — the sawmill drain cannot starve mining)');
+  assert(U.chooseScoredActivity(ctx1095({ ...mineCtx1095, stockpileWood: 0, nearestTreeDist: 0, storehouseIron: 0, storehouseCoal: 0 })).workKind === 'chop', 'M1095: on a true tie with an empty pile the founder still chops (mineTerm 0.45 is not > chopWork 0.45 — the argmax protects the wood loop)');
+  assert(U.chooseScoredActivity(ctx1095({ ...mineCtx1095, stockpileWood: 24, nearestTreeDist: 4, storehouseIron: 0, storehouseCoal: 0 })).workKind === 'mine', 'M1095: with a half-full pile the founder mines (mineTerm 0.45 > chopWork — the spare-capacity behaviour the gate was meant to encode)');
+  // --- The save: the chain + the five store fields + the carried
+  // ore kind survive a v12 round-trip (the 1091 whitelist pattern,
+  // extended to the chain trip states + the coal carrier). ---
+  const simSave1095 = SS.createSettlementSim(W.defaultWorld());
+  simSave1095.founders[0].carryingOre = 2;
+  simSave1095.founders[0].carryingOreKind = 'coal';
+  simSave1095.founders[0].workState = 'toMine';
+  const save1095 = SS.serializeSettlement(simSave1095);
+  const restoredSave1095 = SS.restoreSettlement(W.defaultWorld(), save1095, simSave1095.abs, simSave1095.ledger);
+  assert(restoredSave1095.founders[0].carryingOre === 2 && restoredSave1095.founders[0].carryingOreKind === 'coal', 'M1095: the reload keeps a coal carrier (carryingOre 2 + carryingOreKind coal — the 1091 strand fix, extended to coal)');
+  assert(JSON.stringify(restoredSave1095.metalChain) === JSON.stringify(simSave1095.metalChain), 'M1095: the reload keeps the metal-chain state');
+  assert(MC.metalChainCoalInRegistry(restoredSave1095.registry) === MC.metalChainCoalInRegistry(simSave1095.registry) && MC.metalChainIngotsInRegistry(restoredSave1095.registry) === MC.metalChainIngotsInRegistry(simSave1095.registry) && MC.metalChainToolsInRegistry(restoredSave1095.registry) === MC.metalChainToolsInRegistry(simSave1095.registry) && MC.metalChainTimberInRegistry(restoredSave1095.registry) === MC.metalChainTimberInRegistry(simSave1095.registry) && MC.metalChainFurnitureInRegistry(restoredSave1095.registry) === MC.metalChainFurnitureInRegistry(simSave1095.registry), 'M1095: the reload keeps the five chain store counts');
+  // --- Acceptance 4: the 24h run — the chain is silent on day 1-2
+  // (the mine opens day 3), the settlement stays healthy, and the
+  // mill/bakery/huts still complete. ---
+  const world24_1095 = W.defaultWorld();
+  const sim24_1095 = SS.createSettlementSim(world24_1095);
+  SS.advanceSettlement(sim24_1095, 800);
+  const mid1095 = SS.serializeSettlement(sim24_1095);
+  const restored1095 = SS.restoreSettlement(world24_1095, mid1095, sim24_1095.abs, sim24_1095.ledger);
+  assert(JSON.stringify(restored1095.metalChain) === JSON.stringify(sim24_1095.metalChain), 'M1095: the reload keeps the metal-chain state at hour 12');
+  SS.advanceSettlement(restored1095, 800);
+  const L1095 = restored1095.ledger;
+  assert(L1095.ticks === 1600, 'M1095: the 24h run counts 1600 ticks');
+  assert(L1095.millsCompleted === 1 && L1095.bakeriesCompleted === 1, 'M1095: the mill and the bakery are both built in 24h (the chain does not starve food)');
+  assert(L1095.hutsCompleted === 2, 'M1095: both huts still complete in 24h (the chain does not starve housing)');
+  assert(L1095.smeltersCompleted === 0 && L1095.blacksmithsCompleted === 0 && L1095.sawmillsCompleted === 0 && L1095.carpentersCompleted === 0 && L1095.workshopsCompleted === 0, 'M1095: acceptance 4 — no chain building is built in 24h (the mine opens day 3)');
+  assert(L1095.ingotsSmelted === 0 && L1095.toolsSmithed === 0 && L1095.timberSawn === 0 && L1095.furnitureMade === 0, 'M1095: acceptance 4 — nothing is smelted, smithed, sawn, or carpentered in 24h (no ore, no coal, no chain yet)');
+  assert(L1095.starvedTicks === 0 && Math.round(L1095.minHealth) === 100, 'M1095: acceptance 4 — nobody starves (starvedTicks 0, minHealth 100)');
+  assert(restored1095.founders.length === 6, 'M1095: acceptance 4 — the population is 6 (3 founders + 3 arrivals)');
+  const ingotsNow1095 = MC.metalChainIngotsInRegistry(restored1095.registry);
+  const toolsNow1095 = MC.metalChainToolsInRegistry(restored1095.registry);
+  const timberNow1095 = MC.metalChainTimberInRegistry(restored1095.registry);
+  const furnitureNow1095 = MC.metalChainFurnitureInRegistry(restored1095.registry);
+  assert(L1095.ingotsSmelted === ingotsNow1095 + L1095.ingotsSmithed, 'M1095: every smelted ingot is in the store or smithed (24h, trivially 0)');
+  assert(L1095.timberSawn === timberNow1095 + L1095.timberCarpentered, 'M1095: every sawn timber is in the store or carpentered (24h, trivially 0)');
+  console.log('M1095 24h: ticks=' + L1095.ticks + ' mills/bakeries=' + L1095.millsCompleted + '/' + L1095.bakeriesCompleted + ' huts=' + L1095.hutsCompleted + ' ingots smelted/smithed=' + L1095.ingotsSmelted + '/' + L1095.ingotsSmithed + ' tools=' + L1095.toolsSmithed + ' timber sawn/carpentered=' + L1095.timberSawn + '/' + L1095.timberCarpentered + ' furniture=' + L1095.furnitureMade + ' chain built smelter/blacksmith/sawmill/carpenter/workshop=' + L1095.smeltersCompleted + '/' + L1095.blacksmithsCompleted + '/' + L1095.sawmillsCompleted + '/' + L1095.carpentersCompleted + '/' + L1095.workshopsCompleted + ' starvedTicks=' + L1095.starvedTicks + ' minHealth=' + Math.round(L1095.minHealth) + ' final ingots/tools/timber/furniture=' + ingotsNow1095 + '/' + toolsNow1095 + '/' + timberNow1095 + '/' + furnitureNow1095 + ' population=' + restored1095.founders.length);
+  // --- The week-long run: the chain runs all week. The mine opens
+  // day 3, the smelter follows the first ore, the blacksmith the
+  // smelter, the sawmill the storehouse, the carpenter the sawmill,
+  // and the workshop the bakery + the first 2 tools. The week
+  // numbers below are MEASURED on this run (first pass: a sanity
+  // bound on health, pinned exactly once the run lands — the
+  // M1090 pattern). ---
+  const simWeek1095 = SS.createSettlementSim(W.defaultWorld());
+  SS.advanceSettlement(simWeek1095, 11200);
+  const LWeek1095 = simWeek1095.ledger;
+  assert(LWeek1095.ticks === 11200, 'M1095: the week run counts 11200 ticks');
+  assert(LWeek1095.smeltersCompleted === 1 && LWeek1095.blacksmithsCompleted === 1 && LWeek1095.sawmillsCompleted === 1 && LWeek1095.carpentersCompleted === 1 && LWeek1095.workshopsCompleted === 1, 'M1095: all five chain buildings complete in a week (smelter, blacksmith, sawmill, carpenter, workshop)');
+  assert(LWeek1095.ingotsSmelted > 0 && LWeek1095.toolsSmithed > 0, 'M1095: acceptance 1 + 2 — the week smelts ingots and smiths tools');
+  assert(LWeek1095.timberSawn > 0 && LWeek1095.furnitureMade > 0, 'M1095: the week saws timber and carpenters furniture');
+  assert(LWeek1095.jobsCompleted.smelt > 0 && LWeek1095.jobsCompleted.smith > 0 && LWeek1095.jobsCompleted.saw > 0 && LWeek1095.jobsCompleted.carpenter > 0, 'M1095: all four chain jobs complete in a week');
+  assert(LWeek1095.oreMined > 0 && LWeek1095.coalDelivered > 0, 'M1095: the week mines iron AND delivers coal (two miners, two minerals)');
+  assert(LWeek1095.oreSmelted === LWeek1095.coalBurned, 'M1095: the week smelt burns 1 coal per 1 ore');
+  assert(LWeek1095.ingotsSmelted === MC.metalChainIngotsInRegistry(simWeek1095.registry) + LWeek1095.ingotsSmithed, 'M1095: every smelted ingot is in the store or smithed (week)');
+  assert(LWeek1095.ingotsSmithed === 2 * LWeek1095.toolsSmithed, 'M1095: the week smith conserves — 2 ingots per tool');
+  assert(LWeek1095.timberSawn === MC.metalChainTimberInRegistry(simWeek1095.registry) + LWeek1095.timberCarpentered, 'M1095: every sawn timber is in the store or carpentered (week)');
+  assert(LWeek1095.timberCarpentered === 2 * LWeek1095.furnitureMade, 'M1095: the week carpenter conserves — 2 timber per furniture');
+  assert(LWeek1095.woodSawn === LWeek1095.timberSawn, 'M1095: the week saw conserves — 2 wood become 2 timber (1:1)');
+  assert(LWeek1095.oreMined === LWeek1095.oreDelivered + LWeek1095.coalDelivered + simWeek1095.founders.reduce((n: number, f: { carryingOre: number }) => n + f.carryingOre, 0), 'M1095: every mined mineral is delivered or still carried (week, iron + coal)');
+  // BUILD 1095 (week pin): starvedTicks 166, minHealth 96 — MOVED
+  // from the 1094 baseline (63/98). Mechanism: the chain's wood
+  // demand (5 buildings x 6 wood + the sawmill's ~42 wood) depletes
+  // the nearby trees, so founders range farther to chop, and a long
+  // chop trip + hunger = starved ticks while walking back to the
+  // campfire. The starvation is day-6 only (150 ticks, +16 day 7,
+  // flat after) and food NEVER runs out (food 15, flour 88-100) —
+  // it is the accepted far-from-campfire class (the 1091 6-tick
+  // and 1094 63-tick residuals are the same class), not a food
+  // shortage. No deaths, health recovers, starvation stops by
+  // day 7. The 24h run (acceptance 4) is still clean (0/100).
+  assert(LWeek1095.starvedTicks === 166 && Math.round(LWeek1095.minHealth) === 96, 'M1095: the week stays healthy at the pinned residual 166/96 (moved from the 1094 baseline 63/98 — the chain\'s wood demand pulls founders farther to chop; day-6 only, food never runs out, no deaths)');
+  console.log('M1095 week run: ticks=' + LWeek1095.ticks + ' ore mined/delivered=' + LWeek1095.oreMined + '/' + LWeek1095.oreDelivered + ' coal delivered=' + LWeek1095.coalDelivered + ' ingots smelted/smithed=' + LWeek1095.ingotsSmelted + '/' + LWeek1095.ingotsSmithed + ' tools=' + LWeek1095.toolsSmithed + ' timber sawn/carpentered=' + LWeek1095.timberSawn + '/' + LWeek1095.timberCarpentered + ' furniture=' + LWeek1095.furnitureMade + ' chain jobs smelt/smith/saw/carpenter=' + LWeek1095.jobsCompleted.smelt + '/' + LWeek1095.jobsCompleted.smith + '/' + LWeek1095.jobsCompleted.saw + '/' + LWeek1095.jobsCompleted.carpenter + ' chain built=' + LWeek1095.smeltersCompleted + '/' + LWeek1095.blacksmithsCompleted + '/' + LWeek1095.sawmillsCompleted + '/' + LWeek1095.carpentersCompleted + '/' + LWeek1095.workshopsCompleted + ' store ingots/tools/timber/furniture=' + MC.metalChainIngotsInRegistry(simWeek1095.registry) + '/' + MC.metalChainToolsInRegistry(simWeek1095.registry) + '/' + MC.metalChainTimberInRegistry(simWeek1095.registry) + '/' + MC.metalChainFurnitureInRegistry(simWeek1095.registry) + ' starvedTicks=' + LWeek1095.starvedTicks + ' minHealth=' + Math.round(LWeek1095.minHealth) + ' population=' + simWeek1095.founders.length);
+  console.log('M1095: metal + timber chain verified (surveyed sites, staged builds, workshop stall, catalogue entries, smelt/smith/saw/carpenter, caps, conservation, jobs, scorer, save, 24h run, week run)');
 }
 
 

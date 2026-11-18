@@ -66,7 +66,12 @@ export type CatalogueCostStatus =
  * lumber = the 1089 designated sites; granary = the 1090 registry
  * store; farm = the planted wheat (1067/1090); mill = the 1094
  * food-chain mill (grinds grain -> flour); bakery = the 1094
- * food-chain bakery (bakes flour -> meals).
+ * food-chain bakery (bakes flour -> meals); smelter = the 1095
+ * metal-chain smelter (ore + coal -> ingots); blacksmith = the
+ * 1095 forge (ingots -> tools); sawmill = the 1095 sawmill
+ * (wood -> timber); carpenter = the 1095 carpenter (timber ->
+ * furniture); workshop = the 1095 tools-required site (12 wood
+ * + 2 tools, the first hard dependency).
  */
 export type CatalogueSystem =
   | 'hut'
@@ -80,12 +85,18 @@ export type CatalogueSystem =
   | 'granary'
   | 'farm'
   | 'mill'
-  | 'bakery';
+  | 'bakery'
+  | 'smelter'
+  | 'blacksmith'
+  | 'sawmill'
+  | 'carpenter'
+  | 'workshop';
 
 export const CATALOGUE_SYSTEMS: CatalogueSystem[] = [
   'hut', 'storehouse', 'well', 'bridge', 'path',
   'mine', 'quarry', 'lumber', 'granary', 'farm',
   'mill', 'bakery',
+  'smelter', 'blacksmith', 'sawmill', 'carpenter', 'workshop',
 ];
 
 /**
@@ -93,7 +104,7 @@ export const CATALOGUE_SYSTEMS: CatalogueSystem[] = [
  * plus the registry's carried currencies (gold is not a civilization
  * Resource, but the bank genuinely needs gold to open).
  */
-export type CatalogueResource = Resource | 'gold' | 'copper' | 'silver' | 'flour';
+export type CatalogueResource = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture';
 
 /** What an entry needs before it can exist. */
 export type CataloguePrerequisite =
@@ -333,13 +344,13 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'smelter', name: 'Smelter', category: 'production',
-    blurb: 'Smelts ore into iron: a coal-fired furnace beside the mine. Without it the ore is just heavy rock.',
-    materials: [{ resource: 'stone', qty: 12 }, { resource: 'wood', qty: 6 }, { resource: 'tools', qty: 2 }],
-    costStatus: 'planned', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
-    produces: { resource: 'iron', perHour: 1 }, maintenance: { resource: 'coal', qtyPerDay: 1 },
+    blurb: 'Smelts ore + coal into ingots: the first link of the metal chain (BUILD 1095 — ore + coal -> ingots -> tools). Founder-built through the staged construction path (6 wood, 6 steps, foundation -> frame -> finished); a smelter with no worker, no ore, or no coal produces nothing. Ingots are a real registry resource (cap 20).',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
+    produces: { resource: 'ingot', perHour: 1 }, maintenance: { resource: 'coal', qtyPerDay: 1 },
     upgradesTo: ['foundry'],
     prerequisites: [{ kind: 'building', id: 'mine-entrance' }, { kind: 'resource', resource: 'coal' }],
-    system: null, paletteKind: null,
+    system: 'smelter', paletteKind: null,
   },
   {
     id: 'foundry', name: 'Foundry', category: 'production',
@@ -353,13 +364,13 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'blacksmith', name: 'Blacksmith', category: 'production',
-    blurb: 'The smithy: tools, nails, hinges, and blades. Needs the building itself, plus tools, fuel (coal), and materials (iron) — a blacksmith is a chain, not a hut.',
-    materials: [{ resource: 'stone', qty: 12 }, { resource: 'wood', qty: 8 }, { resource: 'iron', qty: 4 }, { resource: 'tools', qty: 2 }],
-    costStatus: 'planned', footprint: { w: 4, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
+    blurb: 'The smithy: ingots into tools, nails, hinges, and blades (BUILD 1095 — the second link of the metal chain: 2 ingots -> 1 tool). Founder-built through the staged construction path (6 wood, 6 steps); a blacksmith with no worker or no ingots produces nothing. Tools are a real registry resource (cap 10) — and the first hard dependency: the workshop cannot be built without them. Also placeable freely from the Build menu (a player-placed smithy does not smith — smithing is tied to the founder-built blacksmith site).',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
     produces: { resource: 'tools', perHour: 1 }, maintenance: { resource: 'coal', qtyPerDay: 1 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'forge' }, { kind: 'resource', resource: 'tools' }, { kind: 'resource', resource: 'coal' }, { kind: 'resource', resource: 'iron' }],
-    system: null, paletteKind: 'house-smith',
+    system: 'blacksmith', paletteKind: 'house-smith',
   },
   {
     id: 'forge', name: 'Forge', category: 'production',
@@ -383,13 +394,13 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'sawmill', name: 'Sawmill', category: 'production',
-    blurb: 'Water- or muscle-powered saws turning timber into planks and beams: the lumber mill grown into a proper works.',
-    materials: [{ resource: 'wood', qty: 12 }, { resource: 'stone', qty: 4 }, { resource: 'tools', qty: 2 }],
-    costStatus: 'planned', footprint: { w: 4, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 3,
+    blurb: 'Water- or muscle-powered saws turning wood into timber: the first link of the timber chain (BUILD 1095 — 2 wood -> 2 timber). Founder-built through the staged construction path (6 wood, 6 steps); a sawmill with no worker or no wood produces nothing. Timber is a real registry resource (cap 40).',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 3,
     produces: { resource: 'timber', perHour: 4 }, maintenance: { resource: 'wood', qtyPerDay: 1 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'lumber-mill' }],
-    system: null, paletteKind: null,
+    system: 'sawmill', paletteKind: null,
   },
   {
     id: 'stone-mason', name: 'Stone mason', category: 'production',
@@ -403,23 +414,23 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'carpenter', name: 'Carpenter', category: 'production',
-    blurb: 'Shapes timber into doors, beams, furniture, and fittings: every house in the settlement passes through the carpenter\'s bench.',
-    materials: [{ resource: 'wood', qty: 10 }, { resource: 'tools', qty: 2 }],
-    costStatus: 'planned', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
-    produces: null, maintenance: { resource: 'wood', qtyPerDay: 1 },
+    blurb: 'Shapes timber into doors, beams, furniture, and fittings (BUILD 1095 — the second link of the timber chain: 2 timber -> 1 furniture). Founder-built through the staged construction path (6 wood, 6 steps); a carpenter with no worker or no timber produces nothing. Furniture is a real registry resource (cap 10). Every house in the settlement passes through the carpenter\'s bench.',
+    materials: [{ resource: 'wood', qty: 6 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
+    produces: { resource: 'furniture', perHour: 1 }, maintenance: { resource: 'wood', qtyPerDay: 1 },
     upgradesTo: ['workshop'],
     prerequisites: [{ kind: 'building', id: 'lumber-mill' }, { kind: 'resource', resource: 'tools' }],
-    system: null, paletteKind: null,
+    system: 'carpenter', paletteKind: null,
   },
   {
     id: 'workshop', name: 'Workshop', category: 'production',
-    blurb: 'A general craft workshop: repairs tools, builds pumps and lamps, and takes on whatever the settlement needs made.',
-    materials: [{ resource: 'wood', qty: 12 }, { resource: 'stone', qty: 6 }, { resource: 'tools', qty: 2 }],
-    costStatus: 'planned', footprint: { w: 4, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
+    blurb: 'A general craft workshop: repairs tools, builds pumps and lamps, and takes on whatever the settlement needs made (BUILD 1095 — the first hard dependency: 12 wood + 2 tools, the tools spent on the foundation and frame steps; with 0 tools the site sits unstarted and the Control Center names the missing input). Founder-built through the staged construction path (6 steps).',
+    materials: [{ resource: 'wood', qty: 12 }, { resource: 'tools', qty: 2 }],
+    costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 2,
     produces: null, maintenance: { resource: 'wood', qtyPerDay: 1 },
     upgradesTo: [],
     prerequisites: [{ kind: 'building', id: 'carpenter' }, { kind: 'resource', resource: 'tools' }],
-    system: null, paletteKind: null,
+    system: 'workshop', paletteKind: null,
   },
   {
     id: 'tannery', name: 'Tannery', category: 'production',
