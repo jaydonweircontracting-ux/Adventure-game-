@@ -14727,6 +14727,137 @@ console.log('Testing the building catalogue as data (BUILD 1092, 0x1B Phase 3.1)
   console.log('M1092: the catalogue verified (93 entries, 6 categories, complete definitions, acyclic graph, buildable prerequisites, current system costs, 18 placeable / 75 locked menu entries)');
 }
 
+console.log('Testing construction stages (BUILD 1093, 0x1C Phase 3.2)...');
+{
+  const BC = await import('../src/game/engine3d/buildingCatalogue.js');
+  const C = await import('../src/game/engine3d/construction.js');
+  const SH = await import('../src/game/engine3d/storehouse.js');
+  const PA = await import('../src/game/engine3d/paths.js');
+  const R = await import('../src/game/engine3d/resourceRegistry.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const byId1093 = new Map(BC.BUILDING_CATALOGUE.map((e: { id: string }) => [e.id, e]));
+  // --- The stage plans come from the catalogue entries (the existing costs, unchanged). ---
+  const hutPlan1093 = C.stagePlanFor(C.HUT_WORK_STEPS, (byId1093.get('houses-cottages')!.materials as { resource: string; qty: number }[]));
+  assert(hutPlan1093.stages.length === 3 && hutPlan1093.stages[0].id === 'foundation' && hutPlan1093.stages[0].steps === 2 && hutPlan1093.stages[0].materials[0].qty === 4, 'M1093: the hut foundation is 2 steps / 4 wood');
+  assert(hutPlan1093.stages[1].id === 'frame' && hutPlan1093.stages[1].steps === 2 && hutPlan1093.stages[1].materials[0].qty === 4, 'M1093: the hut frame is 2 steps / 4 wood');
+  assert(hutPlan1093.stages[2].id === 'finished' && hutPlan1093.stages[2].steps === 2 && hutPlan1093.stages[2].materials[0].qty === 4, 'M1093: the hut finished stage is 2 steps / 4 wood');
+  assert(hutPlan1093.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === C.HUT_COST_WOOD, 'M1093: the hut stage costs sum to the catalogue cost (12 wood, no free materials)');
+  const shPlan1093 = SH.storehouseStagePlan();
+  assert(shPlan1093.stages[0].id === 'foundation' && shPlan1093.stages[0].steps === 2 && shPlan1093.stages[0].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && shPlan1093.stages[0].materials.find((m: { resource: string }) => m.resource === 'stone')!.qty === 2, 'M1093: the storehouse foundation is 2 steps / 4 wood + 2 stone');
+  assert(shPlan1093.stages[1].id === 'frame' && shPlan1093.stages[1].steps === 2 && shPlan1093.stages[1].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && shPlan1093.stages[1].materials.find((m: { resource: string }) => m.resource === 'stone')!.qty === 2, 'M1093: the storehouse frame is 2 steps / 4 wood + 2 stone');
+  assert(shPlan1093.stages[2].id === 'finished' && shPlan1093.stages[2].steps === 2 && shPlan1093.stages[2].materials.find((m: { resource: string }) => m.resource === 'wood')!.qty === 4 && shPlan1093.stages[2].materials.find((m: { resource: string }) => m.resource === 'stone')!.qty === 2, 'M1093: the storehouse finished stage is 2 steps / 4 wood + 2 stone');
+  assert(shPlan1093.stages.reduce((a: number, s: { materials: { resource: string; qty: number }[] }) => a + (s.materials.find((m: { resource: string }) => m.resource === 'wood')?.qty ?? 0), 0) === SH.STOREHOUSE_COST_WOOD && shPlan1093.stages.reduce((a: number, s: { materials: { resource: string; qty: number }[] }) => a + (s.materials.find((m: { resource: string }) => m.resource === 'stone')?.qty ?? 0), 0) === SH.STOREHOUSE_COST_STONE, 'M1093: the storehouse stage costs sum to the catalogue cost (12 wood + 6 stone)');
+  const brPlan1093 = PA.bridgeStagePlan();
+  assert(brPlan1093.stages[0].id === 'foundation' && brPlan1093.stages[0].steps === 1 && brPlan1093.stages[0].materials[0].qty === 2, 'M1093: the bridge foundation is 1 step / 2 wood');
+  assert(brPlan1093.stages[1].id === 'frame' && brPlan1093.stages[1].steps === 1 && brPlan1093.stages[1].materials[0].qty === 2, 'M1093: the bridge frame is 1 step / 2 wood');
+  assert(brPlan1093.stages[2].id === 'finished' && brPlan1093.stages[2].steps === 0 && brPlan1093.stages[2].materials[0].qty === 0, 'M1093: the bridge finished stage is 0 steps / 0 wood (complete when the frame is done)');
+  assert(brPlan1093.stages.reduce((a: number, s: { materials: { qty: number }[] }) => a + s.materials[0].qty, 0) === PA.BRIDGE_COST_WOOD, 'M1093: the bridge stage costs sum to the catalogue cost (4 wood)');
+  // --- The step split and the stage labels. ---
+  assert(C.stageStepSplit(6).foundation === 2 && C.stageStepSplit(6).frame === 2 && C.stageStepSplit(6).finished === 2, 'M1093: 6 steps split 2/2/2');
+  assert(C.stageStepSplit(2).foundation === 1 && C.stageStepSplit(2).frame === 1 && C.stageStepSplit(2).finished === 0, 'M1093: 2 steps split 1/1/0');
+  assert(C.stageLabelFor(0, 6) === 'foundation' && C.stageLabelFor(1, 6) === 'foundation', 'M1093: steps 0-1 are the foundation stage');
+  assert(C.stageLabelFor(2, 6) === 'frame' && C.stageLabelFor(3, 6) === 'frame', 'M1093: steps 2-3 are the frame stage');
+  assert(C.stageLabelFor(4, 6) === 'finished' && C.stageLabelFor(5, 6) === 'finished', 'M1093: steps 4-5 are the finished stage');
+  assert(C.stageLabelFor(6, 6) === 'done', 'M1093: step 6 is done');
+  assert(JSON.stringify(C.stageStepsFor(3, 6)) === JSON.stringify({ foundation: 2, frame: 1, finished: 0 }), 'M1093: progress 3 derives to foundation 2 / frame 1 / finished 0');
+  // --- Acceptance 1: the storehouse goes through the staged path (foundation -> frame -> finished). ---
+  let regSH1093 = F.seedCampStore(R.createRegistry(), 12, 30, 0, 6);
+  let sh1093 = SH.freshStorehouse();
+  let shHalf1093: ReturnType<typeof SH.freshStorehouse> | null = null;
+  for (let i = 0; i < 6; i++) {
+    const r = SH.spendStorehouseStepFromRegistry(regSH1093, sh1093);
+    assert(r.spent === true, 'M1093: a storehouse stage step spends');
+    regSH1093 = r.registry; sh1093 = r.storehouse;
+    if (i === 1) assert(C.stageProgressOf(sh1093, 6).foundation === 2 && C.stageProgressOf(sh1093, 6).frame === 0, 'M1093: after 2 steps the storehouse foundation is done, the frame untouched');
+    if (i === 2) shHalf1093 = sh1093;
+    if (i === 3) assert(C.stageProgressOf(sh1093, 6).frame === 2 && C.stageProgressOf(sh1093, 6).finished === 0, 'M1093: after 4 steps the storehouse frame is done, the finished stage untouched');
+  }
+  assert(sh1093.progress === 6 && sh1093.spentWood === 12 && sh1093.spentStone === 6, 'M1093: the storehouse costs 12 wood + 6 stone through its stages');
+  assert(F.campWoodInRegistry(regSH1093) === 0 && F.campStoneInRegistry(regSH1093) === 0, 'M1093: the storehouse build empties the pile exactly (materials conserved per stage)');
+  assert(SH.isStorehouseUsable(SH.finishStorehouse(sh1093)) === true, 'M1093: the finished storehouse is usable');
+  assert(shHalf1093 !== null && SH.isStorehouseUsable(shHalf1093) === false, 'M1093: a half-built storehouse is unusable');
+  assert(shHalf1093 !== null && SH.deliveryStoreId(shHalf1093) === R.CAMP_STORE_ID, 'M1093: deliveries go to the camp pile while the storehouse is half-built (no storing)');
+  // --- Acceptance 2: the SECOND hut goes through the SAME staged path (the same code, not a special case). ---
+  let regHut1093 = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 24, { type: 'loaded' });
+  let cHut1093 = C.freshConstruction();
+  for (let i = 0; i < 6; i++) { const s = C.spendBuildStepFromRegistry(regHut1093, cHut1093, 0); regHut1093 = s.registry; cHut1093 = s.construction; }
+  assert(cHut1093.sites[0].progress === 6 && cHut1093.sites[0].spentWood === 12, 'M1093: hut site 0 builds through the staged path (6 steps, 12 wood)');
+  assert(JSON.stringify(C.stageProgressOf(cHut1093.sites[0], 6)) === JSON.stringify({ foundation: 2, frame: 2, finished: 2 }), 'M1093: hut site 0 finishes with every stage complete');
+  for (let i = 0; i < 6; i++) { const s = C.spendBuildStepFromRegistry(regHut1093, cHut1093, 1); regHut1093 = s.registry; cHut1093 = s.construction; }
+  assert(cHut1093.sites[1].progress === 6 && cHut1093.sites[1].spentWood === 12, 'M1093: the second hut builds through the SAME staged path (6 steps, 12 wood)');
+  assert(JSON.stringify(C.stageProgressOf(cHut1093.sites[1], 6)) === JSON.stringify({ foundation: 2, frame: 2, finished: 2 }), 'M1093: the second hut finishes with every stage complete');
+  assert(F.campWoodInRegistry(regHut1093) === 0, 'M1093: two huts cost 24 wood and empty the pile exactly');
+  const cHutDone1093 = C.finishConstruction(C.finishConstruction(cHut1093, 0), 1);
+  assert(C.isHutSiteUsable(cHutDone1093, 0) === true && C.isHutSiteUsable(cHutDone1093, 1) === true, 'M1093: both finished huts are usable');
+  // --- Acceptance 3: two founders work different stages of the same building in parallel. ---
+  let regPar1093 = R.setStoreQty(R.createRegistry(), R.CAMP_STORE_ID, 'wood', 12, { type: 'loaded' });
+  let cPar1093 = C.freshConstruction();
+  const locked1093 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'frame');
+  assert(locked1093.spent === false, 'M1093: the frame stage is locked before the foundation starts (a stage never starts before its predecessor)');
+  const stepA1 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'foundation');
+  assert(stepA1.spent === true, 'M1093: founder A spends a foundation step');
+  regPar1093 = stepA1.registry; cPar1093 = stepA1.construction;
+  assert(C.isStageOpen(cPar1093.sites[0], 6, 'frame') === true, 'M1093: the frame opens once the foundation has started');
+  const stepB1 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'frame');
+  assert(stepB1.spent === true, 'M1093: founder B spends a frame step while founder A is still on the foundation (parallel stage work)');
+  regPar1093 = stepB1.registry; cPar1093 = stepB1.construction;
+  const stepA2 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'foundation');
+  regPar1093 = stepA2.registry; cPar1093 = stepA2.construction;
+  const stepB2 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'frame');
+  regPar1093 = stepB2.registry; cPar1093 = stepB2.construction;
+  const parStages1093 = C.stageProgressOf(cPar1093.sites[0], 6);
+  assert(parStages1093.foundation === 2 && parStages1093.frame === 2 && parStages1093.finished === 0, 'M1093: two founders worked the foundation and frame in parallel (2/2 each, finished untouched)');
+  assert(cPar1093.sites[0].progress === 4 && cPar1093.sites[0].spentWood === 8, 'M1093: parallel stage work spent 8 wood for 4 steps (materials conserved per stage)');
+  assert(F.campWoodInRegistry(regPar1093) === 4, 'M1093: the pile holds the remaining 4 wood (no wood from thin air, none lost)');
+  assert(cPar1093.sites[0].state !== 'done' && C.isHutSiteUsable(cPar1093, 0) === false, 'M1093: a building with two stages done is still unusable until the finished stage completes');
+  const stepF1 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'finished');
+  regPar1093 = stepF1.registry; cPar1093 = stepF1.construction;
+  const stepF2 = C.spendBuildStageStepFromRegistry(regPar1093, cPar1093, 0, 'finished');
+  regPar1093 = stepF2.registry; cPar1093 = stepF2.construction;
+  assert(stepF2.completed === true && stepF2.stageCompleted === true, 'M1093: the finished stage completes the building');
+  assert(cPar1093.sites[0].progress === 6 && cPar1093.sites[0].spentWood === 12, 'M1093: the parallel build finishes at 6 steps / 12 wood');
+  assert(F.campWoodInRegistry(regPar1093) === 0, 'M1093: the parallel build empties the pile exactly');
+  // --- Acceptance 4: a half-built building is unusable. ---
+  const cHalf1093 = C.constructionFromSites([
+    { state: 'building', progress: 3, spentWood: 6, stages: { foundation: 2, frame: 1, finished: 0 } },
+    { state: 'none', progress: 0, spentWood: 0, stages: { foundation: 0, frame: 0, finished: 0 } },
+  ]);
+  assert(C.isHutSiteUsable(cHalf1093, 0) === false, 'M1093: a half-built hut is unusable (no sleeping in it)');
+  assert(F.freeBed(cHalf1093, new Set()) === null, 'M1093: a half-built hut offers no bed (a founder cannot sleep in it)');
+  const brHalf1093 = { ...PA.freshBridgeSite(10, 20, { x: 10, y: 21 }), state: 'building' as const, progress: 1, spentWood: 2, stages: { foundation: 1, frame: 0, finished: 0 } };
+  assert(PA.isBridgeUsable(brHalf1093) === false, 'M1093: a half-built bridge is unusable (no crossing until finished)');
+  assert(PA.bridgeReadyForPlacement(brHalf1093) === false, 'M1093: a half-built bridge is not ready for placement');
+  // --- The bridge goes through the same staged path. ---
+  let regBr1093 = F.seedCampStore(R.createRegistry(), 4, 30, 0, 0);
+  const brSite1093 = PA.freshBridgeSite(10, 20, { x: 10, y: 21 });
+  const stepBr1 = PA.spendBridgeStepFromRegistry(regBr1093, [brSite1093], brSite1093.id);
+  assert(stepBr1.spent === true && stepBr1.site !== null && stepBr1.site.progress === 1, 'M1093: the bridge foundation step spends 2 wood');
+  assert(stepBr1.site !== null && C.stageProgressOf(stepBr1.site, 2).foundation === 1 && C.stageProgressOf(stepBr1.site, 2).frame === 0, 'M1093: after 1 bridge step the foundation is done, the frame untouched');
+  const stepBr2 = PA.spendBridgeStepFromRegistry(stepBr1.registry, stepBr1.bridges, brSite1093.id);
+  assert(stepBr2.spent === true && stepBr2.completed === true && stepBr2.site !== null && stepBr2.site.progress === 2, 'M1093: the bridge frame step completes the bridge (ready, 2/2)');
+  assert(stepBr2.site !== null && C.stageProgressOf(stepBr2.site, 2).frame === 1, 'M1093: after 2 bridge steps the frame is done');
+  assert(F.campWoodInRegistry(stepBr2.registry) === 0, 'M1093: the bridge costs 4 wood total (materials conserved per stage)');
+  assert(stepBr2.site !== null && PA.isBridgeUsable({ ...stepBr2.site, state: 'done' as const, stages: { foundation: 1, frame: 1, finished: 0 } }) === true, 'M1093: a finished bridge is usable');
+  // --- The build-site visual grows with the stages (geometry unchanged — the progress thresholds ARE the stage boundaries). ---
+  assert(C.constructionSiteTrisFor(0, 0).length === 12, 'M1093: the foundation stage renders the slab only (12 triangles)');
+  assert(C.constructionSiteTrisFor(0, 1).length === 12, 'M1093: step 1 is still the foundation stage (slab only)');
+  assert(C.constructionSiteTrisFor(0, 2).length === 60, 'M1093: the frame stage adds the corner posts (60 triangles)');
+  assert(C.constructionSiteTrisFor(0, 4).length === 84, 'M1093: the finished stage adds the wall beams (84 triangles)');
+  assert(C.constructionSiteTrisFor(0, 6).length === 0, 'M1093: a finished hut renders its real placement, not the build site');
+  // --- The stage progress survives a founders-save round-trip (v12, no version move). ---
+  const save1093 = F.freshFoundersSave(1000);
+  save1093.construction = C.constructionFromSites([
+    { state: 'building', progress: 3, spentWood: 6, stages: { foundation: 2, frame: 1, finished: 0 } },
+    { state: 'none', progress: 0, spentWood: 0, stages: { foundation: 0, frame: 0, finished: 0 } },
+  ]);
+  const rt1093 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(save1093)));
+  assert(rt1093 !== null && rt1093.construction.sites[0].stages !== undefined && rt1093.construction.sites[0].stages.foundation === 2 && rt1093.construction.sites[0].stages.frame === 1 && rt1093.construction.sites[0].stages.finished === 0, 'M1093: the per-stage progress survives a v12 save round-trip');
+  const old1093 = F.migrateFoundersSave({ version: 12, founders: [], stockpileWood: 0, foodStock: 0, construction: { sites: [{ state: 'building', progress: 3, spentWood: 6 }] } });
+  assert(old1093 !== null && old1093.construction.sites[0].stages !== undefined && old1093.construction.sites[0].stages.foundation === 2 && old1093.construction.sites[0].stages.frame === 1, 'M1093: an old save without stages derives them from the total (sequential split)');
+  console.log('M1093: construction stages verified (hut/storehouse/bridge stage plans from the catalogue, staged paths, parallel stage work, half-built unusable, save round-trip)');
+}
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

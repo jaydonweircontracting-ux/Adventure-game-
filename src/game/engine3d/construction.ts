@@ -162,6 +162,181 @@ export const HUT_WOOD_PER_STEP = 2;
 /** Ticks a founder works at the site per step (mirrors chop ticks). */
 export const HUT_TICKS_PER_STEP = 3;
 
+// --- BUILD 1093 (0x1C Phase 3.2): construction stages. ---
+//
+// A building goes up in STAGES — foundation -> frame -> finished —
+// and each stage has its own material cost, drawn from the
+// catalogue entry (the hut's 12 wood, the storehouse's 12 wood +
+// 6 stone, the bridge's 4 wood — the existing costs, unchanged).
+// A stage cannot start until its materials are delivered to the
+// site; a stage completes only when its steps are worked AND its
+// materials are spent. The stage plan splits the building's total
+// steps and total materials into three stages (foundation =
+// ceil(n/3) steps, frame = ceil of half the rest, finished = the
+// rest; each material splits proportionally by steps, so every
+// stage's cost is a whole number of per-step costs). The site
+// tracks per-stage progress (`stages`) alongside the total
+// (`progress` = the sum of the stage steps), so two founders can
+// work DIFFERENT stages of the same building at once — the frame
+// opens once the foundation has started, the finished stage once
+// the frame has started — while the live tick's single-builder
+// policy (one builder per site, the scorer's builderTaken) keeps
+// the 24h settlement identical. A site is usable only when every
+// stage is complete (state 'done'); a half-built building is
+// visibly unfinished (the build-site tris already grow with
+// progress: slab at step 0, corner posts at step 2 = the frame,
+// wall beams at step 4 = the finished stage, roof ridge at step
+// 5) and unusable (no sleeping in a half-built hut, no storing
+// in a half-built storehouse). Old saves and old literals carry
+// no `stages` — the per-stage progress is derived from the total
+// (the sequential split), so a v12 save loads without a version
+// move.
+
+/** The three construction stages, in build order. */
+export type BuildStageId = 'foundation' | 'frame' | 'finished';
+export const BUILD_STAGES: BuildStageId[] = ['foundation', 'frame', 'finished'];
+/** Steps completed per stage. */
+export type StageSteps = { foundation: number; frame: number; finished: number };
+/** One stage's material cost (a catalogue material). */
+export type StageMaterial = { resource: string; qty: number };
+/** One stage's plan: its step count + its material cost. */
+export type StagePlanEntry = { id: BuildStageId; steps: number; materials: StageMaterial[] };
+/** A building's stage plan (three stages, in build order). */
+export type StagePlan = { stages: StagePlanEntry[] };
+
+/** Zero stage progress (a fresh site). */
+export const ZERO_STAGE_STEPS: StageSteps = { foundation: 0, frame: 0, finished: 0 };
+
+/**
+ * How a building's total steps split into three stages:
+ * foundation = ceil(n/3), frame = ceil of half the rest,
+ * finished = the rest. (6 steps -> 2/2/2; 2 steps -> 1/1/0 —
+ * the bridge's finished stage has 0 steps: it is complete the
+ * moment the frame is done.) Pure.
+ */
+export function stageStepSplit(totalSteps: number): StageSteps {
+  const n = Math.max(0, Math.round(totalSteps));
+  const foundation = Math.ceil(n / 3);
+  const frame = Math.ceil((n - foundation) / 2);
+  const finished = n - foundation - frame;
+  return { foundation, frame, finished };
+}
+
+/**
+ * The stage plan for a building: the step split above, and each
+ * material split proportionally by steps (per-step qty x stage
+ * steps). Throws when a material does not divide evenly by the
+ * step count — a stage cost must be a whole number of per-step
+ * costs, never a fraction. Pure.
+ */
+export function stagePlanFor(totalSteps: number, materials: readonly StageMaterial[]): StagePlan {
+  const n = Math.max(0, Math.round(totalSteps));
+  const split = stageStepSplit(n);
+  const stages: StagePlanEntry[] = BUILD_STAGES.map((id) => {
+    const steps = split[id];
+    const mats: StageMaterial[] = materials.map((m) => {
+      if (n === 0) return { resource: m.resource, qty: 0 };
+      if (m.qty % n !== 0) throw new Error('stagePlanFor: material ' + m.resource + ' qty ' + m.qty + ' does not divide evenly by ' + n + ' steps');
+      return { resource: m.resource, qty: (m.qty / n) * steps };
+    });
+    return { id, steps, materials: mats };
+  });
+  return { stages };
+}
+
+/**
+ * Per-stage steps derived from a total progress (the sequential
+ * split — what an old state without `stages` means: the stages
+ * were worked in order). Pure.
+ */
+export function stageStepsFor(progress: number, totalSteps: number): StageSteps {
+  const split = stageStepSplit(totalSteps);
+  const foundation = Math.max(0, Math.min(progress, split.foundation));
+  const frame = Math.max(0, Math.min(progress - split.foundation, split.frame));
+  const finished = Math.max(0, progress - split.foundation - split.frame);
+  return { foundation, frame, finished };
+}
+
+/**
+ * A site's per-stage progress: the stored `stages` when it is
+ * valid (each stage within its step count and the sum equal to
+ * the total progress), else the sequential derivation from the
+ * total. Pure.
+ */
+export function stageProgressOf(site: { progress: number; stages?: StageSteps }, totalSteps: number): StageSteps {
+  const split = stageStepSplit(totalSteps);
+  const derived = stageStepsFor(site.progress, totalSteps);
+  const s = site.stages;
+  if (!s) return derived;
+  if (
+    Number.isInteger(s.foundation) && s.foundation >= 0 && s.foundation <= split.foundation &&
+    Number.isInteger(s.frame) && s.frame >= 0 && s.frame <= split.frame &&
+    Number.isInteger(s.finished) && s.finished >= 0 && s.finished <= split.finished &&
+    s.foundation + s.frame + s.finished === site.progress
+  ) {
+    return { foundation: s.foundation, frame: s.frame, finished: s.finished };
+  }
+  return derived;
+}
+
+/**
+ * The first incomplete stage (the one a builder works next), or
+ * null when every stage is complete. A 0-step stage is complete
+ * the moment it is reached (the bridge's finished stage). Pure.
+ */
+export function currentStageFor(site: { progress: number; stages?: StageSteps }, totalSteps: number): { id: BuildStageId; done: number; total: number } | null {
+  const split = stageStepSplit(totalSteps);
+  const steps = stageProgressOf(site, totalSteps);
+  for (const id of BUILD_STAGES) {
+    if (steps[id] < split[id]) return { id, done: steps[id], total: split[id] };
+  }
+  return null;
+}
+
+/**
+ * The stage a total progress sits in (the build-site visual's
+ * stage): foundation below the foundation step count, frame
+ * below foundation + frame, finished below the last step, done
+ * at the last step. Pure.
+ */
+export function stageLabelFor(progress: number, totalSteps: number): BuildStageId | 'done' {
+  if (progress >= totalSteps) return 'done';
+  const split = stageStepSplit(totalSteps);
+  if (progress < split.foundation) return 'foundation';
+  if (progress < split.foundation + split.frame) return 'frame';
+  return 'finished';
+}
+
+/**
+ * True when a stage is open for work: the foundation is always
+ * open; a later stage opens once the previous stage has STARTED
+ * (progress > 0) — so two founders can work two stages of the
+ * same building at once (one on the foundation, one on the
+ * frame), while a stage never starts before its predecessor.
+ * A 0-step stage is open the moment it is reached (it is
+ * complete already). Pure.
+ */
+export function isStageOpen(site: { progress: number; stages?: StageSteps }, totalSteps: number, stageId: BuildStageId): boolean {
+  const idx = BUILD_STAGES.indexOf(stageId);
+  if (idx <= 0) return true;
+  const prev = BUILD_STAGES[idx - 1];
+  const split = stageStepSplit(totalSteps);
+  if (split[prev] === 0) return true;
+  return stageProgressOf(site, totalSteps)[prev] > 0;
+}
+
+/** True when a hut site is usable: the state is 'done' and every
+ *  stage is complete. A half-built hut has no beds and no sleep.
+ *  Pure. */
+export function isHutSiteUsable(c: ConstructionState, siteIndex: number): boolean {
+  const sites = sitesOf(c);
+  const site = sites[siteIndex];
+  if (!site || site.state !== 'done') return false;
+  const split = stageStepSplit(HUT_WORK_STEPS);
+  const steps = stageProgressOf(site, HUT_WORK_STEPS);
+  return steps.foundation >= split.foundation && steps.frame >= split.frame && steps.finished >= split.finished;
+}
+
 export type HutState = 'none' | 'building' | 'done';
 
 /** One site's progress (0..HUT_WORK_STEPS, 2 wood per step). */
@@ -171,6 +346,10 @@ export type SiteState = {
   progress: number;
   /** Wood actually spent on this hut (2 per step). */
   spentWood: number;
+  /** Per-stage steps completed (BUILD 1093). Optional: an old
+   *  save or literal without it derives the stages from the
+   *  total progress (the sequential split). */
+  stages?: StageSteps;
 };
 
 /**
@@ -271,7 +450,7 @@ export function housingCapacity(c: ConstructionState): number {
 
 /** Fresh construction: nothing started, on any site. */
 export function freshConstruction(): ConstructionState {
-  return constructionFromSites(HUT_SITES.map(() => ({ state: 'none' as HutState, progress: 0, spentWood: 0 })));
+  return constructionFromSites(HUT_SITES.map(() => ({ state: 'none' as HutState, progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } })));
 }
 
 /** True when the tile is inside ANY hut rect. */
@@ -414,14 +593,70 @@ export function spendBuildStep(
   const progress = site.progress + 1;
   const spentWood = site.spentWood + HUT_WOOD_PER_STEP;
   const completed = progress >= HUT_WORK_STEPS;
-  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood } : { ...s }));
+  // BUILD 1093: the step lands on the first incomplete stage
+  // (foundation -> frame -> finished), so the stage progress is
+  // tracked alongside the total. A single builder works the
+  // stages in order — the same steps, wood, and ticks as before.
+  const cur = currentStageFor(site, HUT_WORK_STEPS);
+  const stages = stageProgressOf(site, HUT_WORK_STEPS);
+  const nextStages: StageSteps = cur ? { ...stages, [cur.id]: stages[cur.id] + 1 } : stages;
+  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood, stages: nextStages } : { ...s }));
   return {
     construction: constructionFromSites(next),
     stockpileWood: stockpileWood - HUT_WOOD_PER_STEP,
     completed,
     spent: true,
   };
-}
+};
+
+/**
+ * Complete one work step on a SPECIFIC stage, from the
+ * registry's camp store: 2 wood is withdrawn, that stage's
+ * progress rises by 1 (and the total with it). The stage must
+ * be open (its predecessor has started) and incomplete — a
+ * locked or finished stage spends nothing. This is the
+ * parallel-work primitive: two founders can spend two stages
+ * of the same building at once (one on the foundation, one on
+ * the frame), each step spending its own stage's materials, so
+ * the stage accounting stays conserved per stage. The live
+ * tick uses spendBuildStepFromRegistry (first incomplete
+ * stage); this is the explicit-stage form. Pure.
+ */
+export function spendBuildStageStepFromRegistry(
+  registry: ResourceRegistry,
+  c: ConstructionState,
+  siteIndex: number | null,
+  stageId: BuildStageId,
+): { registry: ResourceRegistry; construction: ConstructionState; completed: boolean; stageCompleted: boolean; spent: boolean } {
+  const sites = sitesOf(c);
+  const i = siteIndex ?? activeSiteIndex(c) ?? 0;
+  const site = sites[i] ?? sites[0];
+  const split = stageStepSplit(HUT_WORK_STEPS);
+  const stages = stageProgressOf(site, HUT_WORK_STEPS);
+  if (site.state === 'done' || site.progress >= HUT_WORK_STEPS || stages[stageId] >= split[stageId] || !isStageOpen(site, HUT_WORK_STEPS, stageId)) {
+    return { registry, construction: c, completed: site.progress >= HUT_WORK_STEPS, stageCompleted: stages[stageId] >= split[stageId], spent: false };
+  }
+  if (storeQty(registry, CAMP_STORE_ID, 'wood') < HUT_WOOD_PER_STEP) {
+    return { registry, construction: c, completed: false, stageCompleted: false, spent: false };
+  }
+  const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', HUT_WOOD_PER_STEP);
+  if (w.taken < HUT_WOOD_PER_STEP) {
+    return { registry, construction: c, completed: false, stageCompleted: false, spent: false };
+  }
+  const nextStages: StageSteps = { ...stages, [stageId]: stages[stageId] + 1 };
+  const progress = site.progress + 1;
+  const spentWood = site.spentWood + HUT_WOOD_PER_STEP;
+  const completed = progress >= HUT_WORK_STEPS;
+  const stageCompleted = nextStages[stageId] >= split[stageId];
+  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood, stages: nextStages } : { ...s }));
+  return {
+    registry: w.registry,
+    construction: constructionFromSites(next),
+    completed,
+    stageCompleted,
+    spent: true,
+  };
+};
 
 // --- BUILD 1064 (R-1): the registry as the live-game authority. ---
 //
@@ -463,7 +698,14 @@ export function spendBuildStepFromRegistry(
   const progress = site.progress + 1;
   const spentWood = site.spentWood + HUT_WOOD_PER_STEP;
   const completed = progress >= HUT_WORK_STEPS;
-  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood } : { ...s }));
+  // BUILD 1093: the step lands on the first incomplete stage
+  // (foundation -> frame -> finished), so the stage progress is
+  // tracked alongside the total. A single builder works the
+  // stages in order — the same steps, wood, and ticks as before.
+  const cur = currentStageFor(site, HUT_WORK_STEPS);
+  const stages = stageProgressOf(site, HUT_WORK_STEPS);
+  const nextStages: StageSteps = cur ? { ...stages, [cur.id]: stages[cur.id] + 1 } : stages;
+  const next = sites.map((s, j) => (j === i ? { state: 'building' as HutState, progress, spentWood, stages: nextStages } : { ...s }));
   return {
     registry: w.registry,
     construction: constructionFromSites(next),
@@ -479,7 +721,7 @@ export function finishConstruction(c: ConstructionState, siteIndex: number | nul
   const i = siteIndex ?? activeSiteIndex(c);
   if (i === null || i < 0 || i >= sites.length) return c;
   if (sites[i].state === 'done') return c;
-  const next = sites.map((s, j) => (j === i ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD } : { ...s }));
+  const next = sites.map((s, j) => (j === i ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD, stages: { ...stageStepSplit(HUT_WORK_STEPS) } } : { ...s }));
   return constructionFromSites(next);
 }
 
@@ -500,11 +742,11 @@ export function reconcileConstruction(c: ConstructionState, hutPlaced: boolean):
   const sites = sitesOf(c);
   const s0 = sites[0];
   if (s0.state === 'done' && !hutPlaced) {
-    const next = sites.map((s, j) => (j === 0 ? { state: 'none' as HutState, progress: 0, spentWood: 0 } : { ...s }));
+    const next = sites.map((s, j) => (j === 0 ? { state: 'none' as HutState, progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } } : { ...s }));
     return constructionFromSites(next);
   }
   if (s0.state !== 'done' && hutPlaced) {
-    const next = sites.map((s, j) => (j === 0 ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD } : { ...s }));
+    const next = sites.map((s, j) => (j === 0 ? { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD, stages: { ...stageStepSplit(HUT_WORK_STEPS) } } : { ...s }));
     return constructionFromSites(next);
   }
   return c;
@@ -526,11 +768,11 @@ export function reconcileExtraSites(c: ConstructionState, world: IsoWorld): Cons
     const placed = hutSitePlacementExists(world, HUT_SITES[j]);
     if (s.state === 'done' && !placed) {
       changed = true;
-      return { state: 'none' as HutState, progress: 0, spentWood: 0 };
+      return { state: 'none' as HutState, progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } };
     }
     if (s.state !== 'done' && placed) {
       changed = true;
-      return { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD };
+      return { state: 'done' as HutState, progress: HUT_WORK_STEPS, spentWood: HUT_COST_WOOD, stages: { ...stageStepSplit(HUT_WORK_STEPS) } };
     }
     return s;
   });

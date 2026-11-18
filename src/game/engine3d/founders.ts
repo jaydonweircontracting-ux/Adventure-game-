@@ -97,12 +97,15 @@ import {
 import {
   HUT_SITES,
   HUT_SLEEP_TILES,
+  HUT_WORK_STEPS,
   constructionFromSites,
   freshConstruction,
   sitesOf,
+  stageProgressOf,
   type ConstructionState,
   type HutState,
   type SiteState,
+  type StageSteps,
 } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
 import type { MineState } from './mines';
@@ -1283,7 +1286,12 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       progress = 6;
       spentWood = 12;
     }
-    return { state: st, progress, spentWood };
+    // BUILD 1093: keep the saved per-stage progress when it is
+    // valid (it sums to the total); an old save without it derives
+    // the stages from the total (the sequential split). The save
+    // version stays v12 — a compatible field, not a move.
+    const stages = stageProgressOf({ progress, stages: (raw as { stages?: StageSteps } | undefined)?.stages }, HUT_WORK_STEPS);
+    return { state: st, progress, spentWood, stages };
   };
   const sites: SiteState[] = HUT_SITES.map((_, i) => {
     if (rawSites && rawSites[i]) return siteState(rawSites[i]);

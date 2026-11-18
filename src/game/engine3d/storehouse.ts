@@ -90,8 +90,17 @@ import {
   constructionFromSites,
   activeSiteIndex,
   nearestUnfinishedSite,
+  stagePlanFor,
+  stageStepSplit,
+  stageProgressOf,
+  currentStageFor,
+  isStageOpen,
+  ZERO_STAGE_STEPS,
   type ConstructionState,
   type HutSite,
+  type BuildStageId,
+  type StageSteps,
+  type StagePlan,
 } from './construction';
 import {
   CAMP_STORE_ID,
@@ -178,11 +187,92 @@ export type StorehouseState = {
   spentWood: number;
   /** Stone actually spent on the storehouse (1 per step). */
   spentStone: number;
+  /** Per-stage steps completed (BUILD 1093). Optional: an old
+   *  save without it derives the stages from the total progress. */
+  stages?: StageSteps;
 };
 
 /** Fresh storehouse: nothing started. */
 export function freshStorehouse(): StorehouseState {
-  return { state: 'none', progress: 0, spentWood: 0, spentStone: 0 };
+  return { state: 'none', progress: 0, spentWood: 0, spentStone: 0, stages: { ...ZERO_STAGE_STEPS } };
+}
+
+// --- BUILD 1093 (0x1C Phase 3.2): the storehouse goes up in the
+// same stages as a hut (foundation -> frame -> finished), through
+// the same stage path in construction.ts. The storehouse's stage
+// plan is 6 steps of 2 wood + 1 stone: foundation (2 steps, 4
+// wood + 2 stone), frame (2 steps, 4 wood + 2 stone), finished
+// (2 steps, 4 wood + 2 stone). A half-built storehouse is
+// unusable: deliveryStoreId sends deliveries to the camp pile
+// until the storehouse is done (isStorehouseUsable). ---
+
+/** The storehouse's stage plan (from its catalogue entry's materials: 12 wood + 6 stone). Pure. */
+export function storehouseStagePlan(): StagePlan {
+  return stagePlanFor(STOREHOUSE_WORK_STEPS, [
+    { resource: 'wood', qty: STOREHOUSE_COST_WOOD },
+    { resource: 'stone', qty: STOREHOUSE_COST_STONE },
+  ]);
+}
+
+/** True when the storehouse is usable: the state is 'done' and
+ *  every stage is complete. A half-built storehouse stores
+ *  nothing. Pure. */
+export function isStorehouseUsable(storehouse: StorehouseState): boolean {
+  if (storehouse.state !== 'done') return false;
+  const split = stageStepSplit(STOREHOUSE_WORK_STEPS);
+  const steps = stageProgressOf(storehouse, STOREHOUSE_WORK_STEPS);
+  return steps.foundation >= split.foundation && steps.frame >= split.frame && steps.finished >= split.finished;
+}
+
+/**
+ * Complete one work step on a SPECIFIC stage of the storehouse,
+ * from the registry's camp store: 2 wood + 1 stone leave the
+ * pile, that stage's progress rises by 1 (and the total with
+ * it). The stage must be open (its predecessor has started)
+ * and incomplete — a locked or finished stage spends nothing.
+ * The parallel-work primitive (the hut's
+ * spendBuildStageStepFromRegistry, for the storehouse): two
+ * founders can spend two stages of the storehouse at once.
+ * Pure.
+ */
+export function spendStorehouseStageStepFromRegistry(
+  registry: ResourceRegistry,
+  storehouse: StorehouseState,
+  stageId: BuildStageId,
+): { registry: ResourceRegistry; storehouse: StorehouseState; completed: boolean; stageCompleted: boolean; spent: boolean } {
+  const split = stageStepSplit(STOREHOUSE_WORK_STEPS);
+  const stages = stageProgressOf(storehouse, STOREHOUSE_WORK_STEPS);
+  if (storehouse.state === 'done' || storehouse.progress >= STOREHOUSE_WORK_STEPS || stages[stageId] >= split[stageId] || !isStageOpen(storehouse, STOREHOUSE_WORK_STEPS, stageId)) {
+    return { registry, storehouse, completed: storehouse.progress >= STOREHOUSE_WORK_STEPS, stageCompleted: stages[stageId] >= split[stageId], spent: false };
+  }
+  if (
+    storeQty(registry, CAMP_STORE_ID, 'wood') < STOREHOUSE_WOOD_PER_STEP ||
+    storeQty(registry, CAMP_STORE_ID, 'stone') < STOREHOUSE_STONE_PER_STEP
+  ) {
+    return { registry, storehouse, completed: false, stageCompleted: false, spent: false };
+  }
+  const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', STOREHOUSE_WOOD_PER_STEP);
+  const s = withdrawFrom(w.registry, CAMP_STORE_ID, 'stone', STOREHOUSE_STONE_PER_STEP);
+  if (w.taken < STOREHOUSE_WOOD_PER_STEP || s.taken < STOREHOUSE_STONE_PER_STEP) {
+    return { registry, storehouse, completed: false, stageCompleted: false, spent: false };
+  }
+  const nextStages: StageSteps = { ...stages, [stageId]: stages[stageId] + 1 };
+  const progress = storehouse.progress + 1;
+  const completed = progress >= STOREHOUSE_WORK_STEPS;
+  const stageCompleted = nextStages[stageId] >= split[stageId];
+  return {
+    registry: s.registry,
+    storehouse: {
+      state: 'building' as StorehouseStateKind,
+      progress,
+      spentWood: storehouse.spentWood + STOREHOUSE_WOOD_PER_STEP,
+      spentStone: storehouse.spentStone + STOREHOUSE_STONE_PER_STEP,
+      stages: nextStages,
+    },
+    completed,
+    stageCompleted,
+    spent: true,
+  };
 }
 
 /** Validate a saved storehouse state (v9 migration): unknown
@@ -205,7 +295,11 @@ export function validateStorehouseState(value: unknown): StorehouseState {
     spentWood = 0;
     spentStone = 0;
   }
-  return { state, progress, spentWood, spentStone };
+  // BUILD 1093: keep the saved per-stage progress when it is
+  // valid (it sums to the total); an old save without it derives
+  // the stages from the total (the sequential split).
+  const stages = stageProgressOf({ progress, stages: (v as { stages?: StageSteps }).stages }, STOREHOUSE_WORK_STEPS);
+  return { state, progress, spentWood, spentStone, stages };
 }
 
 /** True when every hut site is done (the construction mirror's
@@ -300,6 +394,14 @@ export function spendStorehouseStepFromRegistry(
   }
   const progress = storehouse.progress + 1;
   const completed = progress >= STOREHOUSE_WORK_STEPS;
+  // BUILD 1093: the step lands on the first incomplete stage
+  // (foundation -> frame -> finished), so the stage progress is
+  // tracked alongside the total. A single builder works the
+  // stages in order — the same steps, wood, stone, and ticks as
+  // before.
+  const cur = currentStageFor(storehouse, STOREHOUSE_WORK_STEPS);
+  const stages = stageProgressOf(storehouse, STOREHOUSE_WORK_STEPS);
+  const nextStages: StageSteps = cur ? { ...stages, [cur.id]: stages[cur.id] + 1 } : stages;
   return {
     registry: s.registry,
     storehouse: {
@@ -307,6 +409,7 @@ export function spendStorehouseStepFromRegistry(
       progress,
       spentWood: storehouse.spentWood + STOREHOUSE_WOOD_PER_STEP,
       spentStone: storehouse.spentStone + STOREHOUSE_STONE_PER_STEP,
+      stages: nextStages,
     },
     completed,
     spent: true,
@@ -364,6 +467,7 @@ export function finishStorehouse(storehouse: StorehouseState): StorehouseState {
     progress: STOREHOUSE_WORK_STEPS,
     spentWood: STOREHOUSE_COST_WOOD,
     spentStone: STOREHOUSE_COST_STONE,
+    stages: { ...stageStepSplit(STOREHOUSE_WORK_STEPS) },
   };
 }
 
@@ -529,7 +633,10 @@ export function seedStorehouseStore(registry: ResourceRegistry, wood: number, st
  *  the camp pile before that (and while it is still being built).
  *  Pure. */
 export function deliveryStoreId(storehouse: StorehouseState | null | undefined): string {
-  return storehouse && storehouse.state === 'done' ? STOREHOUSE_STORE_ID : CAMP_STORE_ID;
+  // BUILD 1093: the storehouse is the delivery store only when
+  // it is usable (every stage complete) — a half-built
+  // storehouse stores nothing, deliveries go to the camp pile.
+  return storehouse && isStorehouseUsable(storehouse) ? STOREHOUSE_STORE_ID : CAMP_STORE_ID;
 }
 
 /**

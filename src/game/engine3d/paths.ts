@@ -64,6 +64,17 @@ import { terrainAt, inBounds, type IsoWorld } from '../iso/isoWorld';
 import { walkableWithPlacements, placementsOf, addPlacement } from './placements';
 import { riverAt } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
+import {
+  stagePlanFor,
+  stageStepSplit,
+  stageProgressOf,
+  currentStageFor,
+  isStageOpen,
+  ZERO_STAGE_STEPS,
+  type BuildStageId,
+  type StageSteps,
+  type StagePlan,
+} from './construction';
 
 /** Founder passes over a tile before it wears into a dirt path. */
 export const PATH_TRAFFIC_THRESHOLD = 8;
@@ -112,6 +123,9 @@ export type BridgeSite = {
   progress: number;
   /** Wood actually spent on this bridge (2 per step). */
   spentWood: number;
+  /** Per-stage steps completed (BUILD 1093). Optional: an old
+   *  save without it derives the stages from the total progress. */
+  stages?: StageSteps;
 };
 
 /** The tick-owned path state: session-only traffic counts + the
@@ -139,7 +153,7 @@ export function bridgeSiteIdFor(x: number, y: number): string {
 /** Fresh bridge site: nothing started, on the river tile, the
  *  builder standing on the bank tile. */
 export function freshBridgeSite(x: number, y: number, workTile: { x: number; y: number }): BridgeSite {
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile }, state: 'none', progress: 0, spentWood: 0 };
+  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile }, state: 'none', progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } };
 }
 
 /** Validate a saved bridge site (v10 migration): unknown states /
@@ -167,7 +181,11 @@ export function validateBridgeSite(value: unknown): BridgeSite | null {
     progress = 0;
     spentWood = 0;
   }
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, state, progress, spentWood };
+  // BUILD 1093: keep the saved per-stage progress when it is
+  // valid (it sums to the total); an old save without it derives
+  // the stages from the total (the sequential split).
+  const stages = stageProgressOf({ progress, stages: (v as { stages?: StageSteps }).stages }, BRIDGE_WORK_STEPS);
+  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, state, progress, spentWood, stages };
 }
 
 /** Validate a saved bridge list (v10 migration): corrupt entries
@@ -447,6 +465,80 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
   return found;
 }
 
+// --- BUILD 1093 (0x1C Phase 3.2): the bridge goes up in the
+// same stages as a hut (foundation -> frame -> finished), through
+// the same stage path in construction.ts. The bridge's stage plan
+// is 2 steps of 2 wood: foundation (1 step, 2 wood), frame (1
+// step, 2 wood), finished (0 steps, 0 wood — complete the moment
+// the frame is done). A half-built bridge is unusable: its
+// placement (the walkable crossing) lands only when the bridge
+// is done (isBridgeUsable). ---
+
+/** The bridge's stage plan (from its catalogue entry's materials: 4 wood). Pure. */
+export function bridgeStagePlan(): StagePlan {
+  return stagePlanFor(BRIDGE_WORK_STEPS, [{ resource: 'wood', qty: BRIDGE_COST_WOOD }]);
+}
+
+/** True when a bridge is usable: the state is 'done' and every
+ *  stage is complete. A half-built bridge cannot be crossed.
+ *  Pure. */
+export function isBridgeUsable(site: BridgeSite): boolean {
+  if (site.state !== 'done') return false;
+  const split = stageStepSplit(BRIDGE_WORK_STEPS);
+  const steps = stageProgressOf(site, BRIDGE_WORK_STEPS);
+  return steps.foundation >= split.foundation && steps.frame >= split.frame && steps.finished >= split.finished;
+}
+
+/**
+ * Complete one work step on a SPECIFIC stage of a bridge, from
+ * the registry's camp store: 2 wood leave the pile, that stage's
+ * progress rises by 1 (and the total with it). The stage must be
+ * open (its predecessor has started) and incomplete — a locked
+ * or finished stage spends nothing. The parallel-work primitive
+ * (the hut's spendBuildStageStepFromRegistry, for a bridge).
+ * Pure.
+ */
+export function spendBridgeStageStepFromRegistry(
+  registry: ResourceRegistry,
+  bridges: readonly BridgeSite[],
+  siteId: string,
+  stageId: BuildStageId,
+): { registry: ResourceRegistry; bridges: BridgeSite[]; site: BridgeSite | null; completed: boolean; stageCompleted: boolean; spent: boolean } {
+  const site = bridgeSiteById(bridges, siteId);
+  if (!site) return { registry, bridges: [...bridges], site: null, completed: false, stageCompleted: false, spent: false };
+  const split = stageStepSplit(BRIDGE_WORK_STEPS);
+  const stages = stageProgressOf(site, BRIDGE_WORK_STEPS);
+  if (site.state === 'done' || site.progress >= BRIDGE_WORK_STEPS || stages[stageId] >= split[stageId] || !isStageOpen(site, BRIDGE_WORK_STEPS, stageId)) {
+    return { registry, bridges: [...bridges], site, completed: site.progress >= BRIDGE_WORK_STEPS, stageCompleted: stages[stageId] >= split[stageId], spent: false };
+  }
+  if (storeQty(registry, CAMP_STORE_ID, 'wood') < BRIDGE_WOOD_PER_STEP) {
+    return { registry, bridges: [...bridges], site, completed: false, stageCompleted: false, spent: false };
+  }
+  const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', BRIDGE_WOOD_PER_STEP);
+  if (w.taken < BRIDGE_WOOD_PER_STEP) {
+    return { registry, bridges: [...bridges], site, completed: false, stageCompleted: false, spent: false };
+  }
+  const nextStages: StageSteps = { ...stages, [stageId]: stages[stageId] + 1 };
+  const progress = site.progress + 1;
+  const completed = progress >= BRIDGE_WORK_STEPS;
+  const stageCompleted = nextStages[stageId] >= split[stageId];
+  const next: BridgeSite = {
+    ...site,
+    state: 'building',
+    progress,
+    spentWood: site.spentWood + BRIDGE_WOOD_PER_STEP,
+    stages: nextStages,
+  };
+  return {
+    registry: w.registry,
+    bridges: bridges.map((s) => (s.id === siteId ? next : s)),
+    site: next,
+    completed,
+    stageCompleted,
+    spent: true,
+  };
+}
+
 /** A bridge site at full progress whose placement has not landed
  *  yet (the tile was occupied when the last step completed). The
  *  step spend on such a site returns completed without spending
@@ -521,11 +613,19 @@ export function spendBridgeStepFromRegistry(
   }
   const progress = site.progress + 1;
   const completed = progress >= BRIDGE_WORK_STEPS;
+  // BUILD 1093: the step lands on the first incomplete stage
+  // (foundation -> frame), so the stage progress is tracked
+  // alongside the total. A single builder works the stages in
+  // order — the same steps, wood, and ticks as before.
+  const cur = currentStageFor(site, BRIDGE_WORK_STEPS);
+  const stages = stageProgressOf(site, BRIDGE_WORK_STEPS);
+  const nextStages: StageSteps = cur ? { ...stages, [cur.id]: stages[cur.id] + 1 } : stages;
   const next: BridgeSite = {
     ...site,
     state: 'building',
     progress,
     spentWood: site.spentWood + BRIDGE_WOOD_PER_STEP,
+    stages: nextStages,
   };
   return {
     registry: w.registry,
@@ -540,7 +640,7 @@ export function spendBridgeStepFromRegistry(
  *  has actually landed. Pure. */
 export function finishBridge(bridges: readonly BridgeSite[], siteId: string): BridgeSite[] {
   return bridges.map((s) =>
-    s.id === siteId ? { ...s, state: 'done' as BridgeSiteStateKind, progress: BRIDGE_WORK_STEPS, spentWood: BRIDGE_COST_WOOD } : s,
+    s.id === siteId ? { ...s, state: 'done' as BridgeSiteStateKind, progress: BRIDGE_WORK_STEPS, spentWood: BRIDGE_COST_WOOD, stages: { ...stageStepSplit(BRIDGE_WORK_STEPS) } } : s,
   );
 }
 
@@ -556,11 +656,11 @@ export function reconcileBridges(bridges: readonly BridgeSite[], world: IsoWorld
     const placed = bridgePlacementExists(world, s.x, s.y);
     if (s.state === 'done' && !placed) {
       changed = true;
-      return { ...s, state: 'none' as BridgeSiteStateKind, progress: 0, spentWood: 0 };
+      return { ...s, state: 'none' as BridgeSiteStateKind, progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } };
     }
     if (s.state === 'building' && placed) {
       changed = true;
-      return { ...s, state: 'done' as BridgeSiteStateKind, progress: BRIDGE_WORK_STEPS, spentWood: BRIDGE_COST_WOOD };
+      return { ...s, state: 'done' as BridgeSiteStateKind, progress: BRIDGE_WORK_STEPS, spentWood: BRIDGE_COST_WOOD, stages: { ...stageStepSplit(BRIDGE_WORK_STEPS) } };
     }
     return s;
   });

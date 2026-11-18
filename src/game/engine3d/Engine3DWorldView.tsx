@@ -2637,7 +2637,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // whether the hut placement exists), and seed the stockpile
       // (probe setup only — the game itself only ever changes the
       // pile by delivery or by a build step).
-      getConstruction:()=>({...constructionRef.current,sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),hutPlaced:hutPlacementExists(world),hutId:hutPlacementId(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
+      getConstruction:()=>({...constructionRef.current,sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood,stages:s.stages})),hutPlaced:hutPlacementExists(world),hutId:hutPlacementId(world),hutRect:{...HUT_RECT},door:{...HUT_DOOR},approach:{...HUT_APPROACH}}),
       // BUILD 1087 (2.2) test hooks (probes only — no gameplay effect):
       // the storehouse state + counts, setters for the store (probe
       // setup — the game itself only ever changes the store by
