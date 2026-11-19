@@ -34,6 +34,7 @@ import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './gr
 import { campGrainInRegistry, FARM_FOOD_THRESHOLD } from './food';
 import { advanceClock } from './worldclock';
 import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
+import { assignProfessions, professionSlotsFor, type ProfessionNeed } from './professions';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
 import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond } from './controlCenter';
 import {
@@ -416,6 +417,40 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         foundersRef.current=[...foundersRef.current,newcomer];
         setMessage(arrival.name+' arrived at the camp!');
       }
+      // BUILD 1098 (0x21): professions — assigned by settlement
+      // need, every tick, before the founder loop (the assignment
+      // is idempotent: a founder keeps a profession that is still
+      // an open slot, so the assignment only CHANGES when the need
+      // changes — a new building opens a slot, a finished project
+      // closes one, a founder without work takes the most-needed
+      // open profession). The need is read from state the tick
+      // already has: the field always exists (farmer), a buildable
+      // hut or an unfinished production building (builder), open
+      // lumber/mine/quarry jobs, a finished smelter/blacksmith/
+      // sawmill/carpenter (their work exists). The player never
+      // assigns a profession.
+      const professionNeed: ProfessionNeed = {
+        farmOpen: true,
+        constructionPending:
+          nearestUnfinishedSite(constructionRef.current, FOUNDER_CAMP, clock.day) !== null ||
+          storehouseRef.current.state !== 'done' ||
+          foodChainRef.current.mill.state !== 'done' ||
+          foodChainRef.current.bakery.state !== 'done' ||
+          metalChainRef.current.smelter.state !== 'done' ||
+          metalChainRef.current.blacksmith.state !== 'done' ||
+          metalChainRef.current.sawmill.state !== 'done' ||
+          metalChainRef.current.carpenter.state !== 'done' ||
+          metalChainRef.current.workshop.state !== 'done' ||
+          housingRef.current.inn.state !== 'done',
+        lumberOpen: readyLumberCount > 0,
+        mineOpen: readyMineCount > 0,
+        quarryOpen: readyQuarryCount > 0,
+        smelterDone: metalChainRef.current.smelter.state === 'done',
+        blacksmithDone: metalChainRef.current.blacksmith.state === 'done',
+        sawmillDone: metalChainRef.current.sawmill.state === 'done',
+        carpenterDone: metalChainRef.current.carpenter.state === 'done',
+      };
+      assignProfessions(foundersRef.current, professionSlotsFor(professionNeed));
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);
         f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
@@ -469,7 +504,22 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // BUILD 1096: pass the day — nearestUnfinishedSite skips a
         // gated worker-housing site (see construction.ts).
         const buildSite=nearestUnfinishedSite(constructionRef.current,f,clock.day);
-        const builderTaken=(()=>{const b=buildSite?buildJobClaimedBy(jobBoardRef.current,buildSite.id):null;const bs=buildJobClaimedBy(jobBoardRef.current,STOREHOUSE_SITE_ID);const bb=pathsRef.current.bridges.some((s)=>{const c=buildJobClaimedBy(jobBoardRef.current,s.id);return c!==null&&c!==f.id;});const bm=buildJobClaimedBy(jobBoardRef.current,MILL_SITE_ID);const bba=buildJobClaimedBy(jobBoardRef.current,BAKERY_SITE_ID);const bsm=buildJobClaimedBy(jobBoardRef.current,SMELTER_SITE_ID);const bbl=buildJobClaimedBy(jobBoardRef.current,BLACKSMITH_SITE_ID);const bsw=buildJobClaimedBy(jobBoardRef.current,SAWMILL_SITE_ID);const bcp=buildJobClaimedBy(jobBoardRef.current,CARPENTER_SITE_ID);const bwk=buildJobClaimedBy(jobBoardRef.current,WORKSHOP_SITE_ID);const bin=buildJobClaimedBy(jobBoardRef.current,INN_SITE_ID);return (b!==null&&b!==f.id)||(bs!==null&&bs!==f.id)||bb||(bm!==null&&bm!==f.id)||(bba!==null&&bba!==f.id)||(bsm!==null&&bsm!==f.id)||(bbl!==null&&bbl!==f.id)||(bsw!==null&&bsw!==f.id)||(bcp!==null&&bcp!==f.id)||(bwk!==null&&bwk!==f.id)||(bin!==null&&bin!==f.id);})();
+        // BUILD 1098: builder priority at the claim — a builder is
+        // FREE (workState 'toTree'), so a non-builder treats the
+        // build slot as taken (the scorer scores build 0 AND no
+        // build claim fires for them). The +0.03 nudge alone does not
+        // make the builder build: claiming is first-come-first-
+        // served, so a free non-builder takes the single build slot
+        // and the builder is locked out (the live diagnostic caught
+        // the farmer + stonecutter building the huts while the
+        // builder's buildTicks stayed 0). When the builder is BUSY
+        // (not 'toTree'), anyone steps in — the strict gate (block
+        // whenever a builder merely EXISTS) serialised all building
+        // on one founder and starved the settlement (M1069 24h:
+        // starved 2717, pop 4). A founder already holding a build
+        // job (myJob build) is exempt and finishes it.
+        const builderIsFree=foundersRef.current.some((o)=>o.profession==='builder'&&o.workState==='toTree');
+        const builderTaken=(()=>{const b=buildSite?buildJobClaimedBy(jobBoardRef.current,buildSite.id):null;const bs=buildJobClaimedBy(jobBoardRef.current,STOREHOUSE_SITE_ID);const bb=pathsRef.current.bridges.some((s)=>{const c=buildJobClaimedBy(jobBoardRef.current,s.id);return c!==null&&c!==f.id;});const bm=buildJobClaimedBy(jobBoardRef.current,MILL_SITE_ID);const bba=buildJobClaimedBy(jobBoardRef.current,BAKERY_SITE_ID);const bsm=buildJobClaimedBy(jobBoardRef.current,SMELTER_SITE_ID);const bbl=buildJobClaimedBy(jobBoardRef.current,BLACKSMITH_SITE_ID);const bsw=buildJobClaimedBy(jobBoardRef.current,SAWMILL_SITE_ID);const bcp=buildJobClaimedBy(jobBoardRef.current,CARPENTER_SITE_ID);const bwk=buildJobClaimedBy(jobBoardRef.current,WORKSHOP_SITE_ID);const bin=buildJobClaimedBy(jobBoardRef.current,INN_SITE_ID);return (b!==null&&b!==f.id)||(bs!==null&&bs!==f.id)||bb||(bm!==null&&bm!==f.id)||(bba!==null&&bba!==f.id)||(bsm!==null&&bsm!==f.id)||(bbl!==null&&bbl!==f.id)||(bsw!==null&&bsw!==f.id)||(bcp!==null&&bcp!==f.id)||(bwk!==null&&bwk!==f.id)||(bin!==null&&bin!==f.id)||(builderIsFree&&f.profession!=='builder'&&myJob?.kind!=='build');})();
         // BUILD 1095: the iron slot and the coal slot are separate —
         // a founder mining iron does not block a founder mining coal.
         const ironTaken=foundersRef.current.some((o)=>o!==f&&founderMiningMineral(o,minesRef.current)==='iron');
@@ -490,7 +540,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')),readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current)});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')),readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }

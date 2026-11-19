@@ -121,6 +121,7 @@ import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './gr
 import { advanceEcosystemDay, applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
+import { assignProfessions, professionSlotsFor, type ProfessionNeed } from './professions';
 import {
   STOREHOUSE_APPROACH, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID,
   STOREHOUSE_WOOD_PER_STEP, STOREHOUSE_STONE_PER_STEP,
@@ -731,6 +732,34 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     ledger.arrivals.push(arrival.name);
   }
 
+  // BUILD 1098 (0x21): professions — assigned by settlement need,
+  // every tick, before the founder loop (the same rule as the view
+  // tick, so the sim mirror never re-chooses by a different rule).
+  // Idempotent: a founder keeps a profession that is still an open
+  // slot, so the assignment only CHANGES when the need changes.
+  const professionNeed: ProfessionNeed = {
+    farmOpen: true,
+    constructionPending:
+      nearestUnfinishedSite(construction, FOUNDER_CAMP, day) !== null ||
+      sim.storehouse.state !== 'done' ||
+      sim.foodChain.mill.state !== 'done' ||
+      sim.foodChain.bakery.state !== 'done' ||
+      sim.metalChain.smelter.state !== 'done' ||
+      sim.metalChain.blacksmith.state !== 'done' ||
+      sim.metalChain.sawmill.state !== 'done' ||
+      sim.metalChain.carpenter.state !== 'done' ||
+      sim.metalChain.workshop.state !== 'done' ||
+      sim.housing.inn.state !== 'done',
+    lumberOpen: readyLumberCount > 0,
+    mineOpen: readyMineCount > 0,
+    quarryOpen: readyQuarryCount > 0,
+    smelterDone: sim.metalChain.smelter.state === 'done',
+    blacksmithDone: sim.metalChain.blacksmith.state === 'done',
+    sawmillDone: sim.metalChain.sawmill.state === 'done',
+    carpenterDone: sim.metalChain.carpenter.state === 'done',
+  };
+  assignProfessions(sim.founders, professionSlotsFor(professionNeed));
+
   for (const f of sim.founders) {
     const elapsed = Math.max(0, nowAbs - f.lastAbs);
     f.needs = decayFounderNeeds(f.needs, elapsed, f.activity);
@@ -804,6 +833,14 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     // BUILD 1096: pass the day — nearestUnfinishedSite skips a
     // gated worker-housing site (see construction.ts).
     const buildSite = nearestUnfinishedSite(construction, f, day);
+    // BUILD 1098: builder priority at the claim — a builder is
+    // FREE (workState 'toTree'), so a non-builder treats the build
+    // slot as taken. See worldSimulation3d.ts for the live-
+    // diagnostic evidence and the fallback (when the builder is
+    // BUSY, anyone steps in — the strict gate starved the
+    // settlement). A founder already holding a build job (myJob
+    // build) is exempt and finishes it.
+    const builderIsFree = sim.founders.some((o) => o.profession === 'builder' && o.workState === 'toTree');
     const builderTaken = (() => {
       const b = buildSite ? buildJobClaimedBy(sim.board, buildSite.id) : null;
       const bs = buildJobClaimedBy(sim.board, STOREHOUSE_SITE_ID);
@@ -826,7 +863,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       // BUILD 1096: a claimed inn build counts the same way — one
       // builder per site.
       const bin = buildJobClaimedBy(sim.board, INN_SITE_ID);
-      return (b !== null && b !== f.id) || (bs !== null && bs !== f.id) || bb || (bm !== null && bm !== f.id) || (bba !== null && bba !== f.id) || (bsm !== null && bsm !== f.id) || (bbl !== null && bbl !== f.id) || (bsw !== null && bsw !== f.id) || (bcp !== null && bcp !== f.id) || (bwk !== null && bwk !== f.id) || (bin !== null && bin !== f.id);
+      return (b !== null && b !== f.id) || (bs !== null && bs !== f.id) || bb || (bm !== null && bm !== f.id) || (bba !== null && bba !== f.id) || (bsm !== null && bsm !== f.id) || (bbl !== null && bbl !== f.id) || (bsw !== null && bsw !== f.id) || (bcp !== null && bcp !== f.id) || (bwk !== null && bwk !== f.id) || (bin !== null && bin !== f.id) || (builderIsFree && f.profession !== 'builder' && myJob?.kind !== 'build');
     })();
     // BUILD 1095: the iron slot and the coal slot are separate —
     // a founder mining iron does not block a founder mining coal
@@ -892,6 +929,8 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         storehouseFurniture: metalChainFurnitureInRegistry(sim.registry),
         campGrain: campGrainInRegistry(sim.registry),
         campFlour: foodChainFlourInRegistry(sim.registry),
+        profession: f.profession,
+        builderExists: sim.founders.some((o) => o.profession === 'builder'),
       });
       f.activity = decision.activity;
       f.lastDecision = decision;

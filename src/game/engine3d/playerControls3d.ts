@@ -29,6 +29,7 @@ import {
   type FounderState,
 } from './founders';
 import { closestFounder, memoryCountsFor } from './memory';
+import { professionLabel } from './professions';
 import { jobForFounder, type JobBoard } from './jobs';
 import { growthFactorAt, livingWorldSummary, type LivingWorld3DState } from './livingWorld';
 import { ecosystemSummaryText, plantSapling, recordAnimalKill } from './ecosystems';
@@ -466,6 +467,33 @@ export function tryMove(ctx: PlayerControlsContext, dx: number, dy: number): voi
   }
 }
 
+/** BUILD 1098 (0x21): the founder's E answer as a pure function —
+ *  name + profession + activity + the scored decision (WHY) +
+ *  needs + closest companion + the held job (kind + site). The
+ *  1057 answer (name, activity, needs), the 1059 WHY (the scored
+ *  decision), and the 1060 closest-companion line all live here.
+ *  Pure so the sim and the standalone asserts can prove the E
+ *  line reports the profession and the current work (the probe
+ *  proves it live). */
+export function founderExamineMessage(f: FounderState, day: number, job: { kind: string; targetId: string } | null | undefined): string {
+  const n = roundFounderNeeds(f.needs);
+  const d = f.lastDecision;
+  const why = d ? ' (' + d.top + ' ' + d.topScore.toFixed(2) + ' > ' + d.runnerUp + ' ' + d.runnerUpScore.toFixed(2) + ')' : '';
+  const cl = closestFounder(f.social, day);
+  let rel = '';
+  if (cl) {
+    const c = memoryCountsFor(f.social, cl.name);
+    const parts: string[] = [];
+    if (c.build > 0) parts.push('built ' + c.build + '×');
+    if (c.eat > 0) parts.push('ate ' + c.eat + '×');
+    if (c.rest > 0) parts.push('rested ' + c.rest + '×');
+    if (c.sleep > 0) parts.push('slept ' + c.sleep + '×');
+    rel = ' · closest ' + cl.name + ' ' + Math.round(cl.affinity) + (parts.length ? ' — ' + parts.join(', ') : '');
+  }
+  const jobLine = job ? ' · job ' + job.kind + ' ' + job.targetId : ' · job —';
+  return f.name + ' (' + professionLabel(f.profession) + '): ' + f.activity + why + ' · hunger ' + n.hunger + ' · energy ' + n.energy + ' · social ' + n.social + ' · health ' + n.health + rel + jobLine;
+}
+
 export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
   const stateRef = ctx.state;
   const world = ctx.world;
@@ -573,7 +601,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // founder's actual memories, so the player never sees a
     // count the founder does not remember. Only non-zero counts
     // are shown.
-    if(nearFounder){const n=roundFounderNeeds(nearFounder.needs);const d=nearFounder.lastDecision;const why=d?` (${d.top} ${d.topScore.toFixed(2)} > ${d.runnerUp} ${d.runnerUpScore.toFixed(2)})`:'';const cl=closestFounder(nearFounder.social,clockRef.current.day);let rel='';if(cl){const c=memoryCountsFor(nearFounder.social,cl.name);const parts:string[]=[];if(c.build>0)parts.push('built '+c.build+'×');if(c.eat>0)parts.push('ate '+c.eat+'×');if(c.rest>0)parts.push('rested '+c.rest+'×');if(c.sleep>0)parts.push('slept '+c.sleep+'×');rel=' · closest '+cl.name+' '+Math.round(cl.affinity)+(parts.length?' — '+parts.join(', '):'');}const nj=jobForFounder(jobBoardRef.current,nearFounder.id);const job=nj?` · job ${nj.kind} ${nj.targetId}`:' · job —';setMessage(nearFounder.name+': '+nearFounder.activity+why+' · hunger '+n.hunger+' · energy '+n.energy+' · social '+n.social+' · health '+n.health+rel+job);return}
+    if(nearFounder){setMessage(founderExamineMessage(nearFounder,clockRef.current.day,jobForFounder(jobBoardRef.current,nearFounder.id)));return}
     if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){
       // BUILD 1062: the stockpile tile is the camp's status board —
       // the living-world numbers ride along (forest density from

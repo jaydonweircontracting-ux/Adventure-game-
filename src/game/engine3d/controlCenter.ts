@@ -78,6 +78,10 @@ export type ControlCenterFounderRow = {
   social: number;
   jobKind: string | null;
   jobTarget: string | null;
+  /** BUILD 1098 (0x21): the founder's profession label ('Farmer',
+   *  'Lumberjack', …; null means no profession yet — the panel
+   *  shows 'Commoner'). Optional: old callers pass none. */
+  profession?: string | null;
   carrying: number;
   carryingGrain: number;
   carryingStone: number;

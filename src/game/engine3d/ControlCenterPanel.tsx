@@ -112,7 +112,7 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
             ) : (
               d.population.founders.map((f) => (
                 <div key={f.id}>
-                  {f.name} — {f.activity} ({f.workState})
+                  {f.name} ({f.profession ?? 'Commoner'}) — {f.activity} ({f.workState})
                   {f.jobKind ? ` · job: ${f.jobKind}${f.jobTarget ? ` ${f.jobTarget}` : ''}` : ' · no job'}
                   {f.carrying > 0 ? ` · carrying ${f.carrying} wood` : ''}
                   {f.carryingGrain > 0 ? ` · carrying ${f.carryingGrain} grain` : ''} · health {f.health} · hunger {f.hunger} · energy {f.energy} · social {f.social}

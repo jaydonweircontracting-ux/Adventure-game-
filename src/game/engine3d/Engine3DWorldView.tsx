@@ -106,6 +106,7 @@ import { formatDayClock, waitOptionsFor, waitInterrupted, waitRemainingLabel, WA
 // (needs-driven, chopping wood to a visible camp stockpile).
 import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
 import { chooseScoredActivity, founderDistToSite } from './utility';
+import { professionLabel } from './professions';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
 import type { SharedEventType } from './memory';
 // BUILD 1062: the living-world coordinator (F-0) — the adapter that
@@ -2652,7 +2653,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // teleport one (drops the cached founder path, the 999 lesson),
       // set needs (to force eat/sleep/rest without waiting for
       // decay), and read its render position (floats).
-      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingBuild:f.carryingBuild,carryingWater:f.carryingWater,carryingOre:f.carryingOre,mineTicks:f.mineTicks,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),stoneStock:campStoneInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
+      getFounders:()=>foundersRef.current.map(f=>{const j=jobForFounder(jobBoardRef.current,f.id);return {id:f.id,name:f.name,profession:f.profession,x:f.x,y:f.y,activity:f.activity,workState:f.workState,bed:f.bed,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingBuild:f.carryingBuild,carryingWater:f.carryingWater,carryingOre:f.carryingOre,mineTicks:f.mineTicks,harvestTicks:f.harvestTicks,chopTicks:f.chopTicks,buildTicks:f.buildTicks,hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),health:Math.round(f.needs.health),stockpileWood:campWoodInRegistry(registryRef.current),foodStock:campFoodInRegistry(registryRef.current),grainStock:campGrainInRegistry(registryRef.current),stoneStock:campStoneInRegistry(registryRef.current),jobId:j?j.id:null,jobKind:j?j.kind:null,jobTarget:j?j.targetId:null};}),
       // BUILD 1065 (J-1): the job board for the probe — the summary
       // counts plus every live job (id, kind, target, tile, state,
       // claim). Read-only.
@@ -2967,7 +2968,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         for(const t of farmTiles){const s=farmStageAt(t.plantedAt,nowAbs,growthFactorAt(stateRef.current.world,clock.day,t.tx,t.ty));farm[s]++;}
         return formatControlCenterData({
           speed:getSimSpeed(),day:clock.day,minutes:clock.minutes,
-          founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingOre:f.carryingOre};}),
+          founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,profession:professionLabel(f.profession),activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingOre:f.carryingOre};}),
           sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),
           hutDone:!hasUnfinishedSite(constructionRef.current),
           camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg),flour:granaryFlourInRegistry(reg),stone:campStoneInRegistry(reg)},

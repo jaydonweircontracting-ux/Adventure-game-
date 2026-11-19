@@ -115,6 +115,8 @@ import { freshStorehouse, validateStorehouseState, type StorehouseState } from '
 import { freshFoodChain, validateFoodChainState, type FoodChainState } from './foodChain';
 import { freshMetalChain, validateMetalChainState, type MetalChainState } from './metalChain';
 import { freshHousing, validateHousingState, type HousingState } from './housing';
+import type { ProfessionId } from './professions';
+import { professionFromSave } from './professions';
 import type { BridgeSite } from './paths';
 import type { WheatTri } from './farm';
 
@@ -734,6 +736,11 @@ export type FounderState = {
    *  the arriving founder stands at the inn rest tile while this
    *  counts down, then walks on to camp. */
   innRestTicks?: number;
+  /** BUILD 1098 (0x21): the founder's profession (professions.ts)
+   *  — assigned by settlement need, never by the player. Null
+   *  means no profession yet (a new arrival, or an old save) — the
+   *  tick's assignment fills it. Saved (v12, a compatible field). */
+  profession: ProfessionId | null;
 };
 
 /** The first free bed: the first sleep tile in a completed hut
@@ -815,6 +822,7 @@ export function spawnResident(
     social: freshFounderSocial(others.map((o) => o.name).filter((n) => n !== name)),
     bed,
     restTile: null,
+    profession: null,
   };
 }
 
@@ -863,6 +871,7 @@ export function defaultFounderState(name: string, index: number, clockAbs: numbe
     social: freshFounderSocial(FOUNDER_NAMES.filter((n) => n !== name)),
     bed: { hut: 0, x: bedTile.x, y: bedTile.y },
     restTile: null,
+    profession: null,
   };
 }
 
@@ -1143,6 +1152,10 @@ export type FounderSave = {
    *  saves have none and migrate to null — iron, the only mineral
    *  mined before 1095). */
   carryingOreKind?: 'iron' | 'coal' | null;
+  /** BUILD 1098 (0x21): the founder's profession (v12; older
+   *  saves have none and migrate to null — the tick assigns one).
+   *  No version move (a compatible field). */
+  profession?: ProfessionId | null;
   hunger: number;
   energy: number;
   social: number;
@@ -1269,6 +1282,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     carryingWater: 0,
       carryingOre: 0,
       carryingOreKind: null,
+      profession: null,
       hunger: 80,
       energy: 90,
       social: 60,
@@ -1470,6 +1484,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       carryingWater: Math.max(0, Math.round(num('carryingWater', 0))),
       carryingOre: Math.max(0, Math.round(num('carryingOre', 0))),
       carryingOreKind: s?.carryingOreKind === 'coal' ? 'coal' : s?.carryingOreKind === 'iron' ? 'iron' : null,
+      profession: professionFromSave(s?.profession),
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1541,6 +1556,7 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       carryingWater: Math.max(0, Math.round(num('carryingWater', 0))),
       carryingOre: Math.max(0, Math.round(num('carryingOre', 0))),
       carryingOreKind: r.carryingOreKind === 'coal' ? 'coal' : r.carryingOreKind === 'iron' ? 'iron' : null,
+      profession: professionFromSave(r.profession),
       hunger: clampNeed(num('hunger', 80), 80),
       energy: clampNeed(num('energy', 90), 90),
       social: clampNeed(num('social', 60), 60),
@@ -1718,6 +1734,7 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
       carryingWater: f.carryingWater,
       carryingOre: f.carryingOre,
       carryingOreKind: f.carryingOreKind,
+      profession: f.profession ?? null,
       hunger: Math.round(f.needs.hunger),
       energy: Math.round(f.needs.energy),
       social: Math.round(f.needs.social),
@@ -1810,6 +1827,7 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
       sawTicks: 0,
       carpenterTicks: 0,
       carryingOreKind: s.carryingOreKind ?? null,
+      profession: professionFromSave(s.profession),
       treeTarget: null,
       farmTarget: null,
     waterTarget: null,

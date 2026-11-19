@@ -132,6 +132,8 @@ import { CARPENTER_TIMBER_PER_BATCH, SAW_WOOD_PER_BATCH, SMELT_COAL_PER_BATCH, S
 import { STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL } from './storehouse';
 import { GRANARY_CAPACITY_FLOUR } from './granary';
 import type { ConstructionState } from './construction';
+import type { ProfessionId } from './professions';
+import { professionJobKinds } from './professions';
 
 /** The five scored activities — the 1057 four plus 'build'. */
 export type ScoredActivity = FounderActivity;
@@ -328,6 +330,19 @@ export type UtilityWorldContext = {
    *  carpenter term is 0 for this founder. Optional: absent means
    *  the slot is free. */
   carpenterTaken?: boolean;
+  /** BUILD 1098: the founder's profession (professions.ts) — the
+   *  scorer weights the profession's job kinds higher (+
+   *  PROFESSION_TERM_BONUS, additive). Optional: absent or null
+   *  means no profession (a founder without one, or an old caller)
+   *  and the terms are unboosted, so old scores are unchanged. */
+  profession?: ProfessionId | null;
+  /** BUILD 1098: true when some founder holds the builder
+   *  profession — a non-builder scores build 0 (leaves NEW
+   *  building to the builder) unless already building (they
+   *  finish their job). Optional: absent means no builder data
+   *  (an old caller) and the build score is unchanged, so old
+   *  scores are unchanged. */
+  builderExists?: boolean;
 };
 
 /** Full scorer input: needs + clock + world. */
@@ -495,6 +510,28 @@ export const UTILITY_SAW_TERM_MAX = 0.3;
  *  harvest, a bake, a mill, a smelt, a smith, or a saw on a
  *  tie. */
 export const UTILITY_CARPENTER_TERM_MAX = 0.5;
+
+/** BUILD 1098: the profession weight — how much a founder's
+ *  profession adds to its own job kinds (additive, clamped to 1).
+ *  A lumberjack's chop scores 0.03 higher than the same chop for a
+ *  founder without the profession, so the profession's kind wins
+ *  more often and the work score rises. Small on purpose — and
+ *  0.03, not 0.1: +0.1 over-specialised on day 1 (the farmer and
+ *  the builder never chopped, wood chopped 54→40, the mill/bakery
+ *  were delayed, the settlement starved 829 ticks and only Bram
+ *  arrived in 24h; the week went 569→4793 starved ticks). +0.03
+ *  keeps the 24h healthy (starved 0, minHealth 100, pop 6) and the
+ *  week near the accepted residual. At food 0 the food term is
+ *  0.65 and the boosted chop in the test context is 0.37 → 0.40 —
+ *  harvest still wins, so the profession only flips the choice
+ *  among jobs the settlement can afford (the need-score still
+ *  matters: a starving settlement still eats first). Bake/mill
+ *  urgency already beats food at food 0 (the 1094 design) — the
+ *  boost does not change that dynamic. The build score gets the
+ *  same +0.03 offsetting the distance penalty, capped at
+ *  UTILITY_BUILD_BASE (0.8) so night sleep (0.81 min) still
+ *  dominates. */
+export const PROFESSION_TERM_BONUS = 0.03;
 
 /** need(x) = (100 - x)/100 — 0 when satisfied, 1 when empty. */
 export function utilityNeed(value: number): number {
@@ -803,22 +840,49 @@ function workTermsFor(ctx: UtilityContext): {
     readyCarpenter > 0 && !carpenterTaken && (ctx.storehouseTimber ?? 0) >= CARPENTER_TIMBER_PER_BATCH && (ctx.storehouseFurniture ?? 0) < STOREHOUSE_CAPACITY_FURNITURE
       ? UTILITY_CARPENTER_TERM_MAX
       : 0;
-  const work = Math.max(chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, smeltTerm, smithTerm, sawTerm, carpenterTerm);
+  // BUILD 1098: the profession weight — a founder with a
+  // profession scores its profession's job kinds higher
+  // (+PROFESSION_TERM_BONUS, additive, clamped to 1). The boost
+  // applies only when the term fires (a term of 0 stays 0 — no
+  // tree in range means no chop, profession or not). Applied
+  // before the argmax, so the profession's kind wins more often
+  // and the work score rises. The stone gate above already read
+  // the RAW chop/lumber (whether wood work EXISTS), so it is
+  // unaffected. The returned terms are the boosted ones — the
+  // decision (workKind, chopWork) reflects the profession-weighted
+  // scoring, which is the whole point.
+  const profKinds = ctx.profession ? professionJobKinds(ctx.profession) : [];
+  const profBoost = (kind: string): number => (profKinds.includes(kind as never) ? PROFESSION_TERM_BONUS : 0);
+  const boosted = (term: number, kind: string): number => (term > 0 ? Math.min(1, term + profBoost(kind)) : 0);
+  const bChop = boosted(chopWork, 'chop');
+  const bFood = boosted(foodTerm, 'harvest');
+  const bStone = boosted(stoneTerm, 'quarry');
+  const bWater = boosted(waterTerm, 'water');
+  const bMine = boosted(mineTerm, 'mine');
+  const bLumber = boosted(lumberTerm, 'lumber');
+  const bPlant = boosted(plantTerm, 'plant');
+  const bMill = boosted(millTerm, 'mill');
+  const bBake = boosted(bakeTerm, 'bake');
+  const bSmelt = boosted(smeltTerm, 'smelt');
+  const bSmith = boosted(smithTerm, 'smith');
+  const bSaw = boosted(sawTerm, 'saw');
+  const bCarpenter = boosted(carpenterTerm, 'carpenter');
+  const work = Math.max(bChop, bFood, bStone, bWater, bMine, bLumber, bPlant, bMill, bBake, bSmelt, bSmith, bSaw, bCarpenter);
   let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null = null;
-  if (waterTerm > 0 && waterTerm > chopWork && waterTerm > foodTerm && waterTerm > stoneTerm && waterTerm > mineTerm && waterTerm > lumberTerm && waterTerm > plantTerm && waterTerm > millTerm && waterTerm > bakeTerm) workKind = 'water';
-  else if (stoneTerm > 0 && stoneTerm > chopWork && stoneTerm > foodTerm && stoneTerm > mineTerm && stoneTerm > lumberTerm && stoneTerm > plantTerm && stoneTerm > millTerm && stoneTerm > bakeTerm) workKind = 'quarry';
-  else if (plantTerm > 0 && plantTerm > chopWork && plantTerm > foodTerm && plantTerm >= lumberTerm && plantTerm >= mineTerm && plantTerm >= millTerm && plantTerm >= bakeTerm) workKind = 'plant';
-  else if (bakeTerm > 0 && bakeTerm >= chopWork && bakeTerm >= lumberTerm && bakeTerm >= mineTerm && bakeTerm >= millTerm && bakeTerm >= foodTerm) workKind = 'bake';
-  else if (millTerm > 0 && millTerm >= chopWork && millTerm >= lumberTerm && millTerm >= mineTerm && millTerm >= foodTerm) workKind = 'mill';
-  else if (smeltTerm > 0 && smeltTerm >= chopWork && smeltTerm >= lumberTerm && smeltTerm >= mineTerm && smeltTerm >= foodTerm) workKind = 'smelt';
-  else if (smithTerm > 0 && smithTerm >= chopWork && smithTerm >= lumberTerm && smithTerm >= mineTerm && smithTerm >= foodTerm) workKind = 'smith';
-  else if (sawTerm > 0 && sawTerm >= chopWork && sawTerm >= lumberTerm && sawTerm >= mineTerm && sawTerm >= foodTerm) workKind = 'saw';
-  else if (carpenterTerm > 0 && carpenterTerm >= chopWork && carpenterTerm >= lumberTerm && carpenterTerm >= mineTerm && carpenterTerm >= foodTerm) workKind = 'carpenter';
-  else if (foodTerm > 0 && foodTerm >= chopWork && foodTerm >= lumberTerm && foodTerm >= mineTerm) workKind = 'harvest';
-  else if (lumberTerm > 0 && lumberTerm >= chopWork && lumberTerm >= mineTerm && lumberTerm >= millTerm) workKind = 'lumber';
-  else if (mineTerm > 0 && mineTerm > chopWork) workKind = 'mine';
-  else if (chopWork > 0) workKind = 'chop';
-  return { chopWork, foodTerm, stoneTerm, waterTerm, mineTerm, lumberTerm, plantTerm, millTerm, bakeTerm, smeltTerm, smithTerm, sawTerm, carpenterTerm, work, workKind };
+  if (bWater > 0 && bWater > bChop && bWater > bFood && bWater > bStone && bWater > bMine && bWater > bLumber && bWater > bPlant && bWater > bMill && bWater > bBake) workKind = 'water';
+  else if (bStone > 0 && bStone > bChop && bStone > bFood && bStone > bMine && bStone > bLumber && bStone > bPlant && bStone > bMill && bStone > bBake) workKind = 'quarry';
+  else if (bPlant > 0 && bPlant > bChop && bPlant > bFood && bPlant >= bLumber && bPlant >= bMine && bPlant >= bMill && bPlant >= bBake) workKind = 'plant';
+  else if (bBake > 0 && bBake >= bChop && bBake >= bLumber && bBake >= bMine && bBake >= bMill && bBake >= bFood) workKind = 'bake';
+  else if (bMill > 0 && bMill >= bChop && bMill >= bLumber && bMill >= bMine && bMill >= bFood) workKind = 'mill';
+  else if (bSmelt > 0 && bSmelt >= bChop && bSmelt >= bLumber && bSmelt >= bMine && bSmelt >= bFood) workKind = 'smelt';
+  else if (bSmith > 0 && bSmith >= bChop && bSmith >= bLumber && bSmith >= bMine && bSmith >= bFood) workKind = 'smith';
+  else if (bSaw > 0 && bSaw >= bChop && bSaw >= bLumber && bSaw >= bMine && bSaw >= bFood) workKind = 'saw';
+  else if (bCarpenter > 0 && bCarpenter >= bChop && bCarpenter >= bLumber && bCarpenter >= bMine && bCarpenter >= bFood) workKind = 'carpenter';
+  else if (bFood > 0 && bFood >= bChop && bFood >= bLumber && bFood >= bMine) workKind = 'harvest';
+  else if (bLumber > 0 && bLumber >= bChop && bLumber >= bMine && bLumber >= bMill) workKind = 'lumber';
+  else if (bMine > 0 && bMine > bChop) workKind = 'mine';
+  else if (bChop > 0) workKind = 'chop';
+  return { chopWork: bChop, foodTerm: bFood, stoneTerm: bStone, waterTerm: bWater, mineTerm: bMine, lumberTerm: bLumber, plantTerm: bPlant, millTerm: bMill, bakeTerm: bBake, smeltTerm: bSmelt, smithTerm: bSmith, sawTerm: bSaw, carpenterTerm: bCarpenter, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
@@ -893,6 +957,30 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
       build = clamp01(UTILITY_BUILD_BASE - distPenalty(ctx.bridge.dist));
     }
   }
+
+  // BUILD 1098: the builder builds from farther away — +0.03
+  // (PROFESSION_TERM_BONUS) offsetting the distance penalty,
+  // CAPPED at UTILITY_BUILD_BASE (0.8), so a builder at distance
+  // never out-scores night sleep (0.81 min) and never beats a
+  // rested founder's sleep on a tie (sleep wins ties). A builder
+  // at 5 tiles scores 0.73 where a founder without the profession
+  // scores 0.7 — the builder is the one who builds when both are
+  // candidates.
+  if (ctx.profession === 'builder' && build > 0) build = Math.min(UTILITY_BUILD_BASE, build + PROFESSION_TERM_BONUS);
+
+  // BUILD 1098: builder priority — a builder exists, so a
+  // non-builder leaves NEW building to them (scores build 0).
+  // The +0.03 nudge alone does not make the builder build: the
+  // build slot is single (one builder per site) and claiming is
+  // first-come-first-served, so a non-builder free first takes
+  // the job and the builder is locked out (builderTaken) — the
+  // live diagnostic caught the farmer and the stonecutter building
+  // the huts while the builder's buildTicks stayed 0. A
+  // non-builder ALREADY building is exempt (currentJob 'build'):
+  // they finish their job, they are not yanked off it. With no
+  // builder (builderExists false/absent) the score is unchanged
+  // and anyone builds — the fallback when the slot is empty.
+  if (ctx.profession !== 'builder' && ctx.builderExists && ctx.currentJob !== 'build') build = 0;
 
   // BUILD 1067: a weak founder works at half strength, a collapsed
   // one (health 0) cannot work at all — starvation has a real
