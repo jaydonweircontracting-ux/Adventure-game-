@@ -227,6 +227,11 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
                 </div>
               ))
             )}
+            {d.construction.plan ? (
+              <div>📋 Plan: build {d.construction.plan.building} at ({d.construction.plan.x},{d.construction.plan.y}) — need {d.construction.plan.need.toFixed(2)} · {d.construction.plan.reasons.join('; ')}</div>
+            ) : (
+              <div style={dimStyle}>No plan yet — nothing startable.</div>
+            )}
             <div style={dimStyle}>Hut {d.construction.hutDone ? 'done' : 'not finished'} · total progress {d.construction.totalProgress} steps</div>
           </div>
 

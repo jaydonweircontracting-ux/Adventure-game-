@@ -184,21 +184,21 @@ export const PROFESSIONS: ProfessionDef[] = [
     jobKinds: [],
     workSites: 'bridges, roads, wells',
     tools: ['plumb line', 'level'], inputs: ['stone', 'wood'], outputs: ['bridges', 'roads', 'wells'],
-    system: 'future', systemNote: 'Construction intelligence is Phase 4.2 — the engineer’s planning comes then.',
+    system: 'future', systemNote: 'Construction intelligence (sitePlan.ts, BUILD 1100) plans the works — the engineer still holds no job kind.',
   },
   {
     id: 'architect', label: 'Architect', blurb: 'Plans where the settlement grows — site selection and the build queue.',
     jobKinds: [],
     workSites: 'the settlement plan',
     tools: ['plans'], inputs: ['the settlement plan'], outputs: ['building sites'],
-    system: 'future', systemNote: 'Construction intelligence is Phase 4.2 — site selection and the build queue come then.',
+    system: 'future', systemNote: 'Construction intelligence (sitePlan.ts, BUILD 1100) does the site selection + build queue — the architect still holds no job kind.',
   },
   {
     id: 'mayor', label: 'Mayor', blurb: 'Leads the settlement — decisions, not labour.',
     jobKinds: [],
     workSites: 'the town hall',
     tools: ['seal'], inputs: ['the settlement'], outputs: ['decisions'],
-    system: 'future', systemNote: 'No work system — settlement leadership, not a job.',
+    system: 'future', systemNote: 'The Mayor’s need scoring lives in sitePlan.ts (BUILD 1100) — the mayor still holds no job kind.',
   },
 ];
 

@@ -11,6 +11,7 @@ import { FARM_FOOD_THRESHOLD, HEALTH_WEAK_BELOW } from './food';
 import { BAKE_FLOUR_PER_MEAL, GRIND_GRAIN_PER_BATCH } from './foodChain';
 import { SMELT_ORE_PER_BATCH, SMELT_COAL_PER_BATCH, SMITH_INGOT_PER_TOOL, SAW_WOOD_PER_BATCH, CARPENTER_TIMBER_PER_BATCH } from './metalChain';
 import type { MarketStallLine } from './housing';
+import { planBuildingLabel, type SettlementPlan } from './sitePlan';
 import { SETTLEMENT_ARRIVAL_FOOD_MIN } from './settlementGrowth';
 import type { LivingWorldSummary } from './livingWorld';
 
@@ -133,6 +134,9 @@ export type ControlCenterInput = {
   // the inn (state + progress + the food in its store), and the
   // market-stall listing (the settlement store, read-only).
   housing?: { capacity: number; bedsFree: number; inn: { state: string; progress: number; food: number }; stall: MarketStallLine[] };
+  /** BUILD 1100: the settlement plan (optional — the old callers
+   *  pass none and the panel shows 'no plan yet'). */
+  sitePlan?: SettlementPlan | null;
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
   storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number; coal: number; ingots: number; tools: number; timber: number; furniture: number };
@@ -236,7 +240,7 @@ export type ControlCenterData = {
    *  the inn (state + the food in its store + readiness), and the
    *  market-stall listing (the settlement store, read-only). */
   housing: { capacity: number; bedsFree: number; innState: string; innFood: number; innReady: boolean; stall: MarketStallLine[] };
-  construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number };
+  construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number; plan: { building: string; x: number; y: number; need: number; reasons: string[]; decidedDay: number } | null };
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
   environment: {
     forestDensityPct: number;
@@ -418,6 +422,9 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       sites: input.sites,
       hutDone: input.hutDone,
       totalProgress: input.sites.reduce((s, x) => s + x.progress, 0),
+      // BUILD 1100: the settlement plan — the Mayor's pick + the
+      // Architect's site, with the reasons (the panel quotes them).
+      plan: input.sitePlan ? { building: planBuildingLabel(input.sitePlan.building), x: (input.sitePlan.site.rect.x0 + input.sitePlan.site.rect.x1) / 2, y: (input.sitePlan.site.rect.y0 + input.sitePlan.site.rect.y1) / 2, need: input.sitePlan.need, reasons: [...input.sitePlan.reasons], decidedDay: input.sitePlan.decidedDay } : null,
     },
     trade: {
       deliverOpen: input.jobs.deliverOpen,

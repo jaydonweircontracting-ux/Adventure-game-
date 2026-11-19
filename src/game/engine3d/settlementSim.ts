@@ -105,6 +105,7 @@ import {
   reconcileExtraSites,
   hasUnfinishedSite,
   foundingHutsDone,
+  housingCapacity,
   nearestUnfinishedSite,
   hutSiteById,
   hutSiteIndexById,
@@ -162,6 +163,7 @@ import {
   type HousingState,
 } from './housing';
 import { stampMineralDeposits } from './geology';
+import { existingBuildingRects, planFor, planNeedsReplan, sitePlanFromSave, type SettlementNeedInput, type SettlementPlan } from './sitePlan';
 import {
   MINE_START_DAY, MINE_TICKS_PER_SHIFT, MINE_IRON_TARGET, MINE_COAL_TARGET, QUARRY_CREW_SIZE,
   designateMine, designateQuarry, designateLumber, reconcileMines, mineOreToCarrier,
@@ -416,6 +418,10 @@ export type SettlementSim = {
   /** The housing (BUILD 1096 — the inn, saved in the founders
    *  save, v12, and round-tripped by serialize/restore). */
   housing: HousingState;
+  /** The settlement plan (BUILD 1100 — the Mayor + Architect
+   *  decision, saved in the founders save, v12, and round-tripped
+   *  by serialize/restore). */
+  sitePlan: SettlementPlan | null;
   /** The path layer (BUILD 1088): the traffic counts, the bridge
    *  sites, and the last bridge-scan day. The traffic is
    *  session-only (never saved — the tiles persist via the world
@@ -495,6 +501,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
     foodChain: freshFoodChain(),
     metalChain: freshMetalChain(),
     housing: freshHousing(),
+    sitePlan: null,
     abs: SETTLEMENT_START_ABS,
     ledger: freshSettlementLedger(),
     paths: new Map(),
@@ -506,7 +513,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry)),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry), sim.sitePlan),
   );
 }
 
@@ -536,6 +543,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
     foodChain: save.foodChain,
     metalChain: save.metalChain,
     housing: save.housing,
+    sitePlan: sitePlanFromSave(save.sitePlan),
     abs,
     ledger,
     paths: new Map(),
@@ -760,6 +768,43 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   };
   assignProfessions(sim.founders, professionSlotsFor(professionNeed));
 
+  // BUILD 1100 (0x23, Phase 4.2): the settlement plan — the Mayor
+  // + Architect re-decide what to build next + where, after the
+  // board rebuild, before the founder loop (the same rule as the
+  // view tick). The plan only changes when its building is done or
+  // no longer startable (planNeedsReplan) — a steady plan is not
+  // re-decided every tick, and the A* site scoring runs only on a
+  // re-plan, never per tick.
+  const planInput: SettlementNeedInput = {
+    day,
+    camp: { ...FOUNDER_CAMP },
+    food: campFoodInRegistry(sim.registry),
+    grain: campGrainInRegistry(sim.registry),
+    flour: foodChainFlourInRegistry(sim.registry),
+    beds: housingCapacity(construction),
+    population: sim.founders.length,
+    waitingArrivals: 0,
+    campWood: campWoodInRegistry(sim.registry),
+    campStone: campStoneInRegistry(sim.registry),
+    storehouseWood: storehouseWoodInRegistry(sim.registry),
+    storehouseIron: storehouseOreInRegistry(sim.registry, 'iron'),
+    storehouseCoal: metalChainCoalInRegistry(sim.registry),
+    storehouseIngots: metalChainIngotsInRegistry(sim.registry),
+    storehouseTools: metalChainToolsInRegistry(sim.registry),
+    storehouseTimber: metalChainTimberInRegistry(sim.registry),
+    storehouseFurniture: metalChainFurnitureInRegistry(sim.registry),
+    construction,
+    storehouse: sim.storehouse,
+    foodChain: sim.foodChain,
+    metalChain: sim.metalChain,
+    housing: sim.housing,
+    bridges: sim.pathState.bridges,
+    foundingDone,
+  };
+  if (planNeedsReplan(sim.sitePlan, planInput)) {
+    sim.sitePlan = planFor(planInput, world, existingBuildingRects(construction, sim.storehouse, sim.foodChain, sim.metalChain, sim.housing));
+  }
+
   for (const f of sim.founders) {
     const elapsed = Math.max(0, nowAbs - f.lastAbs);
     f.needs = decayFounderNeeds(f.needs, elapsed, f.activity);
@@ -886,7 +931,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         stockpileWood: pileForWood(),
         construction,
         nearestTreeDist: scorerTreeDist(sim.board, f.id, FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS),
-        distToSite: distToActiveBuildSite({ x: Math.round(f.x), y: Math.round(f.y) }, construction, sim.storehouse, day),
+        distToSite: distToActiveBuildSite({ x: Math.round(f.x), y: Math.round(f.y) }, construction, sim.storehouse, day, sim.sitePlan?.site.approach ?? null),
         builderTaken,
         currentJob,
         closestAffinity: tClosest ? tClosest.affinity : 50,
@@ -1103,6 +1148,62 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     // else is building. Farming is the 'work' choice while the camp
     // is short of food; chopping is the 'work' choice when it is not.
     if ((f.activity === 'work' || f.activity === 'build') && f.workState === 'toTree' && !f.treeTarget) {
+
+      // BUILD 1100: the plan's building claims FIRST — the Mayor's
+      // pick, not the code order. A free founder attempts the plan's
+      // building with the SAME gate its fixed branch below uses (the
+      // gates live in both places — the plan block and the branch —
+      // so a gate change updates both); if the plan claim fails
+      // (gate closed, job gone, builder taken) the fixed branches
+      // run as before (the fallback). A claimed plan job moves the
+      // founder off 'toTree', so the branches below skip. The hut
+      // resolves to the PLAN's site (matched by rect), not the
+      // founder-nearest site — the plan and the build agree on
+      // where the hut goes.
+      if (sim.sitePlan && !builderTaken) {
+        const planBuilding = sim.sitePlan.building;
+        let planJobId: string | null = null;
+        if (planBuilding === 'hut') {
+          const planHut = HUT_SITES.find((s) => s.rect.x0 === sim.sitePlan!.site.rect.x0 && s.rect.y0 === sim.sitePlan!.site.rect.y0);
+          if (!hutDone && planHut && (canBuild(construction, campWoodInRegistry(sim.registry)) || (sim.storehouse.state === 'done' && storehouseWoodInRegistry(sim.registry) >= HUT_WOOD_PER_STEP))) planJobId = buildJobIdFor(planHut.id);
+        } else if (planBuilding === 'storehouse') {
+          if (foundingDone && canStartStorehouse(sim.storehouse, day, foundingDone, campWoodInRegistry(sim.registry), campStoneInRegistry(sim.registry))) planJobId = buildJobIdFor(STOREHOUSE_SITE_ID);
+        } else if (planBuilding === 'bridge') {
+          const planBridge = sim.pathState.bridges.find((s) => s.x === sim.sitePlan!.site.rect.x0 && s.y === sim.sitePlan!.site.rect.y0);
+          if (foundingDone && sim.storehouse.state === 'done' && planBridge && canStartBridge(planBridge, day, foundingDone, true, campWoodInRegistry(sim.registry))) planJobId = buildJobIdFor(planBridge.id);
+        } else if (planBuilding === 'mill') {
+          if (construction.sites[0] && construction.sites[0].state === 'done' && canStartMill(sim.foodChain, campGrainInRegistry(sim.registry), campWoodInRegistry(sim.registry))) planJobId = buildJobIdFor(MILL_SITE_ID);
+        } else if (planBuilding === 'bakery') {
+          if (canStartBakery(sim.foodChain, campWoodInRegistry(sim.registry))) planJobId = buildJobIdFor(BAKERY_SITE_ID);
+        } else if (planBuilding === 'smelter') {
+          if (canStartSmelter(sim.metalChain, storehouseOreInRegistry(sim.registry, 'iron'), (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) planJobId = buildJobIdFor(SMELTER_SITE_ID);
+        } else if (planBuilding === 'blacksmith') {
+          if (canStartBlacksmith(sim.metalChain, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) planJobId = buildJobIdFor(BLACKSMITH_SITE_ID);
+        } else if (planBuilding === 'sawmill') {
+          if (canStartSawmill(sim.metalChain, sim.storehouse.state === 'done', (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) planJobId = buildJobIdFor(SAWMILL_SITE_ID);
+        } else if (planBuilding === 'carpenter') {
+          if (canStartCarpenter(sim.metalChain, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) planJobId = buildJobIdFor(CARPENTER_SITE_ID);
+        } else if (planBuilding === 'workshop') {
+          if (canStartWorkshop(sim.metalChain, sim.foodChain.bakery.state === 'done', (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)), metalChainToolsInRegistry(sim.registry))) planJobId = buildJobIdFor(WORKSHOP_SITE_ID);
+        } else if (planBuilding === 'inn') {
+          if (canStartInn(sim.housing, sim.construction, campWoodInRegistry(sim.registry), storehouseWoodInRegistry(sim.registry), day)) planJobId = buildJobIdFor(INN_SITE_ID);
+        }
+        if (planJobId) {
+          const pClaim = claimJob(sim.board, f.id, planJobId);
+          sim.board = pClaim.board;
+          if (pClaim.job) {
+            // The hut fetch leg (the fixed branch's shape): the pile
+            // short + the storehouse holding a step's wood sends the
+            // builder to fetch first instead of waiting at the site.
+            if (planBuilding === 'hut' && sim.storehouse.state === 'done' && campWoodInRegistry(sim.registry) < HUT_WOOD_PER_STEP && storehouseWoodInRegistry(sim.registry) >= HUT_WOOD_PER_STEP) {
+              f.workState = 'toStorehouse';
+            } else {
+              f.workState = 'toSite';
+            }
+            myJob = pClaim.job;
+          }
+        }
+      }
       if (!hutDone && !builderTaken && (canBuild(construction, campWoodInRegistry(sim.registry)) || (sim.storehouse.state === 'done' && storehouseWoodInRegistry(sim.registry) >= HUT_WOOD_PER_STEP)) && buildSite) {
         const bc = claimJob(sim.board, f.id, buildJobIdFor(buildSite.id));
         sim.board = bc.board;

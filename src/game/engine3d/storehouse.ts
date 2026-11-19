@@ -858,13 +858,20 @@ export function spendBuildStepFromCarried(
  * the build score is 0 then anyway). The scorer's distToSite —
  * the tick, the sim driver, and the wait step all read this one
  * helper, so the three never disagree. Pure.
+ *
+ * BUILD 1100: the optional plan site (the settlement plan's
+ * approach tile) overrides the nearest site — when a plan exists
+ * the founder builds THERE, so the build score must price the
+ * plan's distance, not the nearest site's. Absent = old behaviour.
  */
 export function distToActiveBuildSite(
   pos: { x: number; y: number },
   construction: ConstructionState,
   storehouse: StorehouseState | null | undefined,
   day: number,
+  planSite?: { x: number; y: number } | null,
 ): number {
+  if (planSite) return Math.abs(planSite.x - pos.x) + Math.abs(planSite.y - pos.y);
   // BUILD 1096: pass the day — nearestUnfinishedSite skips a
   // gated worker-housing site (see construction.ts).
   const site = nearestUnfinishedSite(construction, pos, day);

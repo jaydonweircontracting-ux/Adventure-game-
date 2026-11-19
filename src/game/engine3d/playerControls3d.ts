@@ -28,6 +28,7 @@ import {
   roundFounderNeeds, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry,
   type FounderState,
 } from './founders';
+import { planBuildingLabel, type SettlementPlan } from './sitePlan';
 import { closestFounder, memoryCountsFor } from './memory';
 import { professionLabel } from './professions';
 import { jobForFounder, type JobBoard } from './jobs';
@@ -104,6 +105,10 @@ export interface PlayerControlsContext {
   founders: MutableRefObject<FounderState[]>;
   registry: MutableRefObject<ResourceRegistry>;
   jobBoard: MutableRefObject<JobBoard>;
+  // BUILD 1100: the settlement plan (the view's sitePlanRef) —
+  // the E report quotes it. Optional: old callers pass none and
+  // the report omits the plan line.
+  sitePlan?: MutableRefObject<SettlementPlan | null>;
   construction: MutableRefObject<ConstructionState>;
   // BUILD 1087: the storehouse state (the E-key storehouse-site
   // report reads it). Optional: the old callers pass no storehouse
@@ -475,7 +480,7 @@ export function tryMove(ctx: PlayerControlsContext, dx: number, dy: number): voi
  *  Pure so the sim and the standalone asserts can prove the E
  *  line reports the profession and the current work (the probe
  *  proves it live). */
-export function founderExamineMessage(f: FounderState, day: number, job: { kind: string; targetId: string } | null | undefined): string {
+export function founderExamineMessage(f: FounderState, day: number, job: { kind: string; targetId: string } | null | undefined, plan?: SettlementPlan | null): string {
   const n = roundFounderNeeds(f.needs);
   const d = f.lastDecision;
   const why = d ? ' (' + d.top + ' ' + d.topScore.toFixed(2) + ' > ' + d.runnerUp + ' ' + d.runnerUpScore.toFixed(2) + ')' : '';
@@ -491,7 +496,10 @@ export function founderExamineMessage(f: FounderState, day: number, job: { kind:
     rel = ' · closest ' + cl.name + ' ' + Math.round(cl.affinity) + (parts.length ? ' — ' + parts.join(', ') : '');
   }
   const jobLine = job ? ' · job ' + job.kind + ' ' + job.targetId : ' · job —';
-  return f.name + ' (' + professionLabel(f.profession) + '): ' + f.activity + why + ' · hunger ' + n.hunger + ' · energy ' + n.energy + ' · social ' + n.social + ' · health ' + n.health + rel + jobLine;
+  // BUILD 1100: the settlement plan — why THIS building, why HERE
+  // (the Mayor's need + the Architect's site, with the reasons).
+  const planLine = plan ? ' · plan: ' + planBuildingLabel(plan.building) + ' at (' + ((plan.site.rect.x0 + plan.site.rect.x1) / 2) + ',' + ((plan.site.rect.y0 + plan.site.rect.y1) / 2) + ') — need ' + plan.need.toFixed(2) + ' · ' + plan.reasons.join('; ') : '';
+  return f.name + ' (' + professionLabel(f.profession) + '): ' + f.activity + why + ' · hunger ' + n.hunger + ' · energy ' + n.energy + ' · social ' + n.social + ' · health ' + n.health + rel + jobLine + planLine;
 }
 
 export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
@@ -509,6 +517,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
   const foundersRef = ctx.founders;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
+  const sitePlanRef = ctx.sitePlan;
   const constructionRef = ctx.construction;
   const livingWorldRef = ctx.livingWorld;
   const clockRef = ctx.clock;
@@ -601,7 +610,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // founder's actual memories, so the player never sees a
     // count the founder does not remember. Only non-zero counts
     // are shown.
-    if(nearFounder){setMessage(founderExamineMessage(nearFounder,clockRef.current.day,jobForFounder(jobBoardRef.current,nearFounder.id)));return}
+    if(nearFounder){setMessage(founderExamineMessage(nearFounder,clockRef.current.day,jobForFounder(jobBoardRef.current,nearFounder.id),sitePlanRef?sitePlanRef.current:null));return}
     if(FOUNDERS_ENABLED&&Math.abs(FOUNDER_STOCKPILE_TILE.x-p.x)<=1&&Math.abs(FOUNDER_STOCKPILE_TILE.y-p.y)<=1){
       // BUILD 1062: the stockpile tile is the camp's status board —
       // the living-world numbers ride along (forest density from

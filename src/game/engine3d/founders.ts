@@ -115,6 +115,7 @@ import { freshStorehouse, validateStorehouseState, type StorehouseState } from '
 import { freshFoodChain, validateFoodChainState, type FoodChainState } from './foodChain';
 import { freshMetalChain, validateMetalChainState, type MetalChainState } from './metalChain';
 import { freshHousing, validateHousingState, type HousingState } from './housing';
+import type { SettlementPlan } from './sitePlan';
 import type { ProfessionId } from './professions';
 import { professionFromSave } from './professions';
 import type { BridgeSite } from './paths';
@@ -1259,6 +1260,11 @@ export type FoundersSaveState = {
    *  resting travelers) — v12 saves have none and migrate to 0.
    *  No version move (a compatible field). */
   innFoodStock: number;
+  /** BUILD 1100 (0x23, v12): the settlement plan (sitePlan.ts) —
+   *  what to build next, where, and why. v12 saves have none and
+   *  migrate to null (the tick re-plans on the first tick). No
+   *  version move (a compatible field). */
+  sitePlan: SettlementPlan | null;
   /** BUILD 1058: the first hut's construction (v2; v1 saves have
    *  none and migrate to a fresh one). */
   construction: ConstructionState;
@@ -1315,6 +1321,7 @@ export function freshFoundersSave(clockAbs: number): FoundersSaveState {
     metalChain: freshMetalChain(),
     housing: freshHousing(),
     innFoodStock: 0,
+    sitePlan: null,
     bridges: [],
     construction: freshConstruction(),
   };
@@ -1686,7 +1693,13 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
       bridges.push({ id: 'bridge-' + bx + '-' + by, x: bx, y: by, workTile: { x: bwx, y: bwy }, state: bstate, progress: bprogress, spentWood: bspent });
     }
   }
-  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, storehouseCoal, storehouseIngots, storehouseTools, storehouseTimber, storehouseFurniture, mines, foodChain, metalChain, housing, innFoodStock, bridges, construction };
+  // BUILD 1100 (0x23, v12): the settlement plan — v12 saves have
+  // none and migrate to null (the tick re-plans). Carried through
+  // as-is; the deep shape check is sitePlanFromSave (sitePlan.ts)
+  // at the load sites (the mines precedent).
+  const sitePlan: SettlementPlan | null =
+    v.sitePlan && typeof v.sitePlan === 'object' ? (v.sitePlan as SettlementPlan) : null;
+  return { version: FOUNDER_SAVE_VERSION, founders, stockpileWood, foodStock, grainStock, flourStock, stoneStock, storehouse, storehouseWood, storehouseStone, storehouseOre, storehouseCoal, storehouseIngots, storehouseTools, storehouseTimber, storehouseFurniture, mines, foodChain, metalChain, housing, innFoodStock, sitePlan, bridges, construction };
 }
 
 /** Serialize a founders save (the versioned format, for the round-
@@ -1719,7 +1732,7 @@ export function saveFoundersSave(state: FoundersSaveState): void {
 
 /** Runtime state → save shape (needs rounded, session-only fields
  *  dropped). Pure. */
-export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain(), storehouseCoal = 0, storehouseIngots = 0, storehouseTools = 0, storehouseTimber = 0, storehouseFurniture = 0, metalChain: MetalChainState = freshMetalChain(), housing: HousingState = freshHousing(), innFoodStock = 0): FoundersSaveState {
+export function foundersSaveOf(founders: FounderState[], stockpileWood: number, foodStock: number, grainStock: number, stoneStock: number, construction: ConstructionState, storehouseWood = 0, storehouseStone = 0, storehouse: StorehouseState = freshStorehouse(), bridges: BridgeSite[] = [], storehouseOre = 0, mines: MineState = { mines: [], quarry: null, lumber: null, lastDesignateDay: 1 }, flourStock = 0, foodChain: FoodChainState = freshFoodChain(), storehouseCoal = 0, storehouseIngots = 0, storehouseTools = 0, storehouseTimber = 0, storehouseFurniture = 0, metalChain: MetalChainState = freshMetalChain(), housing: HousingState = freshHousing(), innFoodStock = 0, sitePlan: SettlementPlan | null = null): FoundersSaveState {
   return {
     version: FOUNDER_SAVE_VERSION,
     founders: founders.map((f) => ({
@@ -1776,6 +1789,9 @@ export function foundersSaveOf(founders: FounderState[], stockpileWood: number, 
     metalChain: { smelter: { ...metalChain.smelter }, blacksmith: { ...metalChain.blacksmith }, sawmill: { ...metalChain.sawmill }, carpenter: { ...metalChain.carpenter }, workshop: { ...metalChain.workshop } },
     housing: { inn: { ...housing.inn } },
     innFoodStock,
+    sitePlan: sitePlan
+      ? { building: sitePlan.building, site: { rect: { ...sitePlan.site.rect }, door: { ...sitePlan.site.door }, approach: { ...sitePlan.site.approach } }, need: sitePlan.need, reasons: [...sitePlan.reasons], decidedDay: sitePlan.decidedDay }
+      : null,
     bridges: bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })),
     construction: constructionFromSites(sitesOf(construction)),
   };

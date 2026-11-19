@@ -25,9 +25,10 @@ import {
   HUT_CENTRE, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_WOOD_PER_STEP,
   HUT_TICKS_PER_STEP, canBuild, hasReadyHutSite, spendBuildStepFromRegistry, finishConstruction,
   reconcileConstruction, reconcileExtraSites, hutPlacementExists, insideHutRect,
-  hutSiteById, hutSiteIndexById, foundingHutsDone, nearestUnfinishedSite, hasUnfinishedSite,
+  hutSiteById, hutSiteIndexById, foundingHutsDone, housingCapacity, nearestUnfinishedSite, hasUnfinishedSite,
   type ConstructionState,
 } from './construction';
+import { existingBuildingRects, planFor, planNeedsReplan, type SettlementNeedInput, type SettlementPlan } from './sitePlan';
 import { readyFarmTiles, FARM_VILLAGER_RADIUS, waterFarmTile, waterableFarmTiles } from './farm';
 import { soilFactorAt, growthFactorAt } from './livingWorld';
 import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './granary';
@@ -125,6 +126,10 @@ export interface FounderSimContext {
   // BUILD 1096: the housing (the view's housingRef) — the inn,
   // saved in the founders save (v12).
   housing: { current: HousingState };
+  // BUILD 1100: the settlement plan (the view's sitePlanRef) —
+  // the Mayor + Architect decision, saved in the founders save
+  // (v12, a compatible field).
+  sitePlan: { current: SettlementPlan | null };
   registry: { current: ResourceRegistry };
   jobBoard: { current: JobBoard };
   founderPath: Map<string, FounderPathState>;
@@ -164,6 +169,9 @@ export interface WaitSimContext {
   // BUILD 1096: the housing — the wait step reads it for the
   // inn build-job discovery (the same-rule scorer feeds).
   housing: { current: HousingState };
+  // BUILD 1100: the settlement plan — the wait step carries it in
+  // its save (a wait must not wipe the plan to null).
+  sitePlan: { current: SettlementPlan | null };
   registry: { current: ResourceRegistry };
   jobBoard: { current: JobBoard };
   syncLivingWorld: (world: IsoWorld) => boolean;
@@ -225,6 +233,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
   const foodChainRef = ctx.foodChain;
   const metalChainRef = ctx.metalChain;
   const housingRef = ctx.housing;
+  const sitePlanRef = ctx.sitePlan;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const waitingRef = ctx.waiting;
@@ -451,6 +460,43 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         carpenterDone: metalChainRef.current.carpenter.state === 'done',
       };
       assignProfessions(foundersRef.current, professionSlotsFor(professionNeed));
+
+      // BUILD 1100 (0x23, Phase 4.2): the settlement plan — the Mayor
+      // + Architect re-decide what to build next + where, after the
+      // board rebuild, before the founder loop (the same rule as the
+      // sim tick). The plan only changes when its building is done or
+      // no longer startable (planNeedsReplan) — a steady plan is not
+      // re-decided every tick, and the A* site scoring runs only on a
+      // re-plan, never per tick.
+      const planInput: SettlementNeedInput = {
+        day: clock.day,
+        camp: { ...FOUNDER_CAMP },
+        food: campFoodInRegistry(registryRef.current),
+        grain: campGrainInRegistry(registryRef.current),
+        flour: foodChainFlourInRegistry(registryRef.current),
+        beds: housingCapacity(constructionRef.current),
+        population: foundersRef.current.length,
+        waitingArrivals: 0,
+        campWood: campWoodInRegistry(registryRef.current),
+        campStone: campStoneInRegistry(registryRef.current),
+        storehouseWood: storehouseWoodInRegistry(registryRef.current),
+        storehouseIron: storehouseOreInRegistry(registryRef.current, 'iron'),
+        storehouseCoal: metalChainCoalInRegistry(registryRef.current),
+        storehouseIngots: metalChainIngotsInRegistry(registryRef.current),
+        storehouseTools: metalChainToolsInRegistry(registryRef.current),
+        storehouseTimber: metalChainTimberInRegistry(registryRef.current),
+        storehouseFurniture: metalChainFurnitureInRegistry(registryRef.current),
+        construction: constructionRef.current,
+        storehouse: storehouseRef.current,
+        foodChain: foodChainRef.current,
+        metalChain: metalChainRef.current,
+        housing: housingRef.current,
+        bridges: pathsRef.current.bridges,
+        foundingDone,
+      };
+      if (planNeedsReplan(sitePlanRef.current, planInput)) {
+        sitePlanRef.current = planFor(planInput, world, existingBuildingRects(constructionRef.current, storehouseRef.current, foodChainRef.current, metalChainRef.current, housingRef.current));
+      }
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);
         f.needs=decayFounderNeeds(f.needs,elapsed,f.activity);
@@ -540,7 +586,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')),readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day,sitePlanRef.current?.site.approach??null),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')),readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -693,6 +739,28 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // (blocked since discovery) fails the job — the tree is
         // unworkable for everyone, not just this founder.
         if((f.activity==='work'||f.activity==='build')&&f.workState==='toTree'&&!f.treeTarget){
+
+          // BUILD 1100: the plan's building claims FIRST — the Mayor's
+          // pick, not the code order. A free founder attempts the plan's
+          // building with the SAME gate its fixed branch below uses; if
+          // the plan claim fails the fixed branches run as before (the
+          // fallback). A claimed plan job moves the founder off
+          // 'toTree', so the branches below skip.
+          if(sitePlanRef.current&&!builderTaken){
+            const planBuilding=sitePlanRef.current.building;let planJobId:string|null=null;
+            if(planBuilding==='hut'){const planHut=HUT_SITES.find((s)=>s.rect.x0===sitePlanRef.current!.site.rect.x0&&s.rect.y0===sitePlanRef.current!.site.rect.y0);if(!hutDone&&planHut&&(canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))||(storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP)))planJobId=buildJobIdFor(planHut.id);}
+            else if(planBuilding==='storehouse'){if(foundingDone&&canStartStorehouse(storehouseRef.current,clock.day,foundingDone,campWoodInRegistry(registryRef.current),campStoneInRegistry(registryRef.current)))planJobId=buildJobIdFor(STOREHOUSE_SITE_ID);}
+            else if(planBuilding==='bridge'){const planBridge=pathsRef.current.bridges.find((s)=>s.x===sitePlanRef.current!.site.rect.x0&&s.y===sitePlanRef.current!.site.rect.y0);if(foundingDone&&storehouseRef.current.state==='done'&&planBridge&&canStartBridge(planBridge,clock.day,foundingDone,true,campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(planBridge.id);}
+            else if(planBuilding==='mill'){if(constructionRef.current.sites[0]&&constructionRef.current.sites[0].state==='done'&&canStartMill(foodChainRef.current,campGrainInRegistry(registryRef.current),campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(MILL_SITE_ID);}
+            else if(planBuilding==='bakery'){if(canStartBakery(foodChainRef.current,campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(BAKERY_SITE_ID);}
+            else if(planBuilding==='smelter'){if(canStartSmelter(metalChainRef.current,storehouseOreInRegistry(registryRef.current,'iron'),(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(SMELTER_SITE_ID);}
+            else if(planBuilding==='blacksmith'){if(canStartBlacksmith(metalChainRef.current,(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(BLACKSMITH_SITE_ID);}
+            else if(planBuilding==='sawmill'){if(canStartSawmill(metalChainRef.current,storehouseRef.current.state==='done',(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(SAWMILL_SITE_ID);}
+            else if(planBuilding==='carpenter'){if(canStartCarpenter(metalChainRef.current,(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(CARPENTER_SITE_ID);}
+            else if(planBuilding==='workshop'){if(canStartWorkshop(metalChainRef.current,foodChainRef.current.bakery.state==='done',(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current)),metalChainToolsInRegistry(registryRef.current)))planJobId=buildJobIdFor(WORKSHOP_SITE_ID);}
+            else if(planBuilding==='inn'){if(canStartInn(housingRef.current,constructionRef.current,campWoodInRegistry(registryRef.current),storehouseWoodInRegistry(registryRef.current),clock.day))planJobId=buildJobIdFor(INN_SITE_ID);}
+            if(planJobId){const pClaim=claimJob(jobBoardRef.current,f.id,planJobId);jobBoardRef.current=pClaim.board;if(pClaim.job){if(planBuilding==='hut'&&storehouseRef.current.state==='done'&&campWoodInRegistry(registryRef.current)<HUT_WOOD_PER_STEP&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP){f.workState='toStorehouse';}else{f.workState='toSite';}myJob=pClaim.job;}}
+          }
           if(!hutDone&&!builderTaken&&(canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))||(storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP))&&buildSite){
             const bc=claimJob(jobBoardRef.current,f.id,buildJobIdFor(buildSite.id));
             jobBoardRef.current=bc.board;
@@ -1814,6 +1882,7 @@ export function runFounderSimInterval(ctx: FounderSimContext): void {
   const foodChainRef = ctx.foodChain;
   const metalChainRef = ctx.metalChain;
   const housingRef = ctx.housing;
+  const sitePlanRef = ctx.sitePlan;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const waitingRef = ctx.waiting;
@@ -1828,7 +1897,7 @@ export function runFounderSimInterval(ctx: FounderSimContext): void {
       // the registry (the camp store's numbers), not from the plain
       // refs — the registry is the authority, the save is its
       // serialization (v4 shape preserved).
-      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges,storehouseOreInRegistry(registryRef.current,'iron'),minesRef.current,granaryFlourInRegistry(registryRef.current),foodChainRef.current,metalChainCoalInRegistry(registryRef.current),metalChainIngotsInRegistry(registryRef.current),metalChainToolsInRegistry(registryRef.current),metalChainTimberInRegistry(registryRef.current),metalChainFurnitureInRegistry(registryRef.current),metalChainRef.current,housingRef.current,innFoodInRegistry(registryRef.current)));
+      saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges,storehouseOreInRegistry(registryRef.current,'iron'),minesRef.current,granaryFlourInRegistry(registryRef.current),foodChainRef.current,metalChainCoalInRegistry(registryRef.current),metalChainIngotsInRegistry(registryRef.current),metalChainToolsInRegistry(registryRef.current),metalChainTimberInRegistry(registryRef.current),metalChainFurnitureInRegistry(registryRef.current),metalChainRef.current,housingRef.current,innFoodInRegistry(registryRef.current),sitePlanRef.current));
 }
 
 // One wait step: advance the clock, sync the living world, rebuild the
@@ -1848,6 +1917,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
   const foodChainRef = ctx.foodChain;
   const metalChainRef = ctx.metalChain;
   const housingRef = ctx.housing;
+  const sitePlanRef = ctx.sitePlan;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const { syncLivingWorld, setClockUi } = ctx;
@@ -1931,7 +2001,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
             // any) names the current work; a founder holding
             // nothing has no current job.
             nearestTreeDist:scorerTreeDist(jobBoardRef.current,wf.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),
-            distToSite:distToActiveBuildSite({x:Math.round(wf.x),y:Math.round(wf.y)},constructionRef.current,storehouseRef.current,clockRef.current.day),
+            distToSite:distToActiveBuildSite({x:Math.round(wf.x),y:Math.round(wf.y)},constructionRef.current,storehouseRef.current,clockRef.current.day,sitePlanRef.current?.site.approach??null),
             builderTaken:(()=>{const b=buildJobClaimedBy(jobBoardRef.current);return b!==null&&b!==wf.id;})(),
             currentJob:(()=>{const j=jobForFounder(jobBoardRef.current,wf.id);return j?(j.kind==='build'?'build':'chop'):null;})(),
             closestAffinity:wClosest?wClosest.affinity:50,
@@ -1977,6 +2047,6 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
         // the registry (the camp store's numbers), not from the
         // plain refs — the registry is the authority, the save is
         // its serialization (v4 shape preserved).
-        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges,storehouseOreInRegistry(registryRef.current,'iron'),minesRef.current,granaryFlourInRegistry(registryRef.current),foodChainRef.current,metalChainCoalInRegistry(registryRef.current),metalChainIngotsInRegistry(registryRef.current),metalChainToolsInRegistry(registryRef.current),metalChainTimberInRegistry(registryRef.current),metalChainFurnitureInRegistry(registryRef.current),metalChainRef.current,housingRef.current,innFoodInRegistry(registryRef.current)));
+        saveFoundersSave(foundersSaveOf(foundersRef.current,campWoodInRegistry(registryRef.current),campFoodInRegistry(registryRef.current),campGrainInRegistry(registryRef.current),campStoneInRegistry(registryRef.current),constructionRef.current,storehouseWoodInRegistry(registryRef.current),storehouseStoneInRegistry(registryRef.current),storehouseRef.current,pathsRef.current.bridges,storehouseOreInRegistry(registryRef.current,'iron'),minesRef.current,granaryFlourInRegistry(registryRef.current),foodChainRef.current,metalChainCoalInRegistry(registryRef.current),metalChainIngotsInRegistry(registryRef.current),metalChainToolsInRegistry(registryRef.current),metalChainTimberInRegistry(registryRef.current),metalChainFurnitureInRegistry(registryRef.current),metalChainRef.current,housingRef.current,innFoodInRegistry(registryRef.current),sitePlanRef.current));
       }
 }

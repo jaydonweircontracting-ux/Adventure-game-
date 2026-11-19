@@ -12537,6 +12537,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     foodChain: { current: sim1070.foodChain },
     metalChain: { current: sim1070.metalChain },
     housing: { current: sim1070.housing },
+    sitePlan: { current: null },
     founderPath: sim1070.paths,
     getPlayerPos: () => ({ x: 100, y: 100 }), // far from camp (see asserts1070)
     npcActors: { current: [] },
@@ -12584,6 +12585,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     foodChain: { current: sim1070.foodChain },
     metalChain: { current: sim1070.metalChain },
     housing: { current: sim1070.housing },
+    sitePlan: { current: null },
     syncLivingWorld: () => false, setClockUi: () => {},
   };
   const pos1070 = sim1070.founders.map((f: { x: number; y: number }) => [f.x, f.y].join(',')).join(';');
@@ -16076,6 +16078,109 @@ console.log('Testing river rendering — banks, water tint, minimap river band (
   assert(forestTrees1099 !== undefined && forestTrees1099.cells.length === 1, 'M1099: the tree on the bank tile paints as forest');
   assert(MM.MINIMAP3D_BANK_COLOR === '#c2a86a' && MM.terrainColor3d('water') === '#2a5aaa', 'M1099: the minimap bank colour is sand and the water stays the ocean blue');
   console.log('M1099: river rendering verified (banks, water tint, minimap river band; the red dots did not reproduce in 5 probes / 130+ shots, so no animal rendering changed — see verify1099/PROGRESS.md)');
+}
+
+console.log('Testing construction intelligence — the settlement plan (BUILD 1100, 0x23)...');
+{
+  const SP = await import('../src/game/engine3d/sitePlan.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const ST = await import('../src/game/engine3d/storehouse.js');
+  const PC = await import('../src/game/engine3d/playerControls3d.js');
+  const CC = await import('../src/game/engine3d/controlCenter.js');
+  const RV = await import('../src/game/engine3d/rivers.js');
+  const G = await import('../src/game/engine3d/geology.js');
+  // --- The plan on a fresh settlement: the first hut, site 1. ---
+  const world1100 = W.defaultWorld();
+  RV.stampRivers(world1100);
+  G.stampMineralDeposits(world1100);
+  const sim1100 = SS.createSettlementSim(world1100);
+  const input1100 = {
+    day: 1, camp: { x: 124, y: 120 }, food: 0, grain: 0, flour: 0, beds: 0, population: 3, waitingArrivals: 0,
+    campWood: 0, campStone: 0, storehouseWood: 0, storehouseIron: 0, storehouseCoal: 0, storehouseIngots: 0, storehouseTools: 0, storehouseTimber: 0, storehouseFurniture: 0,
+    construction: sim1100.construction, storehouse: sim1100.storehouse, foodChain: sim1100.foodChain, metalChain: sim1100.metalChain, housing: sim1100.housing, bridges: [], foundingDone: false,
+  };
+  const rects1100 = SP.existingBuildingRects(sim1100.construction, sim1100.storehouse, sim1100.foodChain, sim1100.metalChain, sim1100.housing);
+  const plan1100 = SP.planFor(input1100, world1100, rects1100);
+  assert(plan1100 !== null && plan1100.building === 'hut', 'M1100: the fresh settlement plans a hut first (the Mayor scores beds first)');
+  assert(plan1100 !== null && plan1100.site.rect.x0 === 122 && plan1100.site.rect.y0 === 115, 'M1100: the first hut plan is site 1 (the construction sequence — the Architect validates, does not re-order)');
+  assert(plan1100 !== null && plan1100.reasons.length > 0, 'M1100: the plan carries its reasons (why this building, why here)');
+  assert(SP.planNeedsReplan(null, input1100) === true, 'M1100: no plan re-plans');
+  assert(plan1100 !== null && SP.planNeedsReplan(plan1100, input1100) === false, 'M1100: a fresh hut plan stands (the hut is not done and still startable)');
+  assert(F.FOUNDER_SAVE_VERSION === 12, 'M1100: founders save stays v12 (the plan rides as a compatible field)');
+  // --- distToSite prices the plan's site, not the nearest site. ---
+  const distPlan1100 = ST.distToActiveBuildSite({ x: 130, y: 122 }, sim1100.construction, sim1100.storehouse, 1, plan1100 !== null ? plan1100.site.approach : null);
+  const distNoPlan1100 = ST.distToActiveBuildSite({ x: 130, y: 122 }, sim1100.construction, sim1100.storehouse, 1);
+  assert(distPlan1100 === 10, 'M1100: with a plan the build distance is to the plan site (10 from (130,122) to the site-1 approach (124,118))');
+  assert(distNoPlan1100 === 2, 'M1100: without a plan the build distance is to the nearest site (2 to the site-0 approach (128,122))');
+  // --- The E report explains the plan; the Control Center lists it. ---
+  const msg1100 = PC.founderExamineMessage(sim1100.founders[0], 1, null, plan1100);
+  assert(msg1100.includes('plan:') && msg1100.includes('Hut'), 'M1100: the E report names the plan building (Hut)');
+  assert(PC.founderExamineMessage(sim1100.founders[0], 1, null, null).includes('plan:') === false, 'M1100: no plan, no plan line in the E report');
+  const inputCC1100 = {
+    speed: 1, day: 1, minutes: 480,
+    founders: [{ id: 'founder-Marlow', name: 'Marlow', activity: 'work', workState: 'chopping', health: 80, hunger: 70, energy: 60, social: 55, jobKind: 'chop', jobTarget: 'tree:133,120', carrying: 0, carryingGrain: 0 }],
+    sites: [], hutDone: false,
+    camp: { wood: 0, food: 0, grain: 0, flour: 0, stone: 0 },
+    player: { wood: 0, stone: 0, gold: 0, grain: 0 },
+    carried: [{ id: 'founder-Marlow', wood: 0, grain: 0, stone: 0, iron: 0 }],
+    deposits: { wood: 800, stone: 40 },
+    totalWoodAvailable: 800, totalStoneAvailable: 40,
+    jobs: { open: 200, claimed: 0, completed: 0, failed: 0, chopOpen: 200, chopClaimed: 0, buildOpen: 0, buildClaimed: 0, deliverOpen: 0, deliverClaimed: 0, harvestOpen: 0, harvestClaimed: 0, quarryOpen: 0, quarryClaimed: 0, lastFailedId: null, lastFailedReason: null },
+    livingWorld: null,
+    farm: { planted: 4, growing: 0, ready: 0 },
+    perf: { rebuilds: 0, maxStepMsMoving: 0, lastBuildMs: 0, lastBuildFrames: 0 },
+  };
+  const ccPlan1100 = CC.formatControlCenterData({ ...inputCC1100, sitePlan: plan1100 });
+  assert(ccPlan1100.construction.plan !== null && ccPlan1100.construction.plan.building === 'Hut' && ccPlan1100.construction.plan.reasons.length > 0, 'M1100: the Control Center lists the plan (Hut + reasons)');
+  const ccNoPlan1100 = CC.formatControlCenterData(inputCC1100);
+  assert(ccNoPlan1100.construction.plan === null, 'M1100: no plan input, no plan in the Control Center');
+  // --- The 24h run: the plan walks the chain, the numbers hold. ---
+  const world24_1100 = W.defaultWorld();
+  const sim24_1100 = SS.createSettlementSim(world24_1100);
+  const seen1100 = new Set<string>();
+  for (let i = 0; i < 1600; i += 25) {
+    SS.advanceSettlement(sim24_1100, 25);
+    if (sim24_1100.sitePlan) seen1100.add(sim24_1100.sitePlan.building);
+  }
+  const L24_1100 = sim24_1100.ledger;
+  assert(seen1100.has('hut') && seen1100.has('mill') && seen1100.has('bakery'), 'M1100: the plan walks hut -> mill -> bakery in 24h (the Mayor re-decides as buildings finish)');
+  assert(L24_1100.ticks === 1600, 'M1100: the 24h run counts 1600 ticks');
+  assert(L24_1100.woodChopped === 54 && L24_1100.woodDelivered === 48 && L24_1100.woodSpent === 24, 'M1100: 24h wood 54/48/24 — the plan does not move M1069 (the plan-first claim follows the same order the fixed branches already built)');
+  assert(L24_1100.grainHarvested === 62 && L24_1100.grainDelivered === 62, 'M1100: 24h grain 62/62 (M1069 identical)');
+  assert(L24_1100.mealsBaked === 27 && L24_1100.mealsEaten === 12, 'M1100: 24h meals 27/12 (M1069 identical)');
+  assert(L24_1100.flourMilled === 62 && L24_1100.flourBaked === 54, 'M1100: 24h flour 62/54 (M1069 identical)');
+  assert(L24_1100.millsCompleted === 1 && L24_1100.bakeriesCompleted === 1 && L24_1100.hutsCompleted === 2, 'M1100: mill + bakery + both huts complete in 24h (the plan builds the right buildings)');
+  assert(L24_1100.jobsCompleted.chop === 27 && L24_1100.jobsCompleted.build === 4 && L24_1100.jobsCompleted.harvest === 31, 'M1100: 24h jobs chop/build/harvest 27/4/31 (M1069 identical)');
+  assert(L24_1100.starvedTicks === 0 && Math.round(L24_1100.minHealth) === 100, 'M1100: nobody starves in 24h (M1069 identical)');
+  assert(sim24_1100.founders.length === 6, 'M1100: the population is 6 (M1069 identical)');
+  const finalWood1100 = F.campWoodInRegistry(sim24_1100.registry);
+  const finalFood1100 = F.campFoodInRegistry(sim24_1100.registry);
+  const finalGrain1100 = SS.settlementGrain(sim24_1100);
+  const finalFlour1100 = FC.foodChainFlourInRegistry(sim24_1100.registry);
+  assert(finalWood1100 === 12 && finalFood1100 === 15 && finalGrain1100 === 0 && finalFlour1100 === 8, 'M1100: final wood/food/grain/flour 12/15/0/8 (M1069 identical)');
+  console.log('M1100 24h: ticks=' + L24_1100.ticks + ' wood chopped/delivered/spent=' + L24_1100.woodChopped + '/' + L24_1100.woodDelivered + '/' + L24_1100.woodSpent + ' grain harvested/delivered=' + L24_1100.grainHarvested + '/' + L24_1100.grainDelivered + ' meals baked/eaten=' + L24_1100.mealsBaked + '/' + L24_1100.mealsEaten + ' flour milled/baked=' + L24_1100.flourMilled + '/' + L24_1100.flourBaked + ' mills/bakeries=' + L24_1100.millsCompleted + '/' + L24_1100.bakeriesCompleted + ' jobs chop/build/deliver/harvest=' + L24_1100.jobsCompleted.chop + '/' + L24_1100.jobsCompleted.build + '/' + L24_1100.jobsCompleted.deliver + '/' + L24_1100.jobsCompleted.harvest + ' huts=' + L24_1100.hutsCompleted + ' arrivals=' + (L24_1100.arrivals.join(',') || 'none') + ' starvedTicks=' + L24_1100.starvedTicks + ' minHealth=' + Math.round(L24_1100.minHealth) + ' final wood/food/grain/flour=' + finalWood1100 + '/' + finalFood1100 + '/' + finalGrain1100 + '/' + finalFlour1100 + ' population=' + sim24_1100.founders.length + ' planBuildings=' + [...seen1100].join(','));
+  // --- Save/reload mid-run: the plan survives. ---
+  const worldSave1100 = W.defaultWorld();
+  const simSave1100 = SS.createSettlementSim(worldSave1100);
+  SS.advanceSettlement(simSave1100, 100);
+  const planBefore1100 = simSave1100.sitePlan;
+  assert(planBefore1100 !== null && planBefore1100.building === 'hut', 'M1100: a plan is live at tick 100 (the first hut is being built)');
+  const save1100 = SS.serializeSettlement(simSave1100);
+  const restored1100 = SS.restoreSettlement(worldSave1100, save1100, simSave1100.abs, simSave1100.ledger);
+  assert(restored1100.sitePlan !== null && planBefore1100 !== null && restored1100.sitePlan.building === planBefore1100.building && restored1100.sitePlan.site.rect.x0 === planBefore1100.site.rect.x0 && restored1100.sitePlan.site.rect.y0 === planBefore1100.site.rect.y0 && restored1100.sitePlan.need === planBefore1100.need && restored1100.sitePlan.reasons.join('|') === planBefore1100.reasons.join('|'), 'M1100: the reload restores the plan (building + site + need + reasons, founders save still v12)');
+  // --- The week run: the pins hold. ---
+  const worldWeek1100 = W.defaultWorld();
+  const simWeek1100 = SS.createSettlementSim(worldWeek1100);
+  SS.advanceSettlement(simWeek1100, 11200);
+  const LWeek1100 = simWeek1100.ledger;
+  assert(LWeek1100.ticks === 11200, 'M1100: the week run counts 11200 ticks');
+  assert(simWeek1100.founders.length === 7, 'M1100: Tessa arrives in the week (population 7)');
+  assert(LWeek1100.starvedTicks === 1419 && Math.round(LWeek1100.minHealth) === 89, 'M1100: the week stays at the pinned residual 1419/89 (the plan does not move the week — it builds the same buildings in the same order)');
+  console.log('M1100 week run: ticks=' + LWeek1100.ticks + ' starvedTicks=' + LWeek1100.starvedTicks + ' minHealth=' + Math.round(LWeek1100.minHealth) + ' population=' + simWeek1100.founders.length);
+  console.log('M1100: construction intelligence verified (the plan: Mayor need + Architect site, plan-first claims in both ticks, distToSite prices the plan, E + Control Center explain it, save v12, M1069 identical, week 1419/89)');
 }
 
 // ---- Results ----
