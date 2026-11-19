@@ -321,9 +321,22 @@ export const LAKE_FOAM_HI = 0.94;
  *  runs first anyway. */
 export const STONE_ELEV = 0.75;
 
+/** BUILD 1099: true when a water tile is river (or placed) water — east
+ *  of the ocean coast, outside the pond rect, and not a wild lake.
+ *  Rivers are the only water left after those three are excluded, so
+ *  a river tile is identified by elimination, not by a separate list. */
+export function isRiverWater(effTerrain: (x: number, y: number) => Terrain, x: number, y: number): boolean {
+  if (effTerrain(x, y) !== 'water') return false;
+  if (x < oceanCoastX(y)) return false;
+  if (x >= POND_RECT.x0 && x <= POND_RECT.x1 && y >= POND_RECT.y0 && y <= POND_RECT.y1) return false;
+  if (wildLakeAt(x, y)) return false;
+  return true;
+}
+
 /** True when a grass tile is shore sand: within 3 tiles east of the
- *  ocean coast, within 2 of the pond rect, or on the grass side of a
- *  wild lake's edge. The lake band needs a REAL lake next door, not
+ *  ocean coast, within 2 of the pond rect, on the grass side of a
+ *  wild lake's edge, or next to river water (BUILD 1099).
+ *  The lake band needs a REAL lake next door, not
  *  just the lake field in range: the field is a global noise function
  *  and also reads in-band on in-map grass, where it is not the terrain
  *  — so the band is only a cheap pre-filter, and a direct neighbour
@@ -334,6 +347,14 @@ export function isShoreSand(effTerrain: (x: number, y: number) => Terrain, t: Te
   const coast = oceanCoastX(y);
   if (x >= coast && x < coast + SHORE_SAND_DIST) return true;
   if (x >= POND_RECT.x0 - 2 && x <= POND_RECT.x1 + 2 && y >= POND_RECT.y0 - 2 && y <= POND_RECT.y1 + 2) return true;
+  // BUILD 1099: river banks — grass next to river/placed water renders
+  // as sand, so a river reads as water with banks instead of a flat
+  // blue strip cut straight into grass. (Ocean/pond/lake water is
+  // excluded by isRiverWater, so their own shore rules still own them.)
+  if ((effTerrain(x - 1, y) === 'water' && isRiverWater(effTerrain, x - 1, y))
+    || (effTerrain(x + 1, y) === 'water' && isRiverWater(effTerrain, x + 1, y))
+    || (effTerrain(x, y - 1) === 'water' && isRiverWater(effTerrain, x, y - 1))
+    || (effTerrain(x, y + 1) === 'water' && isRiverWater(effTerrain, x, y + 1))) return true;
   const n = lakeNoiseAt(x, y);
   if (n <= LAKE_SHORE_LO || n > WILD_LAKE_THRESHOLD) return false;
   // Lake edge: a direct neighbour is lake water.

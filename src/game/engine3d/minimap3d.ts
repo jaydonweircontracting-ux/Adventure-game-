@@ -95,6 +95,9 @@ export const MINIMAP3D_BG_COLOR = '#1a2a1a';
  *  already imports terrainColor3d from this module, so importing
  *  the colour back would cycle the two modules. */
 export const MINIMAP3D_FOREST_COLOR = '#2a5a2a';
+/** River bank on the minimap (BUILD 1099): grass/dirt next to water
+ *  paints as sand, so the river reads as a band, not a thin line. */
+export const MINIMAP3D_BANK_COLOR = '#c2a86a';
 /** Circle border (2D: white, 2px). */
 export const MINIMAP3D_BORDER_COLOR = '#ffffff';
 
@@ -209,6 +212,24 @@ export function buildMinimap3dFrame(input: Minimap3dFrameInput): Minimap3dFrame 
   const px = Math.round(playerX);
   const py = Math.round(playerY);
   const byColor = new Map<string, { x: number; y: number }[]>();
+  // BUILD 1099: grid-first — capture the raw terrain window once so a
+  // bank check can read neighbours without extra terrainAt calls.
+  const gridSize = MINIMAP3D_RANGE_TILES * 2 + 1;
+  const grid: Terrain[] = new Array(gridSize * gridSize);
+  for (let gy = 0; gy < gridSize; gy++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      grid[gy * gridSize + gx] = terrainAt(px - MINIMAP3D_RANGE_TILES + gx, py - MINIMAP3D_RANGE_TILES + gy);
+    }
+  }
+  const gridAt = (tx: number, ty: number): Terrain | null => {
+    const gx = tx - (px - MINIMAP3D_RANGE_TILES);
+    const gy = ty - (py - MINIMAP3D_RANGE_TILES);
+    if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) return null;
+    return grid[gy * gridSize + gx];
+  };
+  const nextToWater = (tx: number, ty: number): boolean =>
+    gridAt(tx - 1, ty) === 'water' || gridAt(tx + 1, ty) === 'water'
+    || gridAt(tx, ty - 1) === 'water' || gridAt(tx, ty + 1) === 'water';
   for (let ty = py - MINIMAP3D_RANGE_TILES; ty <= py + MINIMAP3D_RANGE_TILES; ty++) {
     for (let tx = px - MINIMAP3D_RANGE_TILES; tx <= px + MINIMAP3D_RANGE_TILES; tx++) {
       // Tile centre in canvas px; the tile paints as one 2px square.
@@ -218,10 +239,16 @@ export function buildMinimap3dFrame(input: Minimap3dFrameInput): Minimap3dFrame 
       // — the forest patches read on the map day and night (the map
       // takes no night shading). One terrainAt call per tile, same as
       // before; the tree test is a Set lookup + hash, not a scan.
-      const t = terrainAt(tx, ty);
+      const t = gridAt(tx, ty) ?? 'grass';
+      // BUILD 1099: forest first, then river banks (grass/dirt next to
+      // water paints as sand). Water keeps terrainColor3d('water') —
+      // the M1053/M1054 pins own that colour, and the banks alone make
+      // the river read as a band.
       const color = t === 'grass' && input.treeAt && input.treeAt(tx, ty)
         ? MINIMAP3D_FOREST_COLOR
-        : terrainColor3d(t);
+        : (t === 'grass' || t === 'dirt') && nextToWater(tx, ty)
+          ? MINIMAP3D_BANK_COLOR
+          : terrainColor3d(t);
       let cells = byColor.get(color);
       if (!cells) { cells = []; byColor.set(color, cells); }
       cells.push({ x: c.x - MINIMAP3D_PX_PER_TILE / 2, y: c.y - MINIMAP3D_PX_PER_TILE / 2 });

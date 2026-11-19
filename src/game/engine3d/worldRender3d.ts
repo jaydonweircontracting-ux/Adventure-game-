@@ -56,7 +56,7 @@ type Vertex = number[];
 
 const COLORS: Record<string, Vec3> = {
   grass: [0.31, 0.41, 0.22], dirt: DIRT_TAN, sand: [0.68, 0.59, 0.39],
-  stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
+  stone: [0.48, 0.49, 0.46], water: [0.10, 0.33, 0.52], // BUILD 1099: deeper, more natural water blue (was [0.12,0.36,0.57])
   // BUILD 1034: foam — the pale water edge (Stage 2 shores). Display
   // only; walkability still reads the water terrain underneath.
   foam: [0.72, 0.84, 0.87],

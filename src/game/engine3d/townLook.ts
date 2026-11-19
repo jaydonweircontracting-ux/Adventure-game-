@@ -490,8 +490,10 @@ export function groundElevation(x: number, z: number): number {
  *  them on two-octave smooth value noise (8-tile rolling variation +
  *  2.5-tile fine grain) instead of the tile hash, so the field is
  *  continuous: a tile's colour no longer depends on which ring renders
- *  it, and ring boundaries are invisible. Water gets no tint: a flat
- *  water plane reads better. Baked at build time — zero runtime cost.
+ *  it, and ring boundaries are invisible. Water gets a small
+ *  blue-weighted tint (BUILD 1099): a perfectly flat water plane reads
+ *  as a painted strip, so a subtle per-corner variation breaks the
+ *  flatness without noise. Baked at build time — zero runtime cost.
  *  CALLERS MUST EVALUATE THIS PER VERTEX (corner), not once per quad:
  *  a per-quad sample of even a smooth field reintroduces the blocks
  *  (one flat colour per cell). Engine3DWorldView's ground emission
@@ -515,7 +517,7 @@ export function groundTintDelta(terrain: string, x: number, y: number): Rgb {
     case 'dirt': return [n * 0.15, n * 0.12, n2 * 0.09];
     case 'sand': return [n * 0.12, n * 0.09, n2 * 0.06];
     case 'stone': return [n * 0.09, n * 0.09, n * 0.09];
-    case 'water': return [0, 0, 0];
+    case 'water': return [n * 0.02, n * 0.03, n2 * 0.06];
     default: return [n * 0.03, n * 0.03, n * 0.03];
   }
 }

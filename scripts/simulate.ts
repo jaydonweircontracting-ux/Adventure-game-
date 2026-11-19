@@ -16019,6 +16019,65 @@ console.log('Testing professions — the 15 professions as data, profession weig
   console.log('M1098: professions verified (15 as data, scorer weights, assignment by need, E reports profession + work, save v12, 24h run, week run)');
 }
 
+console.log('Testing river rendering — banks, water tint, minimap river band (BUILD 1099, 0x22)...');
+{
+  const WT = await import('../src/game/engine3d/wildTerrain.js');
+  const TL = await import('../src/game/engine3d/townLook.js');
+  const MM = await import('../src/game/engine3d/minimap3d.js');
+  // Test tiles (verified against the real modules): (100,100) is east of
+  // the ocean coast (8.38 at y=100), outside the pond rect (119-123,
+  // 81-85), and not a wild lake. (2,100) is ocean. (121,83) is the pond.
+  // (160,24) is a wild lake.
+  const riverEff = (x: number, y: number): string => (x === 100 && y === 100 ? 'water' : 'grass');
+  const oceanEff = (x: number, y: number): string => (x === 2 && y === 100 ? 'water' : 'grass');
+  const pondEff = (x: number, y: number): string => (x === 121 && y === 83 ? 'water' : 'grass');
+  const lakeEff = (x: number, y: number): string => (x === 160 && y === 24 ? 'water' : 'grass');
+  // --- isRiverWater identifies river water by elimination. ---
+  assert(WT.isRiverWater(riverEff as never, 100, 100) === true, 'M1099: a river tile is river water');
+  assert(WT.isRiverWater(riverEff as never, 100, 101) === false, 'M1099: grass is not river water');
+  assert(WT.isRiverWater(oceanEff as never, 2, 100) === false, 'M1099: ocean water is not river water');
+  assert(WT.isRiverWater(pondEff as never, 121, 83) === false, 'M1099: pond water is not river water');
+  assert(WT.isRiverWater(lakeEff as never, 160, 24) === false, 'M1099: wild-lake water is not river water');
+  // --- River banks: grass next to a river renders as sand. ---
+  assert(WT.isShoreSand(riverEff as never, 'grass', 100, 101) === true, 'M1099: grass south of a river is shore sand');
+  assert(WT.isShoreSand(riverEff as never, 'grass', 100, 99) === true, 'M1099: grass north of a river is shore sand');
+  assert(WT.isShoreSand(riverEff as never, 'grass', 99, 100) === true, 'M1099: grass west of a river is shore sand');
+  assert(WT.isShoreSand(riverEff as never, 'grass', 101, 100) === true, 'M1099: grass east of a river is shore sand');
+  assert(WT.isShoreSand(riverEff as never, 'grass', 105, 105) === false, 'M1099: grass far from any water is not shore sand');
+  assert(WT.renderTerrain(riverEff as never, 100, 101) === 'sand', 'M1099: renderTerrain paints river-adjacent grass as sand');
+  assert(WT.renderTerrain(riverEff as never, 100, 100) === 'water', 'M1099: the river tile itself stays water');
+  assert(WT.isFoam('water', 100, 100) === false, 'M1099: river water is not foam (no pale wash over the whole 1-tile river)');
+  // --- Water tint: a small blue-weighted per-corner variation, not flat zero. ---
+  const w1099 = TL.groundTintDelta('water', 100, 100);
+  assert(Math.abs(w1099[0]) + Math.abs(w1099[1]) + Math.abs(w1099[2]) > 0.001, 'M1099: the water tint is not flat zero');
+  assert(Math.abs(w1099[0]) <= 0.03 && Math.abs(w1099[1]) <= 0.03 && Math.abs(w1099[2]) <= 0.06, 'M1099: the water tint stays subtle (bounded)');
+  const w1099b = TL.groundTintDelta('water', 100, 100);
+  assert(w1099[0] === w1099b[0] && w1099[1] === w1099b[1] && w1099[2] === w1099b[2], 'M1099: the water tint is deterministic');
+  const w1099c = TL.groundTintDelta('water', 150, 150);
+  assert(w1099[2] !== w1099c[2], 'M1099: the water tint varies by position (no flat plane)');
+  // --- Minimap: river water brighter, river-adjacent grass/dirt as banks. ---
+  const frame1099 = MM.buildMinimap3dFrame({
+    terrainAt: riverEff as never, treeAt: () => false,
+    playerX: 100, playerY: 100,
+    huts: [], stalls: [], placements: [], landmarks: [], npcs: [],
+  } as never);
+  const group1099 = (color: string) => frame1099.terrainByColor.find((g: { color: string }) => g.color === color);
+  assert(group1099(MM.terrainColor3d('water')) !== undefined && group1099(MM.terrainColor3d('water'))!.cells.length === 1, 'M1099: the minimap paints the river tile the ocean blue (1 cell — the M1053/M1054 pins own that colour)');
+  assert(group1099(MM.MINIMAP3D_BANK_COLOR) !== undefined && group1099(MM.MINIMAP3D_BANK_COLOR)!.cells.length >= 4, 'M1099: the minimap paints the 4 river-adjacent grass tiles as banks');
+  assert(group1099('#3a6a3a') !== undefined, 'M1099: the minimap still paints the rest as grass');
+  const frameTrees1099 = MM.buildMinimap3dFrame({
+    terrainAt: riverEff as never, treeAt: (x: number, y: number) => x === 101 && y === 100,
+    playerX: 100, playerY: 100,
+    huts: [], stalls: [], placements: [], landmarks: [], npcs: [],
+  } as never);
+  const bankTrees1099 = frameTrees1099.terrainByColor.find((g: { color: string }) => g.color === MM.MINIMAP3D_BANK_COLOR);
+  const forestTrees1099 = frameTrees1099.terrainByColor.find((g: { color: string }) => g.color === MM.MINIMAP3D_FOREST_COLOR);
+  assert(bankTrees1099 !== undefined && bankTrees1099.cells.length === 3, 'M1099: a tree on a bank tile removes it from the bank group (3 banks left)');
+  assert(forestTrees1099 !== undefined && forestTrees1099.cells.length === 1, 'M1099: the tree on the bank tile paints as forest');
+  assert(MM.MINIMAP3D_BANK_COLOR === '#c2a86a' && MM.terrainColor3d('water') === '#2a5aaa', 'M1099: the minimap bank colour is sand and the water stays the ocean blue');
+  console.log('M1099: river rendering verified (banks, water tint, minimap river band; the red dots did not reproduce in 5 probes / 130+ shots, so no animal rendering changed — see verify1099/PROGRESS.md)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
