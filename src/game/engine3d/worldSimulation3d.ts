@@ -29,6 +29,7 @@ import {
   type ConstructionState,
 } from './construction';
 import { existingBuildingRects, planFor, planNeedsReplan, type SettlementNeedInput, type SettlementPlan } from './sitePlan';
+import { advanceFoundingTick, type FoundingState } from './founding';
 import { readyFarmTiles, FARM_VILLAGER_RADIUS, waterFarmTile, waterableFarmTiles } from './farm';
 import { soilFactorAt, growthFactorAt } from './livingWorld';
 import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './granary';
@@ -130,6 +131,9 @@ export interface FounderSimContext {
   // the Mayor + Architect decision, saved in the founders save
   // (v12, a compatible field).
   sitePlan: { current: SettlementPlan | null };
+  // BUILD 1101: the founding party (the view's foundingRef) —
+  // session-only, stepped once per founder tick.
+  founding: { current: FoundingState | null };
   registry: { current: ResourceRegistry };
   jobBoard: { current: JobBoard };
   founderPath: Map<string, FounderPathState>;
@@ -234,6 +238,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
   const metalChainRef = ctx.metalChain;
   const housingRef = ctx.housing;
   const sitePlanRef = ctx.sitePlan;
+  const foundingRef = ctx.founding;
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const waitingRef = ctx.waiting;
@@ -496,6 +501,15 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       };
       if (planNeedsReplan(sitePlanRef.current, planInput)) {
         sitePlanRef.current = planFor(planInput, world, existingBuildingRects(constructionRef.current, storehouseRef.current, foodChainRef.current, metalChainRef.current, housingRef.current));
+      }
+      // BUILD 1101 (0x24, Phase 4.3): the founding party — one step
+      // per founder tick (0.9 game-min), after the plan refresh. A
+      // founding that fells a tree or stamps a placement dirties the
+      // world like a founder build does.
+      if (foundingRef.current) {
+        const foundingPlayer = ctx.getPlayerPos();
+        const foundingRes = advanceFoundingTick(foundingRef.current, world, { playerTile: { x: Math.round(foundingPlayer.x), y: Math.round(foundingPlayer.y) }, npcTiles: foundersRef.current.map((o) => ({ x: Math.round(o.x), y: Math.round(o.y) })) });
+        if (foundingRes.worldDirty) worldDirty = true;
       }
       for(const f of founders){
         const elapsed=Math.max(0,nowAbs-f.lastAbs);

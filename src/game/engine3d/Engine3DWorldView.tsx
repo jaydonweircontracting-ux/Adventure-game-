@@ -26,6 +26,7 @@ import { MILL_CENTRE, MILL_RECT, MILL_DOOR, MILL_APPROACH, BAKERY_CENTRE, BAKERY
 import { SMELTER_CENTRE, SMELTER_RECT, SMELTER_DOOR, SMELTER_APPROACH, BLACKSMITH_CENTRE, BLACKSMITH_RECT, BLACKSMITH_DOOR, BLACKSMITH_APPROACH, SAWMILL_CENTRE, SAWMILL_RECT, SAWMILL_DOOR, SAWMILL_APPROACH, CARPENTER_CENTRE, CARPENTER_RECT, CARPENTER_DOOR, CARPENTER_APPROACH, WORKSHOP_CENTRE, WORKSHOP_RECT, WORKSHOP_DOOR, WORKSHOP_APPROACH, freshMetalChain, reconcileMetalChain, smelterPlacementExists, blacksmithPlacementExists, sawmillPlacementExists, carpenterPlacementExists, workshopPlacementExists, workshopStallReason, metalChainCoalInRegistry, metalChainIngotsInRegistry, metalChainToolsInRegistry, metalChainTimberInRegistry, metalChainFurnitureInRegistry, type MetalChainState } from './metalChain';
 import { INN_APPROACH, INN_CENTRE, INN_RECT, INN_DOOR, INN_SITE_ID, MARKET_STALL_TILE, freshHousing, reconcileHousing, seedInnStore, innFoodInRegistry, innPlacementExists, marketStallListing, nightSleepers, type HousingState } from './housing';
 import { sitePlanFromSave, type SettlementPlan } from './sitePlan';
+import { createFoundingSim, existingRectsForFounding, type FoundingState } from './founding';
 import {
   doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty,
   alignArea, enhanceArea, adjustSpacing,
@@ -724,6 +725,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // Architect decision. The tick owns it; the founders save persists
   // it (v12, a compatible field) alongside the camp pile.
   const sitePlanRef=useRef<SettlementPlan|null>(null);
+  // BUILD 1101 (0x24, Phase 4.3): the founding party — session-only,
+  // like transients (never in the founders save). The tick owns it;
+  // the test hook starts it (probe-only — no UI trigger).
+  const foundingRef=useRef<FoundingState|null>(null);
   // BUILD 1000: transient figures (travelers + adventurers). A
   // SEPARATE array from npcActorsRef on purpose: the resident timer
   // serializes npcActorsRef to NPC_SAVE_KEY every tick, and transients
@@ -2503,7 +2508,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, saveKey: SAVE_KEY,
       isAreaSelectDragging: () => areaSelectDragging !== null,
       isAreaMoveDragging: () => areaMoveDragging !== null,
-      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, staminaPublishCountRef, areaSelectionRef, buildRef,
+      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, foundingRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, staminaPublishCountRef, areaSelectionRef, buildRef,
       setPosition, setMessage, setStaminaUi, setSprintingUi, setSprintLatchedUi, setSprintRearmUi, setFirstPersonOn,
       walkableAt: controls.walkableAt, replanPlayerPath: controls.replanPlayerPath, followPlayerPath: controls.followPlayerPath, positionAreaSelectRect, areaSelectionLabel,
     });
@@ -2718,6 +2723,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // only) — the Mayor's pick + the Architect's site + the
       // reasons, or null when nothing is startable. Read-only.
       getSitePlan:()=>sitePlanRef.current?JSON.parse(JSON.stringify(sitePlanRef.current)):null,
+      // BUILD 1101 (0x24, Phase 4.3): start a founding party in the
+      // wilds (probe-only). Returns the chosen site + reasons, or
+      // null when no site passes the survey. Read-only otherwise.
+      startFounding:()=>{const f=createFoundingSim(stateRef.current.world,existingRectsForFounding(stateRef.current.world,constructionRef.current,storehouseRef.current,foodChainRef.current,metalChainRef.current,housingRef.current));foundingRef.current=f;return f.site?{centre:{...f.site.centre},score:f.site.score,reasons:[...f.site.reasons]}:null;},
+      getFounding:()=>foundingRef.current?JSON.parse(JSON.stringify(foundingRef.current)):null,
       getInn:()=>({inn:{...housingRef.current.inn,centre:{...INN_CENTRE},rect:{...INN_RECT},door:{...INN_DOOR},approach:{...INN_APPROACH},placed:innPlacementExists(stateRef.current.world)},food:innFoodInRegistry(registryRef.current)}),
       getMarketStall:()=>({tile:{...MARKET_STALL_TILE},listing:marketStallListing(registryRef.current)}),
       setStorehouseWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,STOREHOUSE_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...STOREHOUSE_APPROACH},capacity:STOREHOUSE_CAPACITY_WOOD});refreshResourceUi();return storehouseWoodInRegistry(registryRef.current);},
@@ -2857,6 +2867,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       metalChain: metalChainRef,
       housing: housingRef,
       sitePlan: sitePlanRef,
+      founding: foundingRef,
       registry: registryRef,
       jobBoard: jobBoardRef,
       founderPath,
@@ -2991,6 +3002,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           metalChain:{smelter:{state:metalChainRef.current.smelter.state,progress:metalChainRef.current.smelter.progress},blacksmith:{state:metalChainRef.current.blacksmith.state,progress:metalChainRef.current.blacksmith.progress},sawmill:{state:metalChainRef.current.sawmill.state,progress:metalChainRef.current.sawmill.progress},carpenter:{state:metalChainRef.current.carpenter.state,progress:metalChainRef.current.carpenter.progress},workshop:{state:metalChainRef.current.workshop.state,progress:metalChainRef.current.workshop.progress},workshopStall:workshopStallReason(metalChainRef.current,foodChainRef.current.bakery.state==='done',campWoodInRegistry(reg),metalChainToolsInRegistry(reg))},
           housing:{capacity:housingCapacity(constructionRef.current),bedsFree:Math.max(0,housingCapacity(constructionRef.current)-foundersRef.current.length),inn:{state:housingRef.current.inn.state,progress:housingRef.current.inn.progress,food:innFoodInRegistry(reg)},stall:marketStallListing(reg)},
           sitePlan:sitePlanRef.current,
+          founding:foundingRef.current,
           storehouse:{state:storehouseRef.current.state,progress:storehouseRef.current.progress,wood:storehouseWoodInRegistry(reg),stone:storehouseStoneInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),coal:metalChainCoalInRegistry(reg),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg)},
           player:{wood:storeQty(reg,PLAYER_STORE_ID,'wood'),stone:storeQty(reg,PLAYER_STORE_ID,'stone'),gold:storeQty(reg,PLAYER_STORE_ID,'gold'),grain:storeQty(reg,PLAYER_STORE_ID,'grain')},
           carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain'),stone:storeQty(reg,'carrier:'+f.id,'stone'),iron:storeQty(reg,'carrier:'+f.id,'iron')})),

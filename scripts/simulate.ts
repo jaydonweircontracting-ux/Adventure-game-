@@ -12538,6 +12538,7 @@ console.log('Testing the 3D world simulation module — the founder tick, clock,
     metalChain: { current: sim1070.metalChain },
     housing: { current: sim1070.housing },
     sitePlan: { current: null },
+    founding: { current: null },
     founderPath: sim1070.paths,
     getPlayerPos: () => ({ x: 100, y: 100 }), // far from camp (see asserts1070)
     npcActors: { current: [] },
@@ -16181,6 +16182,111 @@ console.log('Testing construction intelligence — the settlement plan (BUILD 11
   assert(LWeek1100.starvedTicks === 1419 && Math.round(LWeek1100.minHealth) === 89, 'M1100: the week stays at the pinned residual 1419/89 (the plan does not move the week — it builds the same buildings in the same order)');
   console.log('M1100 week run: ticks=' + LWeek1100.ticks + ' starvedTicks=' + LWeek1100.starvedTicks + ' minHealth=' + Math.round(LWeek1100.minHealth) + ' population=' + simWeek1100.founders.length);
   console.log('M1100: construction intelligence verified (the plan: Mayor need + Architect site, plan-first claims in both ticks, distToSite prices the plan, E + Control Center explain it, save v12, M1069 identical, week 1419/89)');
+}
+
+console.log('Testing settlement founding — a fresh group founds a camp (BUILD 1101, 0x24)...');
+{
+  const FD = await import('../src/game/engine3d/founding.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const WS = await import('../src/game/engine3d/worldSimulation3d.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const CC = await import('../src/game/engine3d/controlCenter.js');
+  const RV = await import('../src/game/engine3d/rivers.js');
+  const G = await import('../src/game/engine3d/geology.js');
+  const PL = await import('../src/game/engine3d/placements.js');
+  const FM = await import('../src/game/engine3d/farm.js');
+  const PT = await import('../src/game/engine3d/paths.js');
+  // --- The survey: a fresh group picks a site near water + trees + soil. ---
+  const world1101 = W.defaultWorld();
+  RV.stampRivers(world1101);
+  G.stampMineralDeposits(world1101);
+  const sim1101 = SS.createSettlementSim(world1101);
+  const rects1101 = FD.existingRectsForFounding(world1101, sim1101.construction, sim1101.storehouse, sim1101.foodChain, sim1101.metalChain, sim1101.housing);
+  // The survey runs on the founding's first tick (createFoundingSim
+  // only assembles the party — site null, stage 'surveying', like the
+  // probe's startFounding), so the survey asserts call it directly;
+  // the walk below proves the same site via the tick.
+  const site1101survey = FD.surveyCampSites(world1101, FD.FOUNDING_ARRIVAL, rects1101);
+  const founding1101 = FD.createFoundingSim(world1101, rects1101);
+  assert(site1101survey !== null, 'M1101: the survey finds a site on a fresh world');
+  assert(site1101survey !== null && site1101survey.score > 0 && site1101survey.reasons.length > 0, 'M1101: the chosen site carries a score + reasons (water + trees + soil, why here)');
+  assert(founding1101.stage === 'surveying', 'M1101: a fresh party starts surveying');
+  assert(F.FOUNDER_SAVE_VERSION === 12, 'M1101: founders save stays v12 (founding is session-only — no save change)');
+  // --- The module tick drives the party to a founded camp within day 1. ---
+  const clock1101 = { current: SS.settlementClock(sim1101) as { day: number; minutes: number } };
+  const ctx1101: WS.FounderSimContext = {
+    world: sim1101.world, clock: clock1101,
+    founders: { current: sim1101.founders },
+    construction: { current: sim1101.construction },
+    storehouse: { current: sim1101.storehouse },
+    registry: { current: sim1101.registry },
+    jobBoard: { current: sim1101.board },
+    paths: { current: PT.freshPathState() },
+    mines: { current: sim1101.mines },
+    foodChain: { current: sim1101.foodChain },
+    metalChain: { current: sim1101.metalChain },
+    housing: { current: sim1101.housing },
+    sitePlan: { current: null },
+    founding: { current: founding1101 },
+    founderPath: sim1101.paths,
+    getPlayerPos: () => ({ x: 100, y: 100 }),
+    npcActors: { current: [] },
+    waiting: { current: false },
+    needsWorldRebuild: { current: false },
+    setMessage: () => {}, setClockUi: () => {}, refreshResourceUi: () => {}, syncLivingWorld: () => false,
+  };
+  let ticks1101 = 0;
+  while (founding1101.stage !== 'founded' && ticks1101 < 1600) { WS.runFounderSimTick(ctx1101); ticks1101++; }
+  assert(founding1101.stage === 'founded', 'M1101: the party founds its camp within day 1 (1600 ticks), saw stage ' + founding1101.stage + ' at tick ' + ticks1101);
+  assert(founding1101.site !== null && PL.placementsOf(world1101).some((p) => p.kind === 'house' && p.x0 === founding1101.site!.hut.rect.x0 && p.y0 === founding1101.site!.hut.rect.y0 && p.x1 === founding1101.site!.hut.rect.x1 && p.y1 === founding1101.site!.hut.rect.y1), 'M1101: the finished hut is stamped as a real house placement (through the module tick)');
+  assert(founding1101.farm.planted === FD.FOUNDING_FARM_TILES && founding1101.farm.tiles.length === FD.FOUNDING_FARM_TILES, 'M1101: the farm plot is planted (4 tiles, through the module tick)');
+  assert(founding1101.farm.tiles.every((t) => PL.placementsOf(world1101).some((p) => p.kind === 'farm' && p.x0 === t.x && p.y0 === t.y)), 'M1101: every planted farm tile is a real farm placement');
+  assert(founding1101.farm.tiles.every((t) => FM.farmStageAt(t.plantedAt, t.plantedAt + 200) !== 'planted'), 'M1101: the farm grows after planting (the food production is real)');
+  assert(founding1101.pile.wood + founding1101.hut.spentWood >= FD.FOUNDING_HUT_WOOD, 'M1101: the wood is conserved — pile + hut spent covers the hut cost');
+  assert(founding1101.site !== null && founding1101.party.every((m) => Math.abs(m.x - founding1101.site!.centre.x) + Math.abs(m.y - founding1101.site!.centre.y) <= 12), 'M1101: the party ends at the camp they founded');
+  assert(FD.foundingReportLine(founding1101).includes('founded') && founding1101.site !== null && FD.foundingReportLine(founding1101).includes(String(founding1101.site.centre.x)), 'M1101: the report line names the founded camp');
+  console.log('M1101 founding: stage=' + founding1101.stage + ' ticks=' + ticks1101 + ' site=(' + (founding1101.site ? founding1101.site.centre.x + ',' + founding1101.site.centre.y : 'none') + ') score=' + (founding1101.site ? founding1101.site.score.toFixed(2) : '0') + ' pileWood=' + founding1101.pile.wood + ' hutSpent=' + founding1101.hut.spentWood + ' farm=' + founding1101.farm.planted);
+  // --- The Control Center explains the founding; without one it says so. ---
+  const inputCC1101 = {
+    speed: 1, day: 1, minutes: 480,
+    founders: [{ id: 'founder-Marlow', name: 'Marlow', activity: 'work', workState: 'chopping', health: 80, hunger: 70, energy: 60, social: 55, jobKind: 'chop', jobTarget: 'tree:133,120', carrying: 0, carryingGrain: 0 }],
+    sites: [], hutDone: false,
+    camp: { wood: 0, food: 0, grain: 0, flour: 0, stone: 0 },
+    player: { wood: 0, stone: 0, gold: 0, grain: 0 },
+    carried: [{ id: 'founder-Marlow', wood: 0, grain: 0, stone: 0, iron: 0 }],
+    deposits: { wood: 800, stone: 40 },
+    totalWoodAvailable: 800, totalStoneAvailable: 40,
+    jobs: { open: 200, claimed: 0, completed: 0, failed: 0, chopOpen: 200, chopClaimed: 0, buildOpen: 0, buildClaimed: 0, deliverOpen: 0, deliverClaimed: 0, harvestOpen: 0, harvestClaimed: 0, quarryOpen: 0, quarryClaimed: 0, lastFailedId: null, lastFailedReason: null },
+    livingWorld: null,
+    farm: { planted: 4, growing: 0, ready: 0 },
+    perf: { rebuilds: 0, maxStepMsMoving: 0, lastBuildMs: 0, lastBuildFrames: 0 },
+  };
+  const ccFounding1101 = CC.formatControlCenterData({ ...inputCC1101, founding: founding1101 });
+  assert(ccFounding1101.founding !== null && ccFounding1101.founding.stage === 'founded' && ccFounding1101.founding.hutProgress === 6 && ccFounding1101.founding.farmPlanted === 4, 'M1101: the Control Center lists the founding (founded, hut 6/6, farm 4/4)');
+  const ccNoFounding1101 = CC.formatControlCenterData(inputCC1101);
+  assert(ccNoFounding1101.founding === null, 'M1101: no founding input, no founding in the Control Center');
+  // --- The 24h run: founding (inactive) does not move M1069. ---
+  const world24_1101 = W.defaultWorld();
+  const sim24_1101 = SS.createSettlementSim(world24_1101);
+  SS.advanceSettlement(sim24_1101, 1600);
+  const L24_1101 = sim24_1101.ledger;
+  assert(L24_1101.ticks === 1600, 'M1101: the 24h run counts 1600 ticks');
+  assert(L24_1101.woodChopped === 54 && L24_1101.woodDelivered === 48 && L24_1101.woodSpent === 24, 'M1101: 24h wood 54/48/24 (M1069 identical — founding is session-only and never starts here)');
+  assert(L24_1101.grainHarvested === 62 && L24_1101.grainDelivered === 62, 'M1101: 24h grain 62/62 (M1069 identical)');
+  assert(L24_1101.mealsBaked === 27 && L24_1101.mealsEaten === 12, 'M1101: 24h meals 27/12 (M1069 identical)');
+  assert(L24_1101.flourMilled === 62 && L24_1101.flourBaked === 54, 'M1101: 24h flour 62/54 (M1069 identical)');
+  assert(L24_1101.millsCompleted === 1 && L24_1101.bakeriesCompleted === 1 && L24_1101.hutsCompleted === 2, 'M1101: mill + bakery + both huts complete in 24h (M1069 identical)');
+  assert(L24_1101.jobsCompleted.chop === 27 && L24_1101.jobsCompleted.build === 4 && L24_1101.jobsCompleted.harvest === 31, 'M1101: 24h jobs chop/build/harvest 27/4/31 (M1069 identical)');
+  assert(L24_1101.starvedTicks === 0 && Math.round(L24_1101.minHealth) === 100, 'M1101: nobody starves in 24h (M1069 identical)');
+  assert(sim24_1101.founders.length === 6, 'M1101: the population is 6 (M1069 identical)');
+  const finalWood1101 = F.campWoodInRegistry(sim24_1101.registry);
+  const finalFood1101 = F.campFoodInRegistry(sim24_1101.registry);
+  const finalGrain1101 = SS.settlementGrain(sim24_1101);
+  const finalFlour1101 = FC.foodChainFlourInRegistry(sim24_1101.registry);
+  assert(finalWood1101 === 12 && finalFood1101 === 15 && finalGrain1101 === 0 && finalFlour1101 === 8, 'M1101: final wood/food/grain/flour 12/15/0/8 (M1069 identical)');
+  console.log('M1101: settlement founding verified (the survey picks a site with reasons, the module tick founds a camp with a real hut + farm within day 1, the Control Center explains it, save v12, M1069 identical)');
 }
 
 // ---- Results ----

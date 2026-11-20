@@ -232,6 +232,11 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
             ) : (
               <div style={dimStyle}>No plan yet — nothing startable.</div>
             )}
+            {d.founding ? (
+              <div>🌲 Founding: {d.founding.stage}{d.founding.centre ? ` — camp (${d.founding.centre.x},${d.founding.centre.y}) score ${d.founding.score.toFixed(2)}` : ' — no site yet'} · pile {d.founding.pileWood} wood · hut {d.founding.hutProgress}/6 · farm {d.founding.farmPlanted}/4{d.founding.reasons.length > 0 ? ` · ${d.founding.reasons.join('; ')}` : ''}{d.founding.lastLog ? ` — ${d.founding.lastLog}` : ''}</div>
+            ) : (
+              <div style={dimStyle}>No founding party — the founders' camp stands alone.</div>
+            )}
             <div style={dimStyle}>Hut {d.construction.hutDone ? 'done' : 'not finished'} · total progress {d.construction.totalProgress} steps</div>
           </div>
 

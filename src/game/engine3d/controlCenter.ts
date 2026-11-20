@@ -12,6 +12,7 @@ import { BAKE_FLOUR_PER_MEAL, GRIND_GRAIN_PER_BATCH } from './foodChain';
 import { SMELT_ORE_PER_BATCH, SMELT_COAL_PER_BATCH, SMITH_INGOT_PER_TOOL, SAW_WOOD_PER_BATCH, CARPENTER_TIMBER_PER_BATCH } from './metalChain';
 import type { MarketStallLine } from './housing';
 import { planBuildingLabel, type SettlementPlan } from './sitePlan';
+import type { FoundingState } from './founding';
 import { SETTLEMENT_ARRIVAL_FOOD_MIN } from './settlementGrowth';
 import type { LivingWorldSummary } from './livingWorld';
 
@@ -137,6 +138,9 @@ export type ControlCenterInput = {
   /** BUILD 1100: the settlement plan (optional — the old callers
    *  pass none and the panel shows 'no plan yet'). */
   sitePlan?: SettlementPlan | null;
+  /** BUILD 1101: the founding party (optional — the old callers
+   *  pass none and the panel shows 'no founding party'). */
+  founding?: FoundingState | null;
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
   storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number; coal: number; ingots: number; tools: number; timber: number; furniture: number };
@@ -241,6 +245,9 @@ export type ControlCenterData = {
    *  market-stall listing (the settlement store, read-only). */
   housing: { capacity: number; bedsFree: number; innState: string; innFood: number; innReady: boolean; stall: MarketStallLine[] };
   construction: { sites: ControlCenterSiteRow[]; hutDone: boolean; totalProgress: number; plan: { building: string; x: number; y: number; need: number; reasons: string[]; decidedDay: number } | null };
+  /** BUILD 1101: the founding party — stage, chosen site + reasons,
+   *  pile wood, hut progress, farm planted, and the last log line. */
+  founding: { stage: string; centre: { x: number; y: number } | null; score: number; reasons: string[]; pileWood: number; hutProgress: number; farmPlanted: number; lastLog: string | null } | null;
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
   environment: {
     forestDensityPct: number;
@@ -426,6 +433,10 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
       // Architect's site, with the reasons (the panel quotes them).
       plan: input.sitePlan ? { building: planBuildingLabel(input.sitePlan.building), x: (input.sitePlan.site.rect.x0 + input.sitePlan.site.rect.x1) / 2, y: (input.sitePlan.site.rect.y0 + input.sitePlan.site.rect.y1) / 2, need: input.sitePlan.need, reasons: [...input.sitePlan.reasons], decidedDay: input.sitePlan.decidedDay } : null,
     },
+    // BUILD 1101: the founding party — the stage + the chosen site
+    // (null while still surveying), the pile, the hut progress, the
+    // farm count, and the last milestone line (the panel quotes it).
+    founding: input.founding ? { stage: input.founding.stage, centre: input.founding.site ? { ...input.founding.site.centre } : null, score: input.founding.site ? input.founding.site.score : 0, reasons: input.founding.site ? [...input.founding.site.reasons] : [], pileWood: input.founding.pile.wood, hutProgress: input.founding.hut.progress, farmPlanted: input.founding.farm.planted, lastLog: input.founding.log.length > 0 ? input.founding.log[input.founding.log.length - 1] : null } : null,
     trade: {
       deliverOpen: input.jobs.deliverOpen,
       deliverClaimed: input.jobs.deliverClaimed,

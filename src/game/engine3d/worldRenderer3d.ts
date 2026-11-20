@@ -36,6 +36,7 @@ import { interiorCeilingFor, interiorWallBandFor, interiorHearthFor } from './in
 import { productionKindForRect, productionFireFor } from './productionInteriors';
 import { ROSTER_3D, rosterArchetype, type DayClock } from './townsfolk3d';
 import { FOUNDERS_ENABLED, FOUNDER_STOCKPILE_TILE, FOUNDER_NAMES, campWoodInRegistry, type FounderState } from './founders';
+import { FOUNDING_PARTY_SIZE, type FoundingState } from './founding';
 import { createWorldBuilder, type Vec3, type WorldBuilder } from './worldRender3d';
 import { HUT_SITES, sitesOf, type ConstructionState } from './construction';
 import { STOREHOUSE_HUT_SITE, type StorehouseState } from './storehouse';
@@ -160,6 +161,10 @@ export interface WorldRendererDeps {
   npcActorsRef: { current: { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean; looted?: boolean }[] };
   transientActorsRef: { current: TransientActor[] };
   foundersRef: { current: FounderState[] };
+  // BUILD 1101 (0x24, Phase 4.3): the founding party (session-only
+  // — the view's foundingRef). Its figures + stockpile + hut site
+  // ride the same per-frame fx / figure paths as the founders'.
+  foundingRef: { current: FoundingState | null };
   animalActorsRef: { current: AnimalActor[] };
   registryRef: { current: ResourceRegistry };
   constructionRef: { current: ConstructionState };
@@ -245,6 +250,8 @@ export class WorldRenderer {
   transientSlotCap = 0;
   animalSlotBase = 0;
   animalSlotCap = 0;
+  foundingSlotBase = 0;
+  foundingSlotCap = 0;
   founderSlotBase = 0;
   founderSlotCap = 0;
   figureSlots!: { offsets: number[]; totalVerts: number };
@@ -358,7 +365,16 @@ export class WorldRenderer {
     this.animalSlotBase=this.transientSlotBase+MAX_TRANSIENTS;
     this.animalSlotCap=maxAnimalVerts();
     for(let i=0;i<MAX_ANIMALS;i++)this.figureSlotCounts.push(this.animalSlotCap);
-    this.founderSlotBase=this.animalSlotBase+MAX_ANIMALS;
+    // BUILD 1101 (0x24, Phase 4.3): the founding party's slots sit
+    // BEFORE the founder slots — the founder slots are preallocated
+    // for the 3 founding names while the founders array grows to 7,
+    // so founding slots after them would collide with the arrivals'
+    // overflow writes. Founders 0–2 keep their slots; arrivals 3+
+    // behave exactly as today.
+    this.foundingSlotBase=this.animalSlotBase+MAX_ANIMALS;
+    this.foundingSlotCap=maxVillagerVerts();
+    for(let i=0;i<FOUNDING_PARTY_SIZE;i++)this.figureSlotCounts.push(this.foundingSlotCap);
+    this.founderSlotBase=this.foundingSlotBase+FOUNDING_PARTY_SIZE;
     this.founderSlotCap=maxVillagerVerts();
     for(let i=0;i<FOUNDER_NAMES.length;i++)this.figureSlotCounts.push(this.founderSlotCap);
     this.figureSlots=figureSlotLayout(this.figureSlotCounts);
@@ -522,6 +538,7 @@ export class WorldRenderer {
     const npcActorsRef = this.deps.npcActorsRef;
     const transientActorsRef = this.deps.transientActorsRef;
     const foundersRef = this.deps.foundersRef;
+    const foundingRef = this.deps.foundingRef;
     const animalActorsRef = this.deps.animalActorsRef;
     const registryRef = this.deps.registryRef;
     const constructionRef = this.deps.constructionRef;
@@ -578,6 +595,7 @@ export class WorldRenderer {
     const transientSlotCap = this.transientSlotCap;
     const animalSlotBase = this.animalSlotBase;
     const animalSlotCap = this.animalSlotCap;
+    const foundingSlotBase = this.foundingSlotBase;
     const founderSlotBase = this.founderSlotBase;
     const founderSlotCap = this.founderSlotCap;
     const figureSlots = this.figureSlots;
@@ -907,6 +925,9 @@ export class WorldRenderer {
     // pile tile + the real stockpile count; 0 wood still shows 1
     // log (the camp has a pile).
     const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:campWoodInRegistry(registryRef.current)}]:[];
+    // BUILD 1101 (0x24, Phase 4.3): the founding camp's log pile rides
+    // the same fx call as the founders' pile (it grows with deliveries).
+    if(FOUNDERS_ENABLED&&foundingRef.current){const fnd=foundingRef.current;const fSite=fnd.site;if(fSite)stockpileInputs.push({tx:fSite.stockpile.x,ty:fSite.stockpile.y,baseY:surfaceElevation(effTerrainDraw,fSite.stockpile.x+.5,fSite.stockpile.y+.5),wood:fnd.pile.wood});}
     // BUILD 1058: the first hut's build site rides the same fx call
     // as the pile — per-frame fx (foundation + frame grow with the
     // real construction progress), so it needs no world rebuild.
@@ -941,6 +962,10 @@ export class WorldRenderer {
     hearthLit: houseLitAt(clockRef.current.minutes, lightScheduleFor(seedHutIn.x0, seedHutIn.y0)),
     };
     }
+    // BUILD 1101 (0x24, Phase 4.3): the founding hut's build site rides
+    // the same fx call as the founders' huts — at progress 6 the real
+    // hut placement renders instead.
+    if(FOUNDERS_ENABLED&&foundingRef.current&&foundingRef.current.hut.state==='building'){const fnd=foundingRef.current;const fSite=fnd.site;if(fSite)siteInputs.push({baseY:surfaceElevation(effTerrainDraw,fSite.hut.centre.x+.5,fSite.hut.centre.y+.5),progress:fnd.hut.progress,site:fSite.hut});}
     const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs);
     this.lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
     if(fxCounts.totalVerts>0){
@@ -1073,6 +1098,30 @@ export class WorldRenderer {
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
     emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    }
+    // BUILD 1101 (0x24, Phase 4.3): the founding party rides the same
+    // glide/yaw/phase/slot machinery as the founders: logical tiles
+    // come from the 900ms founder timer, render positions glide toward
+    // them at the demo speed, and only dirty slots re-emit. Slots are
+    // fixed per member (foundingSlotBase + index); the render key is
+    // namespaced ('founding:Corin') so it can never collide with a
+    // resident, transient, or founder key.
+    if(foundingRef.current){
+    for(let fi=0;fi<foundingRef.current.party.length;fi++){
+    const m=foundingRef.current.party[fi];
+    const slot=foundingSlotBase+fi;
+    const target={x:m.x,y:m.y};
+    let st=npcRender.get('founding:'+m.name);
+    if(!st){st={x:target.x,y:target.y,yaw:Math.PI,phase:0};npcRender.set('founding:'+m.name,st);}
+    else if(needsRenderSnap({x:st.x,y:st.y},target)){st.x=target.x;st.y=target.y;}
+    const step=advanceRenderPos({x:st.x,y:st.y},target,dtNpc);
+    const moved=step.dist>0;
+    let yaw=st.yaw;
+    if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
+    const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
+    st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
+    emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(m.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    }
     }
     // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
     // machinery as residents and transients: logical tiles come from
