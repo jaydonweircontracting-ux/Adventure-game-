@@ -85,6 +85,16 @@
  * an 8-tile buffer from the wild keep-out (72) — the extreme
  * north/south hut rows (66.0 out) sit just outside it, which is fine:
  * chickens are central-town animals, not far-row ones.
+ *
+ * BUILD 1102 — NEW SPECIES (Phase 4.5): rabbits, boars, elk, foxes,
+ * bears and fish join the five kinds above. Rabbits and elk flee like
+ * deer (small/large radius); boars, foxes and bears graze/wander like
+ * goats and never flee the player; bears live deep (100..140) like
+ * wolves; fish drift in river/pond water within 60 tiles of the plaza
+ * (the ocean sits 84+ away, so fish never reach it). All six reuse
+ * emitQuadruped (new QUAD entries + specs) except fish, which get
+ * emitFish. Sheep live only in the pen (animalHusbandry.ts) — they
+ * are a population, not live actors, so they never take a GPU slot.
  */
 
 import { terrainAt, type IsoWorld } from '../iso/isoWorld';
@@ -94,10 +104,11 @@ import { emitBox, hashStr } from './villagers';
 import { SUN_SHADE, shadeRgb, type Rgb } from './townLook';
 import { doorForRect, hutFace, placedHutRects } from './placements';
 import { animalId } from './entityIds';
+import { allRiverTiles } from './rivers';
 
 // ---------------------------------------------------------------- constants
 
-export type AnimalKind = 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken';
+export type AnimalKind = 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken' | 'rabbit' | 'boar' | 'elk' | 'fox' | 'bear' | 'fish';
 
 /** The 3D plaza (staticAnchors.plaza at runtime; this is the assert default). */
 export const PLAZA_3D = { x: 102, y: 102 };
@@ -122,7 +133,14 @@ export const MAX_DEER = 3;
 export const MAX_WOLVES = 2;
 /** BUILD 1016: a handful scattered loosely, same order as the 1013 caps. */
 export const MAX_CHICKENS = 5;
-export const MAX_ANIMALS = MAX_BIRDS + MAX_GOATS + MAX_DEER + MAX_WOLVES + MAX_CHICKENS;
+/** BUILD 1102: rabbits 4, boars 3, elk 3, foxes 2, bears 1, fish 6. */
+export const MAX_RABBITS = 4;
+export const MAX_BOARS = 3;
+export const MAX_ELK = 3;
+export const MAX_FOXES = 2;
+export const MAX_BEARS = 1;
+export const MAX_FISH = 6;
+export const MAX_ANIMALS = MAX_BIRDS + MAX_GOATS + MAX_DEER + MAX_WOLVES + MAX_CHICKENS + MAX_RABBITS + MAX_BOARS + MAX_ELK + MAX_FOXES + MAX_BEARS + MAX_FISH;
 
 /** Stardew-style flush: a perched bird takes off inside this radius. */
 export const BIRD_FLUSH_RADIUS = 5;
@@ -150,6 +168,18 @@ export const CHICKEN_SCUTTLE_RADIUS = 2;
 /** Scuttle lasts at most this many ticks (or until the player is
  *  CHICKEN_SCUTTLE_RADIUS + 2 away — the goat-shy exit rule). */
 export const CHICKEN_SCUTTLE_TICKS = 3;
+/** BUILD 1102: bears live deeper than wolves (100..140). */
+export const BEAR_SPAWN_MIN_DIST = 100;
+export const BEAR_SPAWN_MAX_DIST = 140;
+/** BUILD 1102: fish stay in river/pond water near camp — the ocean
+ *  coast sits 84+ tiles from the plaza, so a 60-tile band excludes it. */
+export const FISH_MAX_DIST_FROM_PLAZA = 60;
+/** Rabbits flush close and short; elk run like deer. */
+export const RABBIT_FLEE_RADIUS = 3;
+export const RABBIT_FLEE_MAX_TICKS = 4;
+export const ELK_FLEE_RADIUS = 6;
+export const ELK_FLEE_MAX_TICKS = 8;
+export const ELK_FLEE_GIVE_UP_DIST = 12;
 
 // ------------------------------------------------------------------- types
 
@@ -158,7 +188,15 @@ export type GoatState = 'grazing' | 'wandering' | 'shying';
 export type DeerState = 'grazing' | 'wandering' | 'fleeing';
 export type WolfState = 'stalking' | 'approaching' | 'attacking';
 export type ChickenState = 'pecking' | 'wandering' | 'scuttling';
-export type AnimalState = BirdState | GoatState | DeerState | WolfState | ChickenState;
+/** BUILD 1102: rabbits/elk flee like deer; boars/foxes/bears graze like
+ *  goats and never flee; fish drift in water. */
+export type RabbitState = 'grazing' | 'wandering' | 'fleeing';
+export type ElkState = 'grazing' | 'wandering' | 'fleeing';
+export type BoarState = 'grazing' | 'wandering';
+export type FoxState = 'grazing' | 'wandering';
+export type BearState = 'grazing' | 'wandering';
+export type FishState = 'drifting';
+export type AnimalState = BirdState | GoatState | DeerState | WolfState | ChickenState | RabbitState | ElkState | BoarState | FoxState | BearState | FishState;
 
 /** One wild animal. Logical tiles (integers after each 900ms step);
  * the view glides the render position toward them (998 rule). `slotId`
@@ -224,10 +262,17 @@ export function nearTree(world: IsoWorld, x: number, y: number, r: number): bool
  * within 8 but accept open field (see spawnAnimal's preference order).
  */
 export function habitatTile(world: IsoWorld, kind: AnimalKind, x: number, y: number, plaza: { x: number; y: number }): boolean {
+  if (kind === 'fish') {
+    // Fish live in river/pond water only (water blocks NPC movement,
+    // so the walkable check below must not run for them) within 60
+    // tiles of the plaza — the ocean sits 84+ away.
+    return distFromPlaza(x, y, plaza) <= FISH_MAX_DIST_FROM_PLAZA && terrainAt(world, x, y) === 'water';
+  }
   if (!inWild(x, y, plaza)) return false;
   if (!npcWalkable(world, x, y)) return false;
   if (terrainAt(world, x, y) !== 'grass') return false;
   if (kind === 'deer' && !nearTree(world, x, y, 12)) return false;
+  if (kind === 'elk' && !nearTree(world, x, y, 12)) return false;
   return true;
 }
 
@@ -391,6 +436,48 @@ function randomTownTile(
 }
 
 /**
+ * BUILD 1102: a fish spawn tile — a random river/pond water tile
+ * within 60 tiles of the plaza (the ocean is 84+ away, so it never
+ * qualifies), never on another animal's tile, and (when
+ * requireOutOfView) beyond the 22-tile figure cull so a fish never
+ * pops in next to the player.
+ */
+function randomWaterTile(
+  world: IsoWorld,
+  plaza: { x: number; y: number },
+  usedPositions: ReadonlySet<string>,
+  player: { x: number; y: number },
+  requireOutOfView: boolean,
+): { x: number; y: number } | null {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  const outOfView = (x: number, y: number) => !requireOutOfView || Math.max(Math.abs(x - px), Math.abs(y - py)) > ANIMAL_SPAWN_VIEW_DIST;
+  // River tiles first: the river is a thin line, so disc sampling
+  // would mostly miss it (a ~3% hit per try). The pond has no
+  // river record, so disc sampling below is the fallback for it.
+  const riverTiles = allRiverTiles(world).filter(
+    (t) => distFromPlaza(t.x, t.y, plaza) <= FISH_MAX_DIST_FROM_PLAZA
+      && !usedPositions.has(t.x + ',' + t.y)
+      && outOfView(t.x, t.y),
+  );
+  for (let k = 0; k < 48 && riverTiles.length > 0; k++) {
+    const t = riverTiles[Math.floor(Math.random() * riverTiles.length)];
+    if (terrainAt(world, t.x, t.y) === 'water') return { x: t.x, y: t.y };
+  }
+  for (let k = 0; k < 48; k++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = Math.sqrt(Math.random()) * FISH_MAX_DIST_FROM_PLAZA;
+    const x = Math.round(plaza.x + Math.cos(ang) * dist);
+    const y = Math.round(plaza.y + Math.sin(ang) * dist);
+    if (x < 2 || y < 2 || x >= world.w - 2 || y >= world.h - 2) continue;
+    if (usedPositions.has(x + ',' + y)) continue;
+    if (!outOfView(x, y)) continue;
+    if (terrainAt(world, x, y) !== 'water') continue;
+    return { x, y };
+  }
+  return null;
+}
+
+/**
  * Spawn one animal of a kind, or null when it cannot spawn (no free
  * slot, no valid habitat tile, or — when requireOutOfView — no
  * out-of-view tile). Ids are kind + slot (stable, unique per live
@@ -409,14 +496,17 @@ export function spawnAnimal(
   for (let i = 0; i < MAX_ANIMALS; i++) if (!usedSlots.has(i)) { slotId = i; break; }
   if (slotId === null) return null;
   let tile: { x: number; y: number } | null = null;
-  if (kind === 'chicken') {
+  if (kind === 'fish') {
+    // Fish spawn in river/pond water near camp, not in the wild annulus.
+    tile = randomWaterTile(world, plaza, usedPositions, player, requireOutOfView);
+  } else if (kind === 'chicken') {
     // Chickens spawn in town, not in the wild annulus.
     tile = randomTownTile(world, plaza, usedPositions, player, requireOutOfView);
   } else {
-    const minDist = kind === 'wolf' ? WOLF_SPAWN_MIN_DIST : SPAWN_MIN_DIST;
-    const maxDist = kind === 'wolf' ? WOLF_SPAWN_MAX_DIST : SPAWN_MAX_DIST;
+    const minDist = kind === 'wolf' ? WOLF_SPAWN_MIN_DIST : kind === 'bear' ? BEAR_SPAWN_MIN_DIST : SPAWN_MIN_DIST;
+    const maxDist = kind === 'wolf' ? WOLF_SPAWN_MAX_DIST : kind === 'bear' ? BEAR_SPAWN_MAX_DIST : SPAWN_MAX_DIST;
     for (let attempt = 0; attempt < 3 && !tile; attempt++) {
-      const cand = randomSpawnTile(world, kind, plaza, minDist, maxDist, usedPositions, kind === 'bird' || kind === 'deer');
+      const cand = randomSpawnTile(world, kind, plaza, minDist, maxDist, usedPositions, kind === 'bird' || kind === 'deer' || kind === 'elk');
       if (!cand) break;
       if (requireOutOfView && Math.max(Math.abs(cand.x - player.x), Math.abs(cand.y - player.y)) <= ANIMAL_SPAWN_VIEW_DIST) continue;
       tile = cand;
@@ -432,7 +522,7 @@ export function spawnAnimal(
     kind,
     x: tile.x,
     y: tile.y,
-    state: kind === 'wolf' ? 'stalking' : kind === 'bird' ? 'perched' : kind === 'chicken' ? 'pecking' : 'grazing',
+    state: kind === 'wolf' ? 'stalking' : kind === 'bird' ? 'perched' : kind === 'chicken' ? 'pecking' : kind === 'fish' ? 'drifting' : 'grazing',
     hp: kind === 'wolf' ? WOLF_HP : 0,
     slotId,
     flightTo: null,
@@ -634,6 +724,104 @@ function flightLanding(
  * persists for the session; only a slain wolf leaves, via the
  * player's F/Space attack in the view).
  */
+export interface GrazerOpts {
+  /** 0 = never flees (boar/fox/bear). */
+  fleeRadius: number;
+  fleeTicks: number;
+  giveUpDist: number;
+  wanderRadius: number;
+  pauseBase: number;
+  pauseVar: number;
+}
+
+/**
+ * BUILD 1102: the shared goat/deer step shape for the new grazers —
+ * graze (pause) → wander (A* walk) with an optional flee branch.
+ * The goat and deer blocks above keep their own copies (their
+ * behaviour is proven and untouched); the five new kinds share this
+ * one so a flee-radius or wander change lands in one place.
+ */
+function stepGrazer(
+  world: IsoWorld,
+  actor: AnimalActor,
+  path: AnimalPathState | undefined,
+  occupied: (x: number, y: number) => boolean,
+  player: { x: number; y: number },
+  plaza: { x: number; y: number },
+  opts: GrazerOpts,
+): { path: AnimalPathState | undefined; biteDamage: number } {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  const playerDist = Math.hypot(actor.x - px, actor.y - py);
+  const pause = () => opts.pauseBase + (actor.seed % opts.pauseVar);
+  if (opts.fleeRadius > 0 && actor.state === 'fleeing') {
+    actor.fleeTicks--;
+    if (actor.fleeTicks <= 0 || playerDist > opts.giveUpDist) {
+      actor.state = 'grazing';
+      actor.pauseTicks = pause();
+      return { path: undefined, biteDamage: 0 };
+    }
+    fleeStep(world, actor, player, occupied, plaza);
+    return { path: undefined, biteDamage: 0 };
+  }
+  if (opts.fleeRadius > 0 && playerDist <= opts.fleeRadius) {
+    actor.state = 'fleeing';
+    actor.fleeTicks = opts.fleeTicks;
+    fleeStep(world, actor, player, occupied, plaza);
+    return { path: undefined, biteDamage: 0 };
+  }
+  if (actor.state === 'grazing') {
+    actor.pauseTicks--;
+    if (actor.pauseTicks <= 0) {
+      const dest = wanderTarget(world, actor, opts.wanderRadius, plaza);
+      if (dest) { actor.state = 'wandering'; const r = followPath(world, actor, undefined, dest, occupied, plaza); return { path: r.path, biteDamage: 0 }; }
+      actor.pauseTicks = pause();
+    }
+    return { path, biteDamage: 0 };
+  }
+  // wandering
+  const dest = path ? (() => { const [x, y] = path.dest.split(',').map(Number); return { x, y }; })() : null;
+  if (!dest) { actor.state = 'grazing'; actor.pauseTicks = pause(); return { path: undefined, biteDamage: 0 }; }
+  const res = followPath(world, actor, path, dest, occupied, plaza);
+  if (Math.round(actor.x) === dest.x && Math.round(actor.y) === dest.y) {
+    actor.state = 'grazing';
+    actor.pauseTicks = pause();
+    return { path: undefined, biteDamage: 0 };
+  }
+  return { path: res.path, biteDamage: 0 };
+}
+
+/**
+ * BUILD 1102: fish drift — one tile to an adjacent water tile
+ * (river/pond only: the destination stays within 60 tiles of the
+ * plaza, so a fish never drifts into the ocean), pausing 2-4 ticks
+ * between drifts so the school reads calm, not jittery.
+ */
+function stepFishDrift(
+  world: IsoWorld,
+  actor: AnimalActor,
+  occupied: (x: number, y: number) => boolean,
+  plaza: { x: number; y: number },
+): { path: undefined; biteDamage: 0 } {
+  if (actor.pauseTicks > 0) {
+    actor.pauseTicks--;
+    return { path: undefined, biteDamage: 0 };
+  }
+  actor.pauseTicks = 2 + (actor.seed % 3);
+  const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const start = actor.seed % dirs.length;
+  for (let k = 0; k < dirs.length; k++) {
+    const [dx, dy] = dirs[(start + k) % dirs.length];
+    const nx = Math.round(actor.x) + dx, ny = Math.round(actor.y) + dy;
+    if (distFromPlaza(nx, ny, plaza) > FISH_MAX_DIST_FROM_PLAZA) continue;
+    if (terrainAt(world, nx, ny) !== 'water') continue;
+    if (occupied(nx, ny)) continue;
+    actor.x = nx;
+    actor.y = ny;
+    break;
+  }
+  return { path: undefined, biteDamage: 0 };
+}
+
 export function stepAnimal(
   world: IsoWorld,
   actor: AnimalActor,
@@ -816,6 +1004,16 @@ export function stepAnimal(
     return { path: res.path, biteDamage: 0 };
   }
 
+  // ---------------------------------------------------------- BUILD 1102: rabbit / elk (fleeing grazers)
+  if (actor.kind === 'rabbit') return stepGrazer(world, actor, path, occupied, player, plaza, { fleeRadius: RABBIT_FLEE_RADIUS, fleeTicks: RABBIT_FLEE_MAX_TICKS, giveUpDist: ELK_FLEE_GIVE_UP_DIST, wanderRadius: 6, pauseBase: 3, pauseVar: 4 });
+  if (actor.kind === 'elk') return stepGrazer(world, actor, path, occupied, player, plaza, { fleeRadius: ELK_FLEE_RADIUS, fleeTicks: ELK_FLEE_MAX_TICKS, giveUpDist: ELK_FLEE_GIVE_UP_DIST, wanderRadius: 12, pauseBase: 3, pauseVar: 4 });
+  // ---------------------------------------------------------- BUILD 1102: boar / fox / bear (non-fleeing grazers)
+  if (actor.kind === 'boar') return stepGrazer(world, actor, path, occupied, player, plaza, { fleeRadius: 0, fleeTicks: 0, giveUpDist: 0, wanderRadius: 8, pauseBase: 4, pauseVar: 5 });
+  if (actor.kind === 'fox') return stepGrazer(world, actor, path, occupied, player, plaza, { fleeRadius: 0, fleeTicks: 0, giveUpDist: 0, wanderRadius: 10, pauseBase: 4, pauseVar: 5 });
+  if (actor.kind === 'bear') return stepGrazer(world, actor, path, occupied, player, plaza, { fleeRadius: 0, fleeTicks: 0, giveUpDist: 0, wanderRadius: 12, pauseBase: 5, pauseVar: 5 });
+  // ---------------------------------------------------------- BUILD 1102: fish (water drift)
+  if (actor.kind === 'fish') return stepFishDrift(world, actor, occupied, plaza);
+
   // ---------------------------------------------------------- wolf
   const playerInWild = playerWildDist >= ANIMAL_TOWN_KEEP_OUT;
   if (actor.state === 'attacking') {
@@ -892,6 +1090,25 @@ const WOLF_BODIES: Rgb[] = [
 const CHICKEN_BODIES: Rgb[] = [
   [0.93, 0.93, 0.9], [0.93, 0.93, 0.9], [0.62, 0.47, 0.3], [0.35, 0.28, 0.22],
 ];
+/** BUILD 1102: the six new species' body palettes (seeded pick, same as above). */
+const RABBIT_BODIES: Rgb[] = [
+  [0.62, 0.58, 0.52], [0.5, 0.45, 0.4], [0.72, 0.66, 0.58],
+];
+const BOAR_BODIES: Rgb[] = [
+  [0.32, 0.25, 0.2], [0.42, 0.33, 0.26], [0.25, 0.2, 0.16],
+];
+const ELK_BODIES: Rgb[] = [
+  [0.45, 0.33, 0.22], [0.55, 0.42, 0.3], [0.38, 0.28, 0.2],
+];
+const FOX_BODIES: Rgb[] = [
+  [0.78, 0.42, 0.18], [0.62, 0.35, 0.16], [0.85, 0.5, 0.22],
+];
+const BEAR_BODIES: Rgb[] = [
+  [0.3, 0.23, 0.18], [0.38, 0.3, 0.24], [0.24, 0.19, 0.15],
+];
+const FISH_BODIES: Rgb[] = [
+  [0.55, 0.65, 0.7], [0.45, 0.55, 0.6], [0.65, 0.72, 0.75],
+];
 
 export function animalSpecFor(id: string, kind: AnimalKind): AnimalSpec {
   const h = hashStr(id + ':' + kind);
@@ -912,6 +1129,18 @@ export function animalSpecFor(id: string, kind: AnimalKind): AnimalSpec {
     case 'chicken':
       // accent is the red comb; beak/legs are a fixed orange in emitChicken.
       return { body: pick(CHICKEN_BODIES), belly: [0.96, 0.96, 0.93], dark: [0.55, 0.42, 0.28], accent: [0.85, 0.2, 0.15], scale: 0.9 + ((h >>> 3) % 3) * 0.05 };
+    case 'rabbit':
+      return { body: pick(RABBIT_BODIES), belly: [0.88, 0.84, 0.78], dark: [0.45, 0.4, 0.35], accent: [0.85, 0.8, 0.72], scale: 0.5 + ((h >>> 3) % 3) * 0.05 };
+    case 'boar':
+      return { body: pick(BOAR_BODIES), belly: [0.5, 0.42, 0.34], dark: [0.2, 0.16, 0.12], accent: [0.9, 0.88, 0.82], scale: 0.8 + ((h >>> 3) % 3) * 0.05 };
+    case 'elk':
+      return { body: pick(ELK_BODIES), belly: [0.8, 0.68, 0.52], dark: [0.32, 0.24, 0.16], accent: [0.7, 0.58, 0.42], scale: 1.15 + ((h >>> 3) % 3) * 0.05 };
+    case 'fox':
+      return { body: pick(FOX_BODIES), belly: [0.9, 0.82, 0.7], dark: [0.4, 0.28, 0.18], accent: [0.95, 0.95, 0.92], scale: 0.75 + ((h >>> 3) % 3) * 0.05 };
+    case 'bear':
+      return { body: pick(BEAR_BODIES), belly: [0.48, 0.4, 0.32], dark: [0.18, 0.14, 0.1], accent: [0.6, 0.5, 0.4], scale: 1.3 + ((h >>> 3) % 3) * 0.05 };
+    case 'fish':
+      return { body: pick(FISH_BODIES), belly: [0.8, 0.85, 0.86], dark: [0.3, 0.38, 0.42], accent: [0.9, 0.9, 0.88], scale: 0.45 + ((h >>> 3) % 3) * 0.05 };
   }
 }
 
@@ -978,17 +1207,22 @@ const QUAD = {
   goat: { legH: 0.52, bodyH: 0.42, bodyL: 0.78, bodyW: 0.36, neckLen: 0.34, headL: 0.26, headW: 0.2, headH: 0.18, tailL: 0.2 },
   deer: { legH: 0.68, bodyH: 0.44, bodyL: 0.82, bodyW: 0.34, neckLen: 0.5, headL: 0.3, headW: 0.18, headH: 0.16, tailL: 0.14 },
   wolf: { legH: 0.5, bodyH: 0.44, bodyL: 0.8, bodyW: 0.36, neckLen: 0.3, headL: 0.32, headW: 0.2, headH: 0.18, tailL: 0.34 },
+  rabbit: { legH: 0.3, bodyH: 0.28, bodyL: 0.5, bodyW: 0.28, neckLen: 0.2, headL: 0.2, headW: 0.16, headH: 0.14, tailL: 0.08 },
+  boar: { legH: 0.42, bodyH: 0.5, bodyL: 0.85, bodyW: 0.42, neckLen: 0.3, headL: 0.34, headW: 0.22, headH: 0.2, tailL: 0.1 },
+  elk: { legH: 0.85, bodyH: 0.5, bodyL: 0.95, bodyW: 0.4, neckLen: 0.6, headL: 0.34, headW: 0.2, headH: 0.18, tailL: 0.12 },
+  fox: { legH: 0.4, bodyH: 0.34, bodyL: 0.7, bodyW: 0.3, neckLen: 0.3, headL: 0.28, headW: 0.18, headH: 0.16, tailL: 0.4 },
+  bear: { legH: 0.7, bodyH: 0.7, bodyL: 1.05, bodyW: 0.55, neckLen: 0.35, headL: 0.36, headW: 0.26, headH: 0.22, tailL: 0.08 },
 } as const;
 
 /**
- * Emit one quadruped (goat/deer/wolf). Diagonal leg pairs swing
+ * Emit one quadruped (goat/deer/wolf/rabbit/boar/elk/fox/bear). Diagonal leg pairs swing
  * opposite (walk gait); graze (0..1) pitches the neck/head down.
  * All boxes are yaw-rotated; limbs offset along the lateral axis
  * (the 1001 coherence rule).
  */
 function emitQuadruped(
   out: number[],
-  kind: 'goat' | 'deer' | 'wolf',
+  kind: 'goat' | 'deer' | 'wolf' | 'rabbit' | 'boar' | 'elk' | 'fox' | 'bear',
   cx: number, cz: number,
   yBase: number,
   yaw: number,
@@ -1038,7 +1272,7 @@ function emitQuadruped(
   const headL = q.headL * s, headW = q.headW * s, headH = q.headH * s;
   emitBox(out, headCx, headCy, headCz, yaw, graze * 0.5, headW, -headH / 2, headH / 2, headL, spec.body);
   // Snout (wolf: long; goat/deer: shorter, same shape).
-  const snoutL = kind === 'wolf' ? 0.14 * s : 0.09 * s;
+  const snoutL = kind === 'wolf' ? 0.14 * s : kind === 'boar' ? 0.12 * s : 0.09 * s;
   const snoutW = headW * 0.62;
   emitBox(out, headCx + fx * (headL / 2 + snoutL / 2 - 0.02), headCy - headH * 0.12, headCz + fz * (headL / 2 + snoutL / 2 - 0.02), yaw, graze * 0.5, snoutW, -headH * 0.3, headH * 0.3, snoutL, spec.dark);
   // Horns / antlers / ears.
@@ -1048,20 +1282,30 @@ function emitQuadruped(
       const hz = headCz + rz * (side * headW * 0.32) + fz * (-headL * 0.18);
       emitBox(out, hx, headCy + headH / 2, hz, yaw, 0.55, 0.05, 0, 0.2 * s, 0.05, spec.accent);
     }
-  } else if (kind === 'deer') {
+  } else if (kind === 'deer' || kind === 'elk') {
+    // Antlers: elk racks are 1.4x the deer rack.
+    const antlerScale = kind === 'elk' ? 1.4 : 1;
     for (const side of [1, -1] as const) {
       const ax = headCx + rx * (side * headW * 0.3) + fx * (-headL * 0.1);
       const az = headCz + rz * (side * headW * 0.3) + fz * (-headL * 0.1);
-      emitBox(out, ax, headCy + headH / 2, az, yaw, 0.3, 0.045, 0, 0.34 * s, 0.045, spec.accent);
+      emitBox(out, ax, headCy + headH / 2, az, yaw, 0.3, 0.045, 0, 0.34 * s * antlerScale, 0.045, spec.accent);
       // Forward tine on each antler.
-      emitBox(out, ax + fx * 0.07 * s, headCy + headH / 2 + 0.16 * s, az + fz * 0.07 * s, yaw, -0.7, 0.04, 0, 0.14 * s, 0.04, spec.accent);
+      emitBox(out, ax + fx * 0.07 * s, headCy + headH / 2 + 0.16 * s * antlerScale, az + fz * 0.07 * s, yaw, -0.7, 0.04, 0, 0.14 * s * antlerScale, 0.04, spec.accent);
+    }
+  } else if (kind === 'rabbit') {
+    // Long upright ears.
+    for (const side of [1, -1] as const) {
+      const ex = headCx + rx * (side * headW * 0.28) + fx * (-headL * 0.1);
+      const ez = headCz + rz * (side * headW * 0.28) + fz * (-headL * 0.1);
+      emitBox(out, ex, headCy + headH / 2, ez, yaw, -0.1, 0.05, 0, 0.26 * s, 0.05, spec.dark);
     }
   } else {
-    // Wolf ears: two small upright boxes.
+    // Ears: fox tall/pointed, bear short/round, boar short.
+    const earH = kind === 'fox' ? 0.2 * s : kind === 'bear' ? 0.08 * s : 0.1 * s;
     for (const side of [1, -1] as const) {
       const ex = headCx + rx * (side * headW * 0.28) + fx * (headL * 0.12);
       const ez = headCz + rz * (side * headW * 0.28) + fz * (headL * 0.12);
-      emitBox(out, ex, headCy + headH / 2, ez, yaw, -0.15, 0.06, 0, 0.12 * s, 0.06, spec.dark);
+      emitBox(out, ex, headCy + headH / 2, ez, yaw, -0.15, 0.06, 0, earH, 0.06, spec.dark);
     }
   }
   // Tail: pivot at the body rear-top, angled up.
@@ -1174,6 +1418,30 @@ function emitChicken(
 }
 
 /**
+ * BUILD 1102: emit one fish — a small flat body just under the water
+ * surface, with a dorsal fin and a tail fin that wags with the phase.
+ */
+function emitFish(
+  out: number[],
+  cx: number, cz: number,
+  yBase: number,
+  yaw: number,
+  phase: number,
+  spec: AnimalSpec,
+): void {
+  const s = spec.scale;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const bodyY = yBase + 0.06 * s;
+  const bodyL = 0.34 * s, bodyW = 0.14 * s, bodyH = 0.1 * s;
+  emitBox(out, cx, bodyY, cz, yaw, 0, bodyW, -bodyH / 2, bodyH / 2, bodyL, spec.body);
+  // Dorsal fin.
+  emitBox(out, cx, bodyY + bodyH / 2 + 0.02 * s, cz, yaw, 0, 0.03, 0, 0.08 * s, 0.08 * s, spec.dark);
+  // Tail fin (wags with the swim phase).
+  const wag = Math.sin(phase) * 0.3;
+  emitBox(out, cx + fx * (-bodyL / 2 - 0.03 * s), bodyY, cz + fz * (-bodyL / 2 - 0.03 * s), yaw, wag, 0.02, -0.05 * s, 0.05 * s, 0.1 * s, spec.dark);
+}
+
+/**
  * Emit one animal into the world vertex buffer. `yBase` is the ground
  * height (birds pass their flight height; ground animals pass 0).
  * `graze` is 0..1 (goat/deer head-down, chicken peck), `flying`
@@ -1198,13 +1466,17 @@ export function emitAnimal(
     emitChicken(out, cx, cz, yBase, yaw, phase, spec, opts.graze ?? 0, opts.flutter ?? false);
     return;
   }
+  if (kind === 'fish') {
+    emitFish(out, cx, cz, yBase, yaw, phase, spec);
+    return;
+  }
   emitQuadruped(out, kind, cx, cz, yBase, yaw, phase, spec, opts.graze ?? 0);
 }
 
 /** Largest per-kind vertex count (probe one spec per kind). */
 export function maxAnimalVerts(): number {
   let max = 0;
-  for (const kind of ['bird', 'goat', 'deer', 'wolf', 'chicken'] as const) {
+  for (const kind of ['bird', 'goat', 'deer', 'wolf', 'chicken', 'rabbit', 'boar', 'elk', 'fox', 'bear', 'fish'] as const) {
     const out: number[] = [];
     emitAnimal(out, kind, 0, 0, 0, 0, 0, animalSpecFor('probe-0', kind), { graze: 0.5, flying: true, flutter: true });
     max = Math.max(max, out.length / 6);
@@ -1217,11 +1489,14 @@ export function maxAnimalVerts(): number {
  * none). One dark ground quad (2 tris, 6 verts) at y=0.005, same dark
  * blob colour as the house contact shadows. Skipped while a bird is
  * flying (h >= 0.05) — a bird in the air casts no blob here.
- * Half-size by kind: bird 0.22, deer 0.55, goat/wolf 0.45.
+ * Half-size by kind: bird 0.22, deer 0.55, goat/wolf 0.45, elk 0.6,
+ * bear 0.65, rabbit 0.25, fox 0.4. Fish swim — no ground blob.
  */
 export function emitAnimalBlob(out: number[], kind: AnimalKind, cx: number, cz: number, h: number, baseY = 0): void {
   if (h >= 0.05) return;
-  const bs = kind === 'bird' ? 0.22 : kind === 'chicken' ? 0.25 : kind === 'deer' ? 0.55 : 0.45;
+  // BUILD 1102: fish swim under the water surface — no ground blob.
+  if (kind === 'fish') return;
+  const bs = kind === 'bird' ? 0.22 : kind === 'chicken' ? 0.25 : kind === 'deer' ? 0.55 : kind === 'elk' ? 0.6 : kind === 'bear' ? 0.65 : kind === 'rabbit' ? 0.25 : kind === 'fox' ? 0.4 : 0.45;
   const y = 0.005 + baseY;
   out.push(
     cx - bs, y, cz - bs, 0.2, 0.19, 0.17, cx + bs, y, cz - bs, 0.2, 0.19, 0.17, cx + bs, y, cz + bs, 0.2, 0.19, 0.17,

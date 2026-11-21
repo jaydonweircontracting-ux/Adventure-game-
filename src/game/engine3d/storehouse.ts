@@ -112,7 +112,7 @@ import {
   withdrawFrom,
   type ResourceRegistry,
 } from './resourceRegistry';
-import { GRANARY_CAPACITY_GRAIN, GRANARY_GRAIN_TILE } from './granary';
+import { GRANARY_CAPACITY_FISH, GRANARY_CAPACITY_GRAIN, GRANARY_CAPACITY_MEAT, GRANARY_FISH_TILE, GRANARY_GRAIN_TILE, GRANARY_MEAT_TILE } from './granary';
 import { doorForRect } from './placements';
 import { planPathNpc } from './townsfolk3d';
 import { terrainAt, type IsoWorld } from '../iso/isoWorld';
@@ -185,6 +185,12 @@ export const STOREHOUSE_CAPACITY_TIMBER = 40;
 /** Furniture capacity of the storehouse store (BUILD 1095 — the
  *  carpenter's furniture; a real cap that binds at 10). */
 export const STOREHOUSE_CAPACITY_FURNITURE = 10;
+/** Wool the storehouse holds (BUILD 1102 — the shepherd's yield,
+ *  the timber pattern: a bulky craft input). */
+export const STOREHOUSE_CAPACITY_WOOL = 40;
+/** Leather the storehouse holds (BUILD 1102 — the hunter's yield,
+ *  the ingot pattern: a scarce craft input). */
+export const STOREHOUSE_CAPACITY_LEATHER = 20;
 
 /** The storehouse's registry store id (R-1). */
 export const STOREHOUSE_STORE_ID = 'storehouse';
@@ -588,6 +594,18 @@ export function storehouseWoodInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, STOREHOUSE_STORE_ID, 'wood');
 }
 
+/** Wool in the storehouse (BUILD 1102 — the shepherd's yield).
+ *  Pure. */
+export function storehouseWoolInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, STOREHOUSE_STORE_ID, 'wool');
+}
+
+/** Leather in the storehouse (BUILD 1102 — the hunter's yield).
+ *  Pure. */
+export function storehouseLeatherInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, STOREHOUSE_STORE_ID, 'leather');
+}
+
 /** Stone in the storehouse store (0 when it never held any). Pure. */
 export function storehouseStoneInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, STOREHOUSE_STORE_ID, 'stone');
@@ -607,7 +625,7 @@ export function storehouseOreInRegistry(registry: ResourceRegistry, kind: string
  * first deposit, so a fresh storehouse's first delivery creates
  * the capped entry. Pure.
  */
-export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number, ore = 0, coal = 0, ingot = 0, tool = 0, timber = 0, furniture = 0): ResourceRegistry {
+export function seedStorehouseStore(registry: ResourceRegistry, wood: number, stone: number, ore = 0, coal = 0, ingot = 0, tool = 0, timber = 0, furniture = 0, wool = 0, leather = 0): ResourceRegistry {
   let next = registry;
   if (wood > 0) {
     next = setStoreQty(
@@ -693,6 +711,28 @@ export function seedStorehouseStore(registry: ResourceRegistry, wood: number, st
       { capacity: STOREHOUSE_CAPACITY_FURNITURE, location: { ...STOREHOUSE_APPROACH } },
     );
   }
+  // BUILD 1102: the storehouse's wool and leather — seeded from
+  // the founders save (v12), like furniture.
+  if (wool > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'wool',
+      wool,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_WOOL, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
+  if (leather > 0) {
+    next = setStoreQty(
+      next,
+      STOREHOUSE_STORE_ID,
+      'leather',
+      leather,
+      { type: 'loaded' },
+      { capacity: STOREHOUSE_CAPACITY_LEATHER, location: { ...STOREHOUSE_APPROACH } },
+    );
+  }
   return next;
 }
 
@@ -708,7 +748,10 @@ export function deliveryStoreId(storehouse: StorehouseState | null | undefined):
 
 /**
  * Deliver the founder's carried wood, grain, stone, and carried
- * build wood to their stores (BUILD 1087 — the hauling leg):
+ * build wood to their stores (BUILD 1087 — the hauling leg).
+ * BUILD 1102: meat and fish ride the same leg to the granary, and
+ * leather and wool to the delivery store — the hunter's and the
+ * shepherd's yields are carried home exactly like ore:
  * wood + stone + build wood go to the delivery store (the
  * storehouse when it exists, the camp pile before that); grain
  * always goes to the granary store (BUILD 1090 — the mill's
@@ -727,7 +770,7 @@ export function deliverFounderCarryToStore(
   registry: ResourceRegistry,
   f: FounderState,
   storehouse: StorehouseState | null | undefined,
-): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; movedOre: number; movedIron: number; movedCoal: number; dest: string } {
+): { registry: ResourceRegistry; movedWood: number; movedGrain: number; movedStone: number; movedBuildWood: number; movedOre: number; movedIron: number; movedCoal: number; movedMeat: number; movedFish: number; movedLeather: number; movedWool: number; dest: string } {
   const dest = deliveryStoreId(storehouse);
   const loc = dest === STOREHOUSE_STORE_ID ? { ...STOREHOUSE_APPROACH } : { ...FOUNDER_CAMP_CENTRE };
   const src = { type: 'entity', id: f.id } as const;
@@ -744,7 +787,7 @@ export function deliverFounderCarryToStore(
   // BUILD 1095: iron AND coal (the 1089 code moved 'iron' only,
   // so a coal miner's coal stranded in the carrier and the deliver
   // job never completed — the founder pinned at the approach).
-  const moveToDest = (kind: 'wood' | 'stone' | 'iron' | 'coal', qty: number, capacity: number): number => {
+  const moveToDest = (kind: 'wood' | 'stone' | 'iron' | 'coal' | 'leather' | 'wool', qty: number, capacity: number): number => {
     if (qty <= 0) return 0;
     const first = transfer(reg, carrierStoreId(f.id), dest, kind, qty, src, { location: loc, capacity });
     reg = first.registry;
@@ -774,7 +817,27 @@ export function deliverFounderCarryToStore(
   const movedIron = moveToDest('iron', storeQty(reg, carrierStoreId(f.id), 'iron'), STOREHOUSE_CAPACITY_ORE);
   const movedCoal = moveToDest('coal', storeQty(reg, carrierStoreId(f.id), 'coal'), STOREHOUSE_CAPACITY_COAL);
   const movedOre = movedIron + movedCoal;
-  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, movedOre, movedIron, movedCoal, dest };
+  // BUILD 1102: meat and fish go to the granary (the eat tile,
+  // capped like meals); leather and wool go to the delivery store
+  // (the same overflow-to-camp leg as ore). The quantities are read
+  // from the carrier store, like ore — the registry is the authority.
+  let movedMeat = 0;
+  const meat = storeQty(reg, carrierStoreId(f.id), 'meat');
+  if (meat > 0) {
+    const res = transfer(reg, carrierStoreId(f.id), GRANARY_STORE_ID, 'meat', meat, src, { location: { ...GRANARY_MEAT_TILE }, capacity: GRANARY_CAPACITY_MEAT });
+    reg = res.registry;
+    movedMeat = res.moved;
+  }
+  let movedFish = 0;
+  const fish = storeQty(reg, carrierStoreId(f.id), 'fish');
+  if (fish > 0) {
+    const res = transfer(reg, carrierStoreId(f.id), GRANARY_STORE_ID, 'fish', fish, src, { location: { ...GRANARY_FISH_TILE }, capacity: GRANARY_CAPACITY_FISH });
+    reg = res.registry;
+    movedFish = res.moved;
+  }
+  const movedLeather = moveToDest('leather', storeQty(reg, carrierStoreId(f.id), 'leather'), STOREHOUSE_CAPACITY_LEATHER);
+  const movedWool = moveToDest('wool', storeQty(reg, carrierStoreId(f.id), 'wool'), STOREHOUSE_CAPACITY_WOOL);
+  return { registry: reg, movedWood, movedGrain, movedStone, movedBuildWood, movedOre, movedIron, movedCoal, movedMeat, movedFish, movedLeather, movedWool, dest };
 }
 
 /**

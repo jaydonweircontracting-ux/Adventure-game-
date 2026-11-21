@@ -190,6 +190,23 @@ export function ControlCenterPanel(props: { onClose: () => void; getData: () => 
             </div>
           </div>
 
+          <div data-testid="cc-animals" style={sectionStyle}>
+            <div style={headingStyle}>🐑 Animals — pen + hunting + fishing</div>
+            <div>
+              Pen {d.animals.penState}
+              {d.animals.penState === 'building' ? ` — ${d.animals.penProgress}/6` : d.animals.penState === 'done' ? ` — ${Math.floor(d.animals.penFlock)} sheep${d.animals.penWool >= 1 ? ` · ${Math.floor(d.animals.penWool)} wool ready` : ''}${d.animals.penFedDay >= 0 ? ` · fed day ${d.animals.penFedDay}` : ' · never fed'}` : ' — not started'}
+            </div>
+            <div>
+              {d.animals.populations.length === 0 ? 'No animal populations yet' : d.animals.populations.map((p) => `${p.kind} ${Math.round(p.population)}/${p.capacity}`).join(' · ')}
+            </div>
+            <div>
+              {d.animals.workers.length === 0 ? 'No hunter, fisher or shepherd yet' : d.animals.workers.map((w) => `${w.name} (${w.profession}) — ${w.workState}`).join(' · ')}
+            </div>
+            <div style={dimStyle}>
+              Stores: {d.animals.meat} meat · {d.animals.fish} fish · {d.animals.wool} wool · {d.animals.leather} leather
+            </div>
+          </div>
+
           <div data-testid="cc-chain" style={sectionStyle}>
             <div style={headingStyle}>⛓️ Metal + timber chain — production</div>
             <div>

@@ -19,8 +19,11 @@
  *   need(x) = (100 - x)/100. Night sleep dominates (energy 90 at
  *   night scores 0.81); by day a founder sleeps when energy is low
  *   (energy 20 → 0.64, energy 15 → 0.72).
- * - eat = foodStock > 0 ? need(hunger)^2 x 1.2 : 0, capped at 1.
- *   Gated on food — no food, no meal (the 1057 rule). Beats the
+ * - eat = edibleFood (meals + meat + fish) > 0 ? need(hunger)^2 x 1.2 : 0,
+ *   capped at 1. Gated on edible food — no food, no meal (the 1057
+ *   rule, extended BUILD 1102: meat/fish are food, and the eat step
+ *   already falls back to them — the gate must count them too, or a
+ *   founder starves beside a granary of meat). Beats the
  *   hardest work (0.57) at hunger ≤ ~30, so the eat threshold while
  *   a build is pending matches the old priority; while idle it eats
  *   below ~44 (peckish, not starving — Sims-like, and the reason the
@@ -134,6 +137,7 @@ import { GRANARY_CAPACITY_FLOUR } from './granary';
 import type { ConstructionState } from './construction';
 import type { ProfessionId } from './professions';
 import { professionJobKinds } from './professions';
+import { PEN_FEED_GRAIN, PEN_START_DAY } from './animalHusbandry';
 
 /** The five scored activities — the 1057 four plus 'build'. */
 export type ScoredActivity = FounderActivity;
@@ -330,6 +334,43 @@ export type UtilityWorldContext = {
    *  carpenter term is 0 for this founder. Optional: absent means
    *  the slot is free. */
   carpenterTaken?: boolean;
+  /** BUILD 1102: open hunt jobs on the board — the hunt term only
+   *  fires when there is prey to hunt. Optional: absent means no
+   *  hunt data and the hunt term is 0. */
+  readyHuntJobs?: number;
+  /** BUILD 1102: open fish jobs on the board — the fish term only
+   *  fires when there is a river to fish. Optional: absent means
+   *  no fish data and the fish term is 0. */
+  readyFishJobs?: number;
+  /** BUILD 1102: open shepherd feed jobs on the board — the
+   *  shepherd feed term only fires when the pen is unfed.
+   *  Optional: absent means no shepherd data and the feed term
+   *  is 0. */
+  readyShepherdFeedJobs?: number;
+  /** BUILD 1102: open shepherd shear jobs on the board — the
+   *  shepherd shear term only fires when wool is ready.
+   *  Optional: absent means no shepherd data and the shear term
+   *  is 0. */
+  readyShepherdShearJobs?: number;
+  /** BUILD 1102: another founder is already hunting — the hunt
+   *  term is 0 for this founder, so only one founder ever hunts
+   *  at a time. Optional: absent means the slot is free. */
+  huntTaken?: boolean;
+  /** BUILD 1102: another founder is already fishing — the fish
+   *  term is 0 for this founder. Optional: absent means the slot
+   *  is free. */
+  fishTaken?: boolean;
+  /** BUILD 1102: another founder is already shepherding — the
+   *  shepherd term is 0 for this founder. Optional: absent means
+   *  the slot is free. */
+  shepherdTaken?: boolean;
+  /** BUILD 1102: meat in the granary store — the hunt/fish terms
+   *  count it as camp food (a hunted meal is a meal). Optional:
+   *  absent means 0. */
+  campMeat?: number;
+  /** BUILD 1102: fish in the granary store — the hunt/fish terms
+   *  count it as camp food. Optional: absent means 0. */
+  campFish?: number;
   /** BUILD 1098: the founder's profession (professions.ts) — the
    *  scorer weights the profession's job kinds higher (+
    *  PROFESSION_TERM_BONUS, additive). Optional: absent or null
@@ -369,7 +410,7 @@ export type ScoredDecision = {
    *  terms (null when no work is worth doing). BUILD 1089: the
    *  mine and the lumber join the argmax (see workTermsFor).
    *  BUILD 1090: planting joins it too. */
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | 'hunt' | 'fish' | 'shepherd' | null;
   /** BUILD 1086: the chop term itself — the assignment gates the
    *  chop fallback on it, so a founder whose activity is 'work'
    *  (stone or food) but who cannot claim a harvest/quarry job
@@ -479,6 +520,50 @@ export const UTILITY_BAKE_TERM_MAX = 0.6;
  *  term rises as the camp runs out of food. 0.2: 0.6 + 0.2 = 0.8
  *  at food 0, back to 0.6 when the camp is fed (food 15). */
 export const UTILITY_BAKE_URGENCY = 0.2;
+
+/** BUILD 1102: the hunt term max — the most work is worth for
+ *  hunting alone (an open hunt job, camp food below 20). Food
+ *  work: at food 0 it is 0.65, ABOVE the bake term (0.6) — when
+ *  the camp is out of food, a hunter hunts instead of baking, a
+ *  second food stream during the shortage. The old 0.45 never
+ *  won: the diag-week proved the 5 open hunt jobs were never
+ *  claimed in a whole week, even at food 0 (starved 1419),
+ *  because bake (0.6) always beat it. It fades as the camp's
+ *  food recovers (food 0 -> 0.65, food 20 -> 0), so hunting is
+ *  a shortage response, not a routine — the farmer still bakes
+ *  while the food holds. */
+export const UTILITY_HUNT_TERM_MAX = 0.65;
+/** BUILD 1102: the fish term max — the same shape as the hunt
+ *  term, one step lower (0.60): when both a hunt and a fish job
+ *  are open, the hunter goes first (meat + leather beat fish
+ *  alone), and the fisher follows — the fisher's profession
+ *  bonus (+0.03) breaks the tie with bake (0.6) at food 0. */
+export const UTILITY_FISH_TERM_MAX = 0.6;
+/** BUILD 1102: the shepherd term max — the most work is worth
+ *  for shearing alone (wool ready at the pen). 0.65, above the
+ *  bake term (0.6): the pen's yield is real food/income, not
+ *  background work — at 0.5 the shepherd never sheared, because
+ *  bake always beat it (the diag-week's sister proof: the hunt
+ *  term at 0.45 never won either). */
+export const UTILITY_SHEPHERD_TERM_MAX = 0.65;
+/** BUILD 1102: the shepherd feed term — the most work is worth
+ *  for feeding the pen alone (unfed, grain on hand). 0.65,
+ *  equal to the shear: feeding is the daily upkeep the flock's
+ *  growth depends on (births only when fed) — at 0.3 the pen
+ *  was never fed, so the flock never grew. The jobs are quick
+ *  (a short walk + a 3-tick shift) and only exist when needed,
+ *  so the shepherd still does other work most of the day. */
+export const UTILITY_SHEPHERD_FEED_TERM = 0.65;
+/** BUILD 1102: the camp-food threshold the hunt/fish terms use
+ *  — below 20 meals + meat + fish, hunting and fishing are
+ *  worth doing; at 20 or above, the camp is fed and the terms
+ *  are 0. 20, not 10: the camp's food equilibrates at ~15
+ *  (the bake ceiling is 15/day vs ~12-14 eaten), so a 10-meal
+ *  threshold almost never fires — the terms must be live during
+ *  the 8-15 hover, not just below 10. (The bake term's own
+ *  threshold is 15, so baking still fires first when flour is
+ *  on hand and the food holds.) */
+export const UTILITY_HUNT_FOOD_THRESHOLD = 20;
 
 /** BUILD 1095: the smelt term — the most work is worth for
  *  smelting alone (an open smelt job, ore + coal to smelt, room
@@ -591,7 +676,10 @@ function workTermsFor(ctx: UtilityContext): {
   smithTerm: number;
   sawTerm: number;
   carpenterTerm: number;
-  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null;
+  huntTerm: number;
+  fishTerm: number;
+  shepherdTerm: number;
+  workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | 'hunt' | 'fish' | 'shepherd' | null;
 } {
   const { foodStock, stockpileWood, construction, nearestTreeDist } = ctx;
   // BUILD 1096: "a hut is pending" means a BUILDABLE hut site
@@ -840,6 +928,45 @@ function workTermsFor(ctx: UtilityContext): {
     readyCarpenter > 0 && !carpenterTaken && (ctx.storehouseTimber ?? 0) >= CARPENTER_TIMBER_PER_BATCH && (ctx.storehouseFurniture ?? 0) < STOREHOUSE_CAPACITY_FURNITURE
       ? UTILITY_CARPENTER_TERM_MAX
       : 0;
+  // BUILD 1102: the hunt / fish / shepherd terms — when the
+  // settlement is old enough (day >= 3) and the work exists.
+  // Hunt and fish fire only while the camp is short of food
+  // (meals below UTILITY_HUNT_FOOD_THRESHOLD), scaled by the
+  // shortage (food 0 -> max, food 20 -> 0): hunting and fishing
+  // are food work, not background work.
+  // BUILD 1102 Fix 15: the terms used to count meals + meat +
+  // fish, but the founders eat meals first and baking replenishes
+  // them, so the meat/fish reserve is almost never eaten — a
+  // modest reserve (>= 16) kept the total >= 20 for days and the
+  // hunt/fish terms at 0 while the hunter stood idle with meals
+  // at 0 and 10 hunt jobs open (diag-hunt2 day 7). The terms now
+  // read the day-to-day food (meals); meat/fish are the reserve,
+  // eaten when meals run out, and hunting replenishes them.
+  const day1102 = ctx.day ?? 1;
+  const campFood1102 = foodStock;
+  const readyHunt = ctx.readyHuntJobs ?? 0;
+  const huntTaken = ctx.huntTaken ?? false;
+  const huntTerm =
+    day1102 >= PEN_START_DAY && readyHunt > 0 && !huntTaken && campFood1102 < UTILITY_HUNT_FOOD_THRESHOLD
+      ? UTILITY_HUNT_TERM_MAX * Math.max(0, 1 - campFood1102 / UTILITY_HUNT_FOOD_THRESHOLD)
+      : 0;
+  const readyFish = ctx.readyFishJobs ?? 0;
+  const fishTaken = ctx.fishTaken ?? false;
+  const fishTerm =
+    day1102 >= PEN_START_DAY && readyFish > 0 && !fishTaken && campFood1102 < UTILITY_HUNT_FOOD_THRESHOLD
+      ? UTILITY_FISH_TERM_MAX * Math.max(0, 1 - campFood1102 / UTILITY_HUNT_FOOD_THRESHOLD)
+      : 0;
+  const readyShepherdFeed = ctx.readyShepherdFeedJobs ?? 0;
+  const readyShepherdShear = ctx.readyShepherdShearJobs ?? 0;
+  const shepherdTaken = ctx.shepherdTaken ?? false;
+  const shepherdTerm =
+    day1102 >= PEN_START_DAY && !shepherdTaken
+      ? readyShepherdShear > 0
+        ? UTILITY_SHEPHERD_TERM_MAX
+        : readyShepherdFeed > 0 && campGrain >= PEN_FEED_GRAIN
+          ? UTILITY_SHEPHERD_FEED_TERM
+          : 0
+      : 0;
   // BUILD 1098: the profession weight — a founder with a
   // profession scores its profession's job kinds higher
   // (+PROFESSION_TERM_BONUS, additive, clamped to 1). The boost
@@ -867,22 +994,28 @@ function workTermsFor(ctx: UtilityContext): {
   const bSmith = boosted(smithTerm, 'smith');
   const bSaw = boosted(sawTerm, 'saw');
   const bCarpenter = boosted(carpenterTerm, 'carpenter');
-  const work = Math.max(bChop, bFood, bStone, bWater, bMine, bLumber, bPlant, bMill, bBake, bSmelt, bSmith, bSaw, bCarpenter);
-  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | null = null;
+  const bHunt = boosted(huntTerm, 'hunt');
+  const bFish = boosted(fishTerm, 'fish');
+  const bShepherd = boosted(shepherdTerm, 'shepherd');
+  const work = Math.max(bChop, bFood, bStone, bWater, bMine, bLumber, bPlant, bMill, bBake, bSmelt, bSmith, bSaw, bCarpenter, bHunt, bFish, bShepherd);
+  let workKind: 'chop' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | 'hunt' | 'fish' | 'shepherd' | null = null;
   if (bWater > 0 && bWater > bChop && bWater > bFood && bWater > bStone && bWater > bMine && bWater > bLumber && bWater > bPlant && bWater > bMill && bWater > bBake) workKind = 'water';
   else if (bStone > 0 && bStone > bChop && bStone > bFood && bStone > bMine && bStone > bLumber && bStone > bPlant && bStone > bMill && bStone > bBake) workKind = 'quarry';
   else if (bPlant > 0 && bPlant > bChop && bPlant > bFood && bPlant >= bLumber && bPlant >= bMine && bPlant >= bMill && bPlant >= bBake) workKind = 'plant';
-  else if (bBake > 0 && bBake >= bChop && bBake >= bLumber && bBake >= bMine && bBake >= bMill && bBake >= bFood) workKind = 'bake';
-  else if (bMill > 0 && bMill >= bChop && bMill >= bLumber && bMill >= bMine && bMill >= bFood) workKind = 'mill';
+  else if (bBake > 0 && bBake >= bChop && bBake >= bLumber && bBake >= bMine && bBake >= bMill && bBake >= bFood && bBake >= bHunt && bBake >= bFish && bBake >= bShepherd) workKind = 'bake';
+  else if (bMill > 0 && bMill >= bChop && bMill >= bLumber && bMill >= bMine && bMill >= bFood && bMill >= bHunt && bMill >= bFish && bMill >= bShepherd) workKind = 'mill';
+  else if (bHunt > 0 && bHunt >= bChop && bHunt >= bLumber && bHunt >= bMine && bHunt >= bFood) workKind = 'hunt';
+  else if (bFish > 0 && bFish >= bChop && bFish >= bLumber && bFish >= bMine && bFish >= bFood) workKind = 'fish';
   else if (bSmelt > 0 && bSmelt >= bChop && bSmelt >= bLumber && bSmelt >= bMine && bSmelt >= bFood) workKind = 'smelt';
   else if (bSmith > 0 && bSmith >= bChop && bSmith >= bLumber && bSmith >= bMine && bSmith >= bFood) workKind = 'smith';
   else if (bSaw > 0 && bSaw >= bChop && bSaw >= bLumber && bSaw >= bMine && bSaw >= bFood) workKind = 'saw';
   else if (bCarpenter > 0 && bCarpenter >= bChop && bCarpenter >= bLumber && bCarpenter >= bMine && bCarpenter >= bFood) workKind = 'carpenter';
+  else if (bShepherd > 0 && bShepherd >= bChop && bShepherd >= bLumber && bShepherd >= bMine && bShepherd >= bFood) workKind = 'shepherd';
   else if (bFood > 0 && bFood >= bChop && bFood >= bLumber && bFood >= bMine) workKind = 'harvest';
   else if (bLumber > 0 && bLumber >= bChop && bLumber >= bMine && bLumber >= bMill) workKind = 'lumber';
   else if (bMine > 0 && bMine > bChop) workKind = 'mine';
   else if (bChop > 0) workKind = 'chop';
-  return { chopWork: bChop, foodTerm: bFood, stoneTerm: bStone, waterTerm: bWater, mineTerm: bMine, lumberTerm: bLumber, plantTerm: bPlant, millTerm: bMill, bakeTerm: bBake, smeltTerm: bSmelt, smithTerm: bSmith, sawTerm: bSaw, carpenterTerm: bCarpenter, work, workKind };
+  return { chopWork: bChop, foodTerm: bFood, stoneTerm: bStone, waterTerm: bWater, mineTerm: bMine, lumberTerm: bLumber, plantTerm: bPlant, millTerm: bMill, bakeTerm: bBake, smeltTerm: bSmelt, smithTerm: bSmith, sawTerm: bSaw, carpenterTerm: bCarpenter, huntTerm: bHunt, fishTerm: bFish, shepherdTerm: bShepherd, work, workKind };
 }
 
 export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
@@ -896,7 +1029,15 @@ export function scoreFounderActivities(ctx: UtilityContext): UtilityScores {
   const distPenalty = (d: number): number => UTILITY_DIST_PENALTY * Math.min(8, Math.max(0, d));
 
   const sleep = clamp01(utilityNeed(needs.energy) ** 2 + (isFounderNight(minutes) ? UTILITY_NIGHT_BONUS : 0));
-  const eat = foodStock > 0 ? clamp01(utilityNeed(needs.hunger) ** 2 * UTILITY_EAT_WEIGHT) : 0;
+  // BUILD 1102 (eat-term fix): the eat gate counts EDIBLE stock —
+  // meals + meat + fish. The eat step already falls back meals →
+  // meat → fish (founders.ts), but the scorer gated 'eat' on meals
+  // only (the 1057 rule), so once meals hit 0 no founder ever
+  // chose 'eat' — and starved beside 23 meat in the granary
+  // (diag-week6: starved 4384, minHealth 78, meat 23 + fish 2
+  // uneaten at tick 11200). Meat/fish are food; the gate counts them.
+  const edibleFood = foodStock + (ctx.campMeat ?? 0) + (ctx.campFish ?? 0);
+  const eat = edibleFood > 0 ? clamp01(utilityNeed(needs.hunger) ** 2 * UTILITY_EAT_WEIGHT) : 0;
   // BUILD 1060: the companionship premium — a lonely founder rests
   // more eagerly when their closest founder is at camp. The premium
   // scales with affinity ABOVE neutral (50): a neutral 50 adds

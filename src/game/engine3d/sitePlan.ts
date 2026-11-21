@@ -94,6 +94,7 @@ import {
   type HousingState, canStartInn,
 } from './housing';
 import { type BridgeSite, canStartBridge } from './paths';
+import { PEN_RECT, type PenState } from './animalHusbandry';
 
 /** The buildings the settlement plan can choose (the founders'
  *  settlement-run buildings — the ones with a staged build path
@@ -782,6 +783,7 @@ export function existingBuildingRects(
   foodChain: FoodChainState,
   metalChain: MetalChainState,
   housing: HousingState,
+  pen?: PenState,
 ): { x0: number; y0: number; x1: number; y1: number }[] {
   const out: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (let i = 0; i < HUT_SITES.length; i++) {
@@ -796,5 +798,8 @@ export function existingBuildingRects(
   if (metalChain.carpenter.state === 'done') out.push({ ...CARPENTER_RECT });
   if (metalChain.workshop.state === 'done') out.push({ ...WORKSHOP_RECT });
   if (housing.inn.state === 'done') out.push({ ...INN_RECT });
+  // BUILD 1102: the pen, once built — the Architect must not plan
+  // a building on top of the flock's ground.
+  if (pen && pen.site.state === 'done') out.push({ ...PEN_RECT });
   return out;
 }

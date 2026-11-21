@@ -34,11 +34,13 @@ import { professionLabel } from './professions';
 import { jobForFounder, type JobBoard } from './jobs';
 import { growthFactorAt, livingWorldSummary, type LivingWorld3DState } from './livingWorld';
 import { ecosystemSummaryText, plantSapling, recordAnimalKill } from './ecosystems';
+import { granaryMeatInRegistry, granaryFishInRegistry } from './granary';
+import type { PenState } from './animalHusbandry';
 import {
   HUT_SITES, HUT_WORK_STEPS, sitesOf, hutSitePlacementExists,
   type ConstructionState,
 } from './construction';
-import { STOREHOUSE_CENTRE, STOREHOUSE_WORK_STEPS, storehouseWoodInRegistry, storehouseStoneInRegistry, type StorehouseState } from './storehouse';
+import { STOREHOUSE_CENTRE, STOREHOUSE_WORK_STEPS, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, type StorehouseState } from './storehouse';
 import { crateId, rockId, treeId, wildTreeId, npcSpawnIdFor } from './entityIds';
 import {
   depositInto, extractDeposit, CAMP_STORE_ID, PLAYER_STORE_ID,
@@ -109,6 +111,10 @@ export interface PlayerControlsContext {
   // the E report quotes it. Optional: old callers pass none and
   // the report omits the plan line.
   sitePlan?: MutableRefObject<SettlementPlan | null>;
+  // BUILD 1102: the pen (the view's penRef) — the E stockpile
+  // report quotes it. Optional: old callers pass none and the
+  // report omits the pen line.
+  pen?: MutableRefObject<PenState>;
   construction: MutableRefObject<ConstructionState>;
   // BUILD 1087: the storehouse state (the E-key storehouse-site
   // report reads it). Optional: the old callers pass no storehouse
@@ -518,6 +524,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
   const registryRef = ctx.registry;
   const jobBoardRef = ctx.jobBoard;
   const sitePlanRef = ctx.sitePlan;
+  const penRef = ctx.pen;
   const constructionRef = ctx.construction;
   const livingWorldRef = ctx.livingWorld;
   const clockRef = ctx.clock;
@@ -619,7 +626,7 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       const lw=livingWorldRef.current?livingWorldSummary(livingWorldRef.current,world.trees.length,clockRef.current.day):null;
       // BUILD 1085 (1.6): the ecosystem counts ride on the stockpile
       // board too (deer/wolves/saplings, live from the world save).
-      const eco=ecosystemSummaryText(world);
+      const eco=ecosystemSummaryText(world, penRef ? penRef.current : null, { meat: granaryMeatInRegistry(registryRef.current), fish: granaryFishInRegistry(registryRef.current), wool: storehouseWoolInRegistry(registryRef.current), leather: storehouseLeatherInRegistry(registryRef.current) });
       setMessage('Settlers\' stockpile: '+campWoodInRegistry(registryRef.current)+' wood · '+campStoneInRegistry(registryRef.current)+' stone · Granary '+campFoodInRegistry(registryRef.current)+' meals · '+campGrainInRegistry(registryRef.current)+' grain'+(lw?' · Forest '+lw.forestDensityPct+'% ('+lw.liveTrees+'/'+lw.baselineTrees+' trees) · '+lw.plantedTotal+' regrown · sim day '+lw.lastAdvancedDay:'')+(eco?' · '+eco:''));
       return;
     }

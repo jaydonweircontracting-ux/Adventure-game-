@@ -141,6 +141,9 @@ export type ControlCenterInput = {
   /** BUILD 1101: the founding party (optional — the old callers
    *  pass none and the panel shows 'no founding party'). */
   founding?: FoundingState | null;
+  /** BUILD 1102: animals (optional — the old callers pass none and
+   *  the panel shows 'no pen yet'). */
+  animals?: { pen: { state: string; progress: number; flock: number; woolReady: number; fedDay: number }; populations: { kind: string; population: number; capacity: number }[]; workers: { name: string; profession: string; workState: string }[]; meat: number; fish: number; wool: number; leather: number };
   /** BUILD 1087: the storehouse (optional — the old callers pass
    *  none and the panel shows the site line). */
   storehouse?: { state: string; progress: number; wood: number; stone: number; iron: number; coal: number; ingots: number; tools: number; timber: number; furniture: number };
@@ -154,6 +157,26 @@ export type ControlCenterInput = {
   farm: { planted: number; growing: number; ready: number };
   perf: { rebuilds: number; maxStepMsMoving: number; lastBuildMs: number; lastBuildFrames: number };
 };
+
+/** The founder work states that ARE animal work (BUILD 1102):
+ *  heading to prey / hunting, to the bank / fishing, to the pen /
+ *  shepherding. */
+export const ANIMAL_WORK_STATES: readonly string[] = ['toPrey', 'hunting', 'toBank', 'fishing', 'toPen', 'shepherding'];
+
+/**
+ * The founders doing animal work right now (BUILD 1102): by animal
+ * profession (hunter/fisher/shepherd), OR by current animal work.
+ * The profession slots sit last, so in a 7-founder settlement all
+ * seven hold core professions while founders still hunt/fish/
+ * shepherd by need-score — a profession-only list is empty all
+ * week even as the jobs run, so the Control Center must list the
+ * work actually happening, not only the labels. Pure — the caller
+ * maps the returned founders to display entries.
+ */
+export function animalWorkersFor<T extends { name: string; profession: string | null; workState: string }>(founders: T[]): T[] {
+  return founders.filter((f) => f.profession === 'hunter' || f.profession === 'fisher' || f.profession === 'shepherd' || ANIMAL_WORK_STATES.includes(f.workState));
+}
+
 
 export type ControlCenterData = {
   speed: SimSpeed;
@@ -248,6 +271,9 @@ export type ControlCenterData = {
   /** BUILD 1101: the founding party — stage, chosen site + reasons,
    *  pile wood, hut progress, farm planted, and the last log line. */
   founding: { stage: string; centre: { x: number; y: number } | null; score: number; reasons: string[]; pileWood: number; hutProgress: number; farmPlanted: number; lastLog: string | null } | null;
+  /** BUILD 1102: animals — the pen, the populations, the
+   *  hunter/fisher/shepherd workers, and the animal stores. */
+  animals: { penState: string; penProgress: number; penFlock: number; penWool: number; penFedDay: number; populations: { kind: string; population: number; capacity: number }[]; workers: { name: string; profession: string; workState: string }[]; meat: number; fish: number; wool: number; leather: number };
   trade: { deliverOpen: number; deliverClaimed: number; deliveriesCompleted: number; routes: string[]; note: string };
   environment: {
     forestDensityPct: number;
@@ -437,6 +463,21 @@ export function formatControlCenterData(input: ControlCenterInput): ControlCente
     // (null while still surveying), the pile, the hut progress, the
     // farm count, and the last milestone line (the panel quotes it).
     founding: input.founding ? { stage: input.founding.stage, centre: input.founding.site ? { ...input.founding.site.centre } : null, score: input.founding.site ? input.founding.site.score : 0, reasons: input.founding.site ? [...input.founding.site.reasons] : [], pileWood: input.founding.pile.wood, hutProgress: input.founding.hut.progress, farmPlanted: input.founding.farm.planted, lastLog: input.founding.log.length > 0 ? input.founding.log[input.founding.log.length - 1] : null } : null,
+    // BUILD 1102: animals — the pen, the populations, the workers,
+    // and the stores (0s / 'none' when the caller passes none).
+    animals: {
+      penState: input.animals?.pen.state ?? 'none',
+      penProgress: input.animals?.pen.progress ?? 0,
+      penFlock: input.animals?.pen.flock ?? 0,
+      penWool: input.animals?.pen.woolReady ?? 0,
+      penFedDay: input.animals?.pen.fedDay ?? -1,
+      populations: input.animals?.populations ?? [],
+      workers: input.animals?.workers ?? [],
+      meat: input.animals?.meat ?? 0,
+      fish: input.animals?.fish ?? 0,
+      wool: input.animals?.wool ?? 0,
+      leather: input.animals?.leather ?? 0,
+    },
     trade: {
       deliverOpen: input.jobs.deliverOpen,
       deliverClaimed: input.jobs.deliverClaimed,

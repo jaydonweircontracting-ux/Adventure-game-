@@ -47,15 +47,17 @@
 //      = one animal gone), then clears the count: hunting stops →
 //      the subtraction stops → births rebuild the population.
 //
-// The 3D species table: deer + wolf take their params from the 2.5D
-// table (paramsForSpecies — the port, not a second model); bird, goat
-// and chicken have no 2.5D entry, so they carry 3D-native params in
-// the same PopulationParams shape, run through the same day math.
-// No new species (Phase 4), no domestication (Phase 4), no hunting
-// as a profession (Phase 4) — the hunting input is the recorded-kill
-// record a Phase 4 hunt will write; today the player writes it by
-// slaying a wolf, and the probe writes it for deer through the
-// recordHuntingKill test hook.
+// The 3D species table: deer + wolf + rabbit + boar take their params
+// from the 2.5D table (paramsForSpecies — the port, not a second
+// model); the rest carry 3D-native params in the same
+// PopulationParams shape, run through the same day math.
+// BUILD 1102 (Phase 4.5): elk, fox, bear, fish, sheep, cattle, pig
+// and horse join the table. No domestication as a tech (later) —
+// sheep/cattle/pig/horse are regional populations only; the pen flock
+// is the one domestic group, and it lives in animalHusbandry.ts.
+// The hunting input is the recorded-kill record a hunt writes;
+// today the player writes it by slaying a wolf, and the probe
+// writes it for deer through the recordHuntingKill test hook.
 import { DEFAULT_WORLD_SEED, seasonForDay } from '../worldCore';
 import { wfcSeedFor } from '../wfc';
 import {
@@ -67,9 +69,13 @@ import { modifiersForSeason } from '../seasons';
 import { seasonRegrowthFactor } from './climate';
 import type { IsoWorld } from '../iso/isoWorld';
 
-/** The 3D animal kinds — the five animals.ts kinds, no new species. */
-export type AnimalKind3D = 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken';
-export const ANIMAL_KINDS_3D: AnimalKind3D[] = ['bird', 'goat', 'deer', 'wolf', 'chicken'];
+/** BUILD 1102: the 3D animal kinds — the five live kinds plus the
+ *  six new live/population kinds and the four domestic populations.
+ *  Only bird/goat/deer/wolf/chicken/rabbit/boar/elk/fox/bear/fish
+ *  are live actors; sheep/cattle/pig/horse are regional populations
+ *  (their farms/actors come with their buildings). */
+export type AnimalKind3D = 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken' | 'rabbit' | 'boar' | 'elk' | 'fox' | 'bear' | 'fish' | 'sheep' | 'cattle' | 'pig' | 'horse';
+export const ANIMAL_KINDS_3D: AnimalKind3D[] = ['bird', 'goat', 'deer', 'wolf', 'chicken', 'rabbit', 'boar', 'elk', 'fox', 'bear', 'fish', 'sheep', 'cattle', 'pig', 'horse'];
 
 /** Growth points a sapling needs to become a real tree (~a week in spring). */
 export const SAPLING_MATURE_GROWTH = 7;
@@ -104,8 +110,8 @@ export interface MaturedTree {
 
 /**
  * 3D-native population params for the kinds the 2.5D table has no entry
- * for (bird/goat/chicken) — same PopulationParams shape, same day math.
- * Deer + wolf come from the 2.5D table; rabbit/boar are not 3D kinds.
+ * for — same PopulationParams shape, same day math. Deer + wolf +
+ * rabbit + boar come from the 2.5D table.
  */
 const PARAMS_3D: Record<string, PopulationParams> = {
   bird: {
@@ -131,6 +137,72 @@ const PARAMS_3D: Record<string, PopulationParams> = {
     foodDemand: 0.5,
     preferredBiomes: ['grassland'],
     carryingCapacity: 25,
+  },
+  // BUILD 1102: elk/fox/bear/fish are wild; sheep/cattle/pig/horse
+  // are the domestic regional populations (no live actors in 4.5).
+  elk: {
+    speciesId: 'elk',
+    birthRate: 0.05,
+    deathRate: 0.03,
+    foodDemand: 2,
+    preferredBiomes: ['forest', 'grassland'],
+    carryingCapacity: 25,
+  },
+  fox: {
+    speciesId: 'fox',
+    birthRate: 0.08,
+    deathRate: 0.05,
+    foodDemand: 1,
+    preferredBiomes: ['forest', 'grassland'],
+    carryingCapacity: 12,
+  },
+  bear: {
+    speciesId: 'bear',
+    birthRate: 0.03,
+    deathRate: 0.02,
+    foodDemand: 3,
+    preferredBiomes: ['forest'],
+    carryingCapacity: 8,
+  },
+  fish: {
+    speciesId: 'fish',
+    birthRate: 0.15,
+    deathRate: 0.05,
+    foodDemand: 0.5,
+    preferredBiomes: ['water'],
+    carryingCapacity: 40,
+  },
+  sheep: {
+    speciesId: 'sheep',
+    birthRate: 0.09,
+    deathRate: 0.03,
+    foodDemand: 1,
+    preferredBiomes: ['grassland'],
+    carryingCapacity: 30,
+  },
+  cattle: {
+    speciesId: 'cattle',
+    birthRate: 0.05,
+    deathRate: 0.02,
+    foodDemand: 3,
+    preferredBiomes: ['grassland'],
+    carryingCapacity: 20,
+  },
+  pig: {
+    speciesId: 'pig',
+    birthRate: 0.1,
+    deathRate: 0.04,
+    foodDemand: 1.5,
+    preferredBiomes: ['grassland'],
+    carryingCapacity: 25,
+  },
+  horse: {
+    speciesId: 'horse',
+    birthRate: 0.04,
+    deathRate: 0.02,
+    foodDemand: 3,
+    preferredBiomes: ['grassland'],
+    carryingCapacity: 15,
   },
 };
 
@@ -168,16 +240,23 @@ export function initAnimalPopulation(kind: string, worldSeed: number): AnimalPop
 }
 
 /**
- * Stamp the animal populations onto a world that has none. The whole
- * world is one region (0, 0) on the default world seed, so the stamp
- * is deterministic — same world, same counts. Returns true when it
- * stamped (the caller saves); a stamped world is never re-derived,
- * so the counts persist across reloads. Old saves load with none
- * (the stamp generates them on the same load).
+ * Stamp the animal populations onto a world. BUILD 1102: the stamp
+ * is idempotent-additive — a world stamped with an older kind list
+ * GAINS the missing kinds on the next load (an old save never stays
+ * on five kinds), and a world with every kind returns false. The
+ * whole world is one region (0, 0) on the default world seed, so the
+ * stamp is deterministic — same world, same counts. Returns true
+ * when it added at least one kind (the caller saves); stamped counts
+ * persist across reloads.
  */
 export function stampAnimalPopulations(world: IsoWorld): boolean {
-  if (world.animalPopulations && world.animalPopulations.length > 0) return false;
-  world.animalPopulations = ANIMAL_KINDS_3D.map((kind) => initAnimalPopulation(kind, DEFAULT_WORLD_SEED));
+  const have = new Set((world.animalPopulations ?? []).map((p) => p.speciesId));
+  const missing = ANIMAL_KINDS_3D.filter((kind) => !have.has(kind));
+  if (missing.length === 0) return false;
+  world.animalPopulations = [
+    ...(world.animalPopulations ?? []),
+    ...missing.map((kind) => initAnimalPopulation(kind, DEFAULT_WORLD_SEED)),
+  ];
   return true;
 }
 
@@ -233,6 +312,37 @@ export type EcosystemDayResult = {
 };
 
 /**
+ * BUILD 1102: predator pairs the 2.5D food web has no entry for
+ * (fox, elk, sheep and chicken are not 2.5D species in the web).
+ * The 2.5D web already covers wolf→deer/rabbit/boar and
+ * bear→deer/fish; this table adds the rest. The 2.5D foodWeb.ts is
+ * NOT edited — its sims must not move.
+ */
+const PRESSURE_3D: { from: string; to: string; strength: number }[] = [
+  { from: 'fox', to: 'rabbit', strength: 0.5 },
+  { from: 'wolf', to: 'elk', strength: 0.6 },
+  { from: 'wolf', to: 'sheep', strength: 0.7 },
+  { from: 'bear', to: 'elk', strength: 0.5 },
+  { from: 'fox', to: 'chicken', strength: 0.4 },
+];
+
+/**
+ * Predator pressure on a species (0-1): the 2.5D web pressure plus
+ * the 3D-local pairs above (same per-predator formula as
+ * predatorPressureFor — min(0.5, pop/20) x strength, summed, capped).
+ */
+export function predatorPressureFor3D(speciesId: string, predatorPops: Record<string, number>): number {
+  const base = predatorPressureFor(speciesId, predatorPops);
+  let extra = 0;
+  for (const rel of PRESSURE_3D) {
+    if (rel.to !== speciesId) continue;
+    const pop = predatorPops[rel.from] ?? 0;
+    extra += Math.min(0.5, pop / 20) * rel.strength;
+  }
+  return Math.min(1, base + extra);
+}
+
+/**
  * Advance the ecosystem one day. Pure — it reads the world and returns
  * the new state; the caller writes saplings/populations/kills back and
  * appends the matured trees (applyMaturedTrees).
@@ -242,7 +352,9 @@ export type EcosystemDayResult = {
  * Populations run their day step: food drifts 25% toward the habitat
  * target (herbivores + birds eat the forest — the live forest density;
  * wolves eat deer — deer / deer capacity; chickens eat at camp, 0.8),
- * predator pressure comes from the food web (wolves press deer),
+ * predator pressure comes from the food web (wolves press deer) plus
+ * the 3D override pairs (fox→rabbit, wolf→elk/sheep, bear→elk,
+ * fox→chicken),
  * births scale by the 2.5D seasonal birth multiplier for the day's
  * season (the season itself comes from the 1.5 clock), and recorded
  * hunting kills are subtracted once and cleared (deviation 2).
@@ -282,18 +394,23 @@ export function advanceEcosystemDay(
       continue;
     }
     // Habitat food: herbivores + birds eat the forest, wolves eat
-    // deer, chickens eat at camp.
+    // deer, chickens eat at camp, fish eat the river, domestic
+    // stock eats grass.
     const target =
       p.speciesId === 'wolf'
         ? Math.max(0.1, Math.min(1, deerPop / deerCap))
         : p.speciesId === 'chicken'
           ? 0.8
-          : Math.max(0.15, Math.min(1, opts.forestDensity));
+          : p.speciesId === 'fish'
+            ? 0.8
+            : p.speciesId === 'sheep' || p.speciesId === 'cattle' || p.speciesId === 'pig' || p.speciesId === 'horse'
+              ? 0.7
+              : Math.max(0.15, Math.min(1, opts.forestDensity));
     const foodAvailability = Math.max(
       0.1,
       Math.min(1, p.foodAvailability + (target - p.foodAvailability) * 0.25),
     );
-    const pressure = predatorPressureFor(p.speciesId, predatorPops);
+    const pressure = predatorPressureFor3D(p.speciesId, predatorPops);
     const stepped = simulatePopulationDayFloat(
       { ...p, foodAvailability, predatorPressure: pressure },
       { ...params, birthRate: params.birthRate * birthMult },
@@ -365,17 +482,51 @@ export function liveAnimalCap(world: IsoWorld, kind: AnimalKind3D, maxCap: numbe
 /**
  * The ecosystem line for the stockpile E-report (deer / wolves /
  * saplings, live from the world save) — the player-visible counts.
- * Null when the world has neither populations nor saplings.
+ * BUILD 1102: the six new wildlife kinds + the sheep population
+ * ride the same line, plus the pen (building progress, or the flock
+ * + wool ready when done) and the animal stores (meat/fish in the
+ * granary, wool/leather in the storehouse — passed in as numbers so
+ * this module never imports the stores; ecosystems -> storehouse ->
+ * founders -> ecosystems would be a cycle). Null when the world
+ * has neither populations nor saplings nor pen nor stores.
  */
-export function ecosystemSummaryText(world: IsoWorld): string | null {
+export function ecosystemSummaryText(
+  world: IsoWorld,
+  pen?: { site: { state: string; progress: number }; flock: number; woolReady: number; fedDay: number } | null,
+  stores?: { meat: number; fish: number; wool: number; leather: number } | null,
+): string | null {
   const pops = world.animalPopulations ?? [];
   const saplingCount = (world.saplings ?? []).length;
-  if (pops.length === 0 && saplingCount === 0) return null;
+  if (pops.length === 0 && saplingCount === 0 && !pen && !stores) return null;
   const parts: string[] = [];
   const deer = populationFor(world, 'deer');
   const wolf = populationFor(world, 'wolf');
   if (deer !== null) parts.push('Deer ' + Math.round(deer));
   if (wolf !== null) parts.push('Wolves ' + Math.round(wolf));
+  const rabbit = populationFor(world, 'rabbit');
+  const boar = populationFor(world, 'boar');
+  const elk = populationFor(world, 'elk');
+  const fox = populationFor(world, 'fox');
+  const bear = populationFor(world, 'bear');
+  const fish = populationFor(world, 'fish');
+  const sheep = populationFor(world, 'sheep');
+  if (rabbit !== null) parts.push('Rabbits ' + Math.round(rabbit));
+  if (boar !== null) parts.push('Boars ' + Math.round(boar));
+  if (elk !== null) parts.push('Elk ' + Math.round(elk));
+  if (fox !== null) parts.push('Foxes ' + Math.round(fox));
+  if (bear !== null) parts.push('Bears ' + Math.round(bear));
+  if (fish !== null) parts.push('Fish ' + Math.round(fish));
+  if (sheep !== null) parts.push('Sheep ' + Math.round(sheep));
   if (saplingCount > 0) parts.push(saplingCount + ' sapling' + (saplingCount === 1 ? '' : 's'));
+  if (pen && pen.site.state === 'building') parts.push('Pen building ' + pen.site.progress + '/6');
+  if (pen && pen.site.state === 'done') {
+    parts.push('Pen ' + Math.floor(pen.flock) + ' sheep' + (pen.woolReady >= 1 ? ' · ' + Math.floor(pen.woolReady) + ' wool ready' : ''));
+  }
+  if (stores) {
+    if (stores.meat > 0) parts.push('Meat ' + Math.floor(stores.meat));
+    if (stores.fish > 0) parts.push('Fish caught ' + Math.floor(stores.fish));
+    if (stores.wool > 0) parts.push('Wool ' + Math.floor(stores.wool));
+    if (stores.leather > 0) parts.push('Leather ' + Math.floor(stores.leather));
+  }
   return parts.length > 0 ? parts.join(' · ') : null;
 }

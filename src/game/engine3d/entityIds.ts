@@ -126,7 +126,7 @@ export function animalId(kind: string, slotId: number): string {
  * site, one carrier per founder), so a job id never collides with
  * another live job of the same kind.
  */
-export function jobIdFor(kind: 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter', targetId: string): string {
+export function jobIdFor(kind: 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | 'hunt' | 'fish' | 'shepherd', targetId: string): string {
   return 'job:' + kind + ':' + targetId;
 }
 
@@ -145,8 +145,10 @@ export function entityKindOf(id: string): EntityKind | null {
   if (id.startsWith('job:')) return 'job';
   // Animals are kind + '-' + slotId (bird-0, goat-2, ...): a bare
   // word, a dash, and a non-negative integer — and nothing else
-  // this module produces looks like that.
-  const m = /^(bird|goat|deer|wolf|chicken)-(\d+)$/.exec(id);
+  // this module produces looks like that. BUILD 1102: the six new
+  // kinds (rabbit, boar, elk, fox, bear, fish) are animals too —
+  // their ids must parse, or a hunt target reads as nothing.
+  const m = /^(bird|goat|deer|wolf|chicken|rabbit|boar|elk|fox|bear|fish)-(\d+)$/.exec(id);
   if (m) return 'animal';
   return null;
 }

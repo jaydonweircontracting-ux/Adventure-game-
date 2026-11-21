@@ -21,7 +21,7 @@ import { WINDMILL_TOWER_H, WINDMILL_CAP_H } from './windmill';
 import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBER, LANTERN_GLASS_DARK, lanternBoxCentre } from './lantern';
 import { absMinutes, farmStageAt, readyFarmTiles, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
 import { campGrainInRegistry } from './food';
-import { GRANARY_CAPACITY_FLOUR, granaryFlourInRegistry } from './granary';
+import { GRANARY_CAPACITY_FLOUR, granaryFlourInRegistry, granaryMeatInRegistry, granaryFishInRegistry } from './granary';
 import { MILL_CENTRE, MILL_RECT, MILL_DOOR, MILL_APPROACH, BAKERY_CENTRE, BAKERY_RECT, BAKERY_DOOR, BAKERY_APPROACH, freshFoodChain, reconcileFoodChain, millPlacementExists, bakeryPlacementExists, type FoodChainState } from './foodChain';
 import { SMELTER_CENTRE, SMELTER_RECT, SMELTER_DOOR, SMELTER_APPROACH, BLACKSMITH_CENTRE, BLACKSMITH_RECT, BLACKSMITH_DOOR, BLACKSMITH_APPROACH, SAWMILL_CENTRE, SAWMILL_RECT, SAWMILL_DOOR, SAWMILL_APPROACH, CARPENTER_CENTRE, CARPENTER_RECT, CARPENTER_DOOR, CARPENTER_APPROACH, WORKSHOP_CENTRE, WORKSHOP_RECT, WORKSHOP_DOOR, WORKSHOP_APPROACH, freshMetalChain, reconcileMetalChain, smelterPlacementExists, blacksmithPlacementExists, sawmillPlacementExists, carpenterPlacementExists, workshopPlacementExists, workshopStallReason, metalChainCoalInRegistry, metalChainIngotsInRegistry, metalChainToolsInRegistry, metalChainTimberInRegistry, metalChainFurnitureInRegistry, type MetalChainState } from './metalChain';
 import { INN_APPROACH, INN_CENTRE, INN_RECT, INN_DOOR, INN_SITE_ID, MARKET_STALL_TILE, freshHousing, reconcileHousing, seedInnStore, innFoodInRegistry, innPlacementExists, marketStallListing, nightSleepers, type HousingState } from './housing';
@@ -107,6 +107,7 @@ import { formatDayClock, waitOptionsFor, waitInterrupted, waitRemainingLabel, WA
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
 import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
+import { freshPen, validatePenState, PEN_RECT, HUNTABLE_KINDS, simPreyFor, nearestBankTile, type PenState } from './animalHusbandry';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { professionLabel } from './professions';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
@@ -116,12 +117,12 @@ import type { SharedEventType } from './memory';
 // trees + a persisted camp ledger. The view owns the ref; the 1s
 // clock timer and the wait step call the sync on the day boundary.
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, forestDensity, freshLivingWorldState, growthFactorAt, livingWorldSummary, loadLivingWorldState, rainfallAt, saveLivingWorldState, soilAt, soilFactorAt, temperatureAt, type LivingWorld3DState } from './livingWorld';
-import { recordAnimalKill } from './ecosystems';
+import { recordAnimalKill, populationFor, populationParamsFor3D, ANIMAL_KINDS_3D } from './ecosystems';
 import { animalActivityFactor, seasonForDay, seasonGrowthFactor, seasonLabel } from './climate';
 // BUILD 1068 (0x08): World Simulation Control Center — the panel data +
 // sim-speed model (pure) and the panel component. The view owns the refs;
 // the module formats them, the panel renders them.
-import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond, formatControlCenterData } from './controlCenter';
+import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond, formatControlCenterData, animalWorkersFor } from './controlCenter';
 import { advanceWorldSimClock, runFounderSimInterval, simulateWorldSimWaitStep, type FounderSimContext, type WaitSimContext } from './worldSimulation3d';
 import { createNpcSimState, startNpcSimTimers, type NpcSimContext } from './npcSimulation3d';
 import { createPlayerControls, releaseSprintPointer, clearSprintHold, type PlayerControlsContext, type SprintContext } from './playerControls3d';
@@ -134,7 +135,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // Build menu lists it (entries with a palette kind arm that tool;
 // the rest are listed, locked, with the reason why).
 import { BUILDING_CATALOGUE, CATALOGUE_CATEGORIES, catalogueMenuEntryFor } from './buildingCatalogue';
-import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
+import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
 import { freshPathState, pathTiles, reconcileBridges, wellTile, type PathState } from './paths';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
 // BUILD 1064 (R-1): the unified resource registry — the one
@@ -166,7 +167,7 @@ import { createJobBoard, discoverJobs, claimJob, claimNearestJob, claimDeliverJo
 // food, and settlement age allow).
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
 import { spawnTransient, barkLineFor, maxVillagerVerts, MAX_TRANSIENTS, type TransientActor } from './transients';
-import { spawnAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_ANIMALS, type AnimalActor } from './animals';
+import { spawnAnimal, emitAnimal, emitAnimalBlob, animalSpecFor, maxAnimalVerts, BIRD_FLIGHT_HEIGHT, MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS, MAX_RABBITS, MAX_BOARS, MAX_ELK, MAX_FOXES, MAX_BEARS, MAX_FISH, MAX_ANIMALS, PLAZA_3D, type AnimalActor } from './animals';
 import { WALK_SPEED, SPRINT_SPEED, STAMINA_MAX, stepStamina, FULL_STAMINA, sprintInput, nextSprintRearm, type StaminaState } from './sprint';
 import { resolvePlayerStep, type PerpDir } from './playerStep';
 import { planPlayerPath, type PlayerPath } from './playerPath';
@@ -725,6 +726,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // Architect decision. The tick owns it; the founders save persists
   // it (v12, a compatible field) alongside the camp pile.
   const sitePlanRef=useRef<SettlementPlan|null>(null);
+  // BUILD 1102 (0x25, Phase 4.5): the sheep pen. The tick owns it;
+  // the founders save persists it (v12, a compatible field)
+  // alongside the camp pile.
+  const penRef=useRef<PenState>(freshPen());
   // BUILD 1101 (0x24, Phase 4.3): the founding party — session-only,
   // like transients (never in the founders save). The tick owns it;
   // the test hook starts it (probe-only — no UI trigger).
@@ -839,6 +844,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         metalChain: metalChainRef,
         housing: housingRef,
         sitePlan: sitePlanRef,
+        pen: penRef,
         registry: registryRef,
         jobBoard: jobBoardRef,
         syncLivingWorld,
@@ -1743,6 +1749,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // farm tile) — a founder reloaded mid-plant walks to a site
         // again; the tile is not planted yet, so nothing is lost.
         if(f.workState==='toPlant'||f.workState==='planting'){f.workState='toTree';f.plantTicks=0;}
+        // BUILD 1102: 'toPrey'/'hunting', 'toBank'/'fishing' and
+        // 'toPen'/'shepherding' are session-only too (the prey
+        // target / the bank tile / the pen leg) — a founder reloaded
+        // mid-hunt walks to a site again; the prey target is not
+        // saved, and any carried yield rides in the carrier store
+        // and is returned on delivery.
+        if(f.workState==='toPrey'||f.workState==='hunting'||f.workState==='toBank'||f.workState==='fishing'||f.workState==='toPen'||f.workState==='shepherding'){f.workState='toTree';f.preyTarget=null;f.animalTicks=0;}
         // BUILD 1058: a founder reloaded at the build site resumes
         // the step from 0 ticks (like the chop reset above); a
         // founder reloaded mid-build whose hut finished while they
@@ -1766,12 +1779,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // are skipped, so the registry never reports ore that no longer
       // exists. The stamp in loadInitialWorld already ran above.
       reg=depositsFromGeology(reg,world);
-      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0,saved?saved.stoneStock??0:0,saved?saved.flourStock??0:0);
+      reg=seedCampStore(reg,saved?saved.stockpileWood:0,saved?saved.foodStock:FOUNDER_START_FOOD,saved?saved.grainStock:0,saved?saved.stoneStock??0:0,saved?saved.flourStock??0:0,saved?saved.meatStock??0:0,saved?saved.fishStock??0:0);
       // BUILD 1087: the storehouse store from the v9 founders save
       // (v8 saves migrate with empty counts — the camp pile keeps
       // everything, the same as before).
       // BUILD 1089: + the stored iron (v11; v10 saves migrate with 0).
-      reg=seedStorehouseStore(reg,saved?saved.storehouseWood??0:0,saved?saved.storehouseStone??0:0,saved?saved.storehouseOre??0:0,saved?saved.storehouseCoal??0:0,saved?saved.storehouseIngots??0:0,saved?saved.storehouseTools??0:0,saved?saved.storehouseTimber??0:0,saved?saved.storehouseFurniture??0:0);
+      reg=seedStorehouseStore(reg,saved?saved.storehouseWood??0:0,saved?saved.storehouseStone??0:0,saved?saved.storehouseOre??0:0,saved?saved.storehouseCoal??0:0,saved?saved.storehouseIngots??0:0,saved?saved.storehouseTools??0:0,saved?saved.storehouseTimber??0:0,saved?saved.storehouseFurniture??0:0,saved?saved.storehouseWool??0:0,saved?saved.storehouseLeather??0:0);
       // BUILD 1096: the inn store seeds from the v12 founders save
       // (older saves start empty).
       reg=seedInnStore(reg,saved?saved.innFoodStock??0:0);
@@ -1821,6 +1834,20 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // save (older saves have none — the tick re-plans on the first
       // tick). A corrupt value validates to null, never crashes.
       sitePlanRef.current=sitePlanFromSave(saved?saved.sitePlan:null);
+      // BUILD 1102: the pen loads from the v12 founders save
+      // (older saves have none — validatePenState starts fresh).
+      // If the save says 'done' but the world has no fence
+      // placements (a world save wiped without the founders save),
+      // the pen rebuilds from the pile — the inn's reconcile
+      // precedent, inline here so the pen module stays untouched.
+      penRef.current=saved&&saved.pen?validatePenState(saved.pen):freshPen();
+      if(penRef.current.site.state==='done'){
+        const fenced=new Set(placedFenceTiles(world).map((t)=>t.tx+','+t.ty));
+        let whole=true;
+        for(let x=PEN_RECT.x0;x<=PEN_RECT.x1&&whole;x++){if(!fenced.has(x+','+PEN_RECT.y0)||!fenced.has(x+','+PEN_RECT.y1))whole=false;}
+        for(let y=PEN_RECT.y0+1;y<=PEN_RECT.y1-1&&whole;y++){if(!fenced.has(PEN_RECT.x0+','+y)||!fenced.has(PEN_RECT.x1+','+y))whole=false;}
+        if(!whole)penRef.current=freshPen();
+      }
       // BUILD 1062: the living-world coordinator (F-0) — load the saved
       // adapter state, or fresh from the live world (real trees, real
       // founders, real day). A corrupt/unknown save starts fresh; the
@@ -1870,7 +1897,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, renderer, state: stateRef, setPosition, setMessage, setHealth, refreshResourceUi,
       insideHut: insideHutRef, car: carRef, driving: drivingRef,
       npcActors: npcActorsRef, transientActors: transientActorsRef, animalActors: animalActorsRef,
-      founders: foundersRef, registry: registryRef, jobBoard: jobBoardRef, sitePlan: sitePlanRef,
+      founders: foundersRef, registry: registryRef, jobBoard: jobBoardRef, sitePlan: sitePlanRef, pen: penRef,
       construction: constructionRef, storehouse: storehouseRef, livingWorld: livingWorldRef, clock: clockRef,
       health: healthRef, inventory: inventoryRef,
       playerPath: playerPathRef, playerPathReplan: playerPathReplanRef,
@@ -2508,7 +2535,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, saveKey: SAVE_KEY,
       isAreaSelectDragging: () => areaSelectDragging !== null,
       isAreaMoveDragging: () => areaMoveDragging !== null,
-      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, foundingRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, staminaPublishCountRef, areaSelectionRef, buildRef,
+      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, foundingRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, penRef, staminaPublishCountRef, areaSelectionRef, buildRef,
       setPosition, setMessage, setStaminaUi, setSprintingUi, setSprintLatchedUi, setSprintRearmUi, setFirstPersonOn,
       walkableAt: controls.walkableAt, replanPlayerPath: controls.replanPlayerPath, followPlayerPath: controls.followPlayerPath, positionAreaSelectRect, areaSelectionLabel,
     });
@@ -2659,7 +2686,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // the 999 lesson), and read its render position (floats, with
       // flight height h for birds).
       getAnimals:()=>animalActorsRef.current.map(a=>({id:a.id,kind:a.kind,x:a.x,y:a.y,state:a.state,hp:a.hp,slotId:a.slotId,flightTo:a.flightTo})),
-      spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf'|'chicken')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:MAX_CHICKENS;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
+      // BUILD 1102 test hooks (probes only — no gameplay effect):
+      // the pen (site state + flock + wool + last fed day), the
+      // hunting picture (nearest prey per kind from the player,
+      // live huntable counts, populations, hunter work states),
+      // and the fishing picture (fish population, live fish, the
+      // nearest bank tile from the player).
+      getPen:()=>({state:penRef.current.site.state,progress:penRef.current.site.progress,spentWood:penRef.current.site.spentWood,flock:penRef.current.flock,woolReady:penRef.current.woolReady,fedDay:penRef.current.fedDay,stocked:penRef.current.stocked}),
+      getHunting:()=>{const w=stateRef.current.world;const p=stateRef.current.position;const from={x:Math.round(p.x),y:Math.round(p.y)};return {prey:HUNTABLE_KINDS.map(k=>{const t=simPreyFor(w,k,from,PLAZA_3D);return {kind:k,nearest:t?Math.round(Math.hypot(t.x-from.x,t.y-from.y)):null,live:animalActorsRef.current.filter(a=>a.kind===k).length,population:populationFor(w,k)??0};}),hunters:foundersRef.current.filter(f=>f.profession==='hunter').map(f=>({name:f.name,workState:f.workState}))};},
+      getFish:()=>{const w=stateRef.current.world;const p=stateRef.current.position;const from={x:Math.round(p.x),y:Math.round(p.y)};return {population:populationFor(w,'fish')??0,live:animalActorsRef.current.filter(a=>a.kind==='fish').length,bank:nearestBankTile(w,from,PLAZA_3D),fishers:foundersRef.current.filter(f=>f.profession==='fisher').map(f=>({name:f.name,workState:f.workState}))};},
+      spawnAnimal:(kind:'bird'|'goat'|'deer'|'wolf'|'chicken'|'rabbit'|'boar'|'elk'|'fox'|'bear'|'fish')=>{const live=animalActorsRef.current;const cap=kind==='bird'?MAX_BIRDS:kind==='goat'?MAX_GOATS:kind==='deer'?MAX_DEER:kind==='wolf'?MAX_WOLVES:kind==='rabbit'?MAX_RABBITS:kind==='boar'?MAX_BOARS:kind==='elk'?MAX_ELK:kind==='fox'?MAX_FOXES:kind==='bear'?MAX_BEARS:kind==='fish'?MAX_FISH:MAX_CHICKENS;if(live.filter(a=>a.kind===kind).length>=cap)return null;const s=spawnAnimal(world,kind,new Set(live.map(a=>a.slotId)),new Set(live.map(a=>a.x+','+a.y)),stateRef.current.position,staticAnchors.plaza,false);if(s){animalActorsRef.current=[...live,s];return s.id;}return null;},
       setAnimalPos:(id:string,tx:number,ty:number)=>{const a=animalActorsRef.current.find(x=>x.id===id);if(a){a.x=tx;a.y=ty;npcSimState.animalPath.delete(id);return true;}return false;},
       getAnimalRenderPos:(id:string)=>{const r=renderer.animalRender.get(id);return r?{x:r.x,y:r.y,h:r.h}:null;},
       // BUILD 1057 test hooks (probes only — no gameplay effect):
@@ -2867,6 +2903,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       metalChain: metalChainRef,
       housing: housingRef,
       sitePlan: sitePlanRef,
+      pen: penRef,
+      animals: animalActorsRef,
       founding: foundingRef,
       registry: registryRef,
       jobBoard: jobBoardRef,
@@ -2995,7 +3033,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         return formatControlCenterData({
           speed:getSimSpeed(),day:clock.day,minutes:clock.minutes,
           founders:foundersRef.current.map(f=>{const j=jobForFounder(board,f.id);return {id:f.id,name:f.name,profession:professionLabel(f.profession),activity:f.activity,workState:f.workState,health:Math.round(f.needs.health),hunger:Math.round(f.needs.hunger),energy:Math.round(f.needs.energy),social:Math.round(f.needs.social),jobKind:j?j.kind:null,jobTarget:j?j.targetId:null,carrying:f.carrying,carryingGrain:f.carryingGrain,carryingStone:f.carryingStone,carryingOre:f.carryingOre};}),
-          sites:sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),
+          sites:[...sitesOf(constructionRef.current).map((s,i)=>({id:HUT_SITES[i]?HUT_SITES[i].id:'hut-site-'+i,state:s.state,progress:s.progress,spentWood:s.spentWood})),...(penRef.current.site.state!=='none'?[{id:'pen-site',state:penRef.current.site.state,progress:penRef.current.site.progress,spentWood:penRef.current.site.spentWood}]:[])],
           hutDone:!hasUnfinishedSite(constructionRef.current),
           camp:{wood:campWoodInRegistry(reg),food:campFoodInRegistry(reg),grain:campGrainInRegistry(reg),flour:granaryFlourInRegistry(reg),stone:campStoneInRegistry(reg)},
           foodChain:{mill:{state:foodChainRef.current.mill.state,progress:foodChainRef.current.mill.progress},bakery:{state:foodChainRef.current.bakery.state,progress:foodChainRef.current.bakery.progress}},
@@ -3003,6 +3041,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           housing:{capacity:housingCapacity(constructionRef.current),bedsFree:Math.max(0,housingCapacity(constructionRef.current)-foundersRef.current.length),inn:{state:housingRef.current.inn.state,progress:housingRef.current.inn.progress,food:innFoodInRegistry(reg)},stall:marketStallListing(reg)},
           sitePlan:sitePlanRef.current,
           founding:foundingRef.current,
+          animals:{pen:{state:penRef.current.site.state,progress:penRef.current.site.progress,flock:penRef.current.flock,woolReady:penRef.current.woolReady,fedDay:penRef.current.fedDay},populations:ANIMAL_KINDS_3D.map(k=>({kind:k,population:populationFor(stateRef.current.world,k)??0,capacity:populationParamsFor3D(k)?.carryingCapacity??0})),workers:animalWorkersFor(foundersRef.current).map(f=>({name:f.name,profession:professionLabel(f.profession),workState:f.workState})),meat:granaryMeatInRegistry(reg),fish:granaryFishInRegistry(reg),wool:storehouseWoolInRegistry(reg),leather:storehouseLeatherInRegistry(reg)},
           storehouse:{state:storehouseRef.current.state,progress:storehouseRef.current.progress,wood:storehouseWoodInRegistry(reg),stone:storehouseStoneInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),coal:metalChainCoalInRegistry(reg),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg)},
           player:{wood:storeQty(reg,PLAYER_STORE_ID,'wood'),stone:storeQty(reg,PLAYER_STORE_ID,'stone'),gold:storeQty(reg,PLAYER_STORE_ID,'gold'),grain:storeQty(reg,PLAYER_STORE_ID,'grain')},
           carried:foundersRef.current.map(f=>({id:f.id,wood:storeQty(reg,'carrier:'+f.id,'wood'),grain:storeQty(reg,'carrier:'+f.id,'grain'),stone:storeQty(reg,'carrier:'+f.id,'stone'),iron:storeQty(reg,'carrier:'+f.id,'iron')})),

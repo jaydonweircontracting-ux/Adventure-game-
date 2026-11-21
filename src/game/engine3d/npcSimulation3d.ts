@@ -33,7 +33,8 @@ import {
 import {
   spawnAnimal, stepAnimal, ANIMAL_SPAWN_TOPUP_TICKS,
   MAX_BIRDS, MAX_GOATS, MAX_DEER, MAX_WOLVES, MAX_CHICKENS,
-  type AnimalActor, type AnimalPathState,
+  MAX_RABBITS, MAX_BOARS, MAX_ELK, MAX_FOXES, MAX_BEARS, MAX_FISH,
+  type AnimalActor, type AnimalKind, type AnimalPathState,
 } from './animals';
 import type { WorldRenderer } from './worldRenderer3d';
 
@@ -202,9 +203,9 @@ function mountSpawnTransient(ctx: NpcSimContext, kind: 'traveler' | 'adventurer'
   if (s) ctx.transientActors.current = [...live, s];
 }
 
-function mountSpawnAnimal(ctx: NpcSimContext, kind: 'bird' | 'goat' | 'deer' | 'wolf' | 'chicken'): void {
+function mountSpawnAnimal(ctx: NpcSimContext, kind: AnimalKind): void {
   const live = ctx.animalActors.current;
-  const maxCap = kind === 'bird' ? MAX_BIRDS : kind === 'goat' ? MAX_GOATS : kind === 'deer' ? MAX_DEER : kind === 'wolf' ? MAX_WOLVES : MAX_CHICKENS;
+  const maxCap = kind === 'bird' ? MAX_BIRDS : kind === 'goat' ? MAX_GOATS : kind === 'deer' ? MAX_DEER : kind === 'wolf' ? MAX_WOLVES : kind === 'rabbit' ? MAX_RABBITS : kind === 'boar' ? MAX_BOARS : kind === 'elk' ? MAX_ELK : kind === 'fox' ? MAX_FOXES : kind === 'bear' ? MAX_BEARS : kind === 'fish' ? MAX_FISH : MAX_CHICKENS;
   // BUILD 1085 (1.6): the live cap follows the regional population —
   // a crashed deer population stops sending new deer into view
   // (existing live animals are never culled — no pop-outs).
@@ -269,7 +270,7 @@ export function stepAnimals(ctx: NpcSimContext, state: NpcSimState): void {
   const activityPeriod = animalStepPeriod(animalActivityFactor(seasonForDay(ctx.clock.current.day)));
   const player = ctx.getPlayerPos();
   if (tick % ANIMAL_SPAWN_TOPUP_TICKS === 0) {
-    (['bird', 'goat', 'deer', 'wolf', 'chicken'] as const).forEach((kind) => mountSpawnAnimal(ctx, kind));
+    (['bird', 'goat', 'deer', 'wolf', 'chicken', 'rabbit', 'boar', 'elk', 'fox', 'bear', 'fish'] as const).forEach((kind) => mountSpawnAnimal(ctx, kind));
   }
   const residents = ctx.npcActors.current;
   for (const a of ctx.animalActors.current) {
@@ -337,6 +338,13 @@ export function mountNpcSim(ctx: NpcSimContext): void {
   mountSpawnAnimal(ctx, 'wolf');
   // BUILD 1016: chickens spawn in town with the wild animals.
   mountSpawnAnimal(ctx, 'chicken');
+  // BUILD 1102: the six new kinds spawn with the wild animals.
+  mountSpawnAnimal(ctx, 'rabbit');
+  mountSpawnAnimal(ctx, 'boar');
+  mountSpawnAnimal(ctx, 'elk');
+  mountSpawnAnimal(ctx, 'fox');
+  mountSpawnAnimal(ctx, 'bear');
+  mountSpawnAnimal(ctx, 'fish');
 }
 
 // Start the four 900ms/3s NPC timers; returns a cleanup that stops them.

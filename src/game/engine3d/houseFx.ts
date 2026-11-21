@@ -51,7 +51,7 @@
 import { houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, hash2, roofRise, PARAPET_H, GROUND_FLOOR_H, UPPER_FLOOR_H, GLASS_DARK, GLASS_LIT, SKY_HORIZON, type DoorFace, type HouseDesign, type HouseVariantId } from './townLook';
 import { millBladesFor, millHubFor, MILL_ROT_SPEED, MILL_TRIS_PER_MILL } from './windmill';
 import { LANTERN_GLOW, LANTERN_GLOW_BOX, lanternBoxCentre } from './lantern';
-import { wheatStalksFor, type FarmWheatInput } from './farm';
+import { wheatStalksFor, type FarmWheatInput, type WheatTri } from './farm';
 // BUILD 1057: the founders' log pile rides the fx call like the wheat
 // (per-frame, time-varying — it grows with deliveries, so it cannot
 // live in the static world buffer).
@@ -458,6 +458,11 @@ export interface HouseFxCounts {
   siteTiles: number;
   /** BUILD 1058: build-site verts (in the night segment). */
   siteVerts: number;
+  /** BUILD 1102: pen sheep emitted this frame (in the night
+   *  segment — ordinary wool that darkens at night). */
+  penSheep: number;
+  /** BUILD 1102: pen-sheep verts (in the night segment). */
+  penVerts: number;
   /** BUILD 1050: interior ceiling verts this frame (night segment). */
   ceilingVerts: number;
   /** BUILD 1050: interior wall-band verts this frame (night segment). */
@@ -517,6 +522,11 @@ export interface LanternFxInput { tx: number; ty: number; baseY: number; }
  *  base y, and the REAL stockpile count (the pile grows with
  *  deliveries: 1 log at 0 wood, +1 per 2 wood, capped at 6). */
 export interface StockpileFxInput { tx: number; ty: number; baseY: number; wood: number; }
+/** BUILD 1102 (0x25, Phase 4.5): the pen's sheep — the positions
+ *  come from penSheepPositions (animalHusbandry.ts, computed by
+ *  the renderer) and one baseY for the flat pen rect. The renderer
+ *  passes one input while the pen is done and the flock is >= 1. */
+export interface PenFxInput { positions: { x: number; y: number }[]; baseY: number; }
 
 /** BUILD 1058: the first hut's build site — its heightfield base y
  *  and the REAL construction progress (0..5: foundation, posts,
@@ -546,7 +556,45 @@ export interface ConstructionSiteFxInput { baseY: number; progress: number; site
  * argument) — per-frame like the pile, in the night segment; the
  * foundation + frame grow with the real construction progress.
  */
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = [], site: ConstructionSiteFxInput[] = []): HouseFxCounts {
+/** BUILD 1102: the pen sheep's wool (near-white) + face (dark). */
+const PEN_SHEEP_WOOL: Vec3 = [0.93, 0.93, 0.89];
+const PEN_SHEEP_FACE: Vec3 = [0.3, 0.24, 0.2];
+
+/** One axis-aligned box as 12 WheatTris (6 faces x 2), top full
+ *  colour, sides slightly shaded, bottom darkest — the puff-box
+ *  shading language, without the rotation. */
+function woolBoxTris(cx: number, cy: number, cz: number, w: number, h: number, d: number, col: Vec3): WheatTri[] {
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy, y1 = cy + h, z0 = cz - d / 2, z1 = cz + d / 2;
+  const top: Vec3 = col;
+  const side: Vec3 = [col[0] * 0.85, col[1] * 0.85, col[2] * 0.85];
+  const bottom: Vec3 = [col[0] * 0.6, col[1] * 0.6, col[2] * 0.6];
+  const quad = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, cc: Vec3): WheatTri[] => [
+    { a, b, c, col: cc },
+    { a, b: c, c: d, col: cc },
+  ];
+  return [
+    ...quad([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1], top),
+    ...quad([x0, y0, z0], [x0, y0, z1], [x1, y0, z1], [x1, y0, z0], bottom),
+    ...quad([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], side),
+    ...quad([x0, y0, z1], [x0, y1, z1], [x1, y1, z1], [x1, y0, z1], side),
+    ...quad([x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1], side),
+    ...quad([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0], side),
+  ];
+}
+
+/** BUILD 1102: one pen sheep at tile (x, y) — a white wool body
+ *  (0.5 long, 0.34 wide, 0.3 tall) + a small dark head at the front
+ *  — as a WheatTri list (the stockpile-log shape), so the pen pass
+ *  stays a tris loop. 24 tris per sheep (2 boxes x 12). Pure. */
+export function penSheepTrisFor(x: number, y: number, baseY: number): WheatTri[] {
+  const cx = x + 0.5, cz = y + 0.5;
+  return [
+    ...woolBoxTris(cx, baseY, cz, 0.34, 0.3, 0.5, PEN_SHEEP_WOOL),
+    ...woolBoxTris(cx, baseY + 0.22, cz + 0.3, 0.16, 0.16, 0.16, PEN_SHEEP_FACE),
+  ];
+}
+
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = [], site: ConstructionSiteFxInput[] = [], pen: PenFxInput[] = []): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -629,6 +677,21 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     siteVerts += cost;
     for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
   }
+  // BUILD 1102: the pen's sheep — one white blob per sheep in the
+  // flock (count from penSheepPositions, capped at 6), in the night
+  // segment like the pile (ordinary wool that darkens at night). A
+  // flock that does not fit stops the pass (deterministic).
+  let penSheep = 0, penVerts = 0;
+  for (const t of pen) {
+    const tris: WheatTri[] = [];
+    for (const p of t.positions) tris.push(...penSheepTrisFor(p.x, p.y, t.baseY));
+    if (tris.length === 0) continue;
+    const cost = tris.length * 3;
+    if (!fits(cost)) break;
+    penSheep += t.positions.length;
+    penVerts += cost;
+    for (const s of tris) pushTri(out, s.a, s.b, s.c, s.col);
+  }
   // BUILD 1050: the entered hut's interior shell — ceiling + wall
   // band, in the night segment (ordinary surfaces: they darken at
   // night like the room's floor and furniture). Only when the view
@@ -684,5 +747,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, siteTiles, siteVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, siteTiles, siteVerts, penSheep, penVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
 }

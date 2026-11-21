@@ -21,11 +21,12 @@
  * - lumberjack: chop, lumber. miner: mine. stonecutter: quarry.
  *   builder: build. carpenter: saw, carpenter. blacksmith: smelt,
  *   smith.
- * - merchant, hunter, fisher, shepherd, guard, engineer, architect,
- *   mayor: NO job kinds yet (data only — hunting/fishing/shepherding
- *   is 4.5, trade is Phase 5, guards are bounded, construction
+ * - merchant, guard, engineer, architect, mayor: NO job kinds yet
+ *   (data only — trade is Phase 5, guards are bounded, construction
  *   intelligence is 4.2; the assignment never gives them work that
  *   does not exist). Do NOT invent those systems to fill them.
+ *   BUILD 1102: hunter, fisher and shepherd WORK now — hunting,
+ *   fishing and shepherding are this build (4.5).
  * - deliver is the SHARED CARRY LEG: it belongs to no profession.
  *   Every gatherer delivers their own goods (the deliver job is
  *   claimed by whoever is carrying, not scored by the utility
@@ -153,24 +154,24 @@ export const PROFESSIONS: ProfessionDef[] = [
   },
   {
     id: 'hunter', label: 'Hunter', blurb: 'Tracks wild animals for meat and hides.',
-    jobKinds: [],
+    jobKinds: ['hunt'],
     workSites: 'the wilds beyond the settlement',
     tools: ['bow'], inputs: ['wild animals'], outputs: ['meat', 'hides'],
-    system: 'future', systemNote: 'Hunting is Phase 4.5 (animals) — no hunting system yet.',
+    system: 'working', systemNote: '',
   },
   {
     id: 'fisher', label: 'Fisher', blurb: 'Fishes the rivers and lakes.',
-    jobKinds: [],
+    jobKinds: ['fish'],
     workSites: 'the rivers and lakes',
     tools: ['rod', 'net'], inputs: ['rivers', 'lakes'], outputs: ['fish'],
-    system: 'future', systemNote: 'Fishing is Phase 4.5 (animals) — no fishing system yet.',
+    system: 'working', systemNote: '',
   },
   {
     id: 'shepherd', label: 'Shepherd', blurb: 'Tends the flocks on the pastures — wool and mutton.',
-    jobKinds: [],
+    jobKinds: ['shepherd'],
     workSites: 'the pastures',
     tools: ['crook'], inputs: ['pasture', 'sheep'], outputs: ['wool', 'mutton'],
-    system: 'future', systemNote: 'Shepherding is Phase 4.5 (animals) — no animals to tend yet.',
+    system: 'working', systemNote: '',
   },
   {
     id: 'guard', label: 'Guard', blurb: 'Watches the walls and gates — the settlement’s safety is bounded to the town edge.',
@@ -288,11 +289,24 @@ export type ProfessionNeed = {
   sawmillDone: boolean;
   /** The carpenter’s shop is done (the carpenter carpenters). */
   carpenterDone: boolean;
+  /** A hunt job is open and the camp is short of food (day 3+,
+   *  food below the hunt threshold) — the hunter slot opens.
+   *  Optional: older callers omit it (no hunt work, no slot). */
+  huntOpen?: boolean;
+  /** A fish job is open and the camp is short of food (the same
+   *  shape as the hunt) — the fisher slot opens. */
+  fishOpen?: boolean;
+  /** The pen is done and needs feeding or shearing — the
+   *  shepherd slot opens. */
+  shepherdOpen?: boolean;
 };
 
 /** The open profession slots, in need order — food first, then the
- *  build, then the raw materials, then the processing. One slot
- *  per profession. Future professions never open (no system). */
+ *  build, then the raw materials, then the processing, then the
+ *  animal work. One slot per profession. Future professions never
+ *  open (no system). The animal slots sit last so they take a
+ *  spare founder once the core slots are filled — the core loop
+ *  is never starved for a hunter. */
 export function professionSlotsFor(need: ProfessionNeed): ProfessionId[] {
   const slots: ProfessionId[] = [];
   if (need.farmOpen) slots.push('farmer');
@@ -302,6 +316,9 @@ export function professionSlotsFor(need: ProfessionNeed): ProfessionId[] {
   if (need.quarryOpen) slots.push('stonecutter');
   if (need.smelterDone || need.blacksmithDone) slots.push('blacksmith');
   if (need.sawmillDone || need.carpenterDone) slots.push('carpenter');
+  if (need.huntOpen) slots.push('hunter');
+  if (need.fishOpen) slots.push('fisher');
+  if (need.shepherdOpen) slots.push('shepherd');
   return slots;
 }
 

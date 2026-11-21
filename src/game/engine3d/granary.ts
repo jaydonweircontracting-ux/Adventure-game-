@@ -41,6 +41,12 @@ export const GRANARY_CAPACITY_FOOD = 60;
 /** Flour the granary holds (BUILD 1094 — the mill's output, the
  *  bakery's input; the grind stops at this cap, so it binds). */
 export const GRANARY_CAPACITY_FLOUR = 100;
+/** Meat the granary holds (BUILD 1102 — the hunter's yield, eaten
+ *  like meals; the cap is the food cap, not a driver). */
+export const GRANARY_CAPACITY_MEAT = 60;
+/** Fish the granary holds (BUILD 1102 — the fisher's yield, eaten
+ *  like meals; same cap). */
+export const GRANARY_CAPACITY_FISH = 60;
 /** The granary's grain sits at the stockpile tile (the camp's food
  *  store lives at camp, not in a separate building — the plan calls
  *  for a store, not a building). */
@@ -49,6 +55,10 @@ export const GRANARY_GRAIN_TILE = { x: 125, y: 120 };
 export const GRANARY_FOOD_TILE = { x: 123, y: 120 };
 /** The granary's flour sits at the mill centre (where the mill grinds). */
 export const GRANARY_FLOUR_TILE = { x: 124, y: 129 };
+/** The granary's meat sits at the eat tile (where the founders eat). */
+export const GRANARY_MEAT_TILE = { x: 123, y: 120 };
+/** The granary's fish sits at the eat tile (where the founders eat). */
+export const GRANARY_FISH_TILE = { x: 123, y: 120 };
 
 /** Grain in the granary store (the registry's answer to the food
  *  read — the mill's input). Pure. */
@@ -68,15 +78,27 @@ export function granaryFlourInRegistry(registry: ResourceRegistry): number {
   return storeQty(registry, GRANARY_STORE_ID, 'flour');
 }
 
+/** Meat in the granary store (BUILD 1102 — the hunter's yield).
+ *  Pure. */
+export function granaryMeatInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, GRANARY_STORE_ID, 'meat');
+}
+
+/** Fish in the granary store (BUILD 1102 — the fisher's yield).
+ *  Pure. */
+export function granaryFishInRegistry(registry: ResourceRegistry): number {
+  return storeQty(registry, GRANARY_STORE_ID, 'fish');
+}
+
 /**
  * Seed the granary store from the founders save numbers (load path):
  * grain at the stockpile tile, food at the eat tile, source 'loaded'
  * (the save does not record where a unit came from), capped
- * (grain 200, food 60 — the storehouse's pattern). Only set when
- * > 0, like seedStorehouseStore (a store that never held a kind
- * has no entry — qty 0). Pure.
+ * (grain 200, food 60, meat 60, fish 60 — the storehouse's pattern).
+ * Only set when > 0, like seedStorehouseStore (a store that never
+ * held a kind has no entry — qty 0). Pure.
  */
-export function seedGranaryStore(registry: ResourceRegistry, grain: number, food: number, flour = 0): ResourceRegistry {
+export function seedGranaryStore(registry: ResourceRegistry, grain: number, food: number, flour = 0, meat = 0, fish = 0): ResourceRegistry {
   let next = registry;
   if (grain > 0) {
     next = setStoreQty(
@@ -108,13 +130,38 @@ export function seedGranaryStore(registry: ResourceRegistry, grain: number, food
       { capacity: GRANARY_CAPACITY_FLOUR, location: { ...GRANARY_FLOUR_TILE } },
     );
   }
+  // BUILD 1102: the granary's meat and fish — seeded from the
+  // founders save (v12), like flour.
+  if (meat > 0) {
+    next = setStoreQty(
+      next,
+      GRANARY_STORE_ID,
+      'meat',
+      meat,
+      { type: 'loaded' },
+      { capacity: GRANARY_CAPACITY_MEAT, location: { ...GRANARY_MEAT_TILE } },
+    );
+  }
+  if (fish > 0) {
+    next = setStoreQty(
+      next,
+      GRANARY_STORE_ID,
+      'fish',
+      fish,
+      { type: 'loaded' },
+      { capacity: GRANARY_CAPACITY_FISH, location: { ...GRANARY_FISH_TILE } },
+    );
+  }
   return next;
 }
 
 /** The granary count for the HUD / E-report / Control Center:
  *  'Granary 12 meals · 8 grain'. Pure. */
-export function granaryLabel(grain: number, food: number, flour = 0): string {
-  return 'Granary ' + food + ' meals · ' + grain + ' grain · ' + flour + ' flour';
+export function granaryLabel(grain: number, food: number, flour = 0, meat = 0, fish = 0): string {
+  let label = 'Granary ' + food + ' meals · ' + grain + ' grain · ' + flour + ' flour';
+  if (meat > 0) label += ' · ' + meat + ' meat';
+  if (fish > 0) label += ' · ' + fish + ' fish';
+  return label;
 }
 
 // --- Farm planting ---

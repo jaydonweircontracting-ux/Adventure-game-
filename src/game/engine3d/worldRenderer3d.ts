@@ -26,7 +26,7 @@ import { emitSkyObjects, NIGHT_NAVY, SKY_MAX_VERTS } from './sky';
 import { nightFactor3dForMinutes, skyGradientForMinutes, FIGURE_NIGHT_CAP, rainForMinutes, emitRainStreaks, RAIN_STREAKS, RAIN_VERTS_PER_STREAK } from './atmosphere';
 import { growthFactorAt } from './livingWorld';
 import { rainIntensityFor, seasonForDay } from './climate';
-import { emitHouseFx, houseFxInputsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput } from './houseFx';
+import { emitHouseFx, houseFxInputsFor, houseLitAt, lightScheduleFor, FX_MAX_VERTS, type InteriorFxInput, type PenFxInput } from './houseFx';
 import { absMinutes, farmStageAt, type FarmStage } from './farm';
 import { placedLanternTiles, placedFarmTiles, seedRectForHut, type PaletteKind } from './placements';
 import { effTerrainFor, surfaceElevation, rayHitSurface } from './wildTerrain';
@@ -36,6 +36,7 @@ import { interiorCeilingFor, interiorWallBandFor, interiorHearthFor } from './in
 import { productionKindForRect, productionFireFor } from './productionInteriors';
 import { ROSTER_3D, rosterArchetype, type DayClock } from './townsfolk3d';
 import { FOUNDERS_ENABLED, FOUNDER_STOCKPILE_TILE, FOUNDER_NAMES, campWoodInRegistry, type FounderState } from './founders';
+import { PEN_CENTRE, penSheepPositions, type PenState } from './animalHusbandry';
 import { FOUNDING_PARTY_SIZE, type FoundingState } from './founding';
 import { createWorldBuilder, type Vec3, type WorldBuilder } from './worldRender3d';
 import { HUT_SITES, sitesOf, type ConstructionState } from './construction';
@@ -180,6 +181,9 @@ export interface WorldRendererDeps {
   // BUILD 1096: the housing (its build site renders through the
   // same per-frame fx path as a hut site, below).
   housingRef: { current: HousingState };
+  // BUILD 1102 (0x25, Phase 4.5): the pen (its sheep render through
+  // the same per-frame fx path as the stockpile logs, below).
+  penRef: { current: PenState };
   staminaPublishCountRef: { current: number };
   areaSelectionRef: { current: AreaSelection | null };
   buildRef: { current: { palette: PaletteKind | null; removeMode: boolean; moveMode: boolean; saveAreaMode: boolean; pasteName: string | null; customAssetId: string | null; areaSelectMode: boolean; areaMoveArmed: boolean; areaDuplicateArmed: boolean } };
@@ -237,7 +241,7 @@ export class WorldRenderer {
   keys = new Set<string>();
   // ---- render state ----
   worldVertCount = 0;
-  lastFxStats = {houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,stockpileTiles:0,stockpileVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
+  lastFxStats = {houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,stockpileTiles:0,stockpileVerts:0,penSheep:0,penVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
   lastBuildX = 0;
   lastBuildY = 0;
   figureState = new Map<string, FigureState>();
@@ -546,6 +550,7 @@ export class WorldRenderer {
     const foodChainRef = this.deps.foodChainRef;
     const metalChainRef = this.deps.metalChainRef;
     const housingRef = this.deps.housingRef;
+    const penRef = this.deps.penRef;
     const staminaPublishCountRef = this.deps.staminaPublishCountRef;
     const areaSelectionRef = this.deps.areaSelectionRef;
     const buildRef = this.deps.buildRef;
@@ -925,6 +930,11 @@ export class WorldRenderer {
     // pile tile + the real stockpile count; 0 wood still shows 1
     // log (the camp has a pile).
     const stockpileInputs=FOUNDERS_ENABLED?[{tx:FOUNDER_STOCKPILE_TILE.x,ty:FOUNDER_STOCKPILE_TILE.y,baseY:surfaceElevation(effTerrainDraw,FOUNDER_STOCKPILE_TILE.x+.5,FOUNDER_STOCKPILE_TILE.y+.5),wood:campWoodInRegistry(registryRef.current)}]:[];
+    // BUILD 1102 (0x25, Phase 4.5): the pen's sheep ride the same fx
+    // call as the stockpile logs — one white blob per sheep in the
+    // flock (penSheepPositions, capped at 6), on the flat pen rect.
+    // A pen still building, or an empty flock, emits nothing.
+    const penInputs: PenFxInput[] = FOUNDERS_ENABLED && penRef.current.site.state === 'done' && penRef.current.flock >= 1 ? [{ positions: penSheepPositions(penRef.current), baseY: surfaceElevation(effTerrainDraw, PEN_CENTRE.x + 0.5, PEN_CENTRE.y + 0.5) }] : [];
     // BUILD 1101 (0x24, Phase 4.3): the founding camp's log pile rides
     // the same fx call as the founders' pile (it grows with deliveries).
     if(FOUNDERS_ENABLED&&foundingRef.current){const fnd=foundingRef.current;const fSite=fnd.site;if(fSite)stockpileInputs.push({tx:fSite.stockpile.x,ty:fSite.stockpile.y,baseY:surfaceElevation(effTerrainDraw,fSite.stockpile.x+.5,fSite.stockpile.y+.5),wood:fnd.pile.wood});}
@@ -966,8 +976,8 @@ export class WorldRenderer {
     // the same fx call as the founders' huts — at progress 6 the real
     // hut placement renders instead.
     if(FOUNDERS_ENABLED&&foundingRef.current&&foundingRef.current.hut.state==='building'){const fnd=foundingRef.current;const fSite=fnd.site;if(fSite)siteInputs.push({baseY:surfaceElevation(effTerrainDraw,fSite.hut.centre.x+.5,fSite.hut.centre.y+.5),progress:fnd.hut.progress,site:fSite.hut});}
-    const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs);
-    this.lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
+    const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs,penInputs);
+    this.lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,penSheep:fxCounts.penSheep,penVerts:fxCounts.penVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
     if(fxCounts.totalVerts>0){
     gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
     if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);

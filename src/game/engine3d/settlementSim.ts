@@ -47,6 +47,7 @@ import {
   spawnResident,
   campWoodInRegistry,
   campFoodInRegistry,
+  carryAnimalYieldToCarrier,
   campStoneInRegistry,
   eatFounderMealFromRegistry,
   fellTreeToCarrier,
@@ -83,6 +84,9 @@ import {
   smithJobIdFor,
   sawJobIdFor,
   carpenterJobIdFor,
+  fishJobIdFor,
+  huntJobIdFor,
+  shepherdJobIdFor,
   scorerTreeDist,
   scorerQuarryDist,
   jobSummary,
@@ -118,10 +122,18 @@ import { FARM_VILLAGER_RADIUS, readyFarmTiles, seedCampFarmPlot, waterFarmTile, 
 import { stampRivers } from './rivers';
 import { stampLandforms } from './landforms';
 import { forestBaselineTrees, forestDensity, growthFactorAt, soilFactorAt } from './livingWorld';
-import { FOUNDER_PLANT_TICKS, granaryFlourInRegistry, plantFarmTile } from './granary';
-import { advanceEcosystemDay, applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
+import { FOUNDER_PLANT_TICKS, granaryFishInRegistry, granaryFlourInRegistry, granaryMeatInRegistry, plantFarmTile } from './granary';
+import { advanceEcosystemDay, applyMaturedTrees, recordAnimalKill, stampAnimalPopulations } from './ecosystems';
+import {
+  FISH_TICKS_PER_SHIFT, FISH_YIELD, HUNT_GIVE_UP_TICKS, HUNT_TICKS_PER_SHIFT, HUNT_YIELD,
+  PEN_APPROACH, PEN_FEED_JOB_ID, PEN_RECT, PEN_SHEAR_JOB_ID, PEN_SITE_ID, PEN_START_DAY, PEN_WOOD_PER_STEP, PEN_WORK_STEPS,
+  canBuildPen, canStartPen, feedPen, finishPen, freshPen, penDayAdvance,
+  penFeedNeeded, penShearReady,
+  preyKindForTargetId, shearPen, spendPenStepFromRegistry, stockPenFromWild,
+  type PenState,
+} from './animalHusbandry';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
-import { chooseScoredActivity, UTILITY_PILE_FULL } from './utility';
+import { chooseScoredActivity, UTILITY_HUNT_FOOD_THRESHOLD, UTILITY_PILE_FULL } from './utility';
 import { assignProfessions, professionSlotsFor, type ProfessionNeed } from './professions';
 import {
   STOREHOUSE_APPROACH, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID,
@@ -129,7 +141,7 @@ import {
   canStartStorehouse, canBuildStorehouse, spendStorehouseStepFromRegistry, finishStorehouse,
   reconcileStorehouse, storehouseWoodInRegistry, storehouseStoneInRegistry, quarryClaimRadiusForStorehouse,
   deliverFounderCarryToStore, fetchBuildWood, spendBuildStepFromCarried, distToActiveBuildSite,
-  STOREHOUSE_STORE_ID, freshStorehouse, seedStorehouseStore, storehouseOreInRegistry, type StorehouseState,
+  STOREHOUSE_STORE_ID, freshStorehouse, seedStorehouseStore, storehouseLeatherInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, type StorehouseState,
 } from './storehouse';
 import { QUARRY_STONE_TARGET, QUARRY_CLAIM_RADIUS, quarryWorkTile, quarryTargetFromJob, mineStoneToCarrier } from './quarry';
 import {
@@ -177,8 +189,8 @@ import {
   type BridgeSite, type PathState,
 } from './paths';
 import { closestFounder, recordSharedEvent, restTileFor } from './memory';
-import { createRegistry, INN_STORE_ID, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
-import { validatePlacement, addPlacement } from './placements';
+import { CAMP_STORE_ID, createRegistry, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
+import { validatePlacement, addPlacement, placedFenceTiles } from './placements';
 import { npcWalkable } from './townsfolk3d';
 import type { IsoWorld } from '../iso/isoWorld';
 
@@ -315,6 +327,24 @@ export type SettlementLedger = {
   innMeals: number;
   /** Coal delivered into the storehouse store (BUILD 1095). */
   storehouseCoalDelivered: number;
+  /** Meat delivered to the granary (BUILD 1102). */
+  meatDelivered: number;
+  /** Fish delivered to the granary (BUILD 1102). */
+  fishDelivered: number;
+  /** Leather delivered to the storehouse (BUILD 1102). */
+  leatherDelivered: number;
+  /** Wool delivered to the storehouse (BUILD 1102). */
+  woolDelivered: number;
+  /** Fish caught by the fisher (BUILD 1102). */
+  fishCaught: number;
+  /** Wool sheared from the pen flock (BUILD 1102). */
+  woolSheared: number;
+  /** Lambs born in the pen (BUILD 1102). */
+  sheepBorn: number;
+  /** Wood spent on the pen's construction (BUILD 1102). */
+  penWoodSpent: number;
+  /** Pens completed (0/1 in a run — BUILD 1102). */
+  pensCompleted: number;
   arrivals: string[];
   /** Founder-ticks spent at hunger 0 (starving). */
   starvedTicks: number;
@@ -335,7 +365,7 @@ export function freshSettlementLedger(): SettlementLedger {
     mealsBaked: 0,
     flourBaked: 0,
     mealsEaten: 0,
-    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0, plant: 0, mill: 0, bake: 0, smelt: 0, smith: 0, saw: 0, carpenter: 0 },
+    jobsCompleted: { chop: 0, build: 0, deliver: 0, harvest: 0, quarry: 0, water: 0, mine: 0, lumber: 0, plant: 0, mill: 0, bake: 0, smelt: 0, smith: 0, saw: 0, carpenter: 0, hunt: 0, fish: 0, shepherd: 0 },
     stoneMined: 0,
     stoneDelivered: 0,
     jobsFailed: {},
@@ -391,6 +421,15 @@ export function freshSettlementLedger(): SettlementLedger {
     innRests: 0,
     innMeals: 0,
     storehouseCoalDelivered: 0,
+    meatDelivered: 0,
+    fishDelivered: 0,
+    leatherDelivered: 0,
+    woolDelivered: 0,
+    fishCaught: 0,
+    woolSheared: 0,
+    sheepBorn: 0,
+    penWoodSpent: 0,
+    pensCompleted: 0,
     arrivals: [],
     starvedTicks: 0,
     minHealth: 100,
@@ -418,6 +457,9 @@ export type SettlementSim = {
   /** The housing (BUILD 1096 — the inn, saved in the founders
    *  save, v12, and round-tripped by serialize/restore). */
   housing: HousingState;
+  /** The pen (BUILD 1102 — the sheep pen, saved in the founders
+   *  save, v12, and round-tripped by serialize/restore). */
+  pen: PenState;
   /** The settlement plan (BUILD 1100 — the Mayor + Architect
    *  decision, saved in the founders save, v12, and round-tripped
    *  by serialize/restore). */
@@ -501,6 +543,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
     foodChain: freshFoodChain(),
     metalChain: freshMetalChain(),
     housing: freshHousing(),
+    pen: freshPen(),
     sitePlan: null,
     abs: SETTLEMENT_START_ABS,
     ledger: freshSettlementLedger(),
@@ -513,7 +556,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry), sim.sitePlan),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry), sim.sitePlan, sim.pen, granaryMeatInRegistry(sim.registry), granaryFishInRegistry(sim.registry), storehouseWoolInRegistry(sim.registry), storehouseLeatherInRegistry(sim.registry)),
   );
 }
 
@@ -529,8 +572,8 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
   const save = migrateFoundersSave(JSON.parse(saveJson));
   if (!save) throw new Error('settlementSim: the save does not migrate');
   const founders = foundersStateOf(save);
-  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock, save.stoneStock, save.flourStock);
-  registry = seedStorehouseStore(registry, save.storehouseWood, save.storehouseStone, save.storehouseOre, save.storehouseCoal, save.storehouseIngots, save.storehouseTools, save.storehouseTimber, save.storehouseFurniture);
+  let registry = seedCampStore(createRegistry(), save.stockpileWood, save.foodStock, save.grainStock, save.stoneStock, save.flourStock, save.meatStock, save.fishStock);
+  registry = seedStorehouseStore(registry, save.storehouseWood, save.storehouseStone, save.storehouseOre, save.storehouseCoal, save.storehouseIngots, save.storehouseTools, save.storehouseTimber, save.storehouseFurniture, save.storehouseWool, save.storehouseLeather);
   registry = seedInnStore(registry, save.innFoodStock);
   for (const f of founders) registry = seedCarrierStore(registry, f);
   return {
@@ -543,6 +586,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
     foodChain: save.foodChain,
     metalChain: save.metalChain,
     housing: save.housing,
+    pen: save.pen,
     sitePlan: sitePlanFromSave(save.sitePlan),
     abs,
     ledger,
@@ -575,6 +619,15 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     if (isInnUsable(sim.housing)) {
       const top = topUpInnStore(sim.registry);
       sim.registry = top.registry;
+    }
+    // BUILD 1102: the pen's day step — sheep fed on the day just
+    // ended lamb and grow wool; unfed sheep do neither (the fedDay
+    // is the day just ended, dayBefore — the day that flipped is
+    // the new day, not the fed one).
+    if (sim.pen.site.state === 'done') {
+      const penDay = penDayAdvance(sim.pen, dayBefore);
+      sim.pen = penDay.pen;
+      sim.ledger.sheepBorn += penDay.births;
     }
   }
   const ledger = sim.ledger;
@@ -681,7 +734,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   const well = wellTile(world, FOUNDER_CAMP.x, FOUNDER_CAMP.y);
 
   // Rebuild the job board from the world.
-  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines, foodChain: sim.foodChain, metalChain: sim.metalChain, housing: sim.housing, storehouseMaterials: { iron: storehouseOreInRegistry(sim.registry, 'iron'), coal: metalChainCoalInRegistry(sim.registry), ingots: metalChainIngotsInRegistry(sim.registry), tools: metalChainToolsInRegistry(sim.registry), wood: storehouseWoodInRegistry(sim.registry), timber: metalChainTimberInRegistry(sim.registry), furniture: metalChainFurnitureInRegistry(sim.registry) }, granary: { grain: campGrainInRegistry(sim.registry), flour: foodChainFlourInRegistry(sim.registry), food: campFoodInRegistry(sim.registry) } });
+  sim.board = discoverJobs(sim.board, { world, construction, founders: sim.founders, nowAbs, growthFactorAt: (tx, ty) => growthFactorAt(world, day, tx, ty), soilFactorAt: (tx, ty) => soilFactorAt(world, tx, ty), storehouse: sim.storehouse, day, quarryRadius: claimQuarryRadius, well, bridges: sim.pathState.bridges, mines: sim.mines, foodChain: sim.foodChain, metalChain: sim.metalChain, housing: sim.housing, storehouseMaterials: { iron: storehouseOreInRegistry(sim.registry, 'iron'), coal: metalChainCoalInRegistry(sim.registry), ingots: metalChainIngotsInRegistry(sim.registry), tools: metalChainToolsInRegistry(sim.registry), wood: storehouseWoodInRegistry(sim.registry), timber: metalChainTimberInRegistry(sim.registry), furniture: metalChainFurnitureInRegistry(sim.registry) }, granary: { grain: campGrainInRegistry(sim.registry), flour: foodChainFlourInRegistry(sim.registry), food: campFoodInRegistry(sim.registry) }, pen: sim.pen });
 
   // BUILD 1069: the ready farm tiles this tick — computed once and
   // fed to every founder's scorer, so food drives work.
@@ -765,6 +818,21 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     blacksmithDone: sim.metalChain.blacksmith.state === 'done',
     sawmillDone: sim.metalChain.sawmill.state === 'done',
     carpenterDone: sim.metalChain.carpenter.state === 'done',
+    // BUILD 1102 (gate fix): the animal needs — the same shape as
+    // the utility terms (day 3+, an open job, total camp food
+    // below the hunt threshold; the pen done + feed/shear wanted).
+    // Day-3-gated, so the 24h window never sees them.
+    huntOpen:
+      day >= PEN_START_DAY &&
+      openJobs(sim.board, 'hunt').length > 0 &&
+      campFoodInRegistry(sim.registry) + granaryMeatInRegistry(sim.registry) + granaryFishInRegistry(sim.registry) < UTILITY_HUNT_FOOD_THRESHOLD,
+    fishOpen:
+      day >= PEN_START_DAY &&
+      openJobs(sim.board, 'fish').length > 0 &&
+      campFoodInRegistry(sim.registry) + granaryMeatInRegistry(sim.registry) + granaryFishInRegistry(sim.registry) < UTILITY_HUNT_FOOD_THRESHOLD,
+    shepherdOpen:
+      sim.pen.site.state === 'done' &&
+      (penFeedNeeded(sim.pen, day) || penShearReady(sim.pen)),
   };
   assignProfessions(sim.founders, professionSlotsFor(professionNeed));
 
@@ -839,6 +907,24 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.workState = 'toTree';
         f.mineTicks = 0;
         f.mineTarget = null;
+      } else if (f.workState === 'toPrey' || f.workState === 'hunting') {
+        // BUILD 1102: the hunt job vanished (the prey went extinct
+        // while the hunter walked — discovery failed it) — the
+        // hunter re-targets instead of walking to a dead prey.
+        f.workState = 'toTree';
+        f.preyTarget = null;
+        f.animalTicks = 0;
+      } else if (f.workState === 'toBank' || f.workState === 'fishing') {
+        // BUILD 1102: the fish job vanished (the river ran out of
+        // fish) — the fisher re-targets.
+        f.workState = 'toTree';
+        f.animalTicks = 0;
+      } else if (f.workState === 'toPen' || f.workState === 'shepherding') {
+        // BUILD 1102: the shepherd job vanished — the shepherd
+        // re-targets (carried feed grain is re-claimed as a
+        // deliver below, like any other carried good).
+        f.workState = 'toTree';
+        f.animalTicks = 0;
       } else if (f.workState === 'toWell' || f.workState === 'toWater') {
         // BUILD 1088: the water job vanished (the tile was watered
         // by another founder, or grew ready) — spill the carried
@@ -854,7 +940,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.workTile = null;
       }
       if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0)) {
-        const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingBuild + f.carryingOre, nowAbs);
+        const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingBuild + f.carryingOre + f.carryingMeat + f.carryingLeather + f.carryingFish + f.carryingWool, nowAbs);
         sim.board = dc.board;
         if (dc.job) myJob = dc.job;
       }
@@ -974,6 +1060,15 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         storehouseFurniture: metalChainFurnitureInRegistry(sim.registry),
         campGrain: campGrainInRegistry(sim.registry),
         campFlour: foodChainFlourInRegistry(sim.registry),
+        campMeat: granaryMeatInRegistry(sim.registry),
+        campFish: granaryFishInRegistry(sim.registry),
+        readyHuntJobs: openJobs(sim.board, 'hunt').length,
+        readyFishJobs: openJobs(sim.board, 'fish').length,
+        readyShepherdFeedJobs: openJobs(sim.board, 'shepherd').filter((j) => j.targetId === PEN_FEED_JOB_ID).length,
+        readyShepherdShearJobs: openJobs(sim.board, 'shepherd').filter((j) => j.targetId === PEN_SHEAR_JOB_ID).length,
+        huntTaken: sim.founders.some((o) => o !== f && (o.workState === 'toPrey' || o.workState === 'hunting')),
+        fishTaken: sim.founders.some((o) => o !== f && (o.workState === 'toBank' || o.workState === 'fishing')),
+        shepherdTaken: sim.founders.some((o) => o !== f && (o.workState === 'toPen' || o.workState === 'shepherding')),
         profession: f.profession,
         builderExists: sim.founders.some((o) => o.profession === 'builder'),
       });
@@ -1043,6 +1138,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       const keepSawmill = !!(myJob && myJob.kind === 'build' && myJob.targetId === SAWMILL_SITE_ID) && canStartSawmill(sim.metalChain, sim.storehouse.state === 'done', (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)));
       const keepCarpenter = !!(myJob && myJob.kind === 'build' && myJob.targetId === CARPENTER_SITE_ID) && canStartCarpenter(sim.metalChain, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)));
       const keepWorkshop = !!(myJob && myJob.kind === 'build' && myJob.targetId === WORKSHOP_SITE_ID) && canStartWorkshop(sim.metalChain, sim.foodChain.bakery.state === 'done', (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)), metalChainToolsInRegistry(sim.registry));
+      const keepPen = !!(myJob && myJob.kind === 'build' && myJob.targetId === PEN_SITE_ID) && sim.pen.site.state !== 'done' && sim.pen.site.progress < PEN_WORK_STEPS; // BUILD 1102: the pen is kept while unfinished — the pile gate released the job mid-build (3/6) and the bridges took the wood; the builder waits at the pen for the next chop delivery.
       const keepSite =
         f.activity === 'work' &&
         (canBuild(construction, campWoodInRegistry(sim.registry)) ||
@@ -1055,7 +1151,8 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           keepBlacksmith ||
           keepSawmill ||
           keepCarpenter ||
-          keepWorkshop);
+          keepWorkshop ||
+          keepPen);
       if (!keepSite) {
         if (myJob && myJob.kind === 'build') {
           sim.board = releaseJob(sim.board, myJob.id);
@@ -1233,13 +1330,30 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           myJob = sc.job;
         }
       }
+      // BUILD 1102: the pen — claimed right after the storehouse,
+      // before the bridges/mill/bakery/chain (it is NOT a plan
+      // building, so the Mayor never picks it, and the direct claim
+      // sat last and was perpetually preempted — the probe failed
+      // three times at day 7 with the pen 'none'). Food infrastructure
+      // (meat/wool), claimed alongside the mill/bakery by a different
+      // founder. The claim checks penTaken (no other founder has
+      // claimed THE PEN), not the global builderTaken.
+      const penTaken = (() => { const c = buildJobClaimedBy(sim.board, PEN_SITE_ID); return c !== null && c !== f.id; })();
+      if (f.workState === 'toTree' && !f.treeTarget && !penTaken && canStartPen(sim.pen, day, foundingHutsDone(construction), sim.storehouse.state === 'done', campFoodInRegistry(sim.registry), campWoodInRegistry(sim.registry))) {
+        const pc = claimJob(sim.board, f.id, buildJobIdFor(PEN_SITE_ID));
+        sim.board = pc.board;
+        if (pc.job) {
+          f.workState = 'toSite';
+          myJob = pc.job;
+        }
+      }
       // BUILD 1088: the bridge build — claimed the same way as a
       // hut (one builder, the claim IS the site), only once the
       // huts and the storehouse are done and the settlement is old
       // enough (bridges third), and only when the camp pile holds
       // a step's wood (see worldSimulation3d.ts). The nearest
       // startable site wins.
-      if (f.workState === 'toTree' && !f.treeTarget && foundingDone && sim.storehouse.state === 'done' && !builderTaken) {
+      if (f.workState === 'toTree' && !f.treeTarget && foundingDone && sim.storehouse.state === 'done' && !builderTaken && !canStartPen(sim.pen, day, foundingHutsDone(construction), sim.storehouse.state === 'done', campFoodInRegistry(sim.registry), campWoodInRegistry(sim.registry))) { // BUILD 1102: the bridge yields while the pen is startable — the bridge claims are checked first, so the pen never won the builder.
         let bestSite: BridgeSite | null = null;
         let bestDist = Infinity;
         for (const s of sim.pathState.bridges) {
@@ -1348,7 +1462,13 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           myJob = in2.job;
         }
       }
-      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && campFoodInRegistry(sim.registry) < FARM_FOOD_THRESHOLD) {
+      // BUILD 1102: the pen build — claimed the same way as a
+      // hut (one builder, the claim IS the site), only once the
+      // huts and the storehouse are done and the camp holds a
+      // meals surplus (the Songs of Syx guardrail — a pen is a
+      // luxury, not survival), and only when the camp pile holds
+      // a step's wood.
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'harvest' && campFoodInRegistry(sim.registry) < FARM_FOOD_THRESHOLD) {
         const hc = claimNearestJob(sim.board, f.id, 'harvest', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FARM_VILLAGER_RADIUS);
         sim.board = hc.board;
         if (hc.job) {
@@ -1518,6 +1638,78 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           myJob = cp.job;
         }
       }
+      // BUILD 1102: hunting — the mirror of the real-time tick
+      // (same gate: workKind 'hunt', day >= 3, one hunter at a
+      // time). The claim is nearest-first from the founder, so a
+      // hunter who emptied the near band walks further out (the
+      // acceptance test — the prey jobs' tiles move outward as
+      // the near population falls). The radius is the whole map:
+      // prey roam the wild band 100+ tiles from camp, far outside
+      // the 60-tile work radius.
+      const huntTaken = sim.founders.some((o) => o !== f && (o.workState === 'toPrey' || o.workState === 'hunting'));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'hunt' && day >= PEN_START_DAY && !huntTaken) {
+        const hc = claimNearestJob(sim.board, f.id, 'hunt', Math.round(f.x), Math.round(f.y), 200);
+        sim.board = hc.board;
+        if (hc.job) {
+          const kind = preyKindForTargetId(hc.job.targetId);
+          if (kind) {
+            f.preyTarget = { id: hc.job.targetId, kind, x: hc.job.tile.x, y: hc.job.tile.y };
+            f.animalTicks = 0;
+            f.workState = 'toPrey';
+            myJob = hc.job;
+          } else {
+            // An unparseable prey target is a discovery bug, not a
+            // deer — release the job instead of hunting the wrong
+            // population.
+            sim.board = releaseJob(sim.board, hc.job.id);
+          }
+        }
+      }
+      // BUILD 1102: fishing — the same shape (one fisher at a
+      // time, the river bank tile is the job's tile).
+      const fishTaken = sim.founders.some((o) => o !== f && (o.workState === 'toBank' || o.workState === 'fishing'));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'fish' && day >= PEN_START_DAY && !fishTaken) {
+        const fc = claimJob(sim.board, f.id, fishJobIdFor());
+        sim.board = fc.board;
+        if (fc.job) {
+          f.animalTicks = 0;
+          f.workState = 'toBank';
+          myJob = fc.job;
+        }
+      }
+      // BUILD 1102: shepherding — shear first (the utility pays
+      // more for wool than for feeding), then feed. The feed leg
+      // picks up its grain at the claim: the founder is at camp,
+      // the granary is the camp store, so the withdrawal is
+      // instant and the trip is the work (the well-draw
+      // precedent — the draw is instant, the trip is the work). A
+      // granary that ran dry between discovery and claim leaves
+      // the job open instead of walking grain-less to the pen.
+      const shepherdTaken = sim.founders.some((o) => o !== f && (o.workState === 'toPen' || o.workState === 'shepherding'));
+      if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'shepherd' && day >= PEN_START_DAY && !shepherdTaken) {
+        const shc = claimJob(sim.board, f.id, shepherdJobIdFor(PEN_SHEAR_JOB_ID));
+        sim.board = shc.board;
+        if (shc.job) {
+          f.animalTicks = 0;
+          f.workState = 'toPen';
+          myJob = shc.job;
+        } else {
+          const fdc = claimJob(sim.board, f.id, shepherdJobIdFor(PEN_FEED_JOB_ID));
+          sim.board = fdc.board;
+          if (fdc.job) {
+            const g = withdrawFrom(sim.registry, GRANARY_STORE_ID, 'grain', 1);
+            sim.registry = g.registry;
+            if (g.taken >= 1) {
+              f.carryingGrain += 1;
+              f.animalTicks = 0;
+              f.workState = 'toPen';
+              myJob = fdc.job;
+            } else {
+              sim.board = releaseJob(sim.board, fdc.job.id);
+            }
+          }
+        }
+      }
       // BUILD 1086: quarrying — the mirror of the real-time tick
       // (same gate: workKind 'quarry' and the pile below target).
       // BUILD 1089: the crew cap — up to QUARRY_CREW_SIZE founders
@@ -1608,6 +1800,26 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         if (!f.treeTarget) f.workState = 'idle';
       }
     }
+    // BUILD 1102: the hunt give-up — MOVED out of the claims block
+    // (it sat inside `if (... toTree ...)` at 1247, so a toPrey
+    // founder never reached it and walked forever at an unreachable
+    // prey — diag-hunt: 400 ticks, animalTicks 0, never moved). A
+    // hunter who cannot reach the prey in HUNT_GIVE_UP_TICKS fails
+    // the job and walks back to chopping (the 1091 quarry precedent).
+    if (f.workState === 'toPrey') {
+      f.animalTicks++;
+      if (f.animalTicks >= HUNT_GIVE_UP_TICKS) {
+        if (myJob && myJob.kind === 'hunt') {
+          ledger.jobsFailed['give-up'] = (ledger.jobsFailed['give-up'] ?? 0) + 1;
+          sim.board = failJob(sim.board, myJob.id, 'give-up');
+          myJob = undefined;
+        }
+        f.workState = 'toTree';
+        f.preyTarget = null;
+        f.animalTicks = 0;
+      }
+    }
+
 
     // Destination: build/harvest job tiles, the sleep approach, the
     // site approach, else the 1057 destination (carrying → camp,
@@ -1663,6 +1875,9 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     else if (myJob && myJob.kind === 'smith' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'saw' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
     else if (myJob && myJob.kind === 'carpenter' && (f.activity === 'work' || f.activity === 'build')) dest = myJob.tile;
+    else if ((f.workState === 'toPrey' || f.workState === 'hunting') && (f.activity === 'work' || f.activity === 'build')) dest = f.preyTarget ? { x: f.preyTarget.x, y: f.preyTarget.y } : (myJob ? myJob.tile : { x: Math.round(f.x), y: Math.round(f.y) });
+    else if ((f.workState === 'toBank' || f.workState === 'fishing') && (f.activity === 'work' || f.activity === 'build')) dest = myJob ? myJob.tile : { x: Math.round(f.x), y: Math.round(f.y) };
+    else if ((f.workState === 'toPen' || f.workState === 'shepherding') && (f.activity === 'work' || f.activity === 'build')) dest = { ...PEN_APPROACH };
     else if (f.activity === 'sleep' && hutPlaced) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;
     else if ((f.activity === 'work' || f.activity === 'build') && (f.workState === 'toSite' || f.workState === 'building'))
       dest = buildSite ? buildSite.approach : HUT_APPROACH;
@@ -1712,7 +1927,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       // activity — the driver mirrors the view's fix. A founder who
       // flips to rest/eat/sleep while carrying must still deliver
       // when they reach their destination (see worldSimulation3d.ts).
-      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0)) {
+      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0 || f.carryingMeat > 0 || f.carryingLeather > 0 || f.carryingFish > 0 || f.carryingWool > 0)) {
         // The delivery runs only on a held deliver job — the transfer
         // IS the job's completion. Without the job (claimed next tick)
         // the founder waits at camp; the wood never moves without a job.
@@ -1732,23 +1947,35 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           f.carryingStone -= res.movedStone;
           f.carryingBuild -= res.movedBuildWood;
           f.carryingOre -= res.movedOre;
+          f.carryingMeat -= res.movedMeat;
+          f.carryingLeather -= res.movedLeather;
+          f.carryingFish -= res.movedFish;
+          f.carryingWool -= res.movedWool;
           ledger.woodDelivered += res.movedWood;
           ledger.grainDelivered += res.movedGrain;
           ledger.stoneDelivered += res.movedStone;
           ledger.oreDelivered += res.movedIron;
           ledger.coalDelivered += res.movedCoal;
+          ledger.meatDelivered += res.movedMeat;
+          ledger.fishDelivered += res.movedFish;
+          ledger.leatherDelivered += res.movedLeather;
+          ledger.woolDelivered += res.movedWool;
           if (res.dest === STOREHOUSE_STORE_ID) {
             ledger.storehouseWoodDelivered += res.movedWood + res.movedBuildWood;
             ledger.storehouseStoneDelivered += res.movedStone;
             ledger.storehouseOreDelivered += res.movedIron;
             ledger.storehouseCoalDelivered += res.movedCoal;
           }
-          if (f.carrying <= 0 && f.carryingGrain <= 0 && f.carryingStone <= 0 && f.carryingBuild <= 0 && f.carryingOre <= 0) {
+          if (f.carrying <= 0 && f.carryingGrain <= 0 && f.carryingStone <= 0 && f.carryingBuild <= 0 && f.carryingOre <= 0 && f.carryingMeat <= 0 && f.carryingLeather <= 0 && f.carryingFish <= 0 && f.carryingWool <= 0) {
             f.carrying = 0;
             f.carryingGrain = 0;
             f.carryingStone = 0;
             f.carryingBuild = 0;
             f.carryingOre = 0;
+            f.carryingMeat = 0;
+            f.carryingLeather = 0;
+            f.carryingFish = 0;
+            f.carryingWool = 0;
             f.carryingOreKind = null;
             f.workState = 'toTree';
             ledger.jobsCompleted.deliver++;
@@ -1875,6 +2102,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             const isCarpenterJob = myJob && myJob.kind === 'build' && myJob.targetId === CARPENTER_SITE_ID;
             const isWorkshopJob = myJob && myJob.kind === 'build' && myJob.targetId === WORKSHOP_SITE_ID;
             const isInnJob = myJob && myJob.kind === 'build' && myJob.targetId === INN_SITE_ID;
+            const isPenJob = myJob && myJob.kind === 'build' && myJob.targetId === PEN_SITE_ID;
             if (isBridgeJob) {
               // BUILD 1088: a bridge step — 2 wood from the camp
               // pile, the progress rises by 1 (spendBridgeStepFrom-
@@ -1982,6 +2210,29 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                 if (iRes.spent || iRes.completed) {
                   if (iRes.spent) ledger.innWoodSpent += INN_WOOD_PER_STEP;
                   step = { registry: iRes.registry, construction, storehouse: sim.storehouse, foodChain: sim.foodChain, metalChain: sim.metalChain, completed: iRes.completed, spent: iRes.spent };
+                }
+              }
+            } else if (isPenJob) {
+              // BUILD 1102: a pen step — 2 wood from the camp pile,
+              // the progress rises by 1 (spendPenStepFromRegistry);
+              // at the last step the pen is READY but the state
+              // stays 'building' until the placement actually lands
+              // (finishPen, below) — the mill's ready/done split.
+              // The pile is empty once the storehouse is done
+              // (deliveries go there), so the pen stalled at 5/6:
+              // transfer a step's wood from the storehouse to the
+              // pile (both are camp stores) when the pile is short,
+              // then spend from the pile as before.
+              if (campWoodInRegistry(sim.registry) < PEN_WOOD_PER_STEP && storehouseWoodInRegistry(sim.registry) >= PEN_WOOD_PER_STEP) {
+                const tr = transfer(sim.registry, STOREHOUSE_STORE_ID, CAMP_STORE_ID, 'wood', PEN_WOOD_PER_STEP, { type: 'loaded' });
+                sim.registry = tr.registry;
+              }
+              if (canBuildPen(sim.pen, campWoodInRegistry(sim.registry))) {
+                const pRes = spendPenStepFromRegistry(sim.registry, sim.pen);
+                sim.pen = pRes.pen;
+                if (pRes.spent || pRes.completed) {
+                  if (pRes.spent) ledger.penWoodSpent += PEN_WOOD_PER_STEP;
+                  step = { registry: pRes.registry, construction, storehouse: sim.storehouse, foodChain: sim.foodChain, metalChain: sim.metalChain, completed: pRes.completed, spent: pRes.spent };
                 }
               }
             } else if (isStorehouseJob) {
@@ -2206,6 +2457,45 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                     addPlacement(world, placed.item);
                     sim.housing = finishInn(sim.housing);
                     ledger.innsCompleted++;
+                    if (myJob && myJob.kind === 'build') {
+                      ledger.jobsCompleted.build++;
+                      sim.board = completeJob(sim.board, myJob.id);
+                      myJob = undefined;
+                    }
+                    f.workState = 'toTree';
+                  } else {
+                    ledger.placementRetries++;
+                  }
+                } else if (isPenJob) {
+                  // Stamp the pen's fence through the same placement
+                  // path the player uses (the 'fence' kind, 1x1
+                  // blocking, like a placed wall). The rect may be
+                  // occupied this tick — then the builder waits and
+                  // retries next cycle; the progress is banked, no
+                  // wood is spent twice (the ready-site rule).
+                  const fenced = new Set(placedFenceTiles(world).map((t) => t.tx + ',' + t.ty));
+                  const fenceTiles: Array<{ x: number; y: number }> = [];
+                  for (let x = PEN_RECT.x0; x <= PEN_RECT.x1; x++) {
+                    fenceTiles.push({ x, y: PEN_RECT.y0 });
+                    fenceTiles.push({ x, y: PEN_RECT.y1 });
+                  }
+                  for (let y = PEN_RECT.y0 + 1; y <= PEN_RECT.y1 - 1; y++) {
+                    fenceTiles.push({ x: PEN_RECT.x0, y });
+                    fenceTiles.push({ x: PEN_RECT.x1, y });
+                  }
+                  let fenceOk = true;
+                  for (const t of fenceTiles) {
+                    if (fenced.has(t.x + ',' + t.y)) continue;
+                    const placed = validatePlacement(world, 'fence', t.x, t.y, { x: 0, y: 0 }, npcTiles, 0);
+                    if (!placed.ok) { fenceOk = false; break; }
+                    addPlacement(world, placed.item);
+                    fenced.add(t.x + ',' + t.y);
+                  }
+                  if (fenceOk) {
+                    sim.pen = finishPen(sim.pen);
+                    const stocked = stockPenFromWild(sim.pen, world);
+                    sim.pen = stocked.pen;
+                    ledger.pensCompleted++;
                     if (myJob && myJob.kind === 'build') {
                       ledger.jobsCompleted.build++;
                       sim.board = completeJob(sim.board, myJob.id);
@@ -2467,6 +2757,114 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             }
             f.bakeTicks = 0;
             f.workState = 'toTree';
+          }
+        } else if (f.workState === 'toPrey') {
+          // At the prey tile: start the hunt shift (the arrival
+          // gate — no yield moves while walking).
+          f.workState = 'hunting';
+          f.animalTicks = 0;
+        } else if (f.workState === 'hunting') {
+          // The shift hunts per tick — the kill lands at the shift
+          // end (HUNT_TICKS_PER_SHIFT). The prey's population drops
+          // by one (recordAnimalKill) and the yield goes into the
+          // carrier (the fell pattern); the founder then delivers
+          // it (the chop pattern — a deliver job is claimed for
+          // the carried meat/leather).
+          f.animalTicks++;
+          if (f.animalTicks >= HUNT_TICKS_PER_SHIFT) {
+            const kind = preyKindForTargetId(myJob ? myJob.targetId : '') ?? f.preyTarget?.kind ?? null;
+            if (kind && myJob && myJob.kind === 'hunt') {
+              recordAnimalKill(world, kind);
+              const y = HUNT_YIELD[kind as keyof typeof HUNT_YIELD];
+              if (y.meat > 0) {
+                const m = carryAnimalYieldToCarrier(sim.registry, f, 'meat', y.meat, myJob.targetId);
+                sim.registry = m.registry;
+                f.carryingMeat += m.added;
+              }
+              if (y.leather > 0) {
+                const l = carryAnimalYieldToCarrier(sim.registry, f, 'leather', y.leather, myJob.targetId);
+                sim.registry = l.registry;
+                f.carryingLeather += l.added;
+              }
+              ledger.jobsCompleted.hunt++;
+              sim.board = completeJob(sim.board, myJob.id);
+              myJob = undefined;
+              const dc = claimDeliverJobFor(sim.board, f.id, f.carryingMeat + f.carryingLeather, nowAbs);
+              sim.board = dc.board;
+              if (dc.job) myJob = dc.job;
+            } else if (myJob && myJob.kind === 'hunt') {
+              ledger.jobsFailed['target-gone'] = (ledger.jobsFailed['target-gone'] ?? 0) + 1;
+              sim.board = failJob(sim.board, myJob.id, 'target-gone');
+              myJob = undefined;
+            }
+            f.preyTarget = null;
+            f.animalTicks = 0;
+            f.workState = 'toStockpile';
+          }
+        } else if (f.workState === 'toBank') {
+          // At the bank tile: start the fishing shift (the arrival
+          // gate — no fish moves while walking).
+          f.workState = 'fishing';
+          f.animalTicks = 0;
+        } else if (f.workState === 'fishing') {
+          // The shift fishes per tick — the catch lands at the shift
+          // end (FISH_TICKS_PER_SHIFT). The fish population drops by
+          // one (recordAnimalKill) and the catch goes into the
+          // carrier; the founder then delivers it.
+          f.animalTicks++;
+          if (f.animalTicks >= FISH_TICKS_PER_SHIFT) {
+            if (myJob && myJob.kind === 'fish') {
+              recordAnimalKill(world, 'fish');
+              const c = carryAnimalYieldToCarrier(sim.registry, f, 'fish', FISH_YIELD, myJob.targetId);
+              sim.registry = c.registry;
+              f.carryingFish += c.added;
+              ledger.fishCaught += c.added;
+              ledger.jobsCompleted.fish++;
+              sim.board = completeJob(sim.board, myJob.id);
+              myJob = undefined;
+              const dc = claimDeliverJobFor(sim.board, f.id, f.carryingFish, nowAbs);
+              sim.board = dc.board;
+              if (dc.job) myJob = dc.job;
+            }
+            f.animalTicks = 0;
+            f.workState = 'toStockpile';
+          }
+        } else if (f.workState === 'toPen') {
+          // At the pen approach: start the shepherding shift.
+          f.workState = 'shepherding';
+          f.animalTicks = 0;
+        } else if (f.workState === 'shepherding') {
+          // The shift works per tick — the leg lands at the shift
+          // end. Feed: the carried grain is spent and the pen is
+          // fed for the day (feedPen sets fedDay). Shear: the wool
+          // leaves the sheep into the carrier (at most the carrier
+          // cap — the rest stays for the next shear). Either way
+          // the founder then delivers what they carry.
+          f.animalTicks++;
+          if (f.animalTicks >= HUNT_TICKS_PER_SHIFT) {
+            if (myJob && myJob.kind === 'shepherd') {
+              if (myJob.targetId === PEN_FEED_JOB_ID) {
+                sim.pen = feedPen(sim.pen, day);
+                f.carryingGrain = Math.max(0, f.carryingGrain - 1);
+              } else {
+                const sh = shearPen(sim.pen);
+                sim.pen = sh.pen;
+                if (sh.wool > 0) {
+                  const w = carryAnimalYieldToCarrier(sim.registry, f, 'wool', sh.wool, myJob.targetId);
+                  sim.registry = w.registry;
+                  f.carryingWool += w.added;
+                  ledger.woolSheared += w.added;
+                }
+              }
+              ledger.jobsCompleted.shepherd++;
+              sim.board = completeJob(sim.board, myJob.id);
+              myJob = undefined;
+              const dc = claimDeliverJobFor(sim.board, f.id, f.carryingWool + f.carryingGrain, nowAbs);
+              sim.board = dc.board;
+              if (dc.job) myJob = dc.job;
+            }
+            f.animalTicks = 0;
+            f.workState = 'toStockpile';
           }
         } else if (f.workState === 'toSmelter') {
           // At the smelter approach: start the smelting shift (the

@@ -101,7 +101,7 @@
  */
 
 import { FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_WORK_RADIUS, treeWorkTile, treesInRadius } from './founders';
-import { STOREHOUSE_APPROACH, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, type StorehouseState } from './storehouse';
+import { STOREHOUSE_APPROACH, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_SITE_ID, STOREHOUSE_START_DAY, isStorehouseUsable, type StorehouseState } from './storehouse';
 import { stoneDepositsInRadius, rocksInRadius, quarryWorkTile, quarryTargetIdFor } from './quarry';
 import { HOUSING_START_DAY, HUT_SITES, foundingHutsDone, sitesOf } from './construction';
 import { jobIdFor, treeId, wildTreeId, farmTileId } from './entityIds';
@@ -115,9 +115,16 @@ import { BLACKSMITH_APPROACH, BLACKSMITH_SITE_ID, CARPENTER_APPROACH, CARPENTER_
 import { INN_APPROACH, INN_SITE_ID, INN_START_DAY, isWorkerHousingDone, type HousingState } from './housing';
 import type { ConstructionState } from './construction';
 import type { IsoWorld } from '../iso/isoWorld';
+import { PLAZA_3D, type AnimalActor } from './animals';
+import { populationFor } from './ecosystems';
+import {
+  HUNTABLE_KINDS, PEN_APPROACH, PEN_FEED_JOB_ID, PEN_SHEAR_JOB_ID, PEN_SITE_ID,
+  PEN_START_DAY, PEN_START_MEALS, nearestBankTile, penFeedNeeded,
+  penShearReady, simPreyFor, type PenState,
+} from './animalHusbandry';
 
 /** The kinds of work the scheduler knows. */
-export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter';
+export type JobKind = 'chop' | 'build' | 'deliver' | 'harvest' | 'quarry' | 'water' | 'mine' | 'lumber' | 'plant' | 'mill' | 'bake' | 'smelt' | 'smith' | 'saw' | 'carpenter' | 'hunt' | 'fish' | 'shepherd';
 
 /** A job's lifecycle: open → claimed → done | failed. */
 export type JobState = 'open' | 'claimed' | 'done' | 'failed';
@@ -268,6 +275,26 @@ export function lumberJobIdFor(tx: number, ty: number): string {
   return jobIdFor('lumber', treeId(tx, ty));
 }
 
+/** The job id for a hunt of one prey entry (BUILD 1102 — one hunt
+ *  job per live prey animal, or per sim-prey kind in the sim tick;
+ *  the hunter claims the nearest, the chop pattern). */
+export function huntJobIdFor(targetId: string): string {
+  return jobIdFor('hunt', targetId);
+}
+
+/** The job id for the river-bank fishing spot (BUILD 1102 — one
+ *  fish job while the river holds fish). */
+export function fishJobIdFor(): string {
+  return jobIdFor('fish', 'river-bank');
+}
+
+/** The job id for a shepherd leg at the pen (BUILD 1102 — feed or
+ *  shear, one job per leg, targetId PEN_FEED_JOB_ID /
+ *  PEN_SHEAR_JOB_ID). */
+export function shepherdJobIdFor(targetId: string): string {
+  return jobIdFor('shepherd', targetId);
+}
+
 /** What discovery needs: the world (trees), the construction
  *  (the hut), the founders' carried wood, and the clock (for
  *  createdAbs). The registry is NOT an input — a job's existence
@@ -277,7 +304,7 @@ export function lumberJobIdFor(tx: number, ty: number): string {
 export type JobDiscoveryInput = {
   world: IsoWorld;
   construction: ConstructionState;
-  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number; carryingBuild?: number; carryingOre?: number }[];
+  founders: readonly { id: string; carrying: number; carryingGrain?: number; carryingStone?: number; carryingBuild?: number; carryingOre?: number; carryingMeat?: number; carryingLeather?: number; carryingFish?: number; carryingWool?: number }[];
   nowAbs: number;
   /** BUILD 1087: the storehouse state + the settlement day — the
    *  storehouse build job exists only once the huts are done and
@@ -339,6 +366,20 @@ export type JobDiscoveryInput = {
    *  (the old callers) and no inn job, so old boards are
    *  unchanged. */
   housing?: HousingState;
+  /** BUILD 1102 (0x25): the pen state + the live animals — a pen
+   *  build job exists only once the huts and the storehouse are
+   *  done, the settlement is old enough (PEN_START_DAY) and camp
+   *  meals are at the surplus (PEN_START_MEALS); hunt jobs exist
+   *  only from day 3, one per live prey animal when liveAnimals
+   *  is present (the live tick) or one per huntable kind with a
+   *  sim prey when it is absent (the sim tick); a fish job exists
+   *  only from day 3 while the river holds fish; shepherd jobs
+   *  exist only once the pen is done (feed while unfed and grain
+   *  is on hand, shear while wool is ready). Absent means no pen
+   *  data (the old callers) and no animal jobs, so old boards
+   *  are unchanged. */
+  pen?: PenState;
+  liveAnimals?: readonly AnimalActor[];
   /** BUILD 1083 (1.4) + 1084 (1.5): the farm growth factor per
    *  tile, from the 1.1 adapter (livingWorld.growthFactorAt =
    *  soil × season) — harvest discovery reads the combined
@@ -394,6 +435,17 @@ export function quarryJobIdFor(targetId: string): string {
  *   jobs, the building's approach as the tile. A claimed job
  *   whose input ran out mid-shift is NOT failed; an open job
  *   whose input ran out is removed silently.
+ * - hunt / fish / shepherd (BUILD 1102): one hunt job per live
+ *   prey animal (one per huntable kind with a sim prey in the
+ *   sim tick), one fish job while the river holds fish, one
+ *   shepherd job per pen leg (feed, shear) — the same shape as
+ *   the mill/bake jobs, the prey's tile / the bank tile / the pen
+ *   approach as the tile. A claimed hunt whose prey vanished
+ *   fails ('target-gone', the chop pattern); an open hunt whose
+ *   prey is gone is removed silently. A claimed fish job whose
+ *   river emptied fails; a claimed shepherd job whose need
+ *   vanished fails. All three need day >= 3 (the 24h window
+ *   never sees one — the M1069 guard).
  * - deliver: one job per founder carrying wood; completing it
  *   when the carrier empties (the work is done — the wood is
  *   in the camp store). BUILD 1067: a founder carrying GRAIN
@@ -595,6 +647,56 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
         next = failJob(next, bakeryBuildId, 'not-startable');
       } else {
         delete next.jobs[bakeryBuildId];
+      }
+      changed = true;
+    }
+  }
+
+  // --- Pen build job (BUILD 1102): one job while the pen is
+  // unfinished and startable — day >= 3, both huts done, the
+  // storehouse done, camp meals at the surplus (20). The mill
+  // build shape (buildable -> create; done -> completeJob;
+  // claimed + not startable -> fail 'not-startable'; open + not
+  // startable -> delete). The wood gate lives in the claim
+  // (canStartPen checks the camp pile), not here.
+  if (input.pen !== undefined) {
+    const penBuildId = buildJobIdFor(PEN_SITE_ID);
+    // BUILD 1102: the food surplus is a START gate, not a CONTINUE
+    // gate — once the pen has started (progress > 0) the job
+    // persists until the pen is done, even when the granary food
+    // dips below the surplus mid-build (diag-pen2: the food
+    // oscillates 11-15 live, and the job was failed/deleted on
+    // every dip, so the pen stayed 'none' 0/6 through day 5).
+    const penStarted = input.pen.site.progress > 0;
+    const penBuildable =
+      input.pen.site.state !== 'done' &&
+      (penStarted ||
+        ((input.day ?? 1) >= PEN_START_DAY &&
+          foundingHutsDone(construction) &&
+          input.storehouse !== undefined &&
+          isStorehouseUsable(input.storehouse) &&
+          input.granary !== undefined &&
+          input.granary.food >= PEN_START_MEALS));
+    if (penBuildable) {
+      if (!next.jobs[penBuildId]) {
+        next.jobs[penBuildId] = {
+          id: penBuildId,
+          kind: 'build',
+          targetId: PEN_SITE_ID,
+          tile: { ...PEN_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else if (next.jobs[penBuildId]) {
+      if (input.pen.site.state === 'done') {
+        next = completeJob(next, penBuildId);
+      } else if (next.jobs[penBuildId].state === 'claimed') {
+        next = failJob(next, penBuildId, 'not-startable');
+      } else {
+        delete next.jobs[penBuildId];
       }
       changed = true;
     }
@@ -938,6 +1040,151 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     }
   }
 
+  // --- Hunt / fish / shepherd jobs (BUILD 1102): the hunt jobs
+  // are one per live prey animal (the live tick) or one per
+  // huntable kind with a sim prey (the sim tick — the prey never
+  // moves, so the hunt always succeeds, but the start radius
+  // grows as the population falls, the depletion model); the
+  // fish job is one while the river holds fish; the shepherd jobs
+  // are one per pen leg (feed while unfed and grain is on hand,
+  // shear while wool is ready). All three need day >= 3. The
+  // lifecycle is the chop pattern: a claimed job whose target
+  // vanished fails ('target-gone'); an open job whose target is
+  // gone is removed silently. A claimed fish/shepherd job whose
+  // input ran out mid-shift is NOT failed (the founder finishes
+  // the shift); only a claimed job whose TARGET is gone fails.
+  const day1102 = input.day ?? 1;
+  if (day1102 >= PEN_START_DAY) {
+    const liveHuntIds = new Set<string>();
+    if (input.liveAnimals !== undefined) {
+      for (const a of input.liveAnimals) {
+        if (!HUNTABLE_KINDS.includes(a.kind as (typeof HUNTABLE_KINDS)[number])) continue;
+        const id = huntJobIdFor(a.id);
+        liveHuntIds.add(id);
+        if (next.jobs[id]) continue;
+        next.jobs[id] = {
+          id,
+          kind: 'hunt',
+          targetId: a.id,
+          tile: { x: Math.round(a.x), y: Math.round(a.y) },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    } else {
+      for (const kind of HUNTABLE_KINDS) {
+        const tile = simPreyFor(world, kind, FOUNDER_CAMP, PLAZA_3D);
+        if (!tile) continue;
+        const targetId = 'sim-prey-' + kind;
+        const id = huntJobIdFor(targetId);
+        liveHuntIds.add(id);
+        if (next.jobs[id]) continue;
+        next.jobs[id] = {
+          id,
+          kind: 'hunt',
+          targetId,
+          tile,
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      }
+    }
+    for (const job of Object.values(next.jobs)) {
+      if (job.kind !== 'hunt' || liveHuntIds.has(job.id)) continue;
+      if (job.state === 'claimed') {
+        next = failJob(next, job.id, 'target-gone');
+      } else {
+        delete next.jobs[job.id];
+      }
+      changed = true;
+    }
+    // Fish: one job while the river holds fish and a bank tile
+    // exists to stand on.
+    const fishId = fishJobIdFor();
+    const fishPop = populationFor(world, 'fish');
+    const bankTile = nearestBankTile(world, FOUNDER_CAMP, PLAZA_3D);
+    const fishWorkable = (fishPop ?? 0) > 0 && bankTile !== null;
+    if (fishWorkable && !next.jobs[fishId]) {
+      next.jobs[fishId] = {
+        id: fishId,
+        kind: 'fish',
+        targetId: 'river-bank',
+        tile: { ...bankTile! },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
+      changed = true;
+    } else if (!fishWorkable && next.jobs[fishId]) {
+      const job = next.jobs[fishId];
+      if (job.state === 'open') {
+        delete next.jobs[fishId];
+        changed = true;
+      } else if ((fishPop ?? 0) <= 0) {
+        next = failJob(next, fishId, 'target-gone');
+        changed = true;
+      }
+      // claimed + fish left but no bank tile: the river cannot
+      // move — leave it, the shift completes.
+    }
+    // Shepherd: one job per pen leg, at the pen approach.
+    if (input.pen !== undefined && input.pen.site.state === 'done') {
+      const feedId = shepherdJobIdFor(PEN_FEED_JOB_ID);
+      const feedWorkable = penFeedNeeded(input.pen, day1102) && input.granary !== undefined && input.granary.grain >= 1;
+      if (feedWorkable && !next.jobs[feedId]) {
+        next.jobs[feedId] = {
+          id: feedId,
+          kind: 'shepherd',
+          targetId: PEN_FEED_JOB_ID,
+          tile: { ...PEN_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      } else if (!feedWorkable && next.jobs[feedId]) {
+        const job = next.jobs[feedId];
+        if (job.state === 'open') {
+          delete next.jobs[feedId];
+          changed = true;
+        } else if (!penFeedNeeded(input.pen, day1102)) {
+          next = failJob(next, feedId, 'target-gone');
+          changed = true;
+        }
+        // claimed + fed already: leave it — the grain ran out
+        // mid-shift is the only other case, and the shift
+        // completes without it (feedPen is a no-op without grain).
+      }
+      const shearId = shepherdJobIdFor(PEN_SHEAR_JOB_ID);
+      const shearWorkable = penShearReady(input.pen);
+      if (shearWorkable && !next.jobs[shearId]) {
+        next.jobs[shearId] = {
+          id: shearId,
+          kind: 'shepherd',
+          targetId: PEN_SHEAR_JOB_ID,
+          tile: { ...PEN_APPROACH },
+          state: 'open',
+          claimedBy: null,
+          createdAbs: nowAbs,
+        };
+        changed = true;
+      } else if (!shearWorkable && next.jobs[shearId]) {
+        const job = next.jobs[shearId];
+        if (job.state === 'open') {
+          delete next.jobs[shearId];
+          changed = true;
+        } else {
+          next = failJob(next, shearId, 'target-gone');
+          changed = true;
+        }
+      }
+    }
+  }
+
   // --- Smelt / smith / saw / carpenter jobs (BUILD 1095): one
   // job per metal-chain building, while the building is done and
   // there is input to process and room in the output store — the
@@ -968,7 +1215,7 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     };
     syncChainWork(smeltJobIdFor(SMELTER_SITE_ID), 'smelt', SMELTER_SITE_ID, SMELTER_APPROACH, isSmelterUsable(input.metalChain) && sm.iron >= SMELT_ORE_PER_BATCH && sm.coal >= SMELT_COAL_PER_BATCH && sm.ingots < STOREHOUSE_CAPACITY_INGOT, isSmelterUsable(input.metalChain));
     syncChainWork(smithJobIdFor(BLACKSMITH_SITE_ID), 'smith', BLACKSMITH_SITE_ID, BLACKSMITH_APPROACH, isBlacksmithUsable(input.metalChain) && sm.ingots >= SMITH_INGOT_PER_TOOL && sm.tools < STOREHOUSE_CAPACITY_TOOL, isBlacksmithUsable(input.metalChain));
-    syncChainWork(sawJobIdFor(SAWMILL_SITE_ID), 'saw', SAWMILL_SITE_ID, SAWMILL_APPROACH, isSawmillUsable(input.metalChain) && sm.wood >= SAW_WOOD_PER_BATCH && sm.timber < STOREHOUSE_CAPACITY_TIMBER, isSawmillUsable(input.metalChain));
+    syncChainWork(sawJobIdFor(SAWMILL_SITE_ID), 'saw', SAWMILL_SITE_ID, SAWMILL_APPROACH, isSawmillUsable(input.metalChain) && sm.wood >= SAW_WOOD_PER_BATCH && sm.timber < STOREHOUSE_CAPACITY_TIMBER && !(input.pen && input.pen.site.state === 'building'), isSawmillUsable(input.metalChain)); // BUILD 1102: the sawmill yields while the pen builds — the pen step draws its wood from the storehouse, and the saw founder would take it first.
     syncChainWork(carpenterJobIdFor(CARPENTER_SITE_ID), 'carpenter', CARPENTER_SITE_ID, CARPENTER_APPROACH, isCarpenterUsable(input.metalChain) && sm.timber >= CARPENTER_TIMBER_PER_BATCH && sm.furniture < STOREHOUSE_CAPACITY_FURNITURE, isCarpenterUsable(input.metalChain));
   }
 
@@ -1073,7 +1320,11 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     // BUILD 1089: a founder carrying ORE (mined) also gets a
     // deliver job — the carrier holds ore too, and the job
     // completes when ALL are empty.
-    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) + Math.max(0, Math.floor(f.carryingBuild ?? 0)) + Math.max(0, Math.floor(f.carryingOre ?? 0)) <= 0) continue;
+    // BUILD 1102: a founder carrying MEAT, LEATHER, FISH, or
+    // WOOL (the hunt / fish / shepherd yields) also gets a
+    // deliver job — the carrier holds those too, and the job
+    // completes when ALL are empty.
+    if (Math.max(0, Math.floor(f.carrying)) + Math.max(0, Math.floor(f.carryingGrain ?? 0)) + Math.max(0, Math.floor(f.carryingStone ?? 0)) + Math.max(0, Math.floor(f.carryingBuild ?? 0)) + Math.max(0, Math.floor(f.carryingOre ?? 0)) + Math.max(0, Math.floor(f.carryingMeat ?? 0)) + Math.max(0, Math.floor(f.carryingLeather ?? 0)) + Math.max(0, Math.floor(f.carryingFish ?? 0)) + Math.max(0, Math.floor(f.carryingWool ?? 0)) <= 0) continue;
     carryingIds.add(f.id);
     const id = deliverJobIdFor(f.id);
     if (!next.jobs[id]) {
