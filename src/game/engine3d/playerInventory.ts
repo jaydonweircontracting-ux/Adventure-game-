@@ -124,6 +124,21 @@ export const ITEM_META: Record<string, ItemMeta> = {
   'stone-axe': { name: 'Stone Axe', icon: '🪓', description: 'A stone axe — 3 stone + 2 sticks. Chops a tree in 1 hit. Wears out after 60 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
   'wooden-pickaxe': { name: 'Wooden Pickaxe', icon: '⛏️', description: 'A wooden pickaxe — 3 wood + 2 sticks. Mines rock and ore in 2 hits. Wears out after 30 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
   'stone-pickaxe': { name: 'Stone Pickaxe', icon: '⛏️', description: 'A stone pickaxe — 3 stone + 2 sticks. Mines rock and ore in 1 hit. Wears out after 60 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  // BUILD 1111 (0x2E): station products — handles, forged gear, smelted bars, potions.
+  handle: { name: 'Handle', icon: '🔧', description: 'A shaped handle — 1 wood. The grip every forged tool needs.', stackMax: 64, equipSlot: null, useEffect: null },
+  bow: { name: 'Bow', icon: '🏹', description: 'A wooden bow — 2 wood + 2 fibre. Equip it in the weapon slot.', stackMax: 1, equipSlot: 'weapon', useEffect: null },
+  shield: { name: 'Shield', icon: '🛡️', description: 'A wooden shield — 4 wood + 1 fibre. Equip it in the armor slot.', stackMax: 1, equipSlot: 'armor', useEffect: null },
+  'copper-ingot': { name: 'Copper Ingot', icon: '🟧', description: 'A copper ingot, smelted at the furnace. The blacksmith forges tools from it.', stackMax: 64, equipSlot: null, useEffect: null },
+  steel: { name: 'Steel', icon: '🔩', description: 'A steel bar, smelted at the advanced forge. The blacksmith forges the best tools from it.', stackMax: 64, equipSlot: null, useEffect: null },
+  'copper-axe': { name: 'Copper Axe', icon: '🪓', description: 'A copper axe — 2 copper ingots + 1 handle. Chops a tree in 2 hits. Wears out after 45 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'copper-pickaxe': { name: 'Copper Pickaxe', icon: '⛏️', description: 'A copper pickaxe — 2 copper ingots + 1 handle. Mines rock and ore in 2 hits. Wears out after 45 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'iron-axe': { name: 'Iron Axe', icon: '🪓', description: 'An iron axe — 2 ingots + 1 handle. Chops a tree in 1 hit. Wears out after 120 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'iron-pickaxe': { name: 'Iron Pickaxe', icon: '⛏️', description: 'An iron pickaxe — 2 ingots + 1 handle. Mines rock and ore in 1 hit. Wears out after 120 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'iron-sword': { name: 'Iron Sword', icon: '⚔️', description: 'An iron sword — 2 ingots + 1 handle. Equip it in the weapon slot.', stackMax: 1, equipSlot: 'weapon', useEffect: null },
+  'steel-axe': { name: 'Steel Axe', icon: '🪓', description: 'A steel axe — 2 steel + 1 handle. Chops a tree in 1 hit. Wears out after 180 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'steel-pickaxe': { name: 'Steel Pickaxe', icon: '⛏️', description: 'A steel pickaxe — 2 steel + 1 handle. Mines rock and ore in 1 hit. Wears out after 180 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'steel-sword': { name: 'Steel Sword', icon: '🗡️', description: 'A steel sword — 2 steel + 1 handle. Equip it in the weapon slot.', stackMax: 1, equipSlot: 'weapon', useEffect: null },
+  'potion-heal': { name: 'Healing Potion', icon: '🧪', description: 'A healing potion — 2 herbs + 1 berry. Drink it from the hotbar to restore 50 health.', stackMax: 64, equipSlot: null, useEffect: { heal: 50 } },
 };
 
 const KEEPSAKE_META: ItemMeta = { name: '', icon: '🎁', description: 'A keepsake from a fallen traveller. Memorabilia, not a resource.', stackMax: 64, equipSlot: null, useEffect: null };

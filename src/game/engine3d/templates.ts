@@ -33,6 +33,7 @@
 
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { addPlacement, housePlacementKind, isHouseKind, placementsOf, validatePlacement, HOUSE_VARIANT_KINDS, type PaletteKind, type Rotation } from './placements';
+import { paletteKindForStation } from './craftingStations';
 import { validateCustomPlacement, type CustomAsset } from './customAssets';
 
 /** localStorage key for saved chunks. Versioned (v1); separate from
@@ -191,7 +192,7 @@ export function captureChunk(w: IsoWorld, rect: { x0: number; y0: number; x1: nu
         out.push({ kind: 'custom', rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined ? { rot: p.rot } : {}), assetId: p.assetId });
         continue;
       }
-      out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined && (p.kind === 'house' || p.kind === 'stall') ? { rot: p.rot } : {}) });
+      out.push({ kind: p.kind === 'house' ? housePlacementKind(p) : p.kind === 'station' ? paletteKindForStation(p.station ?? 'workbench') : p.kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined && (p.kind === 'house' || p.kind === 'stall') ? { rot: p.rot } : {}) });
     }
   }
   return out;

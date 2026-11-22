@@ -146,13 +146,23 @@ export interface ToolDef {
   durability: number;
 }
 
-/** The four hand-craftable tools (spec section 3 examples + the
- *  pickaxes the rock/deposit acceptance needs). */
+/** The craftable gathering tools (spec section 3 examples + the
+ *  pickaxes the rock/deposit acceptance needs, + the copper/iron/steel
+ *  tiers forged at the blacksmith in 0x2E). */
 export const TOOL_DEFS: Record<string, ToolDef> = {
   'wooden-axe': { kind: 'wooden-axe', name: 'Wooden Axe', targets: ['tree'], damage: 3, durability: 30 },
   'stone-axe': { kind: 'stone-axe', name: 'Stone Axe', targets: ['tree'], damage: 6, durability: 60 },
   'wooden-pickaxe': { kind: 'wooden-pickaxe', name: 'Wooden Pickaxe', targets: ['rock', 'deposit'], damage: 3, durability: 30 },
   'stone-pickaxe': { kind: 'stone-pickaxe', name: 'Stone Pickaxe', targets: ['rock', 'deposit'], damage: 6, durability: 60 },
+  // BUILD 1111 (0x2E): the forged tiers — copper sits between wood and
+  // stone on the shipped ladder (4/45), iron beats stone (9/120),
+  // steel is the top tier (12/180).
+  'copper-axe': { kind: 'copper-axe', name: 'Copper Axe', targets: ['tree'], damage: 4, durability: 45 },
+  'copper-pickaxe': { kind: 'copper-pickaxe', name: 'Copper Pickaxe', targets: ['rock', 'deposit'], damage: 4, durability: 45 },
+  'iron-axe': { kind: 'iron-axe', name: 'Iron Axe', targets: ['tree'], damage: 9, durability: 120 },
+  'iron-pickaxe': { kind: 'iron-pickaxe', name: 'Iron Pickaxe', targets: ['rock', 'deposit'], damage: 9, durability: 120 },
+  'steel-axe': { kind: 'steel-axe', name: 'Steel Axe', targets: ['tree'], damage: 12, durability: 180 },
+  'steel-pickaxe': { kind: 'steel-pickaxe', name: 'Steel Pickaxe', targets: ['rock', 'deposit'], damage: 12, durability: 180 },
 };
 
 /** The tool definition for an equipped kind, or null for hands and

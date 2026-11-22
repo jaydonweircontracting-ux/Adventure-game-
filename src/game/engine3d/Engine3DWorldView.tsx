@@ -28,7 +28,7 @@ import { INN_APPROACH, INN_CENTRE, INN_RECT, INN_DOOR, INN_SITE_ID, MARKET_STALL
 import { sitePlanFromSave, type SettlementPlan } from './sitePlan';
 import { createFoundingSim, existingRectsForFounding, type FoundingState } from './founding';
 import {
-  placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
+  placedHutRects, placedTreeTiles, placedStallRects, placedStationRects, placedRockTiles, placedWallTiles,
   placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts, placedFenceTiles,
   validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
   seedRectForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
@@ -115,13 +115,16 @@ import { freshMineState, validateMineState, mineSummaryText, type MineState } fr
 // HUD/camp line mirror it (never a second count).
 import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, depositInto, extractDeposit, withdrawFrom, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, kindForPlayerKey, type RegistryKind, type ResourceRegistry } from './resourceRegistry';
 // BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
-// the registry -> React mirror. No crafting system exists in 3D yet.
+// the registry -> React mirror. (BUILD 1111: stations now exist —
+  // see craftingStations.ts + stationPanel3d.tsx.)
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
 // BUILD 1108 (0x2B): the slot inventory engine (pure) + the panel.
 // The registry stays the one authority for totals; this module owns
 // only the slot distribution (see playerInventory.ts).
 import { HOTBAR_SLOT_COUNT, equipItem, itemMetaFor, moveSlot, readHotbarSelected, readSlotLayout, reconcileSlots, damageTool, splitSlot, unequipItem, useEffectFor, writeHotbarSelected, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
 import { HAND_RECIPES, canCraftHand, handRecipeFor, maxDurabilityFor } from './gathering';
+import { STATION_RECIPES, canCraftStation, isRecipeUnlocked, nearestStation, readDiscoveredMaterials, recordDiscoveredMaterials, stationDefFor, stationRecipeFor, stationRecipesFor, type StationId } from './craftingStations';
+import { StationPanel } from './stationPanel3d';
 import { InventoryPanel } from './inventoryPanel3d';
 import { Hotbar } from './hotbar3d';
 import { createBuildingInteractions, type BuildingContext } from './buildingInteractions3d';
@@ -769,6 +772,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const inventoryCtx: InventoryContext = { registry: () => registryRef.current, inventoryRef, setInventory };
   const refreshResourceUi=()=>{
     refreshPlayerInventory(inventoryCtx);
+    // BUILD 1111 (0x2E): discovery — every material the player has
+    // ever held unlocks its recipes (recordDiscoveredMaterials unions
+    // the inventory record kinds into the persisted set; the state
+    // only changes when a new material actually appears).
+    const heldKinds=Object.keys(inventoryRef.current).filter((k)=>(inventoryRef.current[k]??0)>0);
+    const nextDiscovered=recordDiscoveredMaterials(discoveredRef.current,heldKinds);
+    if(nextDiscovered!==discoveredRef.current){discoveredRef.current=nextDiscovered;setDiscovered(nextDiscovered);}
     // BUILD 1108 (0x2B): the slot layout follows the record — a pickup
     // lands in the slots (reconcile preserves the player's layout).
     const nextLayout=reconcileSlots(inventoryRef.current,invLayoutRef.current);
@@ -810,7 +820,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     else{const cur=inventoryRef.current[slot.kind]??0;if(cur<=0)return;const next={...inventoryRef.current};if(cur<=1)delete next[slot.kind];else next[slot.kind]=cur-1;inventoryRef.current=next;setInventory({...next});}
     const healed=Math.min(100,healthRef.current+effect.heal);
     healthRef.current=healed;setHealth(healed);try{localStorage.setItem(HEALTH_KEY,String(healed));}catch{}
-    setMessage('Ate a meal · +'+effect.heal+' health');
+    setMessage(itemMetaFor(slot.kind).name+' · +'+effect.heal+' health');
     refreshResourceUi();
   };
   // BUILD 1110 (0x2D): how much of a craft material the player
@@ -841,6 +851,30 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const held:Record<string,number>={};
     for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);
     if(!canCraftHand(recipe,held)){setMessage('Not enough materials to craft '+recipe.name+'.');return;}
+    let reg=registryRef.current;
+    for(const m of recipe.materials){
+      const rk=kindForPlayerKey(m.kind);
+      if(rk){const w=withdrawFrom(reg,PLAYER_STORE_ID,rk,m.qty);reg=w.registry;}
+      else{const cur=inventoryRef.current[m.kind]??0;const next={...inventoryRef.current};if(cur<=m.qty)delete next[m.kind];else next[m.kind]=cur-m.qty;inventoryRef.current=next;setInventory({...next});}
+    }
+    registryRef.current=reg;
+    const prk=kindForPlayerKey(recipe.product);
+    if(prk){const dep=depositInto(reg,PLAYER_STORE_ID,prk,recipe.productQty,{type:'entity',id:'craft:'+recipe.id},{location:{x:Math.round(stateRef.current.position.x),y:Math.round(stateRef.current.position.y)},ownerId:'player'});registryRef.current=dep.registry;}
+    else{inventoryRef.current={...inventoryRef.current,[recipe.product]:(inventoryRef.current[recipe.product]??0)+recipe.productQty};setInventory({...inventoryRef.current});}
+    setMessage('Crafted '+recipe.name+(recipe.productQty>1?' \u00d7'+recipe.productQty:'')+'.');
+    refreshResourceUi();
+  };
+  // BUILD 1111 (0x2E): station crafting — the same conservation as
+  // hand-crafting (withdrawFrom per material, depositInto for
+  // stackables, record++ for gear), plus the unlock gate: a locked
+  // recipe refuses with a message naming the material it needs.
+  const handleStationCraft=(station:StationId,id:string)=>{
+    const recipe=stationRecipeFor(id);
+    if(!recipe||recipe.station!==station)return;
+    if(!isRecipeUnlocked(recipe,discoveredRef.current)){const need=recipe.unlock.kind==='discover'?recipe.unlock.material:'the right material';setMessage(recipe.name+' is locked — find '+need+'.');return;}
+    const held:Record<string,number>={};
+    for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);
+    if(!canCraftStation(recipe,held)){setMessage('Not enough materials to craft '+recipe.name+'.');return;}
     let reg=registryRef.current;
     for(const m of recipe.materials){
       const rk=kindForPlayerKey(m.kind);
@@ -945,6 +979,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [buildOpen,setBuildOpen]=useState(false);
   // BUILD 1108 (0x2B): the inventory panel (I key / HUD button).
   const [inventoryOpen,setInventoryOpen]=useState(false);
+  // BUILD 1111 (0x2E): the station panel — which station is open
+  // (null = none), and the set of materials the player has ever held
+  // (the discovery set — recipe unlocks, persisted under its own key).
+  const [openStation,setOpenStation]=useState<StationId|null>(null);
+  const [discovered,setDiscovered]=useState<Set<string>>(()=>readDiscoveredMaterials());
+  const discoveredRef=useRef<Set<string>>(discovered); discoveredRef.current=discovered;
   // BUILD 1109 (0x2C): the hotbar selection — slots 0-8 of the same
   // inventory, persisted under its own key (the slots persist via 1108).
   const [hotbarSelected,setHotbarSelected]=useState<number>(()=>readHotbarSelected());
@@ -1594,6 +1634,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // in exactly one section, so the counts above are the whole palette.
   const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
     {id:'buildings',label:'Buildings',kinds:['house-windmill','house-mine']},
+    // BUILD 1111 (0x2E): the Crafting section — the five stations.
+    {id:'stations',label:'Crafting',kinds:['station-workbench','station-blacksmith','station-furnace','station-advanced-forge','station-apothecary']},
     // BUILD 1012: the Houses section offers the four real town
     // house designs (cottage / tall / shopfront / grand) instead of
     // the one bare 'house' kind — each is its own palette entry with
@@ -1629,6 +1671,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     'house-windmill':{label:'Windmill',swatch:'linear-gradient(135deg,#9a9a94 0 50%,#6b4a2b 50% 100%)'},
     // BUILD 1040 swatch: mine dark rock / gold ore glint.
     'house-mine':{label:'Mine',swatch:'linear-gradient(135deg,#57564f 0 50%,#d9a833 50% 100%)'},
+    // BUILD 1111 (0x2E) swatches: each station in its own colour
+    // (the same colours as the 3D counter cubes in worldRender3d.ts).
+    'station-workbench':{label:'Workbench',swatch:'linear-gradient(135deg,#8a6d3b 0 50%,#d9b06c 50% 100%)'},
+    'station-blacksmith':{label:'Blacksmith',swatch:'linear-gradient(135deg,#3d3d3d 0 50%,#e07b39 50% 100%)'},
+    'station-furnace':{label:'Furnace',swatch:'linear-gradient(135deg,#5c3a2a 0 50%,#e05a2a 50% 100%)'},
+    'station-advanced-forge':{label:'Advanced Forge',swatch:'linear-gradient(135deg,#2b2b3a 0 50%,#7a5fd0 50% 100%)'},
+    'station-apothecary':{label:'Apothecary',swatch:'linear-gradient(135deg,#2e5c2b 0 50%,#7ac74f 50% 100%)'},
     // BUILD 1040 swatches (995 style: the model's own colours) —
     // lantern warm glow / dark timber, bush two greens, ore grey /
     // gold, bridge plank browns.
@@ -1690,6 +1739,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   };
   const buildIx = createBuildingInteractions(buildCtx);
   const nearDoorHut = buildIx.nearDoorHut();
+  // BUILD 1111 (0x2E): the nearest placed crafting station in E-key
+  // reach (the same 1-tile rule as the E-key branch) — the Use
+  // button and the E-key both read this, so they never disagree.
+  const nearStation = nearestStation(stateRef.current.world, Math.round(position.x), Math.round(position.y));
   const buildMinimized = buildIx.isBuildMinimized();
   // BUILD 1033: the red sports car. The car is SESSION-ONLY (car.ts):
   // it is never written to localStorage, so a reload starts without a
@@ -1997,6 +2050,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       onHotbarSelect: (index: number) => commitHotbarSelected(index),
       getEquippedTool: () => invLayoutRef.current.equipped.tool,
       onToolHit: handleToolHit,
+      onOpenStation: (station) => setOpenStation(station),
     };
     const controls = createPlayerControls(playerCtx);
 
@@ -2892,6 +2946,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       givePlayerItem:(kind:string,qty:number)=>{const rk=kindForPlayerKey(kind);if(rk){const dep=depositInto(registryRef.current,PLAYER_STORE_ID,rk,qty,{type:'entity',id:'test-grant'},{location:{x:Math.round(stateRef.current.position.x),y:Math.round(stateRef.current.position.y)},ownerId:'player'});registryRef.current=dep.registry;refreshResourceUi();return dep.added;}const want=Math.max(0,Math.floor(qty));if(want<=0)return 0;inventoryRef.current={...inventoryRef.current,[kind]:(inventoryRef.current[kind]??0)+want};setInventory({...inventoryRef.current});refreshResourceUi();return want;},
       openInventory:()=>{setInventoryOpen(true);return true;},
       closeInventory:()=>{setInventoryOpen(false);return true;},
+      // BUILD 1111 (0x2E) test hooks: the stations (probes only).
+      // getStations reads the placed stations (world placements);
+      // openStation/closeStation drive the panel; stationCraft runs
+      // the same handler the panel button runs; getStationRecipes
+      // lists every recipe with its unlock state; getDiscoveredMaterials
+      // reads the persisted discovery set.
+      getStations:()=>placedStationRects(stateRef.current.world),
+      openStation:(id:string)=>{setOpenStation(id as StationId);return true;},
+      closeStation:()=>{setOpenStation(null);return true;},
+      stationCraft:(station:string,id:string)=>{handleStationCraft(station as StationId,id);return true;},
+      getStationRecipes:()=>STATION_RECIPES.map((r)=>({station:r.station,id:r.id,name:r.name,unlocked:isRecipeUnlocked(r,discoveredRef.current)})),
+      getDiscoveredMaterials:()=>[...discoveredRef.current],
       inventoryMove:(from:number,to:number)=>{handleInvMove(from,to);return JSON.parse(JSON.stringify(invLayoutRef.current.slots));},
       inventorySplit:(index:number)=>{handleInvSplit(index);return JSON.parse(JSON.stringify(invLayoutRef.current.slots));},
       inventoryEquip:(index:number)=>{handleInvEquip(index);return {...invLayoutRef.current.equipped};},
@@ -3237,7 +3303,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     {/* BUILD 1033: the house Enter is gated on not driving — while
         driving the only Enter/Exit is the car's (the car cannot be
         taken inside a hut). */}
-    <InteriorCarButtons insideHut={!!insideHut} driving={driving} nearDoorHut={nearDoorHut} nearCar={nearCar} onEnterHut={()=>{if(nearDoorHut)buildIx.enterHut(nearDoorHut);}} onExitHut={buildIx.exitHut} onEnterCar={enterCar} onExitCar={exitCar} />
+    <InteriorCarButtons insideHut={!!insideHut} driving={driving} nearDoorHut={nearDoorHut} nearCar={nearCar} onEnterHut={()=>{if(nearDoorHut)buildIx.enterHut(nearDoorHut);}} onExitHut={buildIx.exitHut} onEnterCar={enterCar} onExitCar={exitCar} nearStation={nearStation?{id:nearStation.station,name:stationDefFor(nearStation.station).name}:null} onUseStation={()=>{if(nearStation)setOpenStation(nearStation.station);}} />
     {/* BUILD 1033: car Enter/Exit — the same phone-first pattern as
         houses. Enter Car sits above the house Enter (bottom:170 vs
         110) so the two never overlap; Exit Car takes the 110 slot
@@ -3289,6 +3355,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     </div>
     <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
     <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} recipes={HAND_RECIPES.map((recipe)=>({recipe,canCraft:canCraftHand(recipe,craftHeld)}))} onCraft={handleCraftHand} onClose={()=>setInventoryOpen(false)} />
+    {openStation&&<StationPanel open station={openStation} recipes={stationRecipesFor(openStation).map((recipe)=>{const held:Record<string,number>={};for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);return {recipe,unlocked:isRecipeUnlocked(recipe,discovered),canCraft:canCraftStation(recipe,held)};})} onCraft={(id)=>handleStationCraft(openStation,id)} onClose={()=>setOpenStation(null)} />}
     {!hideUi && <Hotbar layout={invLayout} selected={hotbarSelected} onSelect={handleHotbarSelect} onUse={handleHotbarUse} />}
   </div>;
 }

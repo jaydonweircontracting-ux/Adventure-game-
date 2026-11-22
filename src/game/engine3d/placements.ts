@@ -22,13 +22,15 @@
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
 import { ensurePlacementId } from './entityIds';
+import { isStationPaletteKind, paletteKindForStation, stationOfPaletteKind, type StationId } from './craftingStations';
 import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
   | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm' | 'fence' | 'well'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
-  | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine';
+  | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine'
+  | 'station-workbench' | 'station-blacksmith' | 'station-furnace' | 'station-advanced-forge' | 'station-apothecary';
 /** The placeable house variants (BUILD 1012: four; BUILD 1015: the
  *  three commercial buildings join them; BUILD 1038: the windmill;
  *  BUILD 1040: the mine).
@@ -37,11 +39,11 @@ export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock'
  *  validates and renders exactly as it always did, but the palette
  *  no longer offers it. */
 export const HOUSE_VARIANT_KINDS: PaletteKind[] = ['house-cottage', 'house-tall', 'house-shop', 'house-grand', 'house-inn', 'house-smith', 'house-store', 'house-windmill', 'house-mine'];
-export function isHouseVariantKind(kind: PaletteKind): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
+export function isHouseVariantKind(kind: string): kind is 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
   return (HOUSE_VARIANT_KINDS as string[]).includes(kind);
 }
 /** True for the legacy 'house' kind and every variant kind. */
-export function isHouseKind(kind: PaletteKind): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
+export function isHouseKind(kind: string): kind is 'house' | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand' | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine' {
   return kind === 'house' || isHouseVariantKind(kind);
 }
 export function variantOfKind(kind: PaletteKind): HouseVariantId | null {
@@ -1176,6 +1178,12 @@ export function validatePlacement(
     item = v
       ? { kind: 'house', variant: v, x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, seedX0: x0, seedY0: y0, ...(rot !== 0 ? { rot } : {}) }
       : { kind: 'house', x0, y0, x1: x0 + fp.w - 1, y1: y0 + fp.d - 1, seedX0: x0, seedY0: y0, ...(rot !== 0 ? { rot } : {}) };
+  } else if (isStationPaletteKind(kind)) {
+    // BUILD 1111 (0x2E): a station palette kind places kind 'station'
+    // carrying the station id (the house-variant pattern) — a 1x1
+    // tile, validated by the generic 1x1 path above.
+    const s = stationOfPaletteKind(kind);
+    item = { kind: 'station', station: s ?? 'workbench', x0: tx, y0: ty, x1: tx, y1: ty };
   } else if (kind === 'stall') {
     item = rot % 2 === 1
       ? { kind, x0: tx, y0: ty, x1: tx, y1: ty + 1, rot }
@@ -1241,7 +1249,7 @@ export function movePlacement(
   // BUILD 1036: a moved house keeps its rotation — the destination
   // validates under the rotated footprint, so a 90° cottage stays
   // a 3x4 with its door on the same face.
-  const moveKind = item.kind === 'house' ? housePlacementKind(item) : item.kind;
+  const moveKind = item.kind === 'house' ? housePlacementKind(item) : item.kind === 'station' ? paletteKindForStation(item.station ?? 'workbench') : item.kind;
   const result = validatePlacement(w, moveKind, destTx, destTy, playerTile, npcTiles, item.rot ?? 0);
   if (!result.ok) {
     list.splice(Math.min(index, list.length), 0, lifted);
@@ -1684,6 +1692,13 @@ export function placedStallRects(w: IsoWorld): Array<{ x0: number; y0: number; x
   return placementsOf(w)
     .filter((p) => p.kind === 'stall')
     .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1 }));
+}
+
+/** BUILD 1111 (0x2E): every placed crafting station: its station id + rect. */
+export function placedStationRects(w: IsoWorld): Array<{ station: StationId; x0: number; y0: number; x1: number; y1: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'station')
+    .map((p) => ({ station: (p.station ?? 'workbench') as StationId, x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1 }));
 }
 
 /** Placed custom-upload rects (BUILD 997), with their asset ids, for

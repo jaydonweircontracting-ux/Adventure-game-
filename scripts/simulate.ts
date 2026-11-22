@@ -17032,6 +17032,80 @@ console.log('Testing gathering — hit health / tools + durability / hand recipe
   console.log('M1110: gathering verified (hit health / tools + durability / hand recipes / regrowth, 24h M1069 identical)');
 }
 
+console.log('Testing crafting stations — station defs / recipes / unlocks / forged tools / placement + 24h M1069 identical (BUILD 1111, 0x2E)...');
+{
+  const CS1111 = await import('../src/game/engine3d/craftingStations.js');
+  const G1111 = await import('../src/game/engine3d/gathering.js');
+  const PI1111 = await import('../src/game/engine3d/playerInventory.js');
+  const RR1111 = await import('../src/game/engine3d/resourceRegistry.js');
+  const P1111 = await import('../src/game/engine3d/placements.js');
+  const W1111 = await import('../src/game/iso/isoWorld.js');
+  const SS1111 = await import('../src/game/engine3d/settlementSim.js');
+  const F1111 = await import('../src/game/engine3d/founders.js');
+  const FC1111 = await import('../src/game/engine3d/foodChain.js');
+  // --- Station defs + palette-kind helpers. ---
+  assert(CS1111.STATION_IDS.length === 5, 'M1111: five stations exist');
+  assert(CS1111.stationDefFor('workbench').name === 'Workbench' && CS1111.stationDefFor('blacksmith').name === 'Blacksmith' && CS1111.stationDefFor('furnace').name === 'Furnace' && CS1111.stationDefFor('advanced-forge').name === 'Advanced Forge' && CS1111.stationDefFor('apothecary').name === 'Apothecary', 'M1111: the five station names');
+  assert(CS1111.paletteKindForStation('furnace') === 'station-furnace' && CS1111.isStationPaletteKind('station-furnace') && !CS1111.isStationPaletteKind('house') && CS1111.stationOfPaletteKind('station-apothecary') === 'apothecary' && CS1111.stationOfPaletteKind('stall') === null, 'M1111: palette-kind helpers round-trip');
+  // --- Recipe-table integrity. ---
+  assert(CS1111.STATION_RECIPES.length === 17, 'M1111: seventeen station recipes');
+  assert(new Set(CS1111.STATION_RECIPES.map((r: any) => r.id)).size === 17, 'M1111: recipe ids are unique');
+  assert(CS1111.STATION_RECIPES.every((r: any) => !G1111.HAND_RECIPES.some((h: any) => h.id === r.id || h.product === r.product)), 'M1111: no station recipe duplicates a hand recipe id or product');
+  assert(CS1111.STATION_RECIPES.every((r: any) => CS1111.STATION_IDS.includes(r.station) && RR1111.REGISTRY_KINDS.includes(r.product) && PI1111.itemMetaFor(r.product).name !== r.product && r.productQty >= 1 && r.materials.every((m: any) => RR1111.REGISTRY_KINDS.includes(m.kind) && m.qty >= 1) && (r.unlock.kind === 'known' || RR1111.REGISTRY_KINDS.includes(r.unlock.material))), 'M1111: every recipe has a real station, registry kinds, real ITEM_META and a valid unlock');
+  assert(CS1111.stationRecipesFor('workbench').length === 4 && CS1111.stationRecipesFor('furnace').length === 2 && CS1111.stationRecipesFor('blacksmith').length === 8 && CS1111.stationRecipesFor('advanced-forge').length === 1 && CS1111.stationRecipesFor('apothecary').length === 2, 'M1111: recipes per station 4/2/8/1/2');
+  assert(JSON.stringify((CS1111.stationRecipeFor('iron-axe') as any).materials) === JSON.stringify([{ kind: 'ingot', qty: 2 }, { kind: 'handle', qty: 1 }]), 'M1111: an iron axe costs 2 ingots + 1 handle');
+  assert(JSON.stringify((CS1111.stationRecipeFor('smelt-iron') as any).materials) === JSON.stringify([{ kind: 'iron', qty: 1 }, { kind: 'coal', qty: 1 }]), 'M1111: smelt iron costs 1 iron + 1 coal');
+  assert(CS1111.stationRecipeFor('no-such-recipe') === null, 'M1111: an unknown recipe id returns null');
+  // --- Unlock derivation. ---
+  const empty1111 = new Set<string>();
+  assert(CS1111.STATION_RECIPES.every((r: any) => (r.unlock.kind === 'known') === CS1111.isRecipeUnlocked(r, empty1111)), 'M1111: with nothing discovered only known recipes are unlocked');
+  assert(!CS1111.isRecipeUnlocked(CS1111.stationRecipeFor('iron-axe'), new Set(['wood'])) && CS1111.isRecipeUnlocked(CS1111.stationRecipeFor('iron-axe'), new Set(['ingot'])), 'M1111: an iron axe unlocks once an ingot was held');
+  // --- Affordability + the forged tool tiers. ---
+  assert(CS1111.canCraftStation(CS1111.stationRecipeFor('iron-axe'), { ingot: 2, handle: 1 }) && !CS1111.canCraftStation(CS1111.stationRecipeFor('iron-axe'), { ingot: 1, handle: 1 }), 'M1111: an iron axe needs 2 ingots + 1 handle');
+  assert(G1111.TOOL_DEFS['copper-axe'].damage === 4 && G1111.TOOL_DEFS['copper-axe'].durability === 45 && G1111.TOOL_DEFS['iron-axe'].damage === 9 && G1111.TOOL_DEFS['iron-axe'].durability === 120 && G1111.TOOL_DEFS['steel-axe'].damage === 12 && G1111.TOOL_DEFS['steel-axe'].durability === 180, 'M1111: forged tiers copper 4/45, iron 9/120, steel 12/180');
+  assert(G1111.damageForHit('tree', 'iron-axe') === 9 && G1111.damageForHit('rock', 'steel-pickaxe') === 12 && G1111.maxDurabilityFor('steel-sword') === null, 'M1111: forged tools hit harder; a sword never wears out');
+  // --- Placement validation + nearest. ---
+  const w1111: any = W1111.defaultWorld();
+  const far1111 = { x: 200, y: 200 };
+  for (const sid of CS1111.STATION_IDS) {
+    let spot: { x: number; y: number } | null = null;
+    for (let ty = 112; ty <= 128 && !spot; ty++) for (let tx = 116; tx <= 134 && !spot; tx++) {
+      const r: any = P1111.validatePlacement(w1111, CS1111.paletteKindForStation(sid), tx, ty, far1111, []);
+      if (r.ok) spot = { x: tx, y: ty };
+    }
+    assert(!!spot, 'M1111: a free tile exists near camp for a ' + sid);
+    const res: any = P1111.validatePlacement(w1111, CS1111.paletteKindForStation(sid), spot!.x, spot!.y, far1111, []);
+    assert(res.item.kind === 'station' && res.item.station === sid, 'M1111: a ' + sid + ' places as kind station with its id');
+    P1111.addPlacement(w1111, res.item);
+  }
+  assert(P1111.placedStationRects(w1111).length === 5, 'M1111: placedStationRects lists five stations');
+  const furnace1111 = P1111.placedStationRects(w1111).find((s: any) => s.station === 'furnace')!;
+  assert((CS1111.nearestStation(w1111, furnace1111.x0, furnace1111.y0) as any).station === 'furnace' && CS1111.nearestStation(w1111, 200, 200) === null, 'M1111: nearestStation finds the furnace on its tile and nothing far away');
+  assert(!(P1111.validatePlacement(w1111, 'station-furnace', furnace1111.x0, furnace1111.y0, far1111, []) as any).ok, 'M1111: a second station on the same tile is refused');
+  // --- Discovery persistence (the persisted set unions). ---
+  const disc1111 = CS1111.recordDiscoveredMaterials(new Set<string>(), ['iron', 'ingot']);
+  assert(disc1111.has('iron') && disc1111.has('ingot') && CS1111.isRecipeUnlocked(CS1111.stationRecipeFor('iron-axe'), disc1111), 'M1111: recording iron + ingot unlocks the iron axe');
+  // --- The new ITEM_META (equip slots, potion effect). ---
+  assert(PI1111.equipSlotFor('iron-sword') === 'weapon' && PI1111.equipSlotFor('shield') === 'armor' && PI1111.equipSlotFor('copper-axe') === 'tool' && PI1111.equipSlotFor('handle') === null, 'M1111: forged gear equips in weapon/armor/tool slots; a handle equips nowhere');
+  assert(PI1111.useEffectFor('potion-heal')?.heal === 50 && PI1111.useEffectFor('food')?.heal === 25, 'M1111: a healing potion restores 50, a meal still restores 25');
+  // --- 24h M1069 identical to BUILD 1104. ---
+  const world24_1111: any = W1111.defaultWorld();
+  const sim24_1111: any = SS1111.createSettlementSim(world24_1111);
+  SS1111.advanceSettlement(sim24_1111, 1600);
+  const L24_1111 = sim24_1111.ledger;
+  assert(L24_1111.ticks === 1600, 'M1111: 24h ticks 1600 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.woodChopped === 54 && L24_1111.woodDelivered === 50 && L24_1111.woodSpent === 24, 'M1111: 24h wood 54/50/24 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.grainHarvested === 60 && L24_1111.grainDelivered === 58, 'M1111: 24h grain 60/58 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.mealsBaked === 28 && L24_1111.mealsEaten === 13, 'M1111: 24h meals 28/13 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.flourMilled === 58 && L24_1111.flourBaked === 56, 'M1111: 24h flour 58/56 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.jobsCompleted.chop === 27 && L24_1111.jobsCompleted.build === 4 && L24_1111.jobsCompleted.deliver === 54 && L24_1111.jobsCompleted.harvest === 30, 'M1111: 24h jobs chop/build/deliver/harvest 27/4/54/30 (M1069 identical to BUILD 1104)');
+  assert(L24_1111.hutsCompleted === 2 && L24_1111.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1111: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1111.starvedTicks === 0 && Math.round(L24_1111.minHealth) === 100, 'M1111: nobody starves in 24h');
+  assert(sim24_1111.founders.length === 7, 'M1111: the population is 7 after 24h');
+  assert(F1111.campWoodInRegistry(sim24_1111.registry) === 14 && F1111.campFoodInRegistry(sim24_1111.registry) === 15 && SS1111.settlementGrain(sim24_1111) === 0 && FC1111.foodChainFlourInRegistry(sim24_1111.registry) === 2, 'M1111: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  console.log('M1111: stations verified (defs / recipes / unlocks / forged tools / placement, 24h M1069 identical)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

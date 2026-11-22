@@ -102,12 +102,12 @@ import type { IsoWorld } from '../iso/isoWorld';
 // BUILD 1081: copper and silver join gold as registry kinds — the
 // 1.2 deposits are the first copper/silver in the game (gold's only
 // 3D source before this was looting dead NPCs).
-export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture' | 'meat' | 'stick' | 'berry' | 'fibre' | 'herb' | 'torch';
+export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture' | 'meat' | 'stick' | 'berry' | 'fibre' | 'herb' | 'torch' | 'handle' | 'bow' | 'shield' | 'copper-ingot' | 'steel' | 'copper-axe' | 'copper-pickaxe' | 'iron-axe' | 'iron-pickaxe' | 'iron-sword' | 'steel-axe' | 'steel-pickaxe' | 'steel-sword' | 'potion-heal';
 // BUILD 1110 (0x2D): stick/berry/fibre/herb/torch join the registry —
 // the gathering engine's goods (bushes, herbs, hand-crafting) are
 // real conserved resources, not record-only keepsakes, so they ride
 // the one shared database the spec's section 7 demands.
-export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour', 'ingot', 'furniture', 'meat', 'stick', 'berry', 'fibre', 'herb', 'torch'];
+export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour', 'ingot', 'furniture', 'meat', 'stick', 'berry', 'fibre', 'herb', 'torch', 'handle', 'bow', 'shield', 'copper-ingot', 'steel', 'copper-axe', 'copper-pickaxe', 'iron-axe', 'iron-pickaxe', 'iron-sword', 'steel-axe', 'steel-pickaxe', 'steel-sword', 'potion-heal'];
 
 /** The player's inventory key for a registry kind: wheat is grain
  *  (the 3D farm crop is the civilization grain kind — the HUD keeps
@@ -121,6 +121,10 @@ export function playerKeyFor(kind: RegistryKind): string | null {
   // now (the player mines iron/copper/coal/silver and gathers
   // sticks/berries/fibre/herbs; torches are carried too).
   if (kind === 'iron' || kind === 'copper' || kind === 'coal' || kind === 'silver' || kind === 'stick' || kind === 'berry' || kind === 'fibre' || kind === 'herb' || kind === 'torch') return kind;
+  // BUILD 1111 (0x2E): station products + smelted goods are carried kinds
+  // now (the player smelts ingots, forges gear, brews potions — all of it
+  // lands in the player store, so all of it must map to a player key).
+  if (kind === 'ingot' || kind === 'furniture' || kind === 'medicine' || kind === 'handle' || kind === 'bow' || kind === 'shield' || kind === 'copper-ingot' || kind === 'steel' || kind === 'copper-axe' || kind === 'copper-pickaxe' || kind === 'iron-axe' || kind === 'iron-pickaxe' || kind === 'iron-sword' || kind === 'steel-axe' || kind === 'steel-pickaxe' || kind === 'steel-sword' || kind === 'potion-heal') return kind;
   return null;
 }
 
@@ -132,6 +136,8 @@ export function kindForPlayerKey(key: string): RegistryKind | null {
   if (key === 'wood' || key === 'stone' || key === 'gold' || key === 'food') return key;
   // BUILD 1110 (0x2D): mined ore + gathering goods (see playerKeyFor).
   if (key === 'iron' || key === 'copper' || key === 'coal' || key === 'silver' || key === 'stick' || key === 'berry' || key === 'fibre' || key === 'herb' || key === 'torch') return key as RegistryKind;
+  // BUILD 1111 (0x2E): station products + smelted goods (see playerKeyFor).
+  if (key === 'ingot' || key === 'furniture' || key === 'medicine' || key === 'handle' || key === 'bow' || key === 'shield' || key === 'copper-ingot' || key === 'steel' || key === 'copper-axe' || key === 'copper-pickaxe' || key === 'iron-axe' || key === 'iron-pickaxe' || key === 'iron-sword' || key === 'steel-axe' || key === 'steel-pickaxe' || key === 'steel-sword' || key === 'potion-heal') return key as RegistryKind;
   return null;
 }
 
@@ -150,7 +156,7 @@ export function kindForPlayerKey(key: string): RegistryKind | null {
 // once this build, but the mirror never copied them, so a mined
 // iron ore would have been deposited and then invisible, the exact
 // bug 1108/1109 fixed for tools/food).
-export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat', 'food', 'iron', 'copper', 'coal', 'silver', 'stick', 'berry', 'fibre', 'herb', 'torch'];
+export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat', 'food', 'iron', 'copper', 'coal', 'silver', 'stick', 'berry', 'fibre', 'herb', 'torch', 'ingot', 'furniture', 'medicine', 'handle', 'bow', 'shield', 'copper-ingot', 'steel', 'copper-axe', 'copper-pickaxe', 'iron-axe', 'iron-pickaxe', 'iron-sword', 'steel-axe', 'steel-pickaxe', 'steel-sword', 'potion-heal'];
 
 /** How more of a resource is obtained (null = cannot be extracted
  *  — gold is looted/earned, never mined). */

@@ -446,12 +446,21 @@ export interface InteriorCarButtonsProps {
   onExitHut: () => void;
   onEnterCar: () => void;
   onExitCar: () => void;
+  // BUILD 1111 (0x2E): the nearest crafting station in E-key reach
+  // (the view's nearStation) + its Use handler. Optional: old callers
+  // pass none and no Use button shows.
+  nearStation?: { id: string; name: string } | null;
+  onUseStation?: () => void;
 }
 
-export function InteriorCarButtons({ insideHut, driving, nearDoorHut, nearCar, onEnterHut, onExitHut, onEnterCar, onExitCar }: InteriorCarButtonsProps) {
+export function InteriorCarButtons({ insideHut, driving, nearDoorHut, nearCar, onEnterHut, onExitHut, onEnterCar, onExitCar, nearStation, onUseStation }: InteriorCarButtonsProps) {
   return (
     <>
     {!insideHut&&!driving&&nearDoorHut&&<button type="button" data-testid="interior-enter" onClick={onEnterHut} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Enter</button>}
+    {/* BUILD 1111 (0x2E): the phone-first station path — the Use button
+        sits in the Enter slot when no door is nearer (mirroring the
+        E-key order: door first, station second). */}
+    {!insideHut&&!driving&&!nearDoorHut&&nearStation&&onUseStation&&<button type="button" data-testid="station-use" onClick={onUseStation} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a5a1f',color:'#fff',fontWeight:700,fontSize:16}}>Use {nearStation.name}</button>}
     {insideHut&&<button type="button" data-testid="interior-exit" onClick={onExitHut} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Exit</button>}
     {!driving&&nearCar&&<button type="button" data-testid="car-enter" onClick={onEnterCar} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:170,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16}}>Enter Car</button>}
     {driving&&<button type="button" data-testid="car-exit" onClick={onExitCar} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#7a1f1f',color:'#fff',fontWeight:700,fontSize:16}}>Exit Car</button>}

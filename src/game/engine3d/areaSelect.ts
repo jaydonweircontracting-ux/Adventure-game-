@@ -67,6 +67,7 @@ import {
   type PaletteKind, type Rotation, type UndoEntry,
 } from './placements';
 import { pasteChunk, type ChunkItem } from './templates';
+import { paletteKindForStation } from './craftingStations';
 
 export type AreaRect = { x0: number; y0: number; x1: number; y1: number };
 export type Face = 'north' | 'south' | 'west' | 'east';
@@ -314,7 +315,7 @@ type PlannedMove =
  *  known: house = rect centre, stall = west (even rot) / north
  *  (odd rot — the stall runs south from the tap) tile, everything
  *  else = the rect's min tile. The pasteTapTile anchor math. */
-function destTapFor(kind: PaletteKind, rect: AreaRect, rot: Rotation): { x: number; y: number } {
+function destTapFor(kind: string, rect: AreaRect, rot: Rotation): { x: number; y: number } {
   if (kind === 'house' || (kind as string).startsWith('house-')) return { x: Math.round((rect.x0 + rect.x1) / 2), y: Math.round((rect.y0 + rect.y1) / 2) };
   return { x: rect.x0, y: rect.y0 };
 }
@@ -335,7 +336,7 @@ function planMove(w: IsoWorld, sel: AreaSelection, dx: number, dy: number): { pl
     if (index < 0) { stale.push({ label: selectionItemLabel({ type: 'placed', item }), reason: 'no longer here' }); continue; }
     const newItem: PlacedItem = { ...item, x0: item.x0 + dx, y0: item.y0 + dy, x1: item.x1 + dx, y1: item.y1 + dy };
     if (item.kind === 'custom') plan.push({ kind: 'custom', oldItem: item, newItem, index });
-    else plan.push({ kind: 'placed', oldItem: item, newItem, moveKind: item.kind === 'house' ? (item.variant ? kindOfVariant(item.variant) : 'house') : item.kind, tap: destTapFor(item.kind, newItem, (item.rot ?? 0) as Rotation), index });
+    else plan.push({ kind: 'placed', oldItem: item, newItem, moveKind: item.kind === 'house' ? (item.variant ? kindOfVariant(item.variant) : 'house') : item.kind === 'station' ? paletteKindForStation(item.station ?? 'workbench') : item.kind, tap: destTapFor(item.kind, newItem, (item.rot ?? 0) as Rotation), index });
   }
   for (const hut of sel.huts) {
     const index = w.huts.findIndex((h) => rectEqual(h, hut));
@@ -385,7 +386,7 @@ function planRotate(w: IsoWorld, sel: AreaSelection, steps: number): { plan: Pla
     // triangles by rot, so the model turns with the selection.
     const newItem: PlacedItem = { ...item, ...newRect, ...(isHousePaletteKind(item.kind) || item.kind === 'stall' || item.kind === 'custom' ? { rot: newRot } : {}) };
     if (item.kind === 'custom') plan.push({ kind: 'custom', oldItem: item, newItem, index });
-    else plan.push({ kind: 'placed', oldItem: item, newItem, moveKind: item.kind === 'house' ? (item.variant ? kindOfVariant(item.variant) : 'house') : item.kind, tap: destTapFor(item.kind, newRect, newRot), index });
+    else plan.push({ kind: 'placed', oldItem: item, newItem, moveKind: item.kind === 'house' ? (item.variant ? kindOfVariant(item.variant) : 'house') : item.kind === 'station' ? paletteKindForStation(item.station ?? 'workbench') : item.kind, tap: destTapFor(item.kind, newRect, newRot), index });
   }
   for (const hut of sel.huts) {
     const index = w.huts.findIndex((h) => rectEqual(h, hut));
@@ -754,7 +755,7 @@ export function duplicateArea(
       items.push({ kind: 'custom', rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined ? { rot: p.rot } : {}), assetId: p.assetId });
       continue;
     }
-    const kind: PaletteKind = p.kind === 'house' ? (p.variant ? kindOfVariant(p.variant) : 'house') : p.kind;
+    const kind: PaletteKind = p.kind === 'house' ? (p.variant ? kindOfVariant(p.variant) : 'house') : p.kind === 'station' ? paletteKindForStation(p.station ?? 'workbench') : p.kind;
     items.push({ kind, rx0: p.x0 - x0, ry0: p.y0 - y0, rx1: p.x1 - x0, ry1: p.y1 - y0, ...(p.rot !== undefined && (p.kind === 'house' || p.kind === 'stall') ? { rot: p.rot } : {}) });
   }
   for (const hut of sel.huts) {

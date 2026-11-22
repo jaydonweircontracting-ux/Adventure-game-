@@ -55,6 +55,7 @@ import { absMinutes, farmStageAt, harvestFarmTile } from './farm';
 import { campGrainInRegistry } from './food';
 import { depositNear, examineDeposit, mineralName } from './geology';
 import { hitGatherNode, isGathered, maxHealthForNode, toolDefFor, playGatherSound, type GatherNode } from './gathering';
+import { nearestStation, type StationId } from './craftingStations';
 import { generatedBushAt, generatedHerbAt } from './vegetation';
 import { riverNear, examineRiver } from './rivers';
 import { wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
@@ -130,6 +131,10 @@ export interface PlayerControlsContext {
   // with no wear.
   getEquippedTool?: () => string | null;
   onToolHit?: () => { broken: boolean; kind: string | null };
+  // BUILD 1111 (0x2E): the station panel (the view's setOpenStation) —
+  // E beside a placed crafting station opens its panel. Optional: old
+  // callers pass none and E beside a station does nothing.
+  onOpenStation?: (station: StationId) => void;
   // BUILD 1102: the pen (the view's penRef) — the E stockpile
   // report quotes it. Optional: old callers pass none and the
   // report omits the pen line.
@@ -701,6 +706,12 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       if(sh.state==='building'){const b=foundersRef.current.find(f=>f.workState==='building'||f.workState==='toSite');setMessage('Storehouse: '+sh.progress+'/'+STOREHOUSE_WORK_STEPS+' built · '+sh.spentWood+' wood · '+sh.spentStone+' stone spent'+(b?' · '+b.name+' is building':' · waiting for wood and stone'));return;}
       setMessage('The storehouse site — the founders will build it here once the huts are done.');return;
     }
+    // BUILD 1111 (0x2E): a placed crafting station answers E by
+    // opening its panel — after the storehouse check (the storehouse
+    // is a settlement object like a station) and before the deposit
+    // check, so a station never loses to a rock beside it.
+    const station = nearestStation(world, Math.round(p.x), Math.round(p.y));
+    if (station) { ctx.onOpenStation?.(station.station); return; }
     // BUILD 1110 (0x2D): a mineral deposit answers E with a MINING
     // hit now (1081's "Phase 2" — E only looked, never took). The
     // deposit's health IS its remaining: a hit extracts `damage`

@@ -29,7 +29,7 @@ import {
 } from './lantern';
 import { FARM_SOIL, FARM_FURROW } from './farm';
 import {
-  placedHutRects, placedTreeTiles, placedStallRects, placedRockTiles, placedWallTiles,
+  placedHutRects, placedTreeTiles, placedStallRects, placedStationRects, placedRockTiles, placedWallTiles,
   placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles,
   placedFarmKeyInts, placedFenceTiles, seedRectForHut, removeAt, tileKeyInt,
 } from './placements';
@@ -37,6 +37,7 @@ import { gardenFencesFor, gardenPlantsFor } from './gardens';
 import { type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { mineralRenderColor } from './geology';
+import { stationDefFor } from './craftingStations';
 import { SAPLING_MATURE_GROWTH } from './ecosystems';
 import { emitGroundDetail3d } from './groundDetail3d';
 import {
@@ -708,6 +709,11 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // BUILD 1007: stalls render at whole-world range (were window-culled).
   for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) stallAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
   for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  // BUILD 1111 (0x2E): placed crafting stations render as a coloured
+  // counter cube in the station's colour, with a pale work-surface cap
+  // on top — the same shape language as placed stalls, so a station
+  // reads as a thing you walk up to and use. Whole-world range like stalls.
+  for(const st of placedStationRects(world)){const def=stationDefFor(st.station);const by=surfaceElevation(effTerrain,st.x0+.5,st.y0+.5);cube(st.x0+.5,st.y0+.5,1,.75,1,def.color,by);cube(st.x0+.5,st.y0+.5,.8,.1,.8,[.9,.85,.7],by+.75);}
   // BUILD 1051: fixed wild landmarks (settlements.ts) — the ruined
   // tower, the standing stones, the hunter's camp. Whole-world range
   // like the stalls (the tower is the distance marker), one

@@ -148,7 +148,7 @@ export function shouldShowMinimap3d(opts: { insideHut: boolean; hideUi: boolean;
  *  rocks, water, lanterns, bushes, ore, bridges, farm land, fences
  *  and grass are ground/decor at this scale, not buildings. */
 const BUILDING_PLACEMENT_KINDS: ReadonlySet<string> = new Set([
-  'house', 'stall', 'wall', 'windmill', 'mine', 'custom',
+  'house', 'stall', 'wall', 'windmill', 'mine', 'custom', 'station',
 ]);
 
 export interface Minimap3dBuilding {
