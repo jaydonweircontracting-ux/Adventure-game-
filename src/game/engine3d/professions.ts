@@ -4,7 +4,7 @@
  * The founders do everything by need-score — whoever is free chops,
  * builds, mines, mills, bakes. There are only archetype labels, no
  * profession system and no profession assignment. This module is the
- * profession system as data: the 15 professions, each with its work
+ * profession system as data: the 16 professions, each with its work
  * sites, tools, and inputs/outputs — following the buildingCatalogue.ts
  * data pattern (data only: this module assigns nothing by itself and
  * changes no behaviour; the scorer weights and the assignment live
@@ -13,11 +13,13 @@
  * JOB-KIND MAPPING (each scored work kind belongs to exactly one
  * profession; stated in the commit message, enforced by
  * validateProfessions()):
- * - farmer: harvest, plant, water, mill, bake (milling + baking ride
- *   with the farmer until the baking-profession decision lands in its
- *   own task — baking is NOT one of the 15 professions, and whether
- *   it is a farmer's work or its own profession is a design decision
- *   for that task, not a side effect of this one).
+ * - farmer: harvest, plant, water, mill (milling rides with the
+ *   farmer; baking became its own profession in BUILD 1104 — the
+ *   bakery is the food-capacity bottleneck and needs a dedicated
+ *   worker, and the farmer's plate is already full).
+ * - baker: bake (BUILD 1104 — the deferred 0x21 decision, decided:
+ *   baking is its own profession, with its own slot once the bakery
+ *   is done, so the bakery is always staffed).
  * - lumberjack: chop, lumber. miner: mine. stonecutter: quarry.
  *   builder: build. carpenter: saw, carpenter. blacksmith: smelt,
  *   smith.
@@ -52,9 +54,10 @@
 
 import type { JobKind } from './jobs';
 
-/** The 15 professions (Living World plan Phase 4.1). */
+/** The 16 professions (Living World plan Phase 4.1). */
 export type ProfessionId =
   | 'farmer'
+  | 'baker'
   | 'lumberjack'
   | 'miner'
   | 'stonecutter'
@@ -94,13 +97,20 @@ export type ProfessionDef = {
   systemNote: string;
 };
 
-/** The 15 professions. */
+/** The 16 professions. */
 export const PROFESSIONS: ProfessionDef[] = [
   {
-    id: 'farmer', label: 'Farmer', blurb: 'Grows the settlement’s food — plants, waters, harvests, mills the grain and bakes it into meals.',
-    jobKinds: ['harvest', 'plant', 'water', 'mill', 'bake'],
-    workSites: 'the farm field south-west of camp, the mill, the bakery',
-    tools: ['hoe', 'sickle'], inputs: ['seed', 'grain', 'flour'], outputs: ['grain', 'flour', 'meals'],
+    id: 'farmer', label: 'Farmer', blurb: 'Grows the settlement’s food — plants, waters, harvests and mills the grain into flour.',
+    jobKinds: ['harvest', 'plant', 'water', 'mill'],
+    workSites: 'the farm field south-west of camp, the mill',
+    tools: ['hoe', 'sickle'], inputs: ['seed', 'grain'], outputs: ['grain', 'flour'],
+    system: 'working', systemNote: '',
+  },
+  {
+    id: 'baker', label: 'Baker', blurb: 'Bakes the settlement’s bread — turns flour into meals at the bakery.',
+    jobKinds: ['bake'],
+    workSites: 'the bakery',
+    tools: ['oven peel'], inputs: ['flour'], outputs: ['meals'],
     system: 'working', systemNote: '',
   },
   {
@@ -237,7 +247,7 @@ export const PROFESSION_SCORED_KINDS: JobKind[] = [
  *  clean). The sim and the standalone asserts both call it. */
 export function validateProfessions(): string[] {
   const problems: string[] = [];
-  if (PROFESSIONS.length !== 15) problems.push(`expected 15 professions, got ${PROFESSIONS.length}`);
+  if (PROFESSIONS.length !== 16) problems.push(`expected 16 professions, got ${PROFESSIONS.length}`);
   const seen = new Set<string>();
   for (const p of PROFESSIONS) {
     if (seen.has(p.id)) problems.push(`duplicate profession id: ${p.id}`);
@@ -289,6 +299,9 @@ export type ProfessionNeed = {
   sawmillDone: boolean;
   /** The carpenter’s shop is done (the carpenter carpenters). */
   carpenterDone: boolean;
+  /** The bakery is done — the baker slot opens (BUILD 1104).
+   *  Optional: older callers omit it (no bakery, no slot). */
+  bakeryDone?: boolean;
   /** A hunt job is open and the camp is short of food (day 3+,
    *  food below the hunt threshold) — the hunter slot opens.
    *  Optional: older callers omit it (no hunt work, no slot). */
@@ -310,6 +323,7 @@ export type ProfessionNeed = {
 export function professionSlotsFor(need: ProfessionNeed): ProfessionId[] {
   const slots: ProfessionId[] = [];
   if (need.farmOpen) slots.push('farmer');
+  if (need.bakeryDone) slots.push('baker');
   if (need.constructionPending) slots.push('builder');
   if (need.lumberOpen) slots.push('lumberjack');
   if (need.mineOpen) slots.push('miner');

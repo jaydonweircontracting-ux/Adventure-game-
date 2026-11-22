@@ -110,7 +110,7 @@ import { GRANARY_CAPACITY_FLOUR, plantableFarmTiles } from './granary';
 import { npcWalkable } from './townsfolk3d';
 import { WELL_START_DAY, type BridgeSite } from './paths';
 import { lumberTreesInRect, openMineSite, openMineSites, type MineState } from './mines';
-import { BAKERY_APPROACH, BAKERY_SITE_ID, BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, GRIND_GRAIN_PER_BATCH, MILL_APPROACH, MILL_SITE_ID, isBakeryUsable, isMillUsable, type FoodChainState } from './foodChain';
+import { BAKERY_APPROACH, BAKERY_SECOND_APPROACH, BAKERY_SITE_ID, BAKE_FLOUR_PER_MEAL, BAKE_FOOD_THRESHOLD, BAKE_SLOTS, GRIND_GRAIN_PER_BATCH, MILL_APPROACH, MILL_SITE_ID, isBakeryUsable, isMillUsable, type FoodChainState } from './foodChain';
 import { BLACKSMITH_APPROACH, BLACKSMITH_SITE_ID, CARPENTER_APPROACH, CARPENTER_SITE_ID, CARPENTER_TIMBER_PER_BATCH, SAWMILL_APPROACH, SAWMILL_SITE_ID, SAW_WOOD_PER_BATCH, SMELT_COAL_PER_BATCH, SMELT_ORE_PER_BATCH, SMELTER_APPROACH, SMELTER_SITE_ID, SMITH_INGOT_PER_TOOL, WORKSHOP_APPROACH, WORKSHOP_SITE_ID, isBlacksmithUsable, isCarpenterUsable, isSawmillUsable, isSmelterUsable, type MetalChainState } from './metalChain';
 import { INN_APPROACH, INN_SITE_ID, INN_START_DAY, isWorkerHousingDone, type HousingState } from './housing';
 import type { ConstructionState } from './construction';
@@ -248,6 +248,12 @@ export function millJobIdFor(siteId: string): string {
 /** The job id for the bakery site (BUILD 1094 — one bake job). */
 export function bakeJobIdFor(siteId: string): string {
   return jobIdFor('bake', siteId);
+}
+/** The job id for one bake slot (BUILD 1104 — two bake jobs, one
+ *  per slot; slot 0 keeps the original id so a board built before
+ *  this change still matches). */
+export function bakeJobIdForSlot(siteId: string, slot: number): string {
+  return jobIdFor('bake', slot === 0 ? siteId : `${siteId}-slot-${slot + 1}`);
 }
 
 /** The job id for the smelter site (BUILD 1095 — one smelt job). */
@@ -425,9 +431,13 @@ export function quarryJobIdFor(targetId: string): string {
  *   whose grain ran out mid-shift is NOT failed (the founder
  *   finishes the shift); an open job whose grain ran out is
  *   removed silently.
- * - bake (BUILD 1094): one job while the bakery is done and there
- *   is flour to bake (and the camp is short of food) — same shape
- *   as the mill job, the bakery approach as the tile.
+ * - bake (BUILD 1094; two jobs since BUILD 1104, one per bake
+ *   slot): a job while the bakery is done and there is flour to
+ *   bake (and the camp is short of food) — same shape as the mill
+ *   job. Each slot has its own approach tile (slot 0 the approach,
+ *   slot 1 the tile west of it) — two bakers cannot stand on one
+ *   tile, and a shared tile strands the second baker behind the
+ *   first (BUILD 1104 Fix-1).
  * - smelt / smith / saw / carpenter (BUILD 1095): one job per
  *   metal-chain building, while the building is done and there is
  *   input to process (ore + coal / ingots / wood / timber) and
@@ -1011,32 +1021,38 @@ export function discoverJobs(board: JobBoard, input: JobDiscoveryInput): JobBoar
     // claimed + mill done: the grain ran out mid-shift — leave
     // it, the shift completes.
   }
-  const bakeId = bakeJobIdFor(BAKERY_SITE_ID);
   const bakeryDone = input.foodChain ? isBakeryUsable(input.foodChain) : false;
   const bakeWorkable =
     bakeryDone &&
     input.granary !== undefined &&
     input.granary.flour >= BAKE_FLOUR_PER_MEAL &&
     input.granary.food < BAKE_FOOD_THRESHOLD;
-  if (bakeWorkable && !next.jobs[bakeId]) {
-    next.jobs[bakeId] = {
-      id: bakeId,
-      kind: 'bake',
-      targetId: BAKERY_SITE_ID,
-      tile: { ...BAKERY_APPROACH },
-      state: 'open',
-      claimedBy: null,
-      createdAbs: nowAbs,
-    };
-    changed = true;
-  } else if (!bakeWorkable && next.jobs[bakeId]) {
-    const job = next.jobs[bakeId];
-    if (job.state === 'open') {
-      delete next.jobs[bakeId];
+  // BUILD 1104: one bake job per slot (BAKE_SLOTS) — two founders
+  // may bake at once. Each slot has its own job id (slot 0 keeps
+  // the original id); the lifecycle per slot is the single-job
+  // shape above.
+  for (let slot = 0; slot < BAKE_SLOTS; slot++) {
+    const bakeId = bakeJobIdForSlot(BAKERY_SITE_ID, slot);
+    if (bakeWorkable && !next.jobs[bakeId]) {
+      next.jobs[bakeId] = {
+        id: bakeId,
+        kind: 'bake',
+        targetId: BAKERY_SITE_ID,
+        tile: slot === 0 ? { ...BAKERY_APPROACH } : { ...BAKERY_SECOND_APPROACH },
+        state: 'open',
+        claimedBy: null,
+        createdAbs: nowAbs,
+      };
       changed = true;
-    } else if (!bakeryDone) {
-      next = failJob(next, bakeId, 'target-gone');
-      changed = true;
+    } else if (!bakeWorkable && next.jobs[bakeId]) {
+      const job = next.jobs[bakeId];
+      if (job.state === 'open') {
+        delete next.jobs[bakeId];
+        changed = true;
+      } else if (!bakeryDone) {
+        next = failJob(next, bakeId, 'target-gone');
+        changed = true;
+      }
     }
   }
 

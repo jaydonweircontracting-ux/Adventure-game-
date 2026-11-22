@@ -81,7 +81,6 @@ import {
   buildJobIdFor,
   buildJobClaimedBy,
   millJobIdFor,
-  bakeJobIdFor,
   smeltJobIdFor,
   smithJobIdFor,
   sawJobIdFor,
@@ -148,7 +147,7 @@ import {
 } from './storehouse';
 import { QUARRY_STONE_TARGET, QUARRY_CLAIM_RADIUS, quarryWorkTile, quarryTargetFromJob, mineStoneToCarrier } from './quarry';
 import {
-  BAKERY_APPROACH, BAKERY_CENTRE, BAKERY_SITE_ID, BAKE_TICKS_PER_SHIFT,
+  BAKERY_APPROACH, BAKERY_CENTRE, BAKERY_SITE_ID, BAKE_TICKS_PER_SHIFT, BAKE_SLOTS,
   MILL_APPROACH, MILL_CENTRE, MILL_SITE_ID, MILL_TICKS_PER_SHIFT, MILL_WOOD_PER_STEP, BAKERY_WOOD_PER_STEP,
   bakeFlourToMeals, canBuildBakery, canBuildMill, canStartBakery, canStartMill,
   finishBakery, finishMill, foodChainFlourInRegistry, freshFoodChain, grindGrainToFlour,
@@ -848,6 +847,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     blacksmithDone: sim.metalChain.blacksmith.state === 'done',
     sawmillDone: sim.metalChain.sawmill.state === 'done',
     carpenterDone: sim.metalChain.carpenter.state === 'done',
+    bakeryDone: sim.foodChain.bakery.state === 'done',
     // BUILD 1102 (gate fix): the animal needs — the same shape as
     // the utility terms (day 3+, an open job, total camp food
     // below the hunt threshold; the pen done + feed/shear wanted).
@@ -1075,7 +1075,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         readyMillJobs: readyMillCount,
         millTaken: sim.founders.some((o) => o !== f && (o.workState === 'toMill' || o.workState === 'milling')),
         readyBakeJobs: readyBakeCount,
-        bakeTaken: sim.founders.some((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking')),
+        bakeTaken: sim.founders.filter((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking')).length >= BAKE_SLOTS,
         readySmeltJobs: readySmeltCount,
         smeltTaken: sim.founders.some((o) => o !== f && (o.workState === 'toSmelter' || o.workState === 'smelting')),
         readySmithJobs: readySmithCount,
@@ -1607,10 +1607,12 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         }
       }
       // BUILD 1094: baking — the mirror of the real-time tick
-      // (same gate: workKind 'bake'). One baker at a time.
-      const bakeTaken = sim.founders.some((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking'));
+      // (same gate: workKind 'bake'). BUILD 1104: two bakers at a
+      // time (BAKE_SLOTS) — the guard is true only when both slots
+      // are taken, and the claim takes the first open bake job.
+      const bakeTaken = sim.founders.filter((o) => o !== f && (o.workState === 'toBakery' || o.workState === 'baking')).length >= BAKE_SLOTS;
       if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'bake' && !bakeTaken) {
-        const bc = claimJob(sim.board, f.id, bakeJobIdFor(BAKERY_SITE_ID));
+        const bc = claimFirstJob(sim.board, f.id, 'bake');
         sim.board = bc.board;
         if (bc.job) {
           f.workState = 'toBakery';
@@ -1879,7 +1881,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     // inn sits on the arrival path, so the detour is short).
     else if (f.workState === 'arriving' && isInnUsable(sim.housing) && !f.innRested && (f.activity === 'work' || f.activity === 'build')) dest = { ...INN_APPROACH };
     else if ((f.workState === 'toMill' || f.workState === 'milling') && (f.activity === 'work' || f.activity === 'build')) dest = { ...MILL_APPROACH };
-    else if ((f.workState === 'toBakery' || f.workState === 'baking') && (f.activity === 'work' || f.activity === 'build')) dest = { ...BAKERY_APPROACH };
+    else if ((f.workState === 'toBakery' || f.workState === 'baking') && (f.activity === 'work' || f.activity === 'build')) dest = myJob && myJob.kind === 'bake' ? { ...myJob.tile } : { ...BAKERY_APPROACH };
     else if ((f.workState === 'toSmelter' || f.workState === 'smelting') && (f.activity === 'work' || f.activity === 'build')) dest = { ...SMELTER_APPROACH };
     else if ((f.workState === 'toSmith' || f.workState === 'smithing') && (f.activity === 'work' || f.activity === 'build')) dest = { ...BLACKSMITH_APPROACH };
     else if ((f.workState === 'toSawmill' || f.workState === 'sawing') && (f.activity === 'work' || f.activity === 'build')) dest = { ...SAWMILL_APPROACH };

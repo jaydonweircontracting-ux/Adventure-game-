@@ -290,8 +290,10 @@ export type UtilityWorldContext = {
    *  at a time. Optional: absent means the slot is free. */
   millTaken?: boolean;
   /** BUILD 1094: another founder is already baking — the bake
-   *  term is 0 for this founder, so only one founder ever bakes
-   *  at a time. Optional: absent means the slot is free. */
+   *  term is 0 for this founder. BUILD 1104: the bakery has two
+   *  slots (BAKE_SLOTS), so this is true only when BOTH slots are
+   *  taken — a second founder may still bake while one bakes.
+   *  Optional: absent means a slot is free. */
   bakeTaken?: boolean;
   /** BUILD 1094: grain in the granary store — the mill term only
    *  fires while there is grain to grind. Optional: absent

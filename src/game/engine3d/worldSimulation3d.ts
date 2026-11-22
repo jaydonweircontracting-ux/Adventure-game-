@@ -52,7 +52,7 @@ import { getSimSpeed, founderStepsForSpeed, clockMinutesPerSecond } from './cont
 import {
   discoverJobs, claimJob, claimNearestJob, claimNearestMineJobForMineral, claimFirstJob, nearestOpenJob, openJobs, claimDeliverJobFor, releaseJob,
   completeJob, failJob, blockQuarryTarget, jobForFounder, scorerTreeDist, scorerQuarryDist, buildJobClaimedBy,
-  buildJobIdFor, jobSummary, millJobIdFor, bakeJobIdFor, smeltJobIdFor, smithJobIdFor, sawJobIdFor, carpenterJobIdFor, fishJobIdFor, huntJobIdFor, shepherdJobIdFor, type JobBoard,
+  buildJobIdFor, jobSummary, millJobIdFor, smeltJobIdFor, smithJobIdFor, sawJobIdFor, carpenterJobIdFor, fishJobIdFor, huntJobIdFor, shepherdJobIdFor, type JobBoard,
 } from './jobs';
 import { planPathNpc } from './townsfolk3d';
 import { QUARRY_STONE_TARGET, QUARRY_CLAIM_RADIUS, quarryWorkTile, quarryTargetFromJob, mineStoneToCarrier } from './quarry';
@@ -76,7 +76,7 @@ import {
 } from './paths';
 import { CAMP_STORE_ID, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import {
-  BAKERY_APPROACH, BAKERY_CENTRE, BAKERY_SITE_ID, BAKE_TICKS_PER_SHIFT,
+  BAKERY_APPROACH, BAKERY_CENTRE, BAKERY_SITE_ID, BAKE_TICKS_PER_SHIFT, BAKE_SLOTS,
   MILL_APPROACH, MILL_CENTRE, MILL_SITE_ID, MILL_TICKS_PER_SHIFT, MILL_WOOD_PER_STEP, BAKERY_WOOD_PER_STEP,
   bakeFlourToMeals, canBuildBakery, canBuildMill, canStartBakery, canStartMill,
   finishBakery, finishMill, foodChainFlourInRegistry, grindGrainToFlour,
@@ -506,6 +506,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         blacksmithDone: metalChainRef.current.blacksmith.state === 'done',
         sawmillDone: metalChainRef.current.sawmill.state === 'done',
         carpenterDone: metalChainRef.current.carpenter.state === 'done',
+        bakeryDone: foodChainRef.current.bakery.state === 'done',
         // BUILD 1102 (gate fix): the animal needs — the mirror of
         // the sim tick (day 3+, an open job, total camp food below
         // the hunt threshold; the pen done + feed/shear wanted).
@@ -670,7 +671,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day,sitePlanRef.current?.site.approach??null),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')),readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),campMeat:granaryMeatInRegistry(registryRef.current),campFish:granaryFishInRegistry(registryRef.current),readyHuntJobs:openJobs(jobBoardRef.current,'hunt').length,readyFishJobs:openJobs(jobBoardRef.current,'fish').length,readyShepherdFeedJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_FEED_JOB_ID).length,readyShepherdShearJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_SHEAR_JOB_ID).length,huntTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPrey'||o.workState==='hunting')),fishTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBank'||o.workState==='fishing')),shepherdTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPen'||o.workState==='shepherding')),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day,sitePlanRef.current?.site.approach??null),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')).length>=BAKE_SLOTS,readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),campMeat:granaryMeatInRegistry(registryRef.current),campFish:granaryFishInRegistry(registryRef.current),readyHuntJobs:openJobs(jobBoardRef.current,'hunt').length,readyFishJobs:openJobs(jobBoardRef.current,'fish').length,readyShepherdFeedJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_FEED_JOB_ID).length,readyShepherdShearJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_SHEAR_JOB_ID).length,huntTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPrey'||o.workState==='hunting')),fishTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBank'||o.workState==='fishing')),shepherdTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPen'||o.workState==='shepherding')),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -1076,10 +1077,12 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             if(mc.job){f.workState='toMill';f.millTicks=0;myJob=mc.job;}
           }
           // BUILD 1094: baking — the mirror of the sim tick (same gate:
-          // workKind 'bake'). One baker at a time.
-          const bakeTaken=foundersRef.current.some((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking'));
+          // workKind 'bake'). BUILD 1104: two bakers at a time
+          // (BAKE_SLOTS) — the guard is true only when both slots
+          // are taken, and the claim takes the first open bake job.
+          const bakeTaken=foundersRef.current.filter((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')).length>=BAKE_SLOTS;
           if(f.workState==='toTree'&&!f.treeTarget&&f.activity==='work'&&f.lastDecision?.workKind==='bake'&&!bakeTaken){
-            const bc=claimJob(jobBoardRef.current,f.id,bakeJobIdFor(BAKERY_SITE_ID));
+            const bc=claimFirstJob(jobBoardRef.current,f.id,'bake');
             jobBoardRef.current=bc.board;
             if(bc.job){f.workState='toBakery';f.bakeTicks=0;myJob=bc.job;}
           }
@@ -1261,7 +1264,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // has not rested at the inn walks to the inn approach first.
         else if(f.workState==='arriving'&&isInnUsable(housingRef.current)&&!f.innRested&&(f.activity==='work'||f.activity==='build'))dest={...INN_APPROACH};
         else if((f.workState==='toMill'||f.workState==='milling')&&(f.activity==='work'||f.activity==='build'))dest={...MILL_APPROACH};
-        else if((f.workState==='toBakery'||f.workState==='baking')&&(f.activity==='work'||f.activity==='build'))dest={...BAKERY_APPROACH};
+        else if((f.workState==='toBakery'||f.workState==='baking')&&(f.activity==='work'||f.activity==='build'))dest=myJob&&myJob.kind==='bake'?{...myJob.tile}:{...BAKERY_APPROACH};
         else if((f.workState==='toSmelter'||f.workState==='smelting')&&(f.activity==='work'||f.activity==='build'))dest={...SMELTER_APPROACH};
         else if((f.workState==='toSmith'||f.workState==='smithing')&&(f.activity==='work'||f.activity==='build'))dest={...BLACKSMITH_APPROACH};
         else if((f.workState==='toSawmill'||f.workState==='sawing')&&(f.activity==='work'||f.activity==='build'))dest={...SAWMILL_APPROACH};
@@ -2324,7 +2327,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
             readyMillJobs:wReadyMill,
             millTaken:foundersRef.current.some((o)=>o!==wf&&(o.workState==='toMill'||o.workState==='milling')),
             readyBakeJobs:wReadyBake,
-            bakeTaken:foundersRef.current.some((o)=>o!==wf&&(o.workState==='toBakery'||o.workState==='baking')),
+            bakeTaken:foundersRef.current.filter((o)=>o!==wf&&(o.workState==='toBakery'||o.workState==='baking')).length>=BAKE_SLOTS,
             readySmeltJobs:wReadySmelt,
             smeltTaken:foundersRef.current.some((o)=>o!==wf&&(o.workState==='toSmelter'||o.workState==='smelting')),
             readySmithJobs:wReadySmith,

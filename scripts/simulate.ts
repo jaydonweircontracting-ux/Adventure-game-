@@ -15187,7 +15187,7 @@ console.log('Testing the food chain — mill → flour → bakery → meals (BUI
   assert(U.scoreFounderActivities(ctx1094({ readyMillJobs: 1, millTaken: false, campGrain: 10, campFlour: 100 })).work === 0, 'M1094: a mill with a full flour store scores 0 (the cap binds)');
   const bakeScore1094 = U.scoreFounderActivities(ctx1094({ readyBakeJobs: 1, bakeTaken: false, campFlour: 4, foodStock: 10 }));
   assert(close(bakeScore1094.work, 2 / 3) && U.chooseScoredActivity(ctx1094({ readyBakeJobs: 1, bakeTaken: false, campFlour: 4, foodStock: 10 })).workKind === 'bake', 'M1094: a ready bake job scores work 0.67 at food 10, workKind bake (0.6 + 0.2 x (1 - 10/15) — the urgency rises as food falls)');
-  assert(U.scoreFounderActivities(ctx1094({ readyBakeJobs: 1, bakeTaken: true, campFlour: 4, foodStock: 10 })).work === 0, 'M1094: a taken bakery scores 0 (one baker at a time)');
+  assert(U.scoreFounderActivities(ctx1094({ readyBakeJobs: 1, bakeTaken: true, campFlour: 4, foodStock: 10 })).work === 0, 'M1094: a taken bakery scores 0 (both bake slots taken — BUILD 1104: two bakers at once)');
   assert(U.scoreFounderActivities(ctx1094({ readyBakeJobs: 1, bakeTaken: false, campFlour: 4, foodStock: 15 })).work === 0, 'M1094: a bakery with food at 15 scores 0 (the camp is not short)');
   assert(U.chooseScoredActivity(ctx1094({ readyMillJobs: 1, readyBakeJobs: 1, millTaken: false, bakeTaken: false, campGrain: 10, campFlour: 4, foodStock: 10 })).workKind === 'bake', 'M1094: bake beats mill on a tie (the direct path to food wins)');
   // --- The week fix (day 6): at food 0 the bake/mill terms escalate

@@ -69,8 +69,10 @@
  *   (129,127). Camp -> approach is 12 steps.
  *
  * WORK: milling/baking are J-1 jobs ('mill' | 'bake', see
- * jobs.ts) — one worker per building at a time (the millTaken /
- * bakeTaken guard, mirroring mineTaken). The founder walks to the
+ * jobs.ts) — one miller at a time (the millTaken guard), and since
+ * BUILD 1104 TWO bakers at a time (BAKE_SLOTS; the bakeTaken guard
+ * is true only when both bake slots are taken, mirroring
+ * mineTaken). The founder walks to the
  * building (workStates 'toMill'/'milling', 'toBakery'/'baking',
  * see founders.ts), works a 3-tick shift (MILL_TICKS_PER_SHIFT /
  * BAKE_TICKS_PER_SHIFT, mirroring FOUNDER_MINE_TICKS), produces
@@ -135,6 +137,12 @@ export const BAKERY_RECT = { x0: 128, y0: 124, x1: 130, y1: 126 } as const;
 export const BAKERY_DOOR = { x: 129, y: 126 } as const;
 /** The bakery's approach tile (one south of the door). */
 export const BAKERY_APPROACH = { x: 129, y: 127 } as const;
+/** The bakery's second approach tile (one west of the approach).
+ *  BUILD 1104: two bakers cannot share one tile — the second walks
+ *  to the occupied approach and waits behind the first forever
+ *  (the debug sim: Marlow stuck at (128,127) for 21 ticks while
+ *  Greta baked shift after shift). The second slot stands here. */
+export const BAKERY_SECOND_APPROACH = { x: 128, y: 127 } as const;
 
 /** The mill as a HutSite — the renderer's build-site fx draws the
  *  half-built stage geometry from this (the storehouse's
@@ -186,6 +194,11 @@ export const BAKE_TICKS_PER_SHIFT = 3;
 /** The bakery bakes while camp food is below this (the old
  *  MILL_FOOD_THRESHOLD, moved here with the mill it gated). */
 export const BAKE_FOOD_THRESHOLD = 15;
+/** How many founders may bake at once (BUILD 1104: the second
+ *  baker — the bakery has two slots, so two bake jobs sit on the
+ *  board and two founders can work a shift side by side, doubling
+ *  the meal throughput the single-baker ceiling capped). */
+export const BAKE_SLOTS = 2;
 /** The mill site opens once this much grain has landed. */
 export const MILL_START_GRAIN = 1;
 
