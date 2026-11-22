@@ -449,3 +449,116 @@ baseline. Success criteria, recorded in its brief:
   through the file until then.
 - It does not change the gates. Batching and speed never weaken a test,
   a type check, a sim comparison, or a live verification.
+
+## 13. REAL-TIME DEVELOPMENT & INSTANT DEPLOYMENT (2026-11-21, user's order — CRITICAL)
+
+BUILD 1103 took ~10 hours to ship while its implementation was done and
+probe-passing hours earlier: the worker sat in the test loop while the
+finished code stayed uncommitted. That is the failure this section exists
+to prevent. NEURON HEX is a continuous development pipeline now, not a
+batch scheduler. The game itself is the measure of progress: code
+immediately, save immediately, verify incrementally, push continuously,
+deploy frequently. Activity is not accomplishment — a heartbeat is not
+progress, a restarting test suite is not progress, a build number is not
+progress. Every worker produces tangible code changes.
+
+### The pipeline
+
+Implement → Checkpoint → Verify → Integrate → Deploy → Continue.
+A worker develops a self-contained feature, saves and commits working
+changes, runs targeted tests, merges verified work into main, pushes to
+GitHub Pages and verifies the live game, then moves on. Other workers
+tackle independent tasks without waiting unnecessarily. Large builds are
+broken into independently deliverable components.
+
+### 1. Instant code execution
+
+Start writing actual source code immediately when a task is accepted. Do
+not spend excessive time planning, discussing, or generating additional
+task descriptions. Break large features into small, independently
+implementable components. Write changes directly into the project and
+save files immediately after completing logical changes. Never hold
+completed code hostage while another component is being developed. Allow
+multiple independent workers to develop separate systems simultaneously
+(one code agent per working tree, separate worktrees). Prevent
+unnecessary sequential dependencies.
+
+### 2. Continuous git pushing
+
+Commit completed components immediately. Push verified commits to main
+as frequently as safely possible. Do not wait for an entire BUILD to
+finish before pushing. Keep main continuously updated. Automatically
+recover from interrupted pushes. Detect merge conflicts and resolve them
+safely. Never overwrite newer working changes. Maintain a rollback point
+for every deployment.
+
+### 3. Rapid testing — layered verification
+
+Level 1: immediate syntax and TypeScript checks. Level 2: targeted
+tests for the modified system. Level 3: integration and regression
+tests. Level 4: full test suite running independently in the background.
+Full testing must never unnecessarily prevent independent development or
+safe incremental releases. The development pipeline and the testing
+pipeline are SEPARATE: a worker never waits for the full suite (tens of
+thousands of asserts, hours of runtime) before another worker can build
+the next feature, and a finished component ships on Levels 1–3 while
+Level 4 runs behind it. A Level 4 finding after a push becomes a
+fix-forward commit, not a reason to have held the push.
+
+### 4. Continuous deployment
+
+As soon as a component passes its required checks: commit, push to
+GitHub, trigger deployment, verify GitHub Pages, confirm the live game
+reflects the new version, report the actual commit and deployment URL.
+Never claim a deployment succeeded until verified live (served
+version.json build + `__AG_BUILD` marker).
+
+### 5. Worker speed and recovery
+
+Eliminate idle workers. Detect stalled workers automatically. Set
+execution timeouts. Restart failed jobs from their latest checkpoint.
+Avoid repeatedly restarting entire test suites. Prioritize
+implementation over administrative orchestration. Dynamically assign
+independent tasks to available workers. A worker that spends its time
+only executing tests while its implementation is finished is misassigned:
+it checkpoints and ships, then the testing tail continues in the
+background.
+
+### 6. Real-time development dashboard
+
+The generated status snapshot (`neuron-hex-status.md` / `.json` in the
+goal hidden_files) is the dashboard's data layer and must carry: active
+workers, files currently being edited, features being implemented,
+commits created, pushes completed, deployments completed, tests passing
+and failing, worker execution time, tasks blocked or stalled, and current
+development throughput. The full interactive artifact dashboard is a
+follow-up build, not this change.
+
+### 7. Performance objective
+
+Continuous development with near-immediate code saving, frequent commits
+and rapid deployment. Do not artificially promise instantaneous GitHub
+or hosting operations. Optimize every stage to minimize unnecessary
+waiting.
+
+### The operating table
+
+| Operation | Behaviour |
+|---|---|
+| Writing code | Immediate |
+| Saving files | Immediately |
+| Git checkpoints | After each logical component |
+| Git pushes | Frequently, after safe verification |
+| Targeted tests | Immediately |
+| Full regression | Background |
+| Deployment | Incremental |
+| Live verification | Every release |
+
+### What this does NOT do
+
+- It does not weaken a gate. Levels 1–3 still gate a push; Level 4
+  still runs and its findings still get fixed.
+- It does not change the parent-verification rule: a task is marked
+  done only after the parent verifies the commit, the live markers, and
+  a direct re-run of the targeted asserts.
+- It does not allow two code agents in one working tree.
