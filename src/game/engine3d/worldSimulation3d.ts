@@ -600,7 +600,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       else if(f.workState==='toBank'||f.workState==='fishing'){f.workState='toTree';f.animalTicks=0;}
       else if(f.workState==='toPen'||f.workState==='shepherding'){f.workState='toTree';f.animalTicks=0;}
           else if(f.workState==='toTree'){f.treeTarget=null;f.workTile=null;}
-          if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0||f.carryingStone>0||f.carryingBuild>0||f.carryingOre>0)){
+          if(f.workState==='toStockpile'&&(f.carrying>0||f.carryingGrain>0||f.carryingStone>0||f.carryingBuild>0||f.carryingOre>0||f.carryingMeat>0||f.carryingLeather>0||f.carryingFish>0||f.carryingWool>0)){
             const dc=claimDeliverJobFor(jobBoardRef.current,f.id,f.carrying+f.carryingGrain+f.carryingStone+f.carryingBuild+f.carryingOre+f.carryingMeat+f.carryingLeather+f.carryingFish+f.carryingWool,nowAbs);
             jobBoardRef.current=dc.board;
             if(dc.job)myJob=dc.job;

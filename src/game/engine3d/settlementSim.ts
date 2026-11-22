@@ -937,6 +937,28 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.workState = 'toTree';
         f.mineTicks = 0;
         f.mineTarget = null;
+      } else if (f.workState === 'toMill' || f.workState === 'milling') {
+        // BUILD 1105 (0x28): the chain states were missing from the sim's
+        // stale-job reset (the live tick has them) — a founder restored in
+        // a chain state kept it jobless, grinding/baking per tick without
+        // a job while the slot stayed taken. Mirror of worldSimulation3d.
+        f.workState = 'toTree';
+        f.millTicks = 0;
+      } else if (f.workState === 'toBakery' || f.workState === 'baking') {
+        f.workState = 'toTree';
+        f.bakeTicks = 0;
+      } else if (f.workState === 'toSmelter' || f.workState === 'smelting') {
+        f.workState = 'toTree';
+        f.smeltTicks = 0;
+      } else if (f.workState === 'toSmith' || f.workState === 'smithing') {
+        f.workState = 'toTree';
+        f.smithTicks = 0;
+      } else if (f.workState === 'toSawmill' || f.workState === 'sawing') {
+        f.workState = 'toTree';
+        f.sawTicks = 0;
+      } else if (f.workState === 'toCarpenter' || f.workState === 'carpentering') {
+        f.workState = 'toTree';
+        f.carpenterTicks = 0;
       } else if (f.workState === 'toPrey' || f.workState === 'hunting') {
         // BUILD 1102: the hunt job vanished (the prey went extinct
         // while the hunter walked — discovery failed it) — the
@@ -969,7 +991,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         f.treeTarget = null;
         f.workTile = null;
       }
-      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0)) {
+      if (f.workState === 'toStockpile' && (f.carrying > 0 || f.carryingGrain > 0 || f.carryingStone > 0 || f.carryingBuild > 0 || f.carryingOre > 0 || f.carryingMeat > 0 || f.carryingLeather > 0 || f.carryingFish > 0 || f.carryingWool > 0)) {
         const dc = claimDeliverJobFor(sim.board, f.id, f.carrying + f.carryingGrain + f.carryingStone + f.carryingBuild + f.carryingOre + f.carryingMeat + f.carryingLeather + f.carryingFish + f.carryingWool, nowAbs);
         sim.board = dc.board;
         if (dc.job) myJob = dc.job;
