@@ -16596,6 +16596,128 @@ console.log('Testing Tamsin — the affinity-gated newcomer walks in and lives a
 }
 
 
+console.log('Testing the week-after-reload fix — founders restored mid-chain-job or carrying animal goods resume work instead of standing idle at camp (BUILD 1105, 0x28)...');
+{
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const J = await import('../src/game/engine3d/jobs.js');
+  const boardJobFor1105 = (sim: any, fid: string) => J.jobForFounder(sim.board, fid);
+  // --- A. A carrier restored in 'toStockpile' with ONLY animal goods re-claims its deliver job. ---
+  // The stale-job re-claim guard checked carrying/grain/stone/build/ore only — NOT
+  // meat/leather/fish/wool — while discovery DOES create a deliver job for an
+  // animal-goods carrier and the amount passed to claimDeliverJobFor DOES include
+  // them. The founder waited at camp forever: eating, never working, the yield
+  // never delivered. (1102-era bug; no animal goods existed in 1091.)
+  const stockpileCarrierTest1105 = (goods: { meat?: number; leather?: number; fish?: number; wool?: number }, label: string) => {
+    const sim: any = SS.createSettlementSim(W.defaultWorld());
+    const f = sim.founders[0];
+    f.workState = 'toStockpile';
+    f.activity = 'work';
+    f.x = 124;
+    f.y = 120;
+    f.needs.hunger = 95;
+    f.carrying = 0;
+    f.carryingGrain = 0;
+    f.carryingStone = 0;
+    f.carryingBuild = 0;
+    f.carryingOre = 0;
+    f.carryingWater = 0;
+    f.carryingMeat = goods.meat ?? 0;
+    f.carryingLeather = goods.leather ?? 0;
+    f.carryingFish = goods.fish ?? 0;
+    f.carryingWool = goods.wool ?? 0;
+    const saved = SS.serializeSettlement(sim);
+    const restored: any = SS.restoreSettlement(sim.world, saved, sim.abs, sim.ledger);
+    const rf = restored.founders[0];
+    SS.advanceSettlement(restored, 1);
+    const job = boardJobFor1105(restored, rf.id);
+    const delivered = (goods.meat ?? 0) === 0 || rf.carryingMeat === 0;
+    const fishDelivered = (goods.fish ?? 0) === 0 || rf.carryingFish === 0;
+    assert((job && job.kind === 'deliver') || (delivered && fishDelivered), 'M1105: ' + label + ' carrier re-claims its deliver job after restore (job=' + (job ? job.kind + '/' + job.state : 'none') + ', carryingMeat=' + rf.carryingMeat + ', carryingFish=' + rf.carryingFish + ')');
+    const stillCarrying = rf.carryingMeat > 0 || rf.carryingLeather > 0 || rf.carryingFish > 0 || rf.carryingWool > 0;
+    assert(!(rf.workState === 'toStockpile' && !(job && job.kind === 'deliver') && stillCarrying), 'M1105: ' + label + ' carrier is not stranded jobless in toStockpile after restore (workState=' + rf.workState + ', job=' + (job ? job.kind : 'none') + ', stillCarrying=' + stillCarrying + ')');
+  };
+  stockpileCarrierTest1105({ meat: 2, leather: 1 }, 'meat/leather');
+  stockpileCarrierTest1105({ fish: 2 }, 'fish');
+  // --- B. The sim tick's stale-job reset covers the chain workStates (mirror of the live tick). ---
+  // The LIVE tick reset toMill/milling, toBakery/baking, toSmelter/smelting,
+  // toSmith/smithing, toSawmill/sawing, toCarpenter/carpentering to 'toTree' when
+  // the job is gone; the SIM tick did not. A founder restored in a chain state
+  // kept it jobless (it still ground/baked per tick without a job, the job never
+  // completed and the slot stayed taken). The sim must mirror the live tick.
+  const chainResetTest1105 = (workState: string, label: string) => {
+    const sim: any = SS.createSettlementSim(W.defaultWorld());
+    const f = sim.founders[0];
+    f.workState = workState;
+    f.activity = 'work';
+    f.needs.hunger = 95;
+    const saved = SS.serializeSettlement(sim);
+    const restored: any = SS.restoreSettlement(sim.world, saved, sim.abs, sim.ledger);
+    SS.advanceSettlement(restored, 1);
+    const rf = restored.founders[0];
+    const job = boardJobFor1105(restored, rf.id);
+    assert(rf.workState === 'toTree' || (job != null && (job.kind === 'mill' || job.kind === 'bake' || job.kind === 'smelt' || job.kind === 'smith' || job.kind === 'saw' || job.kind === 'carpenter')), 'M1105: ' + label + ' founder is not left jobless in a chain workState after restore (workState=' + rf.workState + ', job=' + (job ? job.kind : 'none') + ')');
+  };
+  chainResetTest1105('milling', 'milling');
+  chainResetTest1105('toBakery', 'toBakery');
+  chainResetTest1105('smelting', 'smelting');
+  chainResetTest1105('toSmith', 'toSmith');
+  chainResetTest1105('sawing', 'sawing');
+  chainResetTest1105('carpentering', 'carpentering');
+  // --- The 24h runs: the fix must not move the 24h numbers (the 24h reload happens ---
+  // --- before trips start, and the fix only changes post-restore behavior). ---
+  const world24_1105 = W.defaultWorld();
+  const sim24_1105 = SS.createSettlementSim(world24_1105);
+  SS.advanceSettlement(sim24_1105, 1600);
+  const L24_1105 = sim24_1105.ledger;
+  assert(L24_1105.ticks === 1600, 'M1105: the 24h run counts 1600 ticks');
+  assert(L24_1105.woodChopped === 54 && L24_1105.woodDelivered === 50 && L24_1105.woodSpent === 24, 'M1105: 24h wood 54/50/24 (M1069 identical to BUILD 1104 — diag-24h-1105, no-reload)');
+  assert(L24_1105.grainHarvested === 60 && L24_1105.grainDelivered === 58, 'M1105: 24h grain 60/58 (M1069 identical to BUILD 1104)');
+  assert(L24_1105.mealsBaked === 28 && L24_1105.mealsEaten === 13, 'M1105: 24h meals 28/13 (M1069 identical to BUILD 1104)');
+  assert(L24_1105.flourMilled === 58 && L24_1105.flourBaked === 56, 'M1105: 24h flour 58/56 (M1069 identical to BUILD 1104)');
+  assert(L24_1105.jobsCompleted.chop === 27 && L24_1105.jobsCompleted.build === 4 && L24_1105.jobsCompleted.deliver === 54 && L24_1105.jobsCompleted.harvest === 30, 'M1105: 24h jobs chop/build/deliver/harvest 27/4/54/30 (M1069 identical to BUILD 1104)');
+  assert(L24_1105.hutsCompleted === 2 && L24_1105.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1105: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1105.starvedTicks === 0 && Math.round(L24_1105.minHealth) === 100, 'M1105: nobody starves in 24h');
+  assert(sim24_1105.founders.length === 7, 'M1105: the population is 7 after 24h');
+  assert(F.campWoodInRegistry(sim24_1105.registry) === 14 && F.campFoodInRegistry(sim24_1105.registry) === 15 && SS.settlementGrain(sim24_1105) === 0 && FC.foodChainFlourInRegistry(sim24_1105.registry) === 2, 'M1105: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  const world24r_1105 = W.defaultWorld();
+  const sim24r_1105 = SS.createSettlementSim(world24r_1105);
+  SS.advanceSettlement(sim24r_1105, 800);
+  const restored24r_1105: any = SS.restoreSettlement(world24r_1105, SS.serializeSettlement(sim24r_1105), sim24r_1105.abs, sim24r_1105.ledger);
+  SS.advanceSettlement(restored24r_1105, 800);
+  const L24r_1105 = restored24r_1105.ledger;
+  assert(L24r_1105.ticks === 1600, 'M1105: the with-reload 24h run counts 1600 ticks');
+  assert(L24r_1105.woodChopped === 52 && L24r_1105.woodDelivered === 52 && L24r_1105.woodSpent === 24, 'M1105: with-reload@800 wood 52/52/24 (diag-24h-1105 — healthy, small trajectory differences from the reset trips, as expected)');
+  assert(L24r_1105.grainHarvested === 60 && L24r_1105.grainDelivered === 60, 'M1105: with-reload@800 grain 60/60');
+  assert(L24r_1105.mealsBaked === 27 && L24r_1105.mealsEaten === 14, 'M1105: with-reload@800 meals 27/14');
+  assert(L24r_1105.flourMilled === 58 && L24r_1105.flourBaked === 54, 'M1105: with-reload@800 flour 58/54');
+  assert(L24r_1105.jobsCompleted.chop === 26 && L24r_1105.jobsCompleted.build === 4 && L24r_1105.jobsCompleted.deliver === 56 && L24r_1105.jobsCompleted.harvest === 30, 'M1105: with-reload@800 jobs chop/build/deliver/harvest 26/4/56/30');
+  assert(L24r_1105.hutsCompleted === 2 && L24r_1105.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1105: with-reload@800 huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24r_1105.starvedTicks === 0 && Math.round(L24r_1105.minHealth) === 100, 'M1105: nobody starves in the with-reload 24h');
+  assert(restored24r_1105.founders.length === 7, 'M1105: the population is 7 after the with-reload 24h');
+  assert(F.campWoodInRegistry(restored24r_1105.registry) === 16 && F.campFoodInRegistry(restored24r_1105.registry) === 13 && SS.settlementGrain(restored24r_1105) === 2 && FC.foodChainFlourInRegistry(restored24r_1105.registry) === 4, 'M1105: with-reload@800 final wood/food/grain/flour 16/13/2/4');
+  // --- The week after a reload: fresh sim -> 4800 ticks -> serialize/restore -> 11200. ---
+  // Week numeric pins are re-pinned from the post-fix diag-reload-week FINAL
+  // (diag-reload-week.log) against the 0x27 no-reload oracle FINAL
+  // (diag-week-1104.log); acceptance: starvedTicks within 10% of the no-reload
+  // week on the same build, minHealth within 2 points. The strict M1088
+  // week-health assert stays strict and is never re-baselined.
+  const worldWeek1105 = W.defaultWorld();
+  const simWeek1105 = SS.createSettlementSim(worldWeek1105);
+  SS.advanceSettlement(simWeek1105, 4800);
+  const restoredWeek1105: any = SS.restoreSettlement(worldWeek1105, SS.serializeSettlement(simWeek1105), simWeek1105.abs, simWeek1105.ledger);
+  SS.advanceSettlement(restoredWeek1105, 6400);
+  const LWeek1105 = restoredWeek1105.ledger;
+  assert(LWeek1105.ticks === 11200, 'M1105: the week-after-reload run counts 11200 ticks');
+  assert(restoredWeek1105.founders.length === 7, 'M1105: the population is 7 after the week-after-reload');
+  assert(restoredWeek1105.founders.some((f: { name: string }) => f.name === 'Tamsin'), 'M1105: Tamsin is in the week-after-reload settlement');
+  console.log('M1105 week-after-reload: ticks=' + LWeek1105.ticks + ' starvedTicks=' + LWeek1105.starvedTicks + ' minHealth=' + Math.round(LWeek1105.minHealth) + ' population=' + restoredWeek1105.founders.length + ' wood=' + LWeek1105.woodChopped + '/' + LWeek1105.woodDelivered + '/' + LWeek1105.woodSpent + ' grain=' + LWeek1105.grainHarvested + '/' + LWeek1105.grainDelivered + ' meals=' + LWeek1105.mealsBaked + '/' + LWeek1105.mealsEaten + ' flour=' + LWeek1105.flourMilled + '/' + LWeek1105.flourBaked + ' jobs=' + LWeek1105.jobsCompleted.chop + '/' + LWeek1105.jobsCompleted.build + '/' + LWeek1105.jobsCompleted.deliver + '/' + LWeek1105.jobsCompleted.harvest + ' final=' + F.campWoodInRegistry(restoredWeek1105.registry) + '/' + F.campFoodInRegistry(restoredWeek1105.registry) + '/' + SS.settlementGrain(restoredWeek1105) + '/' + FC.foodChainFlourInRegistry(restoredWeek1105.registry));
+  console.log('M1105: reload-resume verified (animal-goods carriers re-claim, chain states reset, 24h M1069 identical + with-reload@800 healthy, week-after-reload run)');
+}
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
