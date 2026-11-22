@@ -16915,6 +16915,123 @@ console.log('Testing the hotbar — food bridge / use effects / consume / select
   console.log('M1109: hotbar verified (food bridge / use effects / consume / selection persistence, 24h M1069 identical)');
 }
 
+
+console.log('Testing gathering — hit health / tools + durability / hand recipes / regrowth + 24h M1069 identical (BUILD 1110, 0x2D)...');
+{
+  const G1110 = await import('../src/game/engine3d/gathering.js');
+  const PI1110 = await import('../src/game/engine3d/playerInventory.js');
+  const RR1110 = await import('../src/game/engine3d/resourceRegistry.js');
+  const GEO1110 = await import('../src/game/engine3d/geology.js');
+  // Node has no localStorage: the 1056 stand-in is installed by an early
+  // section, which a standalone chunk does not include. Install the same
+  // faithful in-memory stand-in here when none exists (a no-op in the
+  // full sim, where 1056 already installed it).
+  const g1110 = globalThis as unknown as { localStorage?: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } };
+  if (!g1110.localStorage) {
+    const store1110 = new Map<string, string>();
+    g1110.localStorage = { getItem: (k: string) => (store1110.has(k) ? store1110.get(k)! : null), setItem: (k: string, v: string) => { store1110.set(k, v); } };
+  }
+  // --- Hit health + tool damage (tools speed, never hard-gate). ---
+  assert(G1110.NODE_HEALTH.tree === 6 && G1110.NODE_HEALTH.rock === 6 && G1110.NODE_HEALTH.bush === 2 && G1110.NODE_HEALTH.herb === 1, 'M1110: node health tree/rock/bush/herb 6/6/2/1');
+  assert(G1110.damageForHit('tree', 'wooden-axe') === 3 && G1110.damageForHit('tree', 'stone-axe') === 6, 'M1110: axes deal 3/6 to trees');
+  assert(G1110.damageForHit('rock', 'stone-pickaxe') === 6 && G1110.damageForHit('deposit', 'stone-pickaxe') === 6, 'M1110: a stone pickaxe deals 6 to rock + deposit');
+  assert(G1110.damageForHit('rock', 'wooden-axe') === 1 && G1110.damageForHit('tree', null) === 1 && G1110.damageForHit('tree', 'torch') === 1, 'M1110: a wrong tool, a bare hand and a torch all deal 1');
+  assert(G1110.maxDurabilityFor('wooden-axe') === 30 && G1110.maxDurabilityFor('stone-axe') === 60 && G1110.maxDurabilityFor('torch') === null, 'M1110: durability wood 30 / stone 60 / torch never wears');
+  // --- hitGatherNode: health depletes per hit, yield only on depletion. ---
+  const W1110a = await import('../src/game/iso/isoWorld.js');
+  const tree1110: G1110.GatherNode = { kind: 'tree', id: G1110.nodeIdFor('tree', 10, 10), x: 10, y: 10 };
+  let w1110: any = W1110a.defaultWorld();
+  const h1110a = G1110.hitGatherNode(w1110, tree1110, 1, 'wooden-axe');
+  assert(h1110a.damage === 3 && h1110a.healthLeft === 3 && !h1110a.depleted && h1110a.yield.length === 0, 'M1110: one axe hit leaves a tree at 3/6 with no yield');
+  assert(h1110a.world.gatherHealth?.[tree1110.id] === 3, 'M1110: partial tree health is stored on the world');
+  const h1110b = G1110.hitGatherNode(h1110a.world, tree1110, 1, 'wooden-axe');
+  assert(h1110b.depleted && JSON.stringify(h1110b.yield) === JSON.stringify([{ kind: 'wood', qty: 2 }]), 'M1110: the second axe hit fells the tree for 2 wood');
+  assert((h1110b.world.stumps ?? []).some((t: { x: number; y: number }) => t.x === 10 && t.y === 10), 'M1110: a felled tree leaves a stump');
+  assert(h1110b.world.gatherHealth?.[tree1110.id] === undefined, 'M1110: the health record clears on depletion');
+  const h1110c = G1110.hitGatherNode(h1110b.world, tree1110, 1, 'wooden-axe');
+  assert(h1110c.damage === 0, 'M1110: a felled tree (stump standing) cannot be hit again');
+  const bush1110: G1110.GatherNode = { kind: 'bush', id: G1110.nodeIdFor('bush', 14, 14), x: 14, y: 14 };
+  const b1110 = G1110.hitGatherNode(G1110.hitGatherNode(w1110, bush1110, 1, null).world, bush1110, 1, null);
+  assert(b1110.depleted && JSON.stringify(b1110.yield) === JSON.stringify([{ kind: 'stick', qty: 1 }, { kind: 'fibre', qty: 1 }, { kind: 'berry', qty: 1 }]), 'M1110: a bush falls on the second hit for stick+fibre+berry');
+  assert(G1110.isGathered(b1110.world, 'bush', 14, 14), 'M1110: a gathered bush reads as gathered');
+  const herb1110: G1110.GatherNode = { kind: 'herb', id: G1110.nodeIdFor('herb', 15, 15), x: 15, y: 15 };
+  const hr1110 = G1110.hitGatherNode(w1110, herb1110, 1, null);
+  assert(hr1110.depleted && JSON.stringify(hr1110.yield) === JSON.stringify([{ kind: 'herb', qty: 2 }]), 'M1110: an herb falls in one hit for 2 herbs');
+  // --- Deposits mine by remaining, store no gatherHealth, never regrow. ---
+  const dep1110: G1110.GatherNode = { kind: 'deposit', id: G1110.nodeIdFor('deposit', 5, 5, 'iron'), x: 5, y: 5, mineral: 'iron', depositId: 'deposit:iron:5,5' };
+  const d1110a = G1110.hitGatherNode(w1110, dep1110, 1, 'stone-pickaxe', 40);
+  assert(d1110a.damage === 6 && d1110a.healthLeft === 34 && !d1110a.depleted && d1110a.yield.length === 0, 'M1110: a pickaxe hit leaves a 40-ore deposit at 34 with no yield');
+  assert(d1110a.world.gatherHealth?.[dep1110.id] === undefined, 'M1110: a deposit stores no gatherHealth');
+  const d1110b = G1110.hitGatherNode(d1110a.world, dep1110, 1, 'stone-pickaxe', 6);
+  assert(d1110b.depleted && JSON.stringify(d1110b.yield) === JSON.stringify([{ kind: 'iron', qty: 6 }]), 'M1110: the last 6 ore depletes the deposit for 6 iron');
+  assert(d1110b.world.gatheredAt?.[dep1110.id] === undefined, 'M1110: a depleted deposit records no regrowth');
+  // --- Regrowth: bush/herb 1 day, rock 3 days, deposit never. ---
+  const rock1110: G1110.GatherNode = { kind: 'rock', id: G1110.nodeIdFor('rock', 13, 13), x: 13, y: 13 };
+  let w1110r: any = G1110.hitGatherNode(w1110, rock1110, 1, 'stone-pickaxe').world;
+  w1110r = G1110.hitGatherNode(G1110.hitGatherNode(w1110r, bush1110, 1, null).world, bush1110, 1, null).world;
+  const rg1110a = G1110.advanceGatherRegrowth(w1110r, 2);
+  assert(rg1110a.regrown.some((x: { kind: string }) => x.kind === 'bush') && !rg1110a.regrown.some((x: { kind: string }) => x.kind === 'rock'), 'M1110: a bush regrows after 1 day, a rock does not');
+  const rg1110b = G1110.advanceGatherRegrowth(rg1110a.world, 4);
+  assert(rg1110b.regrown.some((x: { kind: string }) => x.kind === 'rock'), 'M1110: a rock regrows after 3 days');
+  assert(G1110.advanceGatherRegrowth(w1110r, 1).regrown.length === 0, 'M1110: nothing regrows on the depletion day itself');
+  // --- Stumps. ---
+  const st1110 = G1110.removeStump(h1110b.world, 10, 10);
+  assert((st1110.stumps ?? []).length === 0 && G1110.removeStump(st1110, 10, 10) === st1110, 'M1110: removeStump clears the stump, missing is a no-op');
+  // --- Hand recipes. ---
+  assert(G1110.HAND_RECIPES.length === 6 && G1110.handRecipeFor('wooden-axe')?.product === 'wooden-axe' && G1110.handRecipeFor('nope') === null, 'M1110: six hand recipes, unknown id is null');
+  assert(G1110.canCraftHand(G1110.handRecipeFor('stick')!, { wood: 1 }) && !G1110.canCraftHand(G1110.handRecipeFor('stick')!, { wood: 0 }), 'M1110: 1 wood crafts sticks, 0 does not');
+  assert(G1110.canCraftHand(G1110.handRecipeFor('wooden-axe')!, { wood: 3, stick: 2 }) && !G1110.canCraftHand(G1110.handRecipeFor('wooden-axe')!, { wood: 3, stick: 1 }), 'M1110: 3 wood + 2 sticks crafts a wooden axe');
+  assert(G1110.handRecipeFor('stick')?.productQty === 2, 'M1110: 1 wood crafts 2 sticks');
+  // --- Registry bridge + partial mineral extraction. ---
+  for (const k1110 of ['iron', 'copper', 'coal', 'silver', 'stick', 'berry', 'fibre', 'herb', 'torch']) {
+    assert(RR1110.PLAYER_RESOURCE_KEYS.includes(k1110 as never), 'M1110: ' + k1110 + ' is on the player bridge');
+  }
+  let reg1110 = RR1110.createRegistry();
+  reg1110 = RR1110.addDeposit(reg1110, GEO1110.mineralDepositEntry({ id: 'deposit:iron:5,5', mineral: 'iron', x: 5, y: 5, amount: 40, remaining: 40 }));
+  const red1110 = RR1110.reduceDeposit(reg1110, 'deposit:iron:5,5', 6);
+  assert(red1110.taken === 6 && red1110.registry.entries['deposit:iron:5,5'].qty === 34, 'M1110: reduceDeposit takes 6 ore, 34 left');
+  assert(RR1110.reduceDeposit(red1110.registry, 'deposit:iron:5,5', 99).taken === 34, 'M1110: reduceDeposit never takes more than remains');
+  // --- Tool durability: 30 hits, break, equip/unequip round-trip. ---
+  let lay1110 = PI1110.reconcileSlots({ 'wooden-axe': 1 }, PI1110.emptyLayout());
+  const si1110 = lay1110.slots.findIndex((s: { kind: string | null }) => s.kind === 'wooden-axe');
+  lay1110 = PI1110.equipItem(lay1110, si1110);
+  assert(lay1110.equipped.tool === 'wooden-axe' && lay1110.equippedDurability.tool === 30, 'M1110: an equipped wooden axe starts at 30');
+  for (let i1110 = 0; i1110 < 29; i1110++) { const r1110 = PI1110.damageTool(lay1110, 'tool'); lay1110 = r1110.layout; assert(!r1110.broken, 'M1110: hit ' + (i1110 + 1) + ' of 30 does not break the axe'); }
+  assert(lay1110.equippedDurability.tool === 1, 'M1110: one hit is left after 29 hits');
+  assert(PI1110.damageTool(lay1110, 'tool').broken, 'M1110: the 30th hit breaks the axe');
+  let tl1110 = PI1110.reconcileSlots({ torch: 1 }, PI1110.emptyLayout());
+  tl1110 = PI1110.equipItem(tl1110, tl1110.slots.findIndex((s: { kind: string | null }) => s.kind === 'torch'));
+  assert(tl1110.equipped.tool === 'torch' && !PI1110.damageTool(tl1110, 'tool').broken, 'M1110: a torch equips and never breaks');
+  let rl1110 = PI1110.reconcileSlots({ 'stone-axe': 1 }, PI1110.emptyLayout());
+  const ri1110 = rl1110.slots.findIndex((s: { kind: string | null }) => s.kind === 'stone-axe');
+  rl1110 = PI1110.equipItem(rl1110, ri1110);
+  for (let i1110 = 0; i1110 < 10; i1110++) rl1110 = PI1110.damageTool(rl1110, 'tool').layout;
+  rl1110 = PI1110.unequipItem(rl1110, 'tool');
+  assert(rl1110.slots[ri1110].durability === 50 && PI1110.equipItem(rl1110, ri1110).equippedDurability.tool === 50, 'M1110: unequip/re-equip round-trips a half-worn durability');
+  assert(PI1110.reconcileSlots({ 'wooden-axe': 1 }, { ...lay1110, equippedDurability: {} }).equippedDurability.tool === 30, 'M1110: reconcile fills a missing tool durability to full');
+  assert(PI1110.reconcileSlots({}, lay1110).equipped.tool === null, 'M1110: reconcile clears the equip slot when the kind is gone');
+  // --- 24h M1069 identical to the 1104 baseline (gathering never touches the sim). ---
+  const SS1110 = await import('../src/game/engine3d/settlementSim.js');
+  const W1110 = await import('../src/game/iso/isoWorld.js');
+  const F1110 = await import('../src/game/engine3d/founders.js');
+  const FC1110 = await import('../src/game/engine3d/foodChain.js');
+  const world24_1110: any = W1110.defaultWorld();
+  const sim24_1110: any = SS1110.createSettlementSim(world24_1110);
+  SS1110.advanceSettlement(sim24_1110, 1600);
+  const L24_1110 = sim24_1110.ledger;
+  assert(L24_1110.ticks === 1600, 'M1110: 24h ticks 1600 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.woodChopped === 54 && L24_1110.woodDelivered === 50 && L24_1110.woodSpent === 24, 'M1110: 24h wood 54/50/24 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.grainHarvested === 60 && L24_1110.grainDelivered === 58, 'M1110: 24h grain 60/58 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.mealsBaked === 28 && L24_1110.mealsEaten === 13, 'M1110: 24h meals 28/13 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.flourMilled === 58 && L24_1110.flourBaked === 56, 'M1110: 24h flour 58/56 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.jobsCompleted.chop === 27 && L24_1110.jobsCompleted.build === 4 && L24_1110.jobsCompleted.deliver === 54 && L24_1110.jobsCompleted.harvest === 30, 'M1110: 24h jobs chop/build/deliver/harvest 27/4/54/30 (M1069 identical to BUILD 1104)');
+  assert(L24_1110.hutsCompleted === 2 && L24_1110.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1110: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1110.starvedTicks === 0 && Math.round(L24_1110.minHealth) === 100, 'M1110: nobody starves in 24h');
+  assert(sim24_1110.founders.length === 7, 'M1110: the population is 7 after 24h');
+  assert(F1110.campWoodInRegistry(sim24_1110.registry) === 14 && F1110.campFoodInRegistry(sim24_1110.registry) === 15 && SS1110.settlementGrain(sim24_1110) === 0 && FC1110.foodChainFlourInRegistry(sim24_1110.registry) === 2, 'M1110: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  console.log('M1110: gathering verified (hit health / tools + durability / hand recipes / regrowth, 24h M1069 identical)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
