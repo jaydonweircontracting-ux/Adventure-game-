@@ -16876,9 +16876,13 @@ console.log('Testing the hotbar — food bridge / use effects / consume / select
   assert(hb1109.slots.slice(0, 9).length === 9 && hb1109.slots[0].kind === 'food' && hb1109.slots[1].kind === 'wood' && hb1109.slots[2].kind === 'stone', 'M1109: the hotbar reads slots 0-8 of the same 27-slot grid');
   // --- 24h M1069 IDENTICAL to the BUILD 1104 baseline (the hotbar
   // never touches the settlement sim). ---
-  const world24_1109: any = W.defaultWorld();
-  const sim24_1109: any = SS.createSettlementSim(world24_1109);
-  SS.advanceSettlement(sim24_1109, 1600);
+  const SS1109 = await import('../src/game/engine3d/settlementSim.js');
+  const W1109 = await import('../src/game/iso/isoWorld.js');
+  const F1109 = await import('../src/game/engine3d/founders.js');
+  const FC1109 = await import('../src/game/engine3d/foodChain.js');
+  const world24_1109: any = W1109.defaultWorld();
+  const sim24_1109: any = SS1109.createSettlementSim(world24_1109);
+  SS1109.advanceSettlement(sim24_1109, 1600);
   const L24_1109 = sim24_1109.ledger;
   assert(L24_1109.ticks === 1600, 'M1109: 24h ticks 1600 (M1069 identical to BUILD 1104)');
   assert(L24_1109.woodChopped === 54 && L24_1109.woodDelivered === 50 && L24_1109.woodSpent === 24, 'M1109: 24h wood 54/50/24 (M1069 identical to BUILD 1104)');
@@ -16889,7 +16893,7 @@ console.log('Testing the hotbar — food bridge / use effects / consume / select
   assert(L24_1109.hutsCompleted === 2 && L24_1109.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1109: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
   assert(L24_1109.starvedTicks === 0 && Math.round(L24_1109.minHealth) === 100, 'M1109: nobody starves in 24h');
   assert(sim24_1109.founders.length === 7, 'M1109: the population is 7 after 24h');
-  assert(F.campWoodInRegistry(sim24_1109.registry) === 14 && F.campFoodInRegistry(sim24_1109.registry) === 15 && SS.settlementGrain(sim24_1109) === 0 && FC.foodChainFlourInRegistry(sim24_1109.registry) === 2, 'M1109: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  assert(F1109.campWoodInRegistry(sim24_1109.registry) === 14 && F1109.campFoodInRegistry(sim24_1109.registry) === 15 && SS1109.settlementGrain(sim24_1109) === 0 && FC1109.foodChainFlourInRegistry(sim24_1109.registry) === 2, 'M1109: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
   console.log('M1109: hotbar verified (food bridge / use effects / consume / selection persistence, 24h M1069 identical)');
 }
 
