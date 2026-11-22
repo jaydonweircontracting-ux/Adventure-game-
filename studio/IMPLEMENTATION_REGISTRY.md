@@ -52,11 +52,53 @@
 | G24 | NPC construction (first hut) | COMPLETE AND VERIFIED | BUILD 1058 (commit a4b3adb3): founders spend the stockpile (12 wood = 6 work steps × 2) building a real hut at (128,120) through the player's validatePlacement + addPlacement path — collision, door (128,121), interior, founders sleep inside; save version 2; 132 standalone asserts, sim +28 (384,803 passed / 51 failed), phone probe 0 page errors, hut built in 178s observed |
 | G25 | Utility scorer (NPC decision-making) | COMPLETE AND VERIFIED | BUILD 1059 (commit 46046733): new pure module utility.ts — founders choose by scored utility (sleep/eat/rest/work/build, 0..1, highest wins, deterministic ties sleep > eat > build > work > rest); old chooseFounderActivity deleted; E reports the WHY with scores; 51 standalone asserts, sim +39 (384,842 passed / 51 failed), phone probe 0 page errors, all three divergences observed |
 | G26 | NPC memory + relationships | COMPLETE AND VERIFIED | BUILD 1060 (commit 392ed83f): new pure module memory.ts — founders keep memories (capped 12, forgotten after 30 days) and pairwise affinity (0–100, start neutral 50; build +4, rest +3, eat +2, sleep +1; decays 1/day toward 50); the scorer's rest choice carries a companionship premium and the rest destination is beside the closest founder; E reports the relationship with real counts; save version 3; 43 standalone asserts, sim +33 (384,875 passed / 51 failed), phone probe 0 page errors, togetherness observed |
-| G27 | Population growth | NOT IMPLEMENTED | Paused by the user 2026-11-15 ~14:33 PST; implementation done (newcomer Tamsin, save v3→v4, 46 asserts passed), stashed as stash@{0}; resumes as BUILD 1062 only on the user's word. New settlers arrive/join (or are born) once the founders have a hut, food, and relationships; the audit's dependency order is construction → population growth; needs LOD + spatial partitioning before the population passes ~50 |
+| G27 | Population growth | COMPLETE AND VERIFIED | LANDED via the forest-to-resident chain + Tamsin: BUILD 1066 (24c93ec0) newcomer pool (Bram/Fern/Silas/Tessa/Orin/Hazel) + spawnResident from (199,120); BUILD 1103 (c09b1997) Tamsin arrival gates (hut done + food ≥10 + avg affinity ≥55 + day ≥2), entry (199,120), camp bed (124,119), save v12→v13; 50 asserts, week 23/99. The 2026-11-15 stashed implementation was superseded by 0x26 (its migration rebased to v13). Families proper (children grow up, take professions) is a follow-up, NOT built |
 | G28 | Forests — real tree clusters | COMPLETE AND VERIFIED | BUILD 1061 (commit f258cde8): forest rule (groundNoise(x,y,24) > 0.55 marks forest, ~28% of tiles; trees 10× denser inside, 6% vs 0.6% meadow, same scatter hash so every old tree stays a tree); fresh world 226 → 830 trees; migration (migrateTreeDensity) adds 576 trees to a genuine old save (226 → 802, treeGen 2, idempotent, chopped trees never resurrect); ghost-town regrowth +87 (nearest tree to spawn 19 → 4); minimap paints forest #2a5a2a; E-key + founder chops record removedTrees; 1637 standalone asserts (parent re-ran), sim +298 (385,173 passed / 51 failed, pristine 384,875/51, zero new failures), phone probe 0 page errors, chop +2 wood persists across reload, collision blocks, trees visible day + night at camp/spawn/forest edge. Frame note: p50 100→117ms; steady max 367–417ms in 3 of 4 after-runs — single chop-rebuild frames, not steady cost (follow-up, not fixed) |
+| G29 | Living-world wiring (coordinator) | COMPLETE AND VERIFIED | BUILD 1062 (94fffd8b): livingWorld.ts adapter — settlement systems run through one coordinator; 817 asserts (parent re-ran), tsc 0, sim 385173/51 both, 0 new failures, deploy run 43779882129 |
+| G30 | Stable entity identity (F-1) | COMPLETE AND VERIFIED | BUILD 1063 (6f232bc6): entityIds.ts — every founder, tree, building, animal and deposit gets a stable id surviving save/load; save v3→v4; 85 asserts, sim 385192/51 (+19 new M1063 asserts), 0 new failures, deploy run 43782184222 |
+| G31 | Unified resource registry (R-1) | COMPLETE AND VERIFIED | BUILD 1064 (9db7b6f8): resourceRegistry.ts — one authoritative record for wood, stone, gold, grain; every transfer conserves; 93 asserts, 0 new failures, deploy run 43784484368 |
+| G32 | Autonomous job scheduler (J-1) | COMPLETE AND VERIFIED | BUILD 1065 (1067d4cc): jobs.ts — NPCs discover, claim and complete jobs through the registry (session-only board); 97 asserts, sim 385248/51, 0 new failures, deploy run 43788102349 |
+| G33 | Forest-to-resident chain | COMPLETE AND VERIFIED | BUILD 1066 (24c93ec0): second hut, beds, newcomer pool + spawnResident from (199,120); save v4→v5; 96 asserts, sim 385276/51, 0 new failures |
+| G34 | Food and survival | COMPLETE AND VERIFIED | BUILD 1067 (9671c9bf): food.ts + farm.ts — farming, milling, health; save v5→v6; asserts all passed (bundle prints no count), sim 385311/51, 0 new failures |
+| G35 | World Simulation Control Center | COMPLETE AND VERIFIED | BUILD 1068 (f5643dcd): Control Center — live population, resources, shortages, employment, food, construction, trade, environment, sim errors + performance, pause/1x/5x/10x/50x/100x (session-only); 75 asserts, sim 385333/51, 0 new failures |
+| G36 | Food-loop fix (24h test green) | COMPLETE AND VERIFIED | BUILD 1069 (87a9e454): a finished settlement farms instead of starving; camp grain survives save/reload; save v6→v7; the 24-simulated-hour test (0x09) is green on this tree; 19 asserts, sim 385379/51, 0 new failures |
+| G37 | Engine3DWorldView extraction (0x0D) | COMPLETE AND VERIFIED | BUILDS 1070–1078 (f6a72f02, ae87ea7d, 9d0b9666, 5e1925fd, 40fb7a5f, b51dcd71, 872ac90d, 60e06c52, b242baee): view 6803→3287 lines (−52%) across 8 areas, behaviour-preserving, zero regressions, M1069 24h identical throughout; Build panel JSX stayed in the view (separate item, 1107) |
+| G38 | Delivery-strand fix | COMPLETE AND VERIFIED | BUILD 1079 (8ad2ca72): delivery executes by workState, not activity — a founder flipping to rest/eat while carrying wood still delivers; M1069 deliver jobs 29→32; 28 asserts, 0 new failures |
+| G39 | Chop-rebuild hitch fix | COMPLETE AND VERIFIED | BUILD 1080 (66fa66bf): maxStep 419.9→60.6ms, 1→20 frames; M1069 identical to the 1079 baseline; 20 asserts, 0 new failures |
+| G40 | Geology + mineral deposits | COMPLETE AND VERIFIED | BUILD 1081 (ab93865d): geology.ts — 18 deposits, 6 minerals; Examine names mineral + remaining; persists across reload; 362 asserts, sim 385797/51, 0 new failures; M1069 identical to the 1079 baseline |
+| G41 | Rivers + flowing water (v1) | COMPLETE AND VERIFIED | BUILD 1082 (d760b98d): rivers.ts — 2 main rivers + tributaries, hills-to-coast, flow chevrons + E Examine, bridge-crossable, routed around camp/huts/farm/deposits; 3978 asserts, sim 389336/51, 0 new failures; M1069 identical to the 1079 baseline |
+| G42 | Landforms + soil | COMPLETE AND VERIFIED | BUILD 1083 (80f76c35): landforms.ts — mountain band 3,686 tiles, 1,240 foothill, 2,736 valley, 121 cliff tiles blocking movement; soil rich 1.5/neutral 1.0/poor 0.6; 1635 asserts, sim 421014/51, 0 new failures; M1069 identical to the 1079 baseline |
+| G43 | Climate + seasons | COMPLETE AND VERIFIED | BUILD 1084 (b04389cd): climate.ts — four seasons of 90 days; temperature + rainfall as pure functions of (season, tile); farm ready times and regrowth vary by season; 59 asserts, sim 421042/51, 0 new failures; M1069 identical to the 1079 baseline |
+| G44 | Regrowth + ecosystems | COMPLETE AND VERIFIED | BUILD 1085 (e38ddd36): ecosystems.ts — saplings regrow over days by season; animal populations persist (fractional); Living World Phase 1 COMPLETE; 84 asserts, sim 421088/51, 0 new failures; M1069 identical to the 1079 baseline |
+| G45 | Stone gathering + quarry loop | COMPLETE AND VERIFIED | BUILD 1086 (fc6dd840): quarry.ts — a founder walks to a rock formation, mines on arrival, carries stone to the stockpile; stockpile is now multi-resource (wood + stone); save v7→v8; 62 asserts, sim 421160/51, 0 new failures |
+| G46 | Storage + transport | COMPLETE AND VERIFIED | BUILD 1087 (048426fb): storehouse.ts — a real storehouse (124,125) built through the construction path; founders haul gather→storehouse→construction; save v8→v9; ready-site fix; 127 asserts, sim 421306/51, 0 new failures |
+| G47 | Roads / wells / bridges | COMPLETE AND VERIFIED | BUILD 1088 (6f4cd71d): paths.ts — dirt paths where founders walk, a functional well at (121,120), builder-placed bridges where a path meets a river; save v9→v10; bridge proven end to end but never triggers naturally in a week (latent); 113 asserts, sim 421428/54 (3 new: 2 bridge-latent, 1 week-health pre-existing-improved) |
+| G48 | Mines / quarries / lumber | COMPLETE AND VERIFIED | BUILD 1089 (77407c7c): mines.ts — a miner works an iron deposit, a quarry crew gains stone faster, a lumber forest thins then regrows; save v10→v11; RIVER_MINE_CORRIDOR routes river:1 around the west route to the near iron (84,111); 43 asserts, sim 421542/54, 0 new failures |
+| G49 | Farms that feed | COMPLETE AND VERIFIED | BUILD 1090 (856f4395): granary.ts — NPC-planted farms on adapter-rated soil; harvest goes to a granary; meals draw from the granary; no more magic 30; save v11→v12; 74 asserts, sim 421602/54, 0 new failures. Week-health NOT fixed by this build (worsened 7,790→11,315 starved ticks — the missing magic 30; fixed by 1091) |
+| G50 | Week-health fix | COMPLETE AND VERIFIED | BUILD 1091 (151f8aff + rework 38684d00): week starvedTicks 11,315→6, minHealth 0→100 (strict M1088 assert restored; M1090 pin re-baselined to 6 with an honest residual); founders-save whitelist fix preserves trip states on restore; 10 asserts, sim 421605/52 (2 M1088 bridge failures FIXED) |
+| G51 | Building catalogue as data | COMPLETE AND VERIFIED | BUILD 1092 (ec4b0083): buildingCatalogue.ts — 93 buildings in 6 groups (A–F), dependency graph acyclic; Build menu lists all 93, 18 placeable, 75 locked; 158 asserts, sim 421763/52, 0 new failures; M1069 identical to the 1091 baseline; week 6/100 (accepted residual) |
+| G52 | Construction stages | COMPLETE AND VERIFIED | BUILD 1093 (8662abab): stagePlanFor — foundation → frame → finished on one shared staged path; half-built buildings visibly unfinished and unusable; 66 asserts, sim 421829/52, 0 new failures; M1069 identical to the 1092 baseline |
+| G53 | Food chain (mill → flour → bakery) | COMPLETE AND VERIFIED | BUILD 1094 (2e18773d): foodChain.ts — mill (124,129) grinds grain into flour, bakery (129,125) bakes flour into meals; flour is a real registry resource; flour cap 100; 64 asserts, sim 421923/52, 0 new failures; M1069 MOVED to the 1094 baseline; week 6→63/98 (accepted residual) |
+| G54 | Metal + timber chain | COMPLETE AND VERIFIED | BUILD 1095 (310e6c4f): metalChain.ts — smelter (124,112), blacksmith (112,118), sawmill (118,124), carpenter (130,112), workshop (120,132); tools are a real input (workshop needs 2 tools, stalls visibly until the smiths deliver); 150 asserts, sim 422109/52, 0 new failures; M1069 identical to the 1094 baseline; week 63→166/96 (accepted residual) |
+| G55 | Housing + settlement buildings | COMPLETE AND VERIFIED | BUILD 1096 (4812c802 + rework 0382e664): housing.ts — worker housing (3rd hut, day 3) takes capacity to 10; inn (122,107, day 5); rework restores the strict M1088 week-health assert; 34 asserts, sim 422177/52, 0 new failures; week 166→569/96 (accepted residual — second baker is the fix, 1104) |
+| G56 | Production interiors | COMPLETE AND VERIFIED | BUILD 1097 (13e2e938): productionInteriors.ts — 7 production buildings enterable; 188 asserts, 0 new failures; M1069 identical to the 1094 baseline |
+| G57 | Professions | COMPLETE AND VERIFIED | BUILD 1098 (9ccb5367): professions.ts — 15 professions as data; PROFESSION_TERM_BONUS 0.03; builderTaken gate; 83 asserts, sim 422378/52, 0 new failures; week 569→1419/89 (one baker cannot keep up with 7 mouths — second baker is the fix, 1104) |
+| G58 | Rivers read as water + red-dots investigation | PARTIALLY IMPLEMENTED | BUILD 1099 (8ceecbe9): rivers read as water — sandy banks, deeper colour, minimap band; 24 asserts, sim 422401/52, 0 new failures. Red dots NOT reproduced in 5 probes / 130+ shots in a fresh world — identification stays OPEN (needs the user's save or day/time + building) |
+| G59 | Construction intelligence | COMPLETE AND VERIFIED | BUILD 1100 (06dd90b3): sitePlan.ts — the Mayor scores what the village needs next and the Architect scores where to put it; plan-first claim; 86 asserts, sim 422429/52, 0 new failures; M1069 identical to the 1094 baseline |
+| G60 | Settlement founding | COMPLETE AND VERIFIED | BUILD 1101 (35ba161e): founding.ts — a fresh session-only party (Corin, Mabel, Joss) surveys the wilds and raises a shelter, stockpile and farm within the first day at site (191,128), score 0.66; stamped hut + farm persist; 66 asserts, sim 422453/52, 0 new failures; M1069 identical to the 1094 baseline |
+| G61 | Animals (hunting / fishing / shepherding) | COMPLETE AND VERIFIED | BUILD 1102 (8c4de97b): animalHusbandry.ts — pen system; hunt/fish/shepherd job kinds; eat-term fix (eat scorer counts meals + meat + fish); 582 asserts, sim 422489/52, 0 new failures; week 1419→155/96 |
+| G62 | Tamsin arrival | COMPLETE AND VERIFIED | BUILD 1103 (c09b1997 + follow-up 64768958): population.ts — arrival gates hut done + food ≥10 + avg affinity ≥55 + day ≥2; entry (199,120), camp bed (124,119); save v12→v13; 50 asserts, 0 new failures; week 155→23/99. Completes G27 (the stashed 2026-11-15 implementation was superseded) |
+| G63 | Second baker + bake capacity | COMPLETE AND VERIFIED | BUILD 1104 (c5c0b627 + fix-forward 81613aab): BAKE_SLOTS=2, baker profession owns bake; corridor-deadlock fix (stepFounderMove detour bubble); 38 asserts, 0 new failures; M1069 is the new 1104 baseline; week FINAL 0 starved ticks / minHealth 100 (strict M1088 passing for real) |
+| G64 | Week-after-reload divergence fix | COMPLETE AND VERIFIED | BUILD 1105 (31fab2dd): two restore gaps closed (sim-tick chain-state stale-job reset mirror; animal-goods deliver re-claim guard in both ticks); 10 asserts, 0 new failures; M1069 identical to the 1104 baseline |
+| G65 | Player-placed windmill mills | COMPLETE AND VERIFIED | BUILD 1106 (b2fe71f8): placed windmills grind passively (2 grain → 2 flour/hour/windmill, cap 100, catch-up cap 24); 28 asserts, 0 new failures; M1069 identical to the 1104 baseline. Note: a windmill placed on the exact MILL_RECT completes the founder mill for free (pre-existing, not ordered) |
+| G66 | Build panel JSX extraction | COMPLETE AND VERIFIED | BUILD 1107 (e6778eae): buildPanel3d.tsx (74 props); Engine3DWorldView.tsx 3584→3128 lines; 33 asserts, 0 new failures; M1069 identical to the 1104 baseline |
+| G67 | Player inventory engine | COMPLETE AND VERIFIED | BUILD 1108 (586bb975 + test 5dbfbcab, b07452d5): playerInventory.ts (27-slot grid, stacks 64, gear 1) + inventoryPanel3d.tsx (pointer-event drag/split/swap/equip); 97 asserts, 0 new failures; M1069 identical to the 1104 baseline |
+| G68 | Hotbar UI | COMPLETE AND VERIFIED | BUILD 1109 (79f3750e + test b61985d1): hotbar3d.tsx — slots 0–8, tap or 1–9 select, meal use +25 health cap 100; food bridge fix; 52 asserts, 0 new failures; M1069 identical to the 1104 baseline. Caveat: no meal obtainable in live play yet (no granary take) |
+| G69 | Gathering engine | COMPLETE AND VERIFIED | BUILD 1110 (e11221e8 + test 28a3e904): gathering.ts — resource health, tool damage hand 1/wooden 3/stone 6, durability wood 30/stone 60, stumps, regrowth, hand-crafting, deposits mine by remaining, equipped torch glows at night; 149 asserts, 0 new failures; M1069 identical to the 1104 baseline |
+| G70 | Crafting stations + recipes | COMPLETE AND VERIFIED | BUILD 1111 (7f365b03): five placeable stations (workbench, blacksmith, furnace, advanced forge, apothecary), 17 new recipes, discovery unlocks; forged tiers copper 4/45, iron 9/120, steel 12/180; healing potions (+50) drink from the hotbar; crafting program (0x2B–0x2E) COMPLETE; 339 asserts, 0 new failures; M1069 identical to the 1104 baseline. Honest limits: no skill XP; swords/bows equip but have no combat effect; smelting is instant; stations free to place |
 | D1 | Live development dashboard (artifact) | COMPLETE AND VERIFIED | Artifact v2 (2026-11-12) fetches studio/dashboard/dashboard-data.json live on every load; fallback embedded snapshot labeled 'Cached snapshot'; builder jsdom harness ~90 assertions/mode passed; parent confirmed v2 live + data URL HTTP 200 |
-| D2 | §54 dashboard data in repo (studio/dashboard/) | COMPLETE AND VERIFIED | Files in repo studio/dashboard/ since the studio/ move (4a070435); dashboard-data.json current through 2026-11-12 (1052 verified, repair verified, Stages 2-6 done); artifact reads them live; snapshots 2026-11-07 + 2026-11-12 |
-| D3 | Build ledger / verification history | PARTIALLY IMPLEMENTED | 110 verify*/ dirs, 1016–1029 evidenced; 1016–1025 carry midnight-placeholder dates, no run IDs |
+| D2 | §54 dashboard data in repo (studio/dashboard/) | COMPLETE AND VERIFIED | Files in repo studio/dashboard/ since the studio/ move (4a070435); dashboard-data.json current through 2026-11-22 (buildHistory 1016–1111, lastVerified 1111/7f365b03, snapshots 2026-11-07 + 2026-11-12 + 2026-11-22); artifact reads them live; D3/D4 gaps remain (see below) |
+| D3 | Build ledger / verification history | PARTIALLY IMPLEMENTED | verify*/ dirs, 1016–1111 evidenced (asserts bundles + probe logs + sim logs per build); 1016–1025 carry midnight-placeholder dates, no run IDs; 1062–1111 dashboard entries carry verifiedAt only where a served version.json timestamp is recorded in the dated logs (1072–1075, 1111) — the rest are null, not placeholders |
 | D4 | Quality gates L1–L4 | PARTIALLY IMPLEMENTED | Real gate records exist only for 1030; 1016–1029 Level-4 claims are backfilled, unevidenced |
 | D5 | Autonomous dev engine (§49/§50 RUN, backlog, Teams A–F) | PARTIALLY IMPLEMENTED | Oct-era scripts exist but stale (last session 2026-10-12); live queue lives only in dashboard JSON + MEMORY.md |
 | D6 | Code evolution machine ACEE (§56) | PARTIALLY IMPLEMENTED | Docs in studio/acee/ (10 files, 116,568 B) + Development Genome index in studio/genome/ (scanner + query + genome.json, 440 files / 4,810 symbols / 782 edges, answers queries); Phases 2–7 not started; the machine itself is not built in code |
@@ -372,6 +414,226 @@
 - **(5) Responsible files/modules:** `src/game/engine3d/memory.ts`, `src/game/engine3d/founders.ts`, `src/game/engine3d/utility.ts`, `Engine3DWorldView.tsx`.
 - **(6) How it will be tested:** Phone probe must show relationships changing behaviour observably — founders who built together rest near each other rather than scattered, and E reports the relationship (who a founder trusts and why); memories + relationships survive reload.
 - **(7) Completion:** NPC memory + relationships verified 2026-11-15 (BUILD 1060): 43 standalone asserts ALL PASS (parent re-ran directly from source), sim +33 (384,875 passed / 51 failed — parent re-ran with totals printed; pristine 384,842/51 from the full log — the pristine COUNT bundle run crashed on a missing worktree asset, `public/mobs/bat_sheet.png`; the baseline stands on the completed full log), phone probe 0 page errors (27 findings, steady max frame 167ms p50 100ms). Observed togetherness: at boot all affinity 50, memories empty; first build step → Greta↔Perrin 54 with build memories (Marlow wasn't in the working pair — correct, only the pair that shared the work bonds); shared meal → eat memories for all three; rest → Marlow (124,119), Greta (123,120), Perrin (124,120) — 3 distinct tiles, max pairwise distance 1, clustered beside each other; sleep → sleep memories for all three, affinity up to 59; reload → construction 1/6, affinity + memories byte-identical. Two real catches on the way: a missed 1058 assert (`founders save is v2`) failed the first full run (52 failures) — fixed to v3 and re-run (51); and a decay-arithmetic error in an assert (54 after 5 days decays to 50, not 49 — the clamp — the code was right, the assert was wrong). The sim only prints its first 20 failures, so the +1 was invisible until the cap was lifted. Served version.json 1060 @ 2026-11-15T22:17:16.829Z, deploy run 43768325984 success, `__AG_BUILD="1060"`. Screenshot framing note: rest-together.png framed the player, not the founders, and e-report.png truncates the E line in the HUD — the positions and the full E text are in the probe log.
+
+## G27 — Population growth — COMPLETE AND VERIFIED
+- **Purpose:** New settlers arrive/join once the founders have a hut, food, and relationships (audit dependency order: construction → population growth).
+- **Implementation:** The 2026-11-15 stashed implementation (Tamsin, save v3→v4, 46 asserts) was superseded. What landed: BUILD 1066 (24c93ec0) — newcomer pool (Bram/Fern/Silas/Tessa/Orin/Hazel) + `spawnResident` from (199,120); BUILD 1103 (c09b1997) — `population.ts` arrival gates (hut done + food ≥10 + avg affinity ≥55 + day ≥2), Tamsin enters at (199,120), camp bed (124,119), founders save v12→v13.
+- **Completion:** BUILD 1103 parent-verified live (served markers + probe, 0 page errors): 50 asserts, 0 new sim failures, week 155→23/99. Families proper (children grow up, take professions) is a follow-up, NOT built. Needs LOD + spatial partitioning before the population passes ~50 (unchanged from the audit).
+
+## G28 — Forests — real tree clusters — COMPLETE AND VERIFIED
+- **Purpose:** Real tree clusters instead of uniform scatter, so wood supply and the forest edge are geography the settlement must work with.
+- **Implementation:** BUILD 1061 (f258cde8) — forest rule (`groundNoise(x,y,24) > 0.55` marks forest, ~28% of tiles; trees 10× denser inside, 6% vs 0.6% meadow, same scatter hash so every old tree stays a tree); fresh world 226 → 830 trees; migration adds 576 trees to a genuine old save (226 → 802, treeGen 2, idempotent, chopped trees never resurrect); minimap paints forest #2a5a2a; E-key + founder chops record `removedTrees`.
+- **Completion:** Parent-verified live: 1637 standalone asserts (parent re-ran), sim +298 (385,173 passed / 51 failed, pristine 384,875/51, zero new failures), phone probe 0 page errors, chop +2 wood persists across reload, collision blocks, trees visible day + night. Frame note: p50 100→117ms; steady max 367–417ms in 3 of 4 after-runs — single chop-rebuild frames, not steady cost (follow-up, not fixed). See the summary-table row for the full evidence line.
+
+## G29 — Living-world wiring (coordinator) — COMPLETE AND VERIFIED
+- **Purpose:** One coordinator the settlement systems run through, instead of disconnected modules.
+- **Implementation:** BUILD 1062 (94fffd8b, 0x02) — `livingWorld.ts` adapter; events recorded in the camp ledger only (they do not yet touch the real stockpile — that is R-1, G31).
+- **Completion:** Parent-verified live: 817 asserts (parent re-ran directly), tsc exit 0, sim fail files IDENTICAL, totals 385173/51 both (zero new failures), probe screenshots viewed, deploy run 43779882129 success.
+
+## G30 — Stable entity identity (F-1) — COMPLETE AND VERIFIED
+- **Purpose:** Every NPC, tree, building, animal and resource deposit gets a stable identity (foundation 1 of 3, §62.3).
+- **Implementation:** BUILD 1063 (6f232bc6, 0x03) — `entityIds.ts`; save v3→v4.
+- **Completion:** Parent-verified live: 85 asserts, tsc 0, sim pristine 385173/51 vs modified 385192/51 (+19 = exactly the 19 new M1063 sim asserts, zero new failures), probe PASS, deploy run 43782184222 success.
+
+## G31 — Unified resource registry (R-1) — COMPLETE AND VERIFIED
+- **Purpose:** One authoritative resource system instead of four disconnected inventories (foundation 2 of 3, §62.3).
+- **Implementation:** BUILD 1064 (9db7b6f8, 0x04) — `resourceRegistry.ts`; every transfer conserves.
+- **Completion:** Parent-verified live: 93 asserts (parent rebuilt the bundle from the .mts — the worker's bundle file was absent), tsc 0, sim fail files IDENTICAL, 0 new failures, deploy run 43784484368 success.
+
+## G32 — Autonomous job scheduler (J-1) — COMPLETE AND VERIFIED
+- **Purpose:** NPCs discover, claim, execute and complete jobs (foundation 3 of 3, §62.3).
+- **Implementation:** BUILD 1065 (1067d4cc, 0x05) — `jobs.ts` (session-only board).
+- **Completion:** Parent-verified live: 97 asserts (parent re-ran directly), tsc 0, sim 385,248/51 vs pristine 385,208/51, 0 new failures, served version.json 1065 + `__AG_BUILD="1065"`, deploy run 43788102349 success.
+
+## G33 — Forest-to-resident chain — COMPLETE AND VERIFIED
+- **Purpose:** The complete chain from raw resources through autonomous construction to population arrival (logistics + construction + new residents).
+- **Implementation:** BUILD 1066 (24c93ec0, 0x06) — second hut, beds, newcomer pool + `spawnResident` from (199,120); save v4→v5.
+- **Completion:** Parent-verified live: 96 asserts, sim 385,276/51, 0 new failures, probe PASS.
+
+## G34 — Food and survival — COMPLETE AND VERIFIED
+- **Purpose:** Farming, milling, health — the settlement feeds itself instead of running on magic food.
+- **Implementation:** BUILD 1067 (9671c9bf, 0x07) — `food.ts` + `farm.ts`; save v5→v6.
+- **Completion:** Parent-verified live: asserts all passed (bundle prints no count; parent re-ran directly), tsc 0, sim 385,311/51 (+35 = the M1067 section), 0 new failures, served version.json 1067 + `__AG_BUILD="1067"`.
+
+## G35 — World Simulation Control Center — COMPLETE AND VERIFIED
+- **Purpose:** Live visibility + time control over the simulation (population, resources, shortages, employment, food, construction, trade, environment, sim errors, performance).
+- **Implementation:** BUILD 1068 (f5643dcd, 0x08) — `controlCenter.ts` + `ControlCenterPanel.tsx`; pause/1x/5x/10x/50x/100x, session-only.
+- **Completion:** Parent-verified live: 75 asserts, sim 385,333/51, 0 new failures, probe PASS.
+
+## G36 — Food-loop fix (24h test green) — COMPLETE AND VERIFIED
+- **Purpose:** A finished settlement farms instead of starving; the 24-simulated-hour test (0x09) must pass.
+- **Implementation:** BUILD 1069 (87a9e454, 0x0F) — food drives work; camp grain survives save/reload; save v6→v7.
+- **Completion:** Parent-verified live: 19 asserts, sim 385,379/51, 0 new failures, probe PASS, 24h test green.
+
+## G37 — Engine3DWorldView extraction (0x0D) — COMPLETE AND VERIFIED
+- **Purpose:** Shrink the ~6,800-line view into modules without changing behaviour.
+- **Implementation:** BUILDS 1070–1078 — area 1 world simulation (`worldSimulation3d.ts`, f6a72f02), area 2 terrain geometry (`worldRender3d.ts`, ae87ea7d) + renderer/camera (`worldRenderer3d.ts`, 9d0b9666), area 3 NPC simulation (`npcSimulation3d.ts`, 5e1925fd), area 4 player controls (`playerControls3d.ts`, 40fb7a5f), area 5 inventory store (`inventoryCrafting3d.ts`, b51dcd71), area 6 building interactions (`buildingInteractions3d.ts`, 872ac90d), area 7 HUD/interface (`hudInterface3d.tsx`, 60e06c52), area 8 world synchronization (`worldSync3d.ts`, b242baee). The Build panel JSX stayed in the view (separate item, G66).
+- **Completion:** Parent-verified live per area (served markers 1072 @ 2026-11-16T05:58:28Z, 1073 @ 06:16:13Z, 1074 @ 06:44:27Z, 1075 @ 06:57:29Z); view 6803→3287 lines (−52%), zero regressions across all 8 builds, M1069 24h identical throughout.
+
+## G38 — Delivery-strand fix — COMPLETE AND VERIFIED
+- **Purpose:** Founders no longer get stuck carrying wood when their activity flips mid-delivery.
+- **Implementation:** BUILD 1079 (8ad2ca72, 0x0E) — delivery executes by workState, not activity.
+- **Completion:** Parent-verified live: 28 asserts, 0 new failures, M1069 deliver jobs 29→32, probe PASS.
+
+## G39 — Chop-rebuild hitch fix — COMPLETE AND VERIFIED
+- **Purpose:** Fix the frame hitch when a chop triggers a world rebuild.
+- **Implementation:** BUILD 1080 (66fa66bf, 0x0B) — rebuild path fix (urgent-rebuild flag).
+- **Completion:** Parent-verified live: 20 asserts, 0 new failures, maxStep 419.9→60.6ms, 1→20 frames, M1069 identical to the 1079 baseline.
+
+## G40 — Geology + mineral deposits — COMPLETE AND VERIFIED
+- **Purpose:** The world holds real mineral deposits to find, examine, and mine (Living World Phase 1 step 1.2).
+- **Implementation:** BUILD 1081 (ab93865d, 0x10) — `geology.ts`, 18 deposits, 6 minerals; `depositIdFor` lives here.
+- **Completion:** Parent-verified live: 362 asserts, sim 385,797/51, 0 new failures, probe PASS, M1069 identical to the 1079 baseline.
+
+## G41 — Rivers + flowing water (v1) — COMPLETE AND VERIFIED
+- **Purpose:** Rivers as real water features (Living World Phase 1 step 1.3). Superseded as generation by the v2 rewrite (BUILD 1112, in progress); v1's routing guarantees (camp/huts/farm/deposits) carry into v2.
+- **Implementation:** BUILD 1082 (d760b98d, 0x11) — `rivers.ts`, 2 main rivers + tributaries, hills-to-coast, flow chevrons + E Examine, bridge-crossable, camp exclusion 25, hut margin 2, RIVER_MINE_CORRIDOR.
+- **Completion:** Parent-verified live: 3978 asserts, sim 389,336/51, 0 new failures, probe PASS, M1069 identical to the 1079 baseline.
+
+## G42 — Landforms + soil — COMPLETE AND VERIFIED
+- **Purpose:** Elevation and soil quality shape where things grow and where movement is blocked (Phase 1 step 1.4).
+- **Implementation:** BUILD 1083 (80f76c35, 0x12) — `landforms.ts`: mountain band 3,686 tiles, 1,240 foothill, 2,736 valley, 121 cliff tiles blocking movement; soil rich 1.5/neutral 1.0/poor 0.6 with farm ready in 120/180/300 game-minutes.
+- **Completion:** Parent-verified live: 1635 asserts, sim 421,014/51, 0 new failures, probe PASS, M1069 identical to the 1079 baseline.
+
+## G43 — Climate + seasons — COMPLETE AND VERIFIED
+- **Purpose:** Four seasons that change temperature, rainfall, farm timing and regrowth (Phase 1 step 1.5).
+- **Implementation:** BUILD 1084 (b04389cd, 0x13) — `climate.ts`, 4 seasons × 90 days; farm ready spring 180/summer 144/autumn 225/winter 360 game-minutes.
+- **Completion:** Parent-verified live: 59 asserts, sim 421,042/51, 0 new failures, probe PASS, M1069 identical to the 1079 baseline. Also fixes a pre-existing 1083 farmer harvest-factor bug.
+
+## G44 — Regrowth + ecosystems — COMPLETE AND VERIFIED
+- **Purpose:** The world regrows and animal populations persist (Phase 1 step 1.6 — Phase 1 COMPLETE with this build).
+- **Implementation:** BUILD 1085 (e38ddd36, 0x14) — `ecosystems.ts`: saplings regrow over days, rate by season (spring 1.0/summer 1.25/autumn 0.8/winter 0.5), mature at 7 points; animal populations ported from the 2.5D model.
+- **Completion:** Parent-verified live: 84 asserts, sim 421,088/51, 0 new failures, probe PASS, M1069 identical to the 1079 baseline.
+
+## G45 — Stone gathering + quarry loop — COMPLETE AND VERIFIED
+- **Purpose:** Stone as a gathered resource with a real quarry loop (Phase 2 step 2.1).
+- **Implementation:** BUILD 1086 (fc6dd840, 0x15) — `quarry.ts`; stockpile is now multi-resource (wood + stone); save v7→v8.
+- **Completion:** Parent-verified live: 62 asserts, sim 421,160/51, 0 new failures, probe PASS. The commit-message M1069 numbers were WRONG (earlier diagnostic run, not the final sim) — the parent's direct re-run is the record.
+
+## G46 — Storage + transport — COMPLETE AND VERIFIED
+- **Purpose:** A real storehouse + hauling between gather sites, storehouse, and construction (Phase 2 step 2.2).
+- **Implementation:** BUILD 1087 (048426fb, 0x16) — `storehouse.ts` (124,125), cost 12 wood + 6 stone, 6 steps; save v8→v9; ready-site fix (a full-progress building whose placement fails once now retries).
+- **Completion:** Parent-verified live: 127 asserts, sim 421,306/51, 0 new failures, probe PASS. M1069 MOVED (wood 44/44/24, grain 14/14, meals 5/20) — the ready-site fix completes hut0 at tick 234 instead of 330; new 1087 baseline.
+
+## G47 — Roads / wells / bridges — COMPLETE AND VERIFIED
+- **Purpose:** Paths wear where founders walk; a working well; bridges where a path meets a river (Phase 2 step 2.3).
+- **Implementation:** BUILD 1088 (6f4cd71d, 0x17) — `paths.ts`: dirt paths (8 passes), well (121,120), BridgeSite state machine (none/building/done), bridge cost 4 wood; save v9→v10.
+- **Completion:** Parent-verified live: 113 asserts, sim 421,428/54 (3 new: 2 bridge — no path meets a river in a week, the system is proven end to end but never triggers naturally; 1 week-health — pre-existing starvation, IMPROVED by 1088: 9,120 vs 13,763 starved ticks on pristine), probe PASS. Acceptance PARTIAL PASS (dirt paths pass, bridge latent) — parent ACCEPTED. Note: the well at (121,120) blocks the west chop route (candidate fix NOT ordered).
+
+## G48 — Mines / quarries / lumber — COMPLETE AND VERIFIED
+- **Purpose:** Dedicated extraction crews — mining, quarrying, lumber (Phase 2 step 2.4).
+- **Implementation:** BUILD 1089 (77407c7c, 0x18) — `mines.ts`; save v10→v11; RIVER_MINE_CORRIDOR (x 80..124, y 108..122) routes river:1 around the west route to the near iron (84,111) — a live bug found and fixed in-build (the river's meander had cut the route, 18 water tiles).
+- **Completion:** Parent-verified live: 43 asserts, sim 421,542/54, 0 new failures, probe PASS, M1069 identical to the 1087 baseline.
+
+## G49 — Farms that feed — COMPLETE AND VERIFIED
+- **Purpose:** NPC-planted farms feed a granary; meals draw from the granary; no more magic 30 (Phase 2 step 2.5).
+- **Implementation:** BUILD 1090 (856f4395, 0x19) — `granary.ts`; save v11→v12; granary seeded from foodStock/grainStock on migration.
+- **Completion:** Parent-verified live: 74 asserts, sim 421,602/54, 0 new failures, probe PASS. M1069 MOVED to the 1090 baseline (mechanism understood). Week-health NOT fixed by this build (worsened 7,790→11,315 — the missing magic 30; fixed by G50).
+
+## G50 — Week-health fix — COMPLETE AND VERIFIED
+- **Purpose:** The settlement must not starve over a week.
+- **Implementation:** BUILD 1091 (151f8aff + rework 38684d00, 0x1A) — the fix reallocates founder time to quarry trips + ring-eating; founders-save whitelist fix preserves trip states on restore.
+- **Completion:** Parent-verified live: 10 asserts, sim 421,605/52 (2 M1088 bridge failures FIXED), probe PASS. Week starvedTicks 11,315→6, minHealth 0→100; the 6-tick residual was ACCEPTED as near-zero (one founder, once, 6 game-minutes, self-correcting). M1069 with-reload is the new 1091 baseline.
+
+## G51 — Building catalogue as data — COMPLETE AND VERIFIED
+- **Purpose:** The full building catalogue as data, so the settlement can grow into it (Phase 3 step 3.1).
+- **Implementation:** BUILD 1092 (ec4b0083, 0x1B) — `buildingCatalogue.ts`: 93 buildings in 6 groups (A–F), dependency graph acyclic; Build menu lists all 93, 18 placeable, 75 locked.
+- **Completion:** Parent-verified live: 158 asserts, sim 421,763/52, 0 new failures, probe PASS, M1069 identical to the 1091 baseline, week 6/100 (accepted residual).
+
+## G52 — Construction stages — COMPLETE AND VERIFIED
+- **Purpose:** Buildings go up in visible stages and are unusable until finished (Phase 3 step 3.2).
+- **Implementation:** BUILD 1093 (8662abab, 0x1C) — `stagePlanFor`: foundation → frame → finished on one shared staged path.
+- **Completion:** Parent-verified live: 66 asserts, sim 421,829/52, 0 new failures, probe PASS, M1069 identical to the 1092 baseline. Live tick keeps ONE builder per site (scorer builderTaken, unchanged) — parallel stage work is proven in asserts, not a live-tick behaviour change.
+
+## G53 — Food chain (mill → flour → bakery) — COMPLETE AND VERIFIED
+- **Purpose:** Grain becomes flour becomes meals through real buildings (Phase 3 step 3.3).
+- **Implementation:** BUILD 1094 (2e18773d, 0x1D) — `foodChain.ts`: mill (124,129), bakery (129,125); flour is a real registry resource, cap 100; the direct grain-to-meals mill is gone.
+- **Completion:** Parent-verified live: 64 asserts, sim 421,923/52, 0 new failures, probe PASS. M1069 MOVED to the 1094 baseline; week 6→63/98 (accepted residual, day-6 only, full recovery day 7).
+
+## G54 — Metal + timber chain — COMPLETE AND VERIFIED
+- **Purpose:** Ore and wood become ingots, tools, timber and furniture through real production buildings (Phase 3 step 3.4).
+- **Implementation:** BUILD 1095 (310e6c4f, 0x1E) — `metalChain.ts`: smelter (124,112), blacksmith (112,118), sawmill (118,124), carpenter (130,112), workshop (120,132); smelt 1 iron + 1 coal → 1 ingot; smith 2 ingots → 1 tool; saw 2 wood → 2 timber; carpenter 2 timber → 1 furniture; the workshop needs 2 tools and stalls visibly until the smiths deliver.
+- **Completion:** Parent-verified live: 150 asserts, sim 422,109/52, 0 new failures, probe PASS. M1069 identical to the 1094 baseline; week 63→166/96 (accepted residual; bridges 5→0 — the chain takes the build capacity; iron 6→0 — smelted into ingots).
+
+## G55 — Housing + settlement buildings — COMPLETE AND VERIFIED
+- **Purpose:** Worker housing and settlement buildings with real capacity (Phase 3 step 3.5).
+- **Implementation:** BUILD 1096 (4812c802 + rework 0382e664, 0x1F) — `housing.ts`: worker housing (3rd hut, day 3) takes capacity to 10; inn (122,107, day 5).
+- **Completion:** Parent-verified live: 34 asserts, sim 422,177/52, 0 new failures, probe PASS. The rework restores the strict M1088 week-health assert. Week 166→569/96 (accepted residual — second baker is the fix, G63). Inn rest proven in standalone asserts only, NOT observed live.
+
+## G56 — Production interiors — COMPLETE AND VERIFIED
+- **Purpose:** Production buildings are enterable (Phase 3 step 3.6).
+- **Implementation:** BUILD 1097 (13e2e938, 0x20) — `productionInteriors.ts`: 7 production buildings enterable.
+- **Completion:** Parent-verified live: 188 asserts, 0 new failures, probe PASS, M1069 identical to the 1094 baseline.
+
+## G57 — Professions — COMPLETE AND VERIFIED
+- **Purpose:** Founders have professions that weight what they do (Phase 4 step 4.1).
+- **Implementation:** BUILD 1098 (9ccb5367, 0x21) — `professions.ts`: 15 professions as data; PROFESSION_TERM_BONUS 0.03; builderTaken gate.
+- **Completion:** Parent-verified live: 83 asserts, sim 422,378/52, 0 new failures, probe PASS. Week 569→1419/89 — one baker cannot keep up with 7 mouths (second baker is the fix, G63). Strict M1088 week-health assert still failing at this point; it passes for real at G63.
+
+## G58 — Rivers read as water + red-dots investigation — PARTIALLY IMPLEMENTED
+- **Purpose:** Rivers must read as water in play; the floating red dots the user reported must be identified.
+- **Implementation:** BUILD 1099 (8ceecbe9, 0x22) — sandy banks, deeper water colour, minimap band. Red dots: wildflowers retracted (user correction — the dots move and float), birds ruled out (habitat rule), chickens ruled out (size), founders/smoke/car/monsters/speckles/fire ruled out by code; 5 probes / 130+ shots in a fresh world caught NO moving red dot.
+- **Completion:** Rivers half parent-verified live: 24 asserts, sim 422,401/52, 0 new failures, probe PASS. Red-dots identification stays OPEN — needs the user's save or the exact day/time + building.
+
+## G59 — Construction intelligence — COMPLETE AND VERIFIED
+- **Purpose:** The settlement plans its own growth instead of building on a fixed script (Phase 4 step 4.2).
+- **Implementation:** BUILD 1100 (06dd90b3, 0x23) — `sitePlan.ts`: the Mayor scores what the village needs next and the Architect scores where to put it; plan-first claim.
+- **Completion:** Parent-verified live: 86 asserts, sim 422,429/52, 0 new failures, probe PASS (×2), M1069 identical to the 1094 baseline.
+
+## G60 — Settlement founding — COMPLETE AND VERIFIED
+- **Purpose:** A fresh group can found a new settlement in the wilds (Phase 4 step 4.3).
+- **Implementation:** BUILD 1101 (35ba161e, 0x24) — `founding.ts`: session-only party (Corin, Mabel, Joss), site (191,128) score 0.66, shelter + stockpile + farm within the first day; stamped hut + farm persist.
+- **Completion:** Parent-verified live: 66 asserts, sim 422,453/52, 0 new failures, probe PASS, M1069 identical to the 1094 baseline. The founding party has NO needs by design (follow-up, not built).
+
+## G61 — Animals (hunting / fishing / shepherding) — COMPLETE AND VERIFIED
+- **Purpose:** Animals as a working system — hunted, fished, herded — feeding the settlement (Phase 4 step 4.5).
+- **Implementation:** BUILD 1102 (8c4de97b, 0x25) — `animalHusbandry.ts`: pen system; hunt/fish/shepherd job kinds; eat-term fix (`utility.ts`: eat scorer counts meals + meat + fish).
+- **Completion:** Parent-verified live: 582 asserts, sim 422,489/52, 0 new failures, probe PASS. Week 1419→155/96 — founders starving beside 23 uneaten meat is fixed by the eat term. Live animals are session-only; populations persist since 1085.
+
+## G62 — Tamsin arrival — COMPLETE AND VERIFIED
+- **Purpose:** The first affinity-gated newcomer walks in and lives at camp (Phase 4 step 4.4, arrival step).
+- **Implementation:** BUILD 1103 (c09b1997 + follow-up 64768958, 0x26) — `population.ts` (see G27). Families proper (children grow up, take professions) is a follow-up, NOT built.
+- **Completion:** Parent-verified live: 50 asserts, 0 new failures, probe PASS, week 155→23/99.
+
+## G63 — Second baker + bake capacity — COMPLETE AND VERIFIED
+- **Purpose:** One baker cannot keep up with 7 mouths; food capacity is the binding constraint on week health.
+- **Implementation:** BUILD 1104 (c5c0b627 + fix-forward 81613aab, 0x27) — BAKE_SLOTS=2; baker profession owns bake (farmer keeps mill/plant/water/harvest); corridor-deadlock fix (`stepFounderMove` 3×3 detour bubble).
+- **Completion:** Parent-verified live: 38 asserts, 0 new failures, probe PASS. Week FINAL: starvedTicks 0, minHealth 100, pop 7 — the strict M1088 week-health assert passes for real, never re-baselined. M1069 is the new 1104 baseline (re-pin commit e89be6d7 pending push — git write block).
+
+## G64 — Week-after-reload divergence fix — COMPLETE AND VERIFIED
+- **Purpose:** A week run after a reload must match a week run without one.
+- **Implementation:** BUILD 1105 (31fab2dd, 0x28) — two restore gaps closed (sim-tick chain-state stale-job reset mirror; animal-goods deliver re-claim guard in both ticks).
+- **Completion:** Parent-verified live: 10 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline.
+
+## G65 — Player-placed windmill mills — COMPLETE AND VERIFIED
+- **Purpose:** A windmill the player places actually mills.
+- **Implementation:** BUILD 1106 (b2fe71f8, 0x29) — `grindPlacedWindmills`: passive 2 grain → 2 flour/hour/windmill, cap 100, catch-up cap 24.
+- **Completion:** Parent-verified live: 28 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline. Note: a windmill placed on the exact MILL_RECT completes the founder mill for free (pre-existing, not ordered). Only the founders' mill grinds in the live tick before this build; placed windmills were visual-only.
+
+## G66 — Build panel JSX extraction — COMPLETE AND VERIFIED
+- **Purpose:** Extract the Build panel out of the view (the piece 0x0D deliberately left behind).
+- **Implementation:** BUILD 1107 (e6778eae, 0x2A) — `buildPanel3d.tsx` (74 props); Engine3DWorldView.tsx 3584→3128 lines.
+- **Completion:** Parent-verified live: 33 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline.
+
+## G67 — Player inventory engine — COMPLETE AND VERIFIED
+- **Purpose:** A Minecraft-style inventory for the player (crafting program step 1 of 4).
+- **Implementation:** BUILD 1108 (586bb975 + test 5dbfbcab, b07452d5, 0x2B) — `playerInventory.ts` (27-slot grid, stacks 64, gear 1) + `inventoryPanel3d.tsx` (pointer-event drag/split/swap/equip), on the R-1 registry.
+- **Completion:** Parent-verified live: 97 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline. First equippables in live play.
+
+## G68 — Hotbar UI — COMPLETE AND VERIFIED
+- **Purpose:** A 9-slot hotbar for the player (crafting program step 2 of 4).
+- **Implementation:** BUILD 1109 (79f3750e + test b61985d1, 0x2C) — `hotbar3d.tsx`: slots 0–8, tap or 1–9 select, meal use +25 health cap 100; food bridge fix (PLAYER_RESOURCE_KEYS gained food).
+- **Completion:** Parent-verified live: 52 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline. Caveat: no meal obtainable in live play yet (no granary take).
+
+## G69 — Gathering engine — COMPLETE AND VERIFIED
+- **Purpose:** Physical gathering with tools, damage and durability (crafting program step 3 of 4).
+- **Implementation:** BUILD 1110 (e11221e8 + test 28a3e904, 0x2D) — `gathering.ts`: resource health, tool damage hand 1/wooden 3/stone 6, durability wood 30/stone 60, stumps, regrowth (bush/herb 1d, rocks 3d, deposits never), hand-crafting (sticks/torches/axes/pickaxes), deposits mine by remaining, equipped torch glows at night.
+- **Completion:** Parent-verified live: 149 asserts, 0 new failures, probe PASS, M1069 identical to the 1104 baseline. No skill XP from gathering (the skills funnel does not exist — skills.ts is data-only).
+
+## G70 — Crafting stations + recipes — COMPLETE AND VERIFIED
+- **Purpose:** Crafting stations with recipes and discovery unlocks (crafting program step 4 of 4 — program COMPLETE).
+- **Implementation:** BUILD 1111 (7f365b03, 0x2E) — five placeable stations (workbench, blacksmith, furnace, advanced forge, apothecary) on the R-1 registry; 17 new recipes (zero duplicates of 0x2D hand recipes); discovery unlocks (persisted set `ag-3d-materials-discovered-v1`); smelting/forging instant; forged tiers copper 4/45, iron 9/120, steel 12/180; healing potions (+50) drink from the hotbar.
+- **Completion:** Parent-verified live (served version.json 1111 @ 2026-11-22T13:02:45Z, `__AG_BUILD="1111"`): 339 asserts (parent re-ran directly), tsc exit 0, probe PASS (5 stations listed, 4 placed; iron axe LOCKED → UNLOCKED on holding an ingot; handle crafted at workbench; iron axe crafted at blacksmith + equipped; iron smelted at furnace; healing potion brewed + drunk from hotbar health 40→90; reload preserved stations/discovery/equipment; 0 page errors), M1069 identical to the 1104 baseline. Honest limits: wooden axe stays hand-crafted; no skill XP; swords/bows equip but have no combat effect (melee 25 flat); smelting instant; no rare/magical recipes; stations free to place.
 
 ---
 
@@ -1200,19 +1462,19 @@
 
 ---
 
-# Counts per status (116 requirements total — counted directly from the table rows, 2026-11-15)
+# Counts per status (158 requirements total — counted directly from the table rows, 2026-11-22 backfill)
 
 | Status | Count | IDs |
 |--------|-------|-----|
-| COMPLETE AND VERIFIED | 40 | G17, G21, G22, G23, G24, G25, G26, G28, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, S27, T6 |
+| COMPLETE AND VERIFIED | 82 | G17, G21, G22, G23, G24, G25, G26, G27, G28, G29, G30, G31, G32, G33, G34, G35, G36, G37, G38, G39, G40, G41, G42, G43, G44, G45, G46, G47, G48, G49, G50, G51, G52, G53, G54, G55, G56, G57, G59, G60, G61, G62, G63, G64, G65, G66, G67, G68, G69, G70, D1, D2, D12, R8, Q0, Q1, Q2, Q3, Q4, Q9, Q10, Q11, Q12, Q13, Q14, Q15, Q16, Q17, Q18, Q19, Q20, Q21, Q22, Q23, Q24, Q25, Q26, Q27, S2, S26, S27, T6 |
 | IMPLEMENTED BUT UNVERIFIED | 14 | G1, G3, G4, G5, G7, G9, G16, G20, D7, D9, S14, S21, S22, S25 |
-| PARTIALLY IMPLEMENTED | 20 | G2, G10, G15, G18, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R9, R13, T1, T2, T3, T4 |
+| PARTIALLY IMPLEMENTED | 21 | G2, G10, G15, G18, G58, D3, D4, D5, D6, D10, D11, R1, R2, R4, R6, R9, R13, T1, T2, T3, T4 |
 | DOCUMENTED ONLY | 8 | D8, R3, R5, R7, R10, R11, R12, T5 |
-| NOT IMPLEMENTED | 30 | G8, G11, G12, G13, G14, G19, G27, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
+| NOT IMPLEMENTED | 29 | G8, G11, G12, G13, G14, G19, Q5, Q6, Q7, Q8, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S15, S16, S17, S18, S19, S20, S23, S24 |
 | BLOCKED | 4 | S1, E1, E2, E3 |
 | OBSOLETE OR DUPLICATED | 0 | (overlaps flagged below, not yet adjudicated) |
 
-**Reading the counts:** 40 of 116 requirements are complete and verified. 30 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1061; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows there, and again for S27/G21/G22/G23/G24/G25/G26/G27/G28.)
+**Reading the counts:** 82 of 158 requirements are complete and verified. 29 are not implemented at all — but most of those are future work by design (§56/§58 engines, Stages 2–6, 3D ports of 2D systems) or items awaiting a user decision (S3–S13, S15–S20, S23–S24), not oversights. The game itself is playable and verified through 1111; the gap is depth (quests, economy, dungeons, skills, audio) and the development machinery (ACEE, AGEE, RUN, gates evidence), not the core loop. The single most consequential number is 14 IMPLEMENTED BUT UNVERIFIED — code that exists but has never been confirmed live. (This table was stale and internally inconsistent before the 1053 checkpoint — header said 89 total while the rows summed to 108 and Q4 was listed under both COMPLETE and NOT IMPLEMENTED; regenerated from the actual rows there, and again for S27/G21/G22/G23/G24/G25/G26/G27/G28, and again 2026-11-22 for G27–G70 — the 1062–1111 backfill.)
 
 # Top 10 highest-priority incomplete items (by impact per credit)
 

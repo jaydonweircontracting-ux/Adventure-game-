@@ -562,3 +562,152 @@ waiting.
   done only after the parent verifies the commit, the live markers, and
   a direct re-run of the targeted asserts.
 - It does not allow two code agents in one working tree.
+
+## 14. 80% IMPLEMENTATION, 20% VERIFICATION (2026-11-22, user's order — CRITICAL)
+
+The user reviewed the activity log and ruled: too much time was going into
+building and testing tooling instead of changing Adventure. Measurable game
+development progress is the metric — not activity entries showing temporary
+tests.
+
+### The rule
+
+A worker's time is 80% implementation, 20% verification. Most of the time
+goes into changing the actual game; verification is the targeted check that
+follows, not a second project.
+
+### What it forbids
+
+- Do not repeatedly rebuild temporary probe harnesses unless a specific
+  production bug requires one. One targeted asserts bundle and one phone
+  probe per stage is the norm; drainage probes, extraction probes, /tmp
+  scratch repos and esbuild experiments are not routine work.
+- Do not spend excessive time investigating systems that have already been
+  inspected. The parent audit stands; a worker reads the named files and
+  implements.
+- Do not expand orchestration machinery (new status files, new dashboards,
+  new monitors) inside a game build.
+- Do not wait for unrelated subagents or unrelated tasks. L4 sim tails run
+  in the background and never gate implementation work.
+
+### What it requires
+
+- Prioritize actual changes to Adventure's production source code.
+  Implement directly in the existing engine; extend, never duplicate.
+- Run the necessary targeted tests immediately after implementation.
+- Commit and push each completed working stage. If git fails, diagnose the
+  specific failure once, retry, and continue working locally while it
+  resolves — never stop implementing for a push failure.
+- Stages chain without user permission between them: when a stage passes
+  parent verification, the next stage releases immediately.
+- Every completed stage's report must include a production-code diff:
+  production files changed, lines added/removed, test results, commit
+  hash, deployment status. A stage with no production diff is not done,
+  whatever its activity log shows.
+
+### What this does NOT do
+
+- It does not weaken a gate. Levels 1-3 still gate a push; Level 4 still
+  runs in the background and its findings still get fixed.
+- It does not change the parent-verification rule: a task is marked done
+  only after the parent verifies the commit, the live markers, and a
+  direct re-run of the targeted asserts.
+- It does not remove the audit-first rule: the parent audits a new order
+  against the repo before queueing it, so workers implement against a
+  grounded brief instead of rediscovering the codebase.
+
+## 15. DELIVERY IS FOUR STATUSES, NOT ONE (2026-11-22, user's order)
+
+Never confuse local completion with delivery. Every stage has four
+distinct statuses, and a stage report must state each one separately:
+
+1. Implemented locally.
+2. Tests passed.
+3. Committed and pushed to GitHub.
+4. Verified live in Adventure.
+
+A failed git push means the work is NOT delivered, even if the
+implementation is finished. Git failures cannot become development
+blockers: continue implementation locally, preserve completed work, and
+push as soon as git writes recover. A local-only stage is reported as
+local-only, never as shipped.
+
+Stages ship independently: when a stage passes parent verification, the
+next stage releases immediately, with no unnecessary approval pause.
+
+Gameplay evidence is part of every stage, not an extra. A river stage
+must show rivers following elevation in play; a bridge stage must show
+bridges connecting both banks; a pathway stage must show pathways
+continuing naturally across crossings. Assert counts alone are not
+evidence. The objective is a better Adventure game, not a more
+complicated development pipeline.
+
+## 16. MAXIMUM PRODUCTIVE CONCURRENCY, NOT MAXIMUM AGENT COUNT (2026-11-22, user's order)
+
+The user ordered Muse turned into a high-parallelism autonomous
+development operation: specialized sub-agents working simultaneously,
+a continuous pipeline, measured throughput, and a report every 5
+minutes of active agents, completed tasks, failed tasks, and actual
+commits. The target is maximum productive concurrency, never maximum
+agent count. More agents do not mean more computing power; they slow
+everything down through context overhead, shared-file conflicts, and
+integration bottlenecks.
+
+### Measured capacity (2026-11-22 ~11:00 MST — the baseline all scaling is judged against)
+
+- 8 agents running concurrently: the 0x2F river worker + 7 L4 finishers (0x28-0x2E).
+- VM: 1.5 shared CPUs (nproc 4), load average 9.41, memory 7.5 of 7.9 GB used.
+- 5 sim chunk processes running at ~21-26% CPU each; week chunks already take 4.5-5h wall at this contention.
+- tasks.json: 45 done, 1 in progress, 6 pending, 1 blocked (0x0A).
+- Latest origin/main top: studio commit 35fa8b4f over game BUILD 1111 (7f365b03).
+
+### Policy
+
+- Operating band is 8-12 concurrent agents. We are already at 8.
+  16-24 is NOT supportable on this box: CPU and memory are already
+  saturated, and the measured contention proves it. 32+ is not a
+  target at all. Scale only on measured throughput, never on a number.
+- The real bottlenecks are, in order: (1) shared CPU for builds and
+  tests, (2) parent verification — one parent verifies every build
+  before it is marked done, (3) sequential integration — one main
+  checkout, merges in order, (4) the flickering git-write block.
+  Adding agents does not widen any of these.
+- Specialist teams (architect, world sim, terrain, 2D/2.5D engine, 3D
+  engine, NPC intelligence, combat, inventory/crafting, World Studio,
+  UI/UX, performance, QA/regression, assets, integration, security,
+  research) are a roster of roles, not 16 simultaneous agents. Roles
+  map onto workers as tasks demand them.
+- One code agent per working tree; one code agent at a time on the
+  shared checkout (the 1022 lesson). Parallel work uses separate
+  worktrees. The parent spawns release workers directly.
+- The pipeline is unchanged: Research -> Assign -> Develop -> Test ->
+  Review -> Integrate -> Build -> Deploy (§13). A component enters
+  integration as soon as it passes its tests; other agents keep working.
+- Never pretend to have launched agents that are not actually running.
+  Active agents are verified with subagent.list, not claimed.
+
+### Throughput measurement
+
+Track per run, in the 5-minute report and the status snapshot:
+tasks completed per hour, commits on origin/main per hour, builds
+shipped per hour, merge conflicts, defects introduced per
+integration, agent idle time. If concurrency rises and throughput
+per agent falls, concurrency comes back down. That is the experiment
+working, not failing.
+
+### 5-minute throughput report
+
+Cron `parallelism-throughput-report`, every 5 minutes, main chat,
+one compact line: active agents (short ids + tasks), tasks
+done / in progress / pending, latest origin/main commit + time,
+plus any failure or newly landed commit since the last report.
+Stop condition: the user says stop, or the parallelism build-out
+ends and the user moves on.
+
+### Safeguards (non-negotiable, unchanged)
+
+Preserve verified backups. Never overwrite another agent's
+uncommitted work. Never merge untested changes into main. Keep
+production deployment separate from experimental work. Maintain a
+recoverable checkpoint. Never claim a build or deployment succeeded
+without verification.
