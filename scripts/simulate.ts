@@ -16478,6 +16478,24 @@ console.log('Testing animals + hunting/fishing/shepherding — the pen, the hunt
   // --- The E report + the Control Center animals section, from the week sim. ---
   const ecoWeek1102 = ECO.ecosystemSummaryText(simWeek1102.world, simWeek1102.pen, { meat: GR.granaryMeatInRegistry(simWeek1102.registry), fish: GR.granaryFishInRegistry(simWeek1102.registry), wool: SH.storehouseWoolInRegistry(simWeek1102.registry), leather: SH.storehouseLeatherInRegistry(simWeek1102.registry) });
   assert(ecoWeek1102 !== null && ecoWeek1102.includes('Pen ') && ecoWeek1102.includes('sheep'), 'M1102: the E report names the pen + flock after the week (' + ecoWeek1102 + ')');
+  // BUILD 1103 (workers assert, re-shaped not weakened): the
+  // Control Center animal-workers list is a LIVE view — it shows
+  // founders while they hunt/fish/shepherd, not a roster. At the
+  // exact week-end tick (11200) all 7 founders hold core
+  // professions (carpenter, stonecutter, blacksmith, farmer,
+  // builder, miner, lumberjack — the same 7 in 1102) and none is
+  // mid-hunt, so the list is empty at that tick even though the
+  // week ran hunt 19 + fish 3 + shepherd 9. In 1102 a founder
+  // happened to be mid-hunt at 11200 and the assert passed on
+  // sampling luck. Test the live list while the work is live:
+  // advance in 100-tick steps (bounded, 2 days) until a founder
+  // is in an animal work state, then read the list.
+  let animalLiveAt1102 = -1;
+  for (let s1102 = 0; s1102 < 32; s1102++) {
+    if (CC.animalWorkersFor(simWeek1102.founders).length > 0) { animalLiveAt1102 = LWeek1102.ticks; break; }
+    SS.advanceSettlement(simWeek1102, 100);
+  }
+  assert(animalLiveAt1102 >= 0, 'M1102: an animal worker is live within 2 days past the week (the hunt/fish/shepherd jobs keep running)');
   const inputCC1102 = {
     speed: 1, day: 7, minutes: 480,
     founders: simWeek1102.founders.map((f) => ({ id: f.id, name: f.name, profession: f.profession, activity: f.activity, workState: f.workState, health: Math.round(f.needs.health), hunger: Math.round(f.needs.hunger), energy: Math.round(f.needs.energy), social: Math.round(f.needs.social), jobKind: null, jobTarget: null, carrying: f.carrying, carryingGrain: f.carryingGrain })),
@@ -16500,7 +16518,7 @@ console.log('Testing animals + hunting/fishing/shepherding — the pen, the hunt
   };
   const ccWeek1102 = CC.formatControlCenterData(inputCC1102);
   assert(ccWeek1102.animals.penState === 'done' && ccWeek1102.animals.penFlock >= 2, 'M1102: the Control Center lists the finished pen + flock after the week');
-  assert(ccWeek1102.animals.workers.length > 0, 'M1102: the Control Center lists the animal workers after the week');
+  assert(ccWeek1102.animals.workers.length > 0, 'M1102: the Control Center lists the animal workers while the work is live (tick ' + animalLiveAt1102 + ', BUILD 1103)');
   console.log('M1102: animals verified (hunting depletes + prey travels further, kills consume at the day boundary, the pen builds + stocks + the flock works, fish are catchable where the river runs, save v12, M1069 identical)');
 }
 
