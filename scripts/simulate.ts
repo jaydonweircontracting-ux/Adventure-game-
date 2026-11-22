@@ -16815,6 +16815,84 @@ console.log('Testing the slot inventory engine — reconcile / move / split / eq
   console.log('M1108: slot inventory verified (reconcile/move/split/equip/persistence/routing, 24h M1069 identical)');
 }
 
+
+console.log('Testing the hotbar — food bridge / use effects / consume / selection persistence + 24h M1069 identical (BUILD 1109, 0x2C)...');
+{
+  const PI1109 = await import('../src/game/engine3d/playerInventory.js');
+  const RR1109 = await import('../src/game/engine3d/resourceRegistry.js');
+  // Node has no localStorage: the 1056 stand-in is installed by an early
+  // section, which a standalone chunk does not include. Install the same
+  // faithful in-memory stand-in here when none exists (a no-op in the
+  // full sim, where 1056 already installed it; this is the last section,
+  // so the stand-in cannot leak into another test).
+  const g1109 = globalThis as unknown as { localStorage?: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } };
+  if (!g1109.localStorage) {
+    const store1109 = new Map<string, string>();
+    g1109.localStorage = { getItem: (k: string) => (store1109.has(k) ? store1109.get(k)! : null), setItem: (k: string, v: string) => { store1109.set(k, v); } };
+  }
+  // --- The food bridge: a meal granted to the player is mirrored. ---
+  // (The 1108 gap: kindForPlayerKey('food') already mapped food->food,
+  // but PLAYER_RESOURCE_KEYS never listed it, so a meal deposited into
+  // the player store was never mirrored and never reached a slot.)
+  assert(RR1109.PLAYER_RESOURCE_KEYS.includes('food'), 'M1109: food is on the player bridge');
+  assert(RR1109.kindForPlayerKey('food') === 'food', 'M1109: food maps to the food registry kind');
+  let reg1109 = RR1109.createRegistry();
+  const dep1109 = RR1109.depositInto(reg1109, RR1109.PLAYER_STORE_ID, 'food', 2, { type: 'entity', id: 'test-meal' }, { ownerId: 'player' });
+  reg1109 = dep1109.registry;
+  assert(dep1109.added === 2, 'M1109: a meal grant deposits 2 food into the player store');
+  assert(RR1109.registryToPlayerInventory(reg1109).food === 2, 'M1109: the mirror reads food back into the record');
+  assert(JSON.stringify(RR1109.keepsakesOf({ food: 2, tools: 1 })) === JSON.stringify({ tools: 1 }), 'M1109: keepsakesOf keeps food out (it is a resource now)');
+  const loaded1109 = RR1109.playerInventoryToRegistry(RR1109.createRegistry(), { food: 3, wood: 1 });
+  assert(RR1109.storeQty(loaded1109, RR1109.PLAYER_STORE_ID, 'food') === 3, 'M1109: playerInventoryToRegistry loads food into the player store');
+  const w1109 = RR1109.withdrawFrom(reg1109, RR1109.PLAYER_STORE_ID, 'food', 1);
+  assert(w1109.taken === 1 && RR1109.registryToPlayerInventory(w1109.registry).food === 1, 'M1109: withdrawFrom takes 1 meal, 1 is left');
+  // --- Use effects: only a meal is usable. ---
+  assert(JSON.stringify(PI1109.useEffectFor('food')) === JSON.stringify({ heal: 25 }), 'M1109: a meal heals 25');
+  assert(PI1109.useEffectFor('wood') === null && PI1109.useEffectFor('stone') === null && PI1109.useEffectFor('tools') === null && PI1109.useEffectFor('grain') === null, 'M1109: wood, stone, tools and wheat are not usable');
+  assert(PI1109.itemMetaFor('food').description.includes('25 health'), 'M1109: the meal description says it restores 25 health');
+  // --- consumeSlot: eat the meal, keep everything else. ---
+  const base1109 = PI1109.reconcileSlots({ food: 2, wood: 3 }, PI1109.emptyLayout());
+  assert(base1109.slots[0].kind === 'food' && base1109.slots[1].kind === 'wood', 'M1109: reconcile puts food in slot 0 and wood in slot 1 (the hotbar)');
+  const used1109 = PI1109.consumeSlot(base1109, 0);
+  assert(used1109 !== null && used1109.effect.heal === 25 && used1109.layout.slots[0].qty === 1, 'M1109: eating a meal consumes one unit and heals 25');
+  const last1109 = PI1109.consumeSlot(used1109!.layout, 0);
+  assert(last1109 !== null && last1109.layout.slots[0].kind === null && last1109.layout.slots[0].qty === 0, 'M1109: the slot clears when the last meal is eaten');
+  assert(PI1109.consumeSlot(base1109, 1) === null, 'M1109: wood cannot be used (no-op, unit kept)');
+  assert(PI1109.consumeSlot(PI1109.emptyLayout(), 0) === null, 'M1109: an empty slot cannot be used');
+  assert(PI1109.consumeSlot(base1109, -1) === null, 'M1109: a negative index is a no-op');
+  // --- Hotbar selection persistence: round-trip, clamp, corrupt. ---
+  assert(PI1109.HOTBAR_SLOT_COUNT === 9, 'M1109: the hotbar has 9 slots');
+  PI1109.writeHotbarSelected(4);
+  assert(PI1109.readHotbarSelected() === 4, 'M1109: selection 4 round-trips');
+  PI1109.writeHotbarSelected(9);
+  assert(PI1109.readHotbarSelected() === 8, 'M1109: selection 9 clamps to slot 8');
+  PI1109.writeHotbarSelected(-1);
+  assert(PI1109.readHotbarSelected() === 0, 'M1109: selection -1 clamps to slot 0');
+  const ls1109 = (globalThis as unknown as { localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } }).localStorage;
+  ls1109.setItem(PI1109.HOTBAR_SELECTED_KEY, 'banana');
+  assert(PI1109.readHotbarSelected() === 0, 'M1109: a corrupt selection falls back to slot 0');
+  // --- The hotbar is slots 0-8 of the same layout. ---
+  const hb1109 = PI1109.reconcileSlots({ food: 2, wood: 1, stone: 5 }, PI1109.emptyLayout());
+  assert(hb1109.slots.slice(0, 9).length === 9 && hb1109.slots[0].kind === 'food' && hb1109.slots[1].kind === 'wood' && hb1109.slots[2].kind === 'stone', 'M1109: the hotbar reads slots 0-8 of the same 27-slot grid');
+  // --- 24h M1069 IDENTICAL to the BUILD 1104 baseline (the hotbar
+  // never touches the settlement sim). ---
+  const world24_1109: any = W.defaultWorld();
+  const sim24_1109: any = SS.createSettlementSim(world24_1109);
+  SS.advanceSettlement(sim24_1109, 1600);
+  const L24_1109 = sim24_1109.ledger;
+  assert(L24_1109.ticks === 1600, 'M1109: 24h ticks 1600 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.woodChopped === 54 && L24_1109.woodDelivered === 50 && L24_1109.woodSpent === 24, 'M1109: 24h wood 54/50/24 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.grainHarvested === 60 && L24_1109.grainDelivered === 58, 'M1109: 24h grain 60/58 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.mealsBaked === 28 && L24_1109.mealsEaten === 13, 'M1109: 24h meals 28/13 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.flourMilled === 58 && L24_1109.flourBaked === 56, 'M1109: 24h flour 58/56 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.jobsCompleted.chop === 27 && L24_1109.jobsCompleted.build === 4 && L24_1109.jobsCompleted.deliver === 54 && L24_1109.jobsCompleted.harvest === 30, 'M1109: 24h jobs chop/build/deliver/harvest 27/4/54/30 (M1069 identical to BUILD 1104)');
+  assert(L24_1109.hutsCompleted === 2 && L24_1109.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1109: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1109.starvedTicks === 0 && Math.round(L24_1109.minHealth) === 100, 'M1109: nobody starves in 24h');
+  assert(sim24_1109.founders.length === 7, 'M1109: the population is 7 after 24h');
+  assert(F.campWoodInRegistry(sim24_1109.registry) === 14 && F.campFoodInRegistry(sim24_1109.registry) === 15 && SS.settlementGrain(sim24_1109) === 0 && FC.foodChainFlourInRegistry(sim24_1109.registry) === 2, 'M1109: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  console.log('M1109: hotbar verified (food bridge / use effects / consume / selection persistence, 24h M1069 identical)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

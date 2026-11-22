@@ -24,6 +24,12 @@
 // bottom follow the readSaved try/catch style of inventoryCrafting3d.ts.
 // The view owns the React state and calls reconcileSlots() beside
 // refreshPlayerInventory() in refreshResourceUi().
+//
+// BUILD 1109 (0x2C): the hotbar — slots 0-8 of this same inventory
+// (slot indexing is stable, the hotbar never renumbers) — plus the
+// use effects: a meal is the one usable kind (eat it to restore
+// health). Use goes through the registry (the totals authority);
+// the pure consumeSlot() below pins the layout semantics only.
 
 export type EquipSlotId = 'weapon' | 'tool' | 'armor';
 
@@ -58,6 +64,10 @@ export interface ItemMeta {
   description: string;
   stackMax: number;
   equipSlot: EquipSlotId | null;
+  /** The use effect, if the kind can be used from the hotbar
+   *  (a meal restores health). Null = not usable — the unit is
+   *  never destroyed without an effect. */
+  useEffect: { heal: number } | null;
 }
 
 /** Item metadata, keyed by registry kind (grain displays as Wheat, the
@@ -65,35 +75,35 @@ export interface ItemMeta {
  *  an effect that does not exist yet: equipping a tool has no gameplay
  *  effect in 1108 — tools gain their use in 0x2D, stations in 0x2E. */
 export const ITEM_META: Record<string, ItemMeta> = {
-  wood: { name: 'Wood', icon: '🪵', description: 'Timber from trees and crates. The settlement builds with it.', stackMax: 64, equipSlot: null },
-  stone: { name: 'Stone', icon: '🪨', description: 'Stone from rocks and the quarry. The settlement builds with it.', stackMax: 64, equipSlot: null },
-  gold: { name: 'Gold', icon: '🪙', description: 'Coin looted from the fallen. For trade, when merchants come.', stackMax: 64, equipSlot: null },
-  grain: { name: 'Wheat', icon: '🌾', description: 'Grain harvested from the farm. The mill grinds it into flour.', stackMax: 64, equipSlot: null },
-  food: { name: 'Meal', icon: '🍞', description: 'A cooked meal. The founders eat meals at the campfire.', stackMax: 64, equipSlot: null },
-  iron: { name: 'Iron', icon: '⛓️', description: 'Iron ore from the mine. The smelter turns it into ingots.', stackMax: 64, equipSlot: null },
-  coal: { name: 'Coal', icon: '⬛', description: 'Coal from the mine. The smelter burns it to make ingots.', stackMax: 64, equipSlot: null },
-  leather: { name: 'Leather', icon: '🟫', description: 'Leather from hunted animals. The settlement stores it.', stackMax: 64, equipSlot: null },
-  wool: { name: 'Wool', icon: '🐑', description: 'Wool from the shepherd\u2019s flock. The settlement stores it.', stackMax: 64, equipSlot: null },
-  livestock: { name: 'Livestock', icon: '🐄', description: 'Livestock. The settlement raises it.', stackMax: 64, equipSlot: null },
-  weapons: { name: 'Weapons', icon: '⚔️', description: 'Weapons. Equip one in the weapon slot.', stackMax: 1, equipSlot: 'weapon' },
-  armor: { name: 'Armor', icon: '🛡️', description: 'Armor. Equip it in the armor slot.', stackMax: 1, equipSlot: 'armor' },
-  tools: { name: 'Tools', icon: '🔨', description: 'A tool from the blacksmith. Equip it in the tool slot.', stackMax: 1, equipSlot: 'tool' },
-  clothing: { name: 'Clothing', icon: '👕', description: 'Clothing. The settlement trades it.', stackMax: 64, equipSlot: null },
-  medicine: { name: 'Medicine', icon: '💊', description: 'Medicine. The settlement stores it.', stackMax: 64, equipSlot: null },
-  luxury: { name: 'Luxury', icon: '💎', description: 'Luxury goods. The settlement trades them.', stackMax: 64, equipSlot: null },
-  magicMaterials: { name: 'Magic Materials', icon: '✨', description: 'Strange materials. The settlement stores them.', stackMax: 64, equipSlot: null },
-  ore: { name: 'Ore', icon: '⛏️', description: 'Raw ore. The smelter refines it.', stackMax: 64, equipSlot: null },
-  fish: { name: 'Fish', icon: '🐟', description: 'Fish from the river. The granary stores it.', stackMax: 64, equipSlot: null },
-  timber: { name: 'Timber', icon: '🌲', description: 'Sawn timber from the sawmill. The carpenter builds with it.', stackMax: 64, equipSlot: null },
-  copper: { name: 'Copper', icon: '🟠', description: 'Copper ore from the mine. The smelter refines it.', stackMax: 64, equipSlot: null },
-  silver: { name: 'Silver', icon: '⚪', description: 'Silver ore from the mine. The smelter refines it.', stackMax: 64, equipSlot: null },
-  flour: { name: 'Flour', icon: '🥣', description: 'Flour ground at the mill. The bakery bakes it into meals.', stackMax: 64, equipSlot: null },
-  ingot: { name: 'Ingot', icon: '🔶', description: 'A smelted ingot. The blacksmith forges tools from it.', stackMax: 64, equipSlot: null },
-  furniture: { name: 'Furniture', icon: '🪑', description: 'Furniture from the carpenter. The settlement furnishes its homes.', stackMax: 64, equipSlot: null },
-  meat: { name: 'Meat', icon: '🍖', description: 'Meat from the hunt. The granary stores it.', stackMax: 64, equipSlot: null },
+  wood: { name: 'Wood', icon: '🪵', description: 'Timber from trees and crates. The settlement builds with it.', stackMax: 64, equipSlot: null, useEffect: null },
+  stone: { name: 'Stone', icon: '🪨', description: 'Stone from rocks and the quarry. The settlement builds with it.', stackMax: 64, equipSlot: null, useEffect: null },
+  gold: { name: 'Gold', icon: '🪙', description: 'Coin looted from the fallen. For trade, when merchants come.', stackMax: 64, equipSlot: null, useEffect: null },
+  grain: { name: 'Wheat', icon: '🌾', description: 'Grain harvested from the farm. The mill grinds it into flour.', stackMax: 64, equipSlot: null, useEffect: null },
+  food: { name: 'Meal', icon: '🍞', description: 'A cooked meal. Eat it from the hotbar to restore 25 health.', stackMax: 64, equipSlot: null, useEffect: { heal: 25 } },
+  iron: { name: 'Iron', icon: '⛓️', description: 'Iron ore from the mine. The smelter turns it into ingots.', stackMax: 64, equipSlot: null, useEffect: null },
+  coal: { name: 'Coal', icon: '⬛', description: 'Coal from the mine. The smelter burns it to make ingots.', stackMax: 64, equipSlot: null, useEffect: null },
+  leather: { name: 'Leather', icon: '🟫', description: 'Leather from hunted animals. The settlement stores it.', stackMax: 64, equipSlot: null, useEffect: null },
+  wool: { name: 'Wool', icon: '🐑', description: 'Wool from the shepherd\u2019s flock. The settlement stores it.', stackMax: 64, equipSlot: null, useEffect: null },
+  livestock: { name: 'Livestock', icon: '🐄', description: 'Livestock. The settlement raises it.', stackMax: 64, equipSlot: null, useEffect: null },
+  weapons: { name: 'Weapons', icon: '⚔️', description: 'Weapons. Equip one in the weapon slot.', stackMax: 1, equipSlot: 'weapon', useEffect: null },
+  armor: { name: 'Armor', icon: '🛡️', description: 'Armor. Equip it in the armor slot.', stackMax: 1, equipSlot: 'armor', useEffect: null },
+  tools: { name: 'Tools', icon: '🔨', description: 'A tool from the blacksmith. Equip it in the tool slot.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  clothing: { name: 'Clothing', icon: '👕', description: 'Clothing. The settlement trades it.', stackMax: 64, equipSlot: null, useEffect: null },
+  medicine: { name: 'Medicine', icon: '💊', description: 'Medicine. The settlement stores it.', stackMax: 64, equipSlot: null, useEffect: null },
+  luxury: { name: 'Luxury', icon: '💎', description: 'Luxury goods. The settlement trades them.', stackMax: 64, equipSlot: null, useEffect: null },
+  magicMaterials: { name: 'Magic Materials', icon: '✨', description: 'Strange materials. The settlement stores them.', stackMax: 64, equipSlot: null, useEffect: null },
+  ore: { name: 'Ore', icon: '⛏️', description: 'Raw ore. The smelter refines it.', stackMax: 64, equipSlot: null, useEffect: null },
+  fish: { name: 'Fish', icon: '🐟', description: 'Fish from the river. The granary stores it.', stackMax: 64, equipSlot: null, useEffect: null },
+  timber: { name: 'Timber', icon: '🌲', description: 'Sawn timber from the sawmill. The carpenter builds with it.', stackMax: 64, equipSlot: null, useEffect: null },
+  copper: { name: 'Copper', icon: '🟠', description: 'Copper ore from the mine. The smelter refines it.', stackMax: 64, equipSlot: null, useEffect: null },
+  silver: { name: 'Silver', icon: '⚪', description: 'Silver ore from the mine. The smelter refines it.', stackMax: 64, equipSlot: null, useEffect: null },
+  flour: { name: 'Flour', icon: '🥣', description: 'Flour ground at the mill. The bakery bakes it into meals.', stackMax: 64, equipSlot: null, useEffect: null },
+  ingot: { name: 'Ingot', icon: '🔶', description: 'A smelted ingot. The blacksmith forges tools from it.', stackMax: 64, equipSlot: null, useEffect: null },
+  furniture: { name: 'Furniture', icon: '🪑', description: 'Furniture from the carpenter. The settlement furnishes its homes.', stackMax: 64, equipSlot: null, useEffect: null },
+  meat: { name: 'Meat', icon: '🍖', description: 'Meat from the hunt. The granary stores it.', stackMax: 64, equipSlot: null, useEffect: null },
 };
 
-const KEEPSAKE_META: ItemMeta = { name: '', icon: '🎁', description: 'A keepsake from a fallen traveller. Memorabilia, not a resource.', stackMax: 64, equipSlot: null };
+const KEEPSAKE_META: ItemMeta = { name: '', icon: '🎁', description: 'A keepsake from a fallen traveller. Memorabilia, not a resource.', stackMax: 64, equipSlot: null, useEffect: null };
 
 /** Metadata for a slot kind. A '<name> loot' keepsake (not a registry
  *  kind) gets the keepsake fallback, named after itself. */
@@ -109,6 +119,53 @@ export function stackMaxFor(kind: string): number {
 
 export function equipSlotFor(kind: string): EquipSlotId | null {
   return itemMetaFor(kind).equipSlot;
+}
+
+/** The hotbar: slots 0-8 of the same inventory (slot indexing is
+ *  stable — the hotbar never renumbers). */
+export const HOTBAR_SLOT_COUNT = 9;
+/** The hotbar selection's save key (new in 1109 — the selection is
+ *  UI state, not inventory; the slots persist via 1108). */
+export const HOTBAR_SELECTED_KEY = 'ag-3d-hotbar-selected-v1';
+
+export interface UseEffect { heal: number; }
+
+/** The use effect of a kind, if it has one. Only a meal is usable in
+ *  1109 (eat it to restore health); everything else returns null and
+ *  can never be consumed — a unit is never destroyed without an effect. */
+export function useEffectFor(kind: string): UseEffect | null {
+  return itemMetaFor(kind).useEffect;
+}
+
+/** Use one unit from a slot (pure — the layout semantics the asserts
+ *  pin). The VIEW does not apply this directly: it withdraws the unit
+ *  from the registry (the totals authority) and lets reconcileSlots
+ *  derive the layout, which agrees with this op. Returns the new
+ *  layout + the effect, or null when nothing was used. */
+export function consumeSlot(layout: PlayerInventoryLayout, index: number): { layout: PlayerInventoryLayout; effect: UseEffect } | null {
+  if (index < 0 || index >= layout.slots.length) return null;
+  const src = layout.slots[index];
+  if (!src.kind || src.qty <= 0) return null;
+  const effect = useEffectFor(src.kind);
+  if (!effect) return null;
+  const next = cloneLayout(layout);
+  next.slots[index].qty -= 1;
+  if (next.slots[index].qty <= 0) { next.slots[index].kind = null; next.slots[index].qty = 0; }
+  return { layout: next, effect };
+}
+
+/** Read the saved hotbar selection (corrupt or out-of-range saves
+ *  fall back to slot 0 — the selection is never load-bearing). */
+export function readHotbarSelected(): number {
+  try {
+    const n = Number(localStorage.getItem(HOTBAR_SELECTED_KEY));
+    if (Number.isFinite(n)) return Math.min(HOTBAR_SLOT_COUNT - 1, Math.max(0, Math.floor(n)));
+  } catch {}
+  return 0;
+}
+
+export function writeHotbarSelected(index: number): void {
+  try { localStorage.setItem(HOTBAR_SELECTED_KEY, String(Math.min(HOTBAR_SLOT_COUNT - 1, Math.max(0, Math.floor(index))))); } catch {}
 }
 
 export function emptyLayout(): PlayerInventoryLayout {

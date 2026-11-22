@@ -127,7 +127,15 @@ export function kindForPlayerKey(key: string): RegistryKind | null {
 
 /** The player inventory's resource keys (the ones the registry
  *  owns; keepsakes are the other keys in the same record). */
-export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat'];
+// BUILD 1109 (0x2C): 'food' joined the player bridge. kindForPlayerKey
+// already mapped food->food, but the bridge never mirrored it and
+// keepsakesOf dropped it — so a meal granted to the player (the 1108
+// givePlayerItem hook) was deposited into the registry and then
+// invisible: never in the record, never in the slots. Meals are now
+// registry-tracked for the player like the other carried kinds, so
+// the hotbar can use one. The settlement sim never touches the
+// player store's food (founders eat from the granary store).
+export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat', 'food'];
 
 /** How more of a resource is obtained (null = cannot be extracted
  *  — gold is looted/earned, never mined). */

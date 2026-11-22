@@ -113,15 +113,16 @@ import { freshMineState, validateMineState, mineSummaryText, type MineState } fr
 // came from. The view owns the ref; the E-key gather, the founder
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
-import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, depositInto, extractDeposit, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, kindForPlayerKey, type RegistryKind, type ResourceRegistry } from './resourceRegistry';
+import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, depositInto, extractDeposit, withdrawFrom, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, kindForPlayerKey, type RegistryKind, type ResourceRegistry } from './resourceRegistry';
 // BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
 // the registry -> React mirror. No crafting system exists in 3D yet.
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
 // BUILD 1108 (0x2B): the slot inventory engine (pure) + the panel.
 // The registry stays the one authority for totals; this module owns
 // only the slot distribution (see playerInventory.ts).
-import { equipItem, moveSlot, readSlotLayout, reconcileSlots, splitSlot, unequipItem, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
+import { HOTBAR_SLOT_COUNT, equipItem, itemMetaFor, moveSlot, readHotbarSelected, readSlotLayout, reconcileSlots, splitSlot, unequipItem, useEffectFor, writeHotbarSelected, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
 import { InventoryPanel } from './inventoryPanel3d';
+import { Hotbar } from './hotbar3d';
 import { createBuildingInteractions, type BuildingContext } from './buildingInteractions3d';
 import { Minimap3D, WorldMap3D, HudStrip, WaitSheet, WaitProgress, TopLeftButtons, BuildCluster, InteriorCarButtons } from './hudInterface3d';
 import { BuildPanel, type ImportReport, type OverwritePrompt, type CatalogCategory } from './buildPanel3d';
@@ -784,6 +785,30 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const handleInvSplit=(index:number)=>{commitInvLayout(splitSlot(invLayoutRef.current,index));};
   const handleInvEquip=(index:number)=>{commitInvLayout(equipItem(invLayoutRef.current,index));};
   const handleInvUnequip=(slot: EquipSlotId)=>{commitInvLayout(unequipItem(invLayoutRef.current,slot));};
+  // BUILD 1109 (0x2C): the hotbar selection + use. Selection is UI
+  // state (persisted under its own key); use consumes one unit of a
+  // usable kind (a meal restores 25 health) through the registry —
+  // the unit leaves the player store, then the normal refresh
+  // re-derives the slots, so totals stay authoritative. Anything
+  // without a use effect is a no-op with a message — the unit is
+  // never destroyed without an effect — and use at full health is
+  // blocked so a meal is never wasted.
+  const commitHotbarSelected=(index:number)=>{const clamped=Math.min(HOTBAR_SLOT_COUNT-1,Math.max(0,Math.floor(index)));if(clamped!==hotbarSelectedRef.current){hotbarSelectedRef.current=clamped;setHotbarSelected(clamped);}writeHotbarSelected(clamped);};
+  const handleHotbarSelect=(index:number)=>{commitHotbarSelected(index);};
+  const handleHotbarUse=(index:number)=>{
+    const slot=invLayoutRef.current.slots[index];
+    if(!slot||!slot.kind||slot.qty<=0)return;
+    const effect=useEffectFor(slot.kind);
+    if(!effect){setMessage(itemMetaFor(slot.kind).name+' cannot be used.');return;}
+    if(healthRef.current>=100){setMessage('Already at full health.');return;}
+    const rk=kindForPlayerKey(slot.kind);
+    if(rk){const w=withdrawFrom(registryRef.current,PLAYER_STORE_ID,rk,1);if(w.taken<=0)return;registryRef.current=w.registry;}
+    else{const cur=inventoryRef.current[slot.kind]??0;if(cur<=0)return;const next={...inventoryRef.current};if(cur<=1)delete next[slot.kind];else next[slot.kind]=cur-1;inventoryRef.current=next;setInventory({...next});}
+    const healed=Math.min(100,healthRef.current+effect.heal);
+    healthRef.current=healed;setHealth(healed);try{localStorage.setItem(HEALTH_KEY,String(healed));}catch{}
+    setMessage('Ate a meal · +'+effect.heal+' health');
+    refreshResourceUi();
+  };
   // BUILD 1078 (0x0D, area 8): the living-world sync lives in
   // worldSync3d.ts now — the view builds the context once and calls
   // in through the bound syncLivingWorld below (used by the 1s clock
@@ -858,6 +883,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [buildOpen,setBuildOpen]=useState(false);
   // BUILD 1108 (0x2B): the inventory panel (I key / HUD button).
   const [inventoryOpen,setInventoryOpen]=useState(false);
+  // BUILD 1109 (0x2C): the hotbar selection — slots 0-8 of the same
+  // inventory, persisted under its own key (the slots persist via 1108).
+  const [hotbarSelected,setHotbarSelected]=useState<number>(()=>readHotbarSelected());
+  const hotbarSelectedRef=useRef<number>(hotbarSelected); hotbarSelectedRef.current=hotbarSelected;
   const [palette,setPalette]=useState<PaletteKind|null>(null);
   const [removeMode,setRemoveMode]=useState(false);
   const [moveMode,setMoveMode]=useState(false);
@@ -1903,6 +1932,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       enterCar, exitCar, enterHut: buildIx.enterHut, exitHut: buildIx.exitHut,
       saveKey: SAVE_KEY, npcSaveKey: NPC_SAVE_KEY, healthKey: HEALTH_KEY,
       onToggleInventory: () => setInventoryOpen((v) => !v),
+      onHotbarSelect: (index: number) => commitHotbarSelected(index),
     };
     const controls = createPlayerControls(playerCtx);
 
@@ -2783,7 +2813,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1108 (0x2B) test hooks: the slot inventory (probes only).
       // getInventorySlots/getEquipped/getInventoryRecord read the live
       // layout + record; givePlayerItem grants through the REAL paths —
-      // resource kinds (wood/stone/gold/wheat→grain) via depositInto the
+      // resource kinds (wood/stone/gold/wheat→grain, food since 1109) via depositInto the
       // player store, the same path E-key gather uses; non-resource kinds
       // (gear: tools/weapons/armor) through the record's non-resource
       // channel, the same channel loot keepsakes use — there is no
@@ -2802,6 +2832,18 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       inventorySplit:(index:number)=>{handleInvSplit(index);return JSON.parse(JSON.stringify(invLayoutRef.current.slots));},
       inventoryEquip:(index:number)=>{handleInvEquip(index);return {...invLayoutRef.current.equipped};},
       inventoryUnequip:(slot:string)=>{handleInvUnequip(slot as EquipSlotId);return {...invLayoutRef.current.equipped};},
+      // BUILD 1109 (0x2C) test hooks: the hotbar (probes only). Slots
+      // 0-8 of the same layout — getHotbarSlots reads them, selectHotbar
+      // / useHotbar drive the live view handlers, getHotbarSelected
+      // reads the persisted selection.
+      getHotbarSlots:()=>JSON.parse(JSON.stringify(invLayoutRef.current.slots.slice(0,9))),
+      getHotbarSelected:()=>hotbarSelectedRef.current,
+      selectHotbar:(index:number)=>{handleHotbarSelect(index);return hotbarSelectedRef.current;},
+      useHotbar:(index:number)=>{handleHotbarUse(index);return {health:healthRef.current,slots:JSON.parse(JSON.stringify(invLayoutRef.current.slots.slice(0,9)))};},
+      // BUILD 1109 (0x2C): health read/write for the hotbar probe (the
+      // meal heal is only observable through the live health value).
+      getHealth:()=>healthRef.current,
+      setHealth:(n:number)=>{const v=Math.min(100,Math.max(0,Math.floor(n)));healthRef.current=v;setHealth(v);try{localStorage.setItem(HEALTH_KEY,String(v));}catch{}return v;},
       setCampFlour:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'flour',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE},capacity:GRANARY_CAPACITY_FLOUR});refreshResourceUi();return granaryFlourInRegistry(registryRef.current);},
       // BUILD 1095 (3.4): the chain setters (probes only) — the
       // storehouse store's coal / ingots / tools / timber /
@@ -3172,5 +3214,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     </div>
     <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
     <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} onClose={()=>setInventoryOpen(false)} />
+    {!hideUi && <Hotbar layout={invLayout} selected={hotbarSelected} onSelect={handleHotbarSelect} onUse={handleHotbarUse} />}
   </div>;
 }

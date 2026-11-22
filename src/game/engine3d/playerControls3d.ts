@@ -115,6 +115,10 @@ export interface PlayerControlsContext {
   // the I key opens/closes the inventory panel. Optional: old callers
   // pass none and I does nothing.
   onToggleInventory?: () => void;
+  // BUILD 1109: the hotbar quick-select (the view's hotbar selection)
+  // — digits 1-9 select hotbar slots 0-8. Optional: old callers pass
+  // none and the digits do nothing.
+  onHotbarSelect?: (index: number) => void;
   // BUILD 1102: the pen (the view's penRef) — the E stockpile
   // report quotes it. Optional: old callers pass none and the
   // report omits the pen line.
@@ -555,6 +559,10 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
   // BUILD 1108 (0x2B): I opens/closes the inventory panel. Not while
   // typing in a text field (library search, rename, paste name).
   if(k==='i'){if(!(e.target instanceof HTMLInputElement)&&!(e.target instanceof HTMLTextAreaElement))ctx.onToggleInventory?.();return;}
+  // BUILD 1109 (0x2C): digits 1-9 quick-select hotbar slots 0-8.
+  // Not while typing in a text field (same guard as I). Wheel stays
+  // camera zoom — it is never hijacked for the hotbar.
+  if(k>='1'&&k<='9'){if(!(e.target instanceof HTMLInputElement)&&!(e.target instanceof HTMLTextAreaElement))ctx.onHotbarSelect?.(Number(k)-1);return;}
   if(k==='f'||k===' '){
     const npcTarget=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
     // BUILD 1013: wolves are F/Space targets too (25/swing, the
