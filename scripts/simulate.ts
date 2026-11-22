@@ -16724,6 +16724,16 @@ console.log('Testing the slot inventory engine — reconcile / move / split / eq
 {
   const PI1108 = await import('../src/game/engine3d/playerInventory.js');
   const RR1108 = await import('../src/game/engine3d/resourceRegistry.js');
+  // Node has no localStorage: the 1056 stand-in is installed by an early
+  // section, which a standalone chunk does not include. Install the same
+  // faithful in-memory stand-in here when none exists (a no-op in the
+  // full sim, where 1056 already installed it; this is the last section,
+  // so the stand-in cannot leak into another test).
+  const g1108 = globalThis as unknown as { localStorage?: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } };
+  if (!g1108.localStorage) {
+    const store1108 = new Map<string, string>();
+    g1108.localStorage = { getItem: (k: string) => (store1108.has(k) ? store1108.get(k)! : null), setItem: (k: string, v: string) => { store1108.set(k, v); } };
+  }
   // --- Metadata: stack caps, equip slots, display names. ---
   assert(PI1108.stackMaxFor('wood') === 64, 'M1108: wood stacks to 64');
   assert(PI1108.stackMaxFor('tools') === 1, 'M1108: tools stack to 1 (unstackable gear)');
@@ -16752,7 +16762,9 @@ console.log('Testing the slot inventory engine — reconcile / move / split / eq
   const swapBase1108 = PI1108.reconcileSlots({ wood: 10, stone: 5 }, PI1108.emptyLayout());
   const swapped1108 = PI1108.moveSlot(swapBase1108, 0, 1);
   assert(swapped1108.slots[0].kind === 'stone' && swapped1108.slots[1].kind === 'wood', 'M1108: dragging wood onto stone swaps the two stacks');
-  assert(JSON.stringify(PI1108.layoutTotals(swapped1108)) === JSON.stringify({ wood: 10, stone: 5 }), 'M1108: totals are preserved across a swap');
+  // layoutTotals key order follows slot order, so compare key-sorted.
+  const sortedTotals1108 = (l: { slots: { kind: string | null; qty: number }[]; equipped: { weapon: string | null; tool: string | null; armor: string | null } }) => JSON.stringify(Object.fromEntries(Object.entries(PI1108.layoutTotals(l)).sort()));
+  assert(sortedTotals1108(swapped1108) === JSON.stringify({ stone: 5, wood: 10 }), 'M1108: totals are preserved across a swap');
   // --- Split: halves round down; qty 1 is a no-op. ---
   const odd1108 = PI1108.splitSlot(PI1108.reconcileSlots({ wood: 9 }, PI1108.emptyLayout()), 0);
   assert(odd1108.slots[0].qty === 5 && odd1108.slots[1].qty === 4, 'M1108: split rounds down — 9 keeps 5, moves 4');
@@ -16761,8 +16773,9 @@ console.log('Testing the slot inventory engine — reconcile / move / split / eq
   // --- Equip / unequip: one unit to the slot, totals preserved, back again. ---
   const gear1108 = PI1108.reconcileSlots({ tools: 1, wood: 5 }, PI1108.emptyLayout());
   const equipped1108 = PI1108.equipItem(gear1108, 0);
-  assert(equipped1108.equipped.tool === 'tools' && PI1108.layoutTotals(equipped1108).tools === undefined, 'M1108: equipping tools moves the unit out of the grid into the tool slot');
-  assert(JSON.stringify(PI1108.layoutTotals(equipped1108)) === JSON.stringify({ wood: 5 }), 'M1108: grid totals after equip are wood 5 only');
+  assert(equipped1108.equipped.tool === 'tools' && equipped1108.slots[0].kind === null, 'M1108: equipping tools moves the unit out of the grid into the tool slot');
+  assert(PI1108.layoutTotals(equipped1108).tools === 1, 'M1108: an equipped unit still counts toward its kind total');
+  assert(equipped1108.slots[1].kind === 'wood' && equipped1108.slots[1].qty === 5, 'M1108: the grid holds wood 5 only after the tool is equipped');
   const unequipped1108 = PI1108.unequipItem(equipped1108, 'tool');
   assert(unequipped1108.equipped.tool === null && PI1108.layoutTotals(unequipped1108).tools === 1, 'M1108: unequipping returns the tool to the grid');
   const noEquip1108 = PI1108.equipItem(PI1108.reconcileSlots({ wood: 5 }, PI1108.emptyLayout()), 0);
