@@ -111,6 +111,10 @@ export interface PlayerControlsContext {
   // the E report quotes it. Optional: old callers pass none and
   // the report omits the plan line.
   sitePlan?: MutableRefObject<SettlementPlan | null>;
+  // BUILD 1108: the inventory toggle (the view's setInventoryOpen) —
+  // the I key opens/closes the inventory panel. Optional: old callers
+  // pass none and I does nothing.
+  onToggleInventory?: () => void;
   // BUILD 1102: the pen (the view's penRef) — the E stockpile
   // report quotes it. Optional: old callers pass none and the
   // report omits the pen line.
@@ -548,6 +552,9 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     refreshResourceUi();
     return dep.added;
   };
+  // BUILD 1108 (0x2B): I opens/closes the inventory panel. Not while
+  // typing in a text field (library search, rename, paste name).
+  if(k==='i'){if(!(e.target instanceof HTMLInputElement)&&!(e.target instanceof HTMLTextAreaElement))ctx.onToggleInventory?.();return;}
   if(k==='f'||k===' '){
     const npcTarget=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
     // BUILD 1013: wolves are F/Space targets too (25/swing, the

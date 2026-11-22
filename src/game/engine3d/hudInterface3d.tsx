@@ -308,6 +308,7 @@ export interface HudStripProps {
   sprintRearmUi: boolean;
   inventory: Inventory3D;
   campUi: HudCampUi;
+  onInventoryToggle: () => void;
   onWaitToggle: () => void;
   onSprintPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
   onSprintPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => void;
@@ -315,7 +316,7 @@ export interface HudStripProps {
 }
 
 export function HudStrip(props: HudStripProps) {
-  const { message, clockUi, health, staminaUi, sprintingUi, sprintLatchedUi, sprintRearmUi, inventory, campUi, onWaitToggle, onSprintPointerDown, onSprintPointerUp, onSprintPointerCancel } = props;
+  const { message, clockUi, health, staminaUi, sprintingUi, sprintLatchedUi, sprintRearmUi, inventory, campUi, onInventoryToggle, onWaitToggle, onSprintPointerDown, onSprintPointerUp, onSprintPointerCancel } = props;
   return (
     <div data-testid="hud-text" style={{position:'absolute',left:10,bottom:10,maxWidth:260,padding:'6px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>
       <div title={message} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:240}}>{message}</div>
@@ -336,7 +337,7 @@ export function HudStrip(props: HudStripProps) {
           Consequence, stated: Hide UI hides this whole strip, so the
           icon hides with it (the old button stayed visible) — the
           user asked for it next to Gold, which lives in this strip. */}
-      <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={onSprintPointerDown} onPointerUp={onSprintPointerUp} onPointerCancel={onSprintPointerCancel} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button></div>
+      <div style={{marginTop:2,display:'flex',alignItems:'center',flexWrap:'wrap',gap:6}}><span>Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0} · Wheat {inventory.wheat||0}</span><button type="button" data-testid="sprint-toggle" aria-label="Sprint" title="Sprint (tap to toggle)" onPointerDown={onSprintPointerDown} onPointerUp={onSprintPointerUp} onPointerCancel={onSprintPointerCancel} onContextMenu={(e)=>e.preventDefault()} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:(sprintingUi||sprintLatchedUi)&&!staminaUi.exhausted?'#3f7d4e':staminaUi.exhausted?'#5a3a2e':'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1,opacity:staminaUi.exhausted?0.65:1,touchAction:'none',WebkitTouchCallout:'none',userSelect:'none'}}><span style={{fontSize:13}}>⚡</span><span>{staminaUi.exhausted?'Tired':sprintRearmUi?'Release!':sprintLatchedUi?'Sprinting':'Sprint'}</span></button><button type="button" data-testid="inventory-toggle" aria-label="Inventory" title="Inventory (I)" onClick={onInventoryToggle} style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 6px',border:'1px solid #c4d1bd',borderRadius:6,background:'#22392d',color:'#fff',fontWeight:700,fontSize:11,lineHeight:1}}>🎒 Inventory</button></div>
       {/* BUILD 1057: the founders' camp — the real stockpile count
           (wood delivered by the founders) and the shared food stock.
           Lives in the HUD strip, so Hide UI hides it with the rest. */}

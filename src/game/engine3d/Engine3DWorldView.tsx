@@ -113,10 +113,15 @@ import { freshMineState, validateMineState, mineSummaryText, type MineState } fr
 // came from. The view owns the ref; the E-key gather, the founder
 // tick, and the living-world sync all write through it, and the
 // HUD/camp line mirror it (never a second count).
-import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, extractDeposit, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { CAMP_STORE_ID, GRANARY_STORE_ID, PLAYER_STORE_ID, createRegistry, addDeposit, depositInto, extractDeposit, treeDeposit, depositsFromWorld, mirrorCampStoresToSettlement, setStoreQty, storeQty, totalAvailable, depositsOfKind, syncCampStoreFromSettlement, kindForPlayerKey, type RegistryKind, type ResourceRegistry } from './resourceRegistry';
 // BUILD 1075 (0x0D area 5): the player's inventory store — save/load +
 // the registry -> React mirror. No crafting system exists in 3D yet.
 import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInventory, type Inventory3D, type InventoryContext } from './inventoryCrafting3d';
+// BUILD 1108 (0x2B): the slot inventory engine (pure) + the panel.
+// The registry stays the one authority for totals; this module owns
+// only the slot distribution (see playerInventory.ts).
+import { equipItem, moveSlot, readSlotLayout, reconcileSlots, splitSlot, unequipItem, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
+import { InventoryPanel } from './inventoryPanel3d';
 import { createBuildingInteractions, type BuildingContext } from './buildingInteractions3d';
 import { Minimap3D, WorldMap3D, HudStrip, WaitSheet, WaitProgress, TopLeftButtons, BuildCluster, InteriorCarButtons } from './hudInterface3d';
 import { BuildPanel, type ImportReport, type OverwritePrompt, type CatalogCategory } from './buildPanel3d';
@@ -514,12 +519,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // the effect reads position, so it cannot sit above it.
   useEffect(()=>{const next={...diagRef.current,x:Math.round(position.x),y:Math.round(position.y)};diagRef.current=next;onDiagnosticsRef.current?.(next);},[position]);
   const [inventory,setInventory]=useState<Inventory3D>(()=>initialInventory());
+  // BUILD 1108 (0x2B): the slot layout — distribution state only, the
+  // record above (registry totals) stays the authority.
+  const [invLayout,setInvLayout]=useState<PlayerInventoryLayout>(()=>readSlotLayout());
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
   // BUILD 1003: stamina UI state (throttled publish from draw(); the
   // authoritative value lives in staminaRef, session-only, never saved).
   const [staminaUi,setStaminaUi]=useState<StaminaState>(FULL_STAMINA);
   const [sprintingUi,setSprintingUi]=useState(false);
   const inventoryRef=useRef<Inventory3D>(inventory); inventoryRef.current=inventory;
+  const invLayoutRef=useRef<PlayerInventoryLayout>(invLayout); invLayoutRef.current=invLayout;
   const healthRef=useRef<number>(health); healthRef.current=health;
   // BUILD 1003: sprint hold (button or Shift key) + stamina. Session-only:
   // staminaRef starts full on every mount and is never written to storage.
@@ -755,6 +764,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const inventoryCtx: InventoryContext = { registry: () => registryRef.current, inventoryRef, setInventory };
   const refreshResourceUi=()=>{
     refreshPlayerInventory(inventoryCtx);
+    // BUILD 1108 (0x2B): the slot layout follows the record — a pickup
+    // lands in the slots (reconcile preserves the player's layout).
+    const nextLayout=reconcileSlots(inventoryRef.current,invLayoutRef.current);
+    if(nextLayout!==invLayoutRef.current){invLayoutRef.current=nextLayout;setInvLayout(nextLayout);}
+    writeSlotLayout(nextLayout);
     const reg=registryRef.current;
     founderStockpileRef.current=campWoodInRegistry(reg);
     founderFoodRef.current=campFoodInRegistry(reg);
@@ -762,6 +776,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     founderStoneRef.current=campStoneInRegistry(reg);
     setCampUi({wood:founderStockpileRef.current,stone:founderStoneRef.current,food:founderFoodRef.current,grain:founderGrainRef.current,flour:granaryFlourInRegistry(reg),iron:storehouseOreInRegistry(reg,'iron'),ingots:metalChainIngotsInRegistry(reg),tools:metalChainToolsInRegistry(reg),timber:metalChainTimberInRegistry(reg),furniture:metalChainFurnitureInRegistry(reg),hut:hutProgressLabel(constructionRef.current),storehouse:storehouseLabel(storehouseRef.current),forest:forestPct(stateRef.current.world.trees.length),beds:foundersRef.current.length+'/'+housingCapacity(constructionRef.current)});
   };
+  // BUILD 1108 (0x2B): slot interactions — distribution only, the
+  // totals never move (the registry is the authority), so these never
+  // write to the registry; they persist the layout and mirror it.
+  const commitInvLayout=(next: PlayerInventoryLayout)=>{if(next!==invLayoutRef.current){invLayoutRef.current=next;setInvLayout(next);}writeSlotLayout(next);};
+  const handleInvMove=(from:number,to:number)=>{commitInvLayout(moveSlot(invLayoutRef.current,from,to));};
+  const handleInvSplit=(index:number)=>{commitInvLayout(splitSlot(invLayoutRef.current,index));};
+  const handleInvEquip=(index:number)=>{commitInvLayout(equipItem(invLayoutRef.current,index));};
+  const handleInvUnequip=(slot: EquipSlotId)=>{commitInvLayout(unequipItem(invLayoutRef.current,slot));};
   // BUILD 1078 (0x0D, area 8): the living-world sync lives in
   // worldSync3d.ts now — the view builds the context once and calls
   // in through the bound syncLivingWorld below (used by the 1s clock
@@ -834,6 +856,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // BUILD 984 placement tool. The ref mirrors the state for the
   // render-loop closures (which capture refs, not state).
   const [buildOpen,setBuildOpen]=useState(false);
+  // BUILD 1108 (0x2B): the inventory panel (I key / HUD button).
+  const [inventoryOpen,setInventoryOpen]=useState(false);
   const [palette,setPalette]=useState<PaletteKind|null>(null);
   const [removeMode,setRemoveMode]=useState(false);
   const [moveMode,setMoveMode]=useState(false);
@@ -1878,6 +1902,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setAreaMoveArmedBoth: buildIx.setAreaMoveArmedBoth, setAreaDuplicateArmedBoth: buildIx.setAreaDuplicateArmedBoth, setAreaDeleteArmed, setPlacementRotBoth,
       enterCar, exitCar, enterHut: buildIx.enterHut, exitHut: buildIx.exitHut,
       saveKey: SAVE_KEY, npcSaveKey: NPC_SAVE_KEY, healthKey: HEALTH_KEY,
+      onToggleInventory: () => setInventoryOpen((v) => !v),
     };
     const controls = createPlayerControls(playerCtx);
 
@@ -2755,6 +2780,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setStockpileWood:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,CAMP_STORE_ID,'wood',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_STOCKPILE_TILE}});refreshResourceUi();return campWoodInRegistry(registryRef.current);},
       setFoodStock:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'food',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_EAT_TILE},capacity:60});refreshResourceUi();return campFoodInRegistry(registryRef.current);},
       setCampGrain:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'grain',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE},capacity:200});refreshResourceUi();return campGrainInRegistry(registryRef.current);},
+      // BUILD 1108 (0x2B) test hooks: the slot inventory (probes only).
+      // getInventorySlots/getEquipped/getInventoryRecord read the live
+      // layout + record; givePlayerItem grants through the REAL paths —
+      // resource kinds (wood/stone/gold/wheat→grain) via depositInto the
+      // player store, the same path E-key gather uses; non-resource kinds
+      // (gear: tools/weapons/armor) through the record's non-resource
+      // channel, the same channel loot keepsakes use — there is no
+      // registry kind for gear, and depositInto would create an entry
+      // the player bridge can never read back. The inventory* hooks
+      // drive the pure slot ops through the live view state, so the
+      // probe proves the UI wiring, not just the pure functions (the
+      // asserts prove those).
+      getInventorySlots:()=>JSON.parse(JSON.stringify(invLayoutRef.current.slots)),
+      getEquipped:()=>({...invLayoutRef.current.equipped}),
+      getInventoryRecord:()=>({...inventoryRef.current}),
+      givePlayerItem:(kind:string,qty:number)=>{const rk=kindForPlayerKey(kind);if(rk){const dep=depositInto(registryRef.current,PLAYER_STORE_ID,rk,qty,{type:'entity',id:'test-grant'},{location:{x:Math.round(stateRef.current.position.x),y:Math.round(stateRef.current.position.y)},ownerId:'player'});registryRef.current=dep.registry;refreshResourceUi();return dep.added;}const want=Math.max(0,Math.floor(qty));if(want<=0)return 0;inventoryRef.current={...inventoryRef.current,[kind]:(inventoryRef.current[kind]??0)+want};setInventory({...inventoryRef.current});refreshResourceUi();return want;},
+      openInventory:()=>{setInventoryOpen(true);return true;},
+      closeInventory:()=>{setInventoryOpen(false);return true;},
+      inventoryMove:(from:number,to:number)=>{handleInvMove(from,to);return JSON.parse(JSON.stringify(invLayoutRef.current.slots));},
+      inventorySplit:(index:number)=>{handleInvSplit(index);return JSON.parse(JSON.stringify(invLayoutRef.current.slots));},
+      inventoryEquip:(index:number)=>{handleInvEquip(index);return {...invLayoutRef.current.equipped};},
+      inventoryUnequip:(slot:string)=>{handleInvUnequip(slot as EquipSlotId);return {...invLayoutRef.current.equipped};},
       setCampFlour:(n:number)=>{registryRef.current=setStoreQty(registryRef.current,GRANARY_STORE_ID,'flour',Math.max(0,Math.round(n)),{type:'loaded'},{location:{...FOUNDER_CAMP_CENTRE},capacity:GRANARY_CAPACITY_FLOUR});refreshResourceUi();return granaryFlourInRegistry(registryRef.current);},
       // BUILD 1095 (3.4): the chain setters (probes only) — the
       // storehouse store's coal / ingots / tools / timber /
@@ -2963,7 +3010,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         while exhausted) — only the long "walk to recover" sentence is
         dropped, so the row still fits on one line; the Sprint icon
         already shows "Tired" while exhausted. */}
-    {!hideUi && <HudStrip message={message} clockUi={clockUi} health={health} staminaUi={staminaUi} sprintingUi={sprintingUi} sprintLatchedUi={sprintLatchedUi} sprintRearmUi={sprintRearmUi} inventory={inventory} campUi={campUi} onWaitToggle={()=>setWaitSheetOpen(v=>!v)} onSprintPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onSprintPointerUp={(e)=>releaseSprintPointer(sprintCtx,e.pointerId,e.clientX,e.clientY,true)} onSprintPointerCancel={(e)=>releaseSprintPointer(sprintCtx,e.pointerId,e.clientX,e.clientY,false)} />}
+    {!hideUi && <HudStrip message={message} clockUi={clockUi} health={health} staminaUi={staminaUi} sprintingUi={sprintingUi} sprintLatchedUi={sprintLatchedUi} sprintRearmUi={sprintRearmUi} inventory={inventory} campUi={campUi} onInventoryToggle={()=>setInventoryOpen(v=>!v)} onWaitToggle={()=>setWaitSheetOpen(v=>!v)} onSprintPointerDown={(e)=>{sprintPointerIdRef.current=e.pointerId;sprintDownRef.current={t:performance.now(),x:e.clientX,y:e.clientY};sprintHeldRef.current=true;}} onSprintPointerUp={(e)=>releaseSprintPointer(sprintCtx,e.pointerId,e.clientX,e.clientY,true)} onSprintPointerCancel={(e)=>releaseSprintPointer(sprintCtx,e.pointerId,e.clientX,e.clientY,false)} />}
     {/* BUILD 1056: wait sheet — the 2D wait options on the 3D clock.
         A centred panel (the sheet covers the canvas, so taps land on it,
         not the field). The progress panel shows the live clock as it
@@ -3124,5 +3171,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <span ref={placePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#fff',fontSize:12,fontWeight:700}}></span>
     </div>
     <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
+    <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} onClose={()=>setInventoryOpen(false)} />
   </div>;
 }
