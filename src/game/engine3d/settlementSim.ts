@@ -45,6 +45,8 @@ import {
   stepFounderMove,
   emptyFounderPath,
   spawnResident,
+  NEWCOMER_NAME,
+  NEWCOMER_SLEEP_TILE,
   campWoodInRegistry,
   campFoodInRegistry,
   carryAnimalYieldToCarrier,
@@ -133,6 +135,7 @@ import {
   type PenState,
 } from './animalHusbandry';
 import { arrivalCheck, RESIDENT_ENTRY_TILE } from './settlementGrowth';
+import { newcomerEligibility, averageSettlerAffinity, newcomerEntryTile } from './population';
 import { chooseScoredActivity, UTILITY_HUNT_FOOD_THRESHOLD, UTILITY_PILE_FULL } from './utility';
 import { assignProfessions, professionSlotsFor, type ProfessionNeed } from './professions';
 import {
@@ -188,7 +191,7 @@ import {
   spendBridgeStepFromRegistry, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
-import { closestFounder, recordSharedEvent, restTileFor } from './memory';
+import { closestFounder, recordSharedEvent, restTileFor, addSocialKey } from './memory';
 import { CAMP_STORE_ID, createRegistry, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import { validatePlacement, addPlacement, placedFenceTiles } from './placements';
 import { npcWalkable } from './townsfolk3d';
@@ -791,6 +794,33 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     const newcomer = spawnResident(arrival.name, arrival.bed, RESIDENT_ENTRY_TILE, nowAbs, sim.founders);
     sim.founders = [...sim.founders, newcomer];
     ledger.arrivals.push(arrival.name);
+  }
+
+  // BUILD 1103 (0x26, Phase 4.4): Tamsin — the affinity-gated
+  // newcomer (population.ts), the mirror of the view tick: first
+  // hut done, food >= 10, founders bonded (avg affinity >= 55),
+  // day >= 2. She walks in from the east edge and sleeps at the
+  // camp bed (124,119), never taking a hut bed. One at a time.
+  if (!sim.founders.some((f) => f.name === NEWCOMER_NAME) && !sim.founders.some((f) => f.workState === 'arriving')) {
+    const tamsinEl = newcomerEligibility({
+      day,
+      foodStock: campFoodInRegistry(sim.registry),
+      hutDone: construction.sites[0].state === 'done',
+      avgAffinity: averageSettlerAffinity(sim.founders, day),
+      hasNewcomer: false,
+    });
+    if (tamsinEl.eligible) {
+      const entry = newcomerEntryTile(world) ?? RESIDENT_ENTRY_TILE;
+      const tamsin = spawnResident(
+        NEWCOMER_NAME,
+        { hut: -1, x: NEWCOMER_SLEEP_TILE.x, y: NEWCOMER_SLEEP_TILE.y },
+        entry,
+        nowAbs,
+        sim.founders,
+      );
+      sim.founders = [...sim.founders, tamsin];
+      ledger.arrivals.push(NEWCOMER_NAME);
+    }
   }
 
   // BUILD 1098 (0x21): professions — assigned by settlement need,
@@ -1878,7 +1908,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
     else if ((f.workState === 'toPrey' || f.workState === 'hunting') && (f.activity === 'work' || f.activity === 'build')) dest = f.preyTarget ? { x: f.preyTarget.x, y: f.preyTarget.y } : (myJob ? myJob.tile : { x: Math.round(f.x), y: Math.round(f.y) });
     else if ((f.workState === 'toBank' || f.workState === 'fishing') && (f.activity === 'work' || f.activity === 'build')) dest = myJob ? myJob.tile : { x: Math.round(f.x), y: Math.round(f.y) };
     else if ((f.workState === 'toPen' || f.workState === 'shepherding') && (f.activity === 'work' || f.activity === 'build')) dest = { ...PEN_APPROACH };
-    else if (f.activity === 'sleep' && hutPlaced) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;
+    else if (f.activity === 'sleep' && hutPlaced && f.bed.hut >= 0) dest = HUT_SITES[f.bed.hut]?.approach ?? HUT_APPROACH;
     else if ((f.activity === 'work' || f.activity === 'build') && (f.workState === 'toSite' || f.workState === 'building'))
       dest = buildSite ? buildSite.approach : HUT_APPROACH;
     const cx = Math.round(f.x);
@@ -1985,7 +2015,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         }
       } else if (f.workState === 'toStockpile') {
         f.workState = 'toTree';
-      } else if (f.activity === 'sleep' && hutPlaced && !insideHut) {
+      } else if (f.activity === 'sleep' && hutPlaced && f.bed.hut >= 0 && !insideHut) {
         // Through the door to their bed (their hut sleep tile).
         const bed = f.bed;
         f.x = bed.x;
@@ -2027,6 +2057,14 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           } else {
             // A newcomer reached camp on foot — they join the workforce.
             f.workState = 'toTree';
+            // BUILD 1103: Tamsin is welcomed — every founder gains
+            // her key (neutral 50, dated today). Pool arrivals keep
+            // the old shape (no keys).
+            if (f.name === NEWCOMER_NAME) {
+              for (const o of sim.founders) {
+                if (o !== f) o.social = addSocialKey(o.social, f.name, day);
+              }
+            }
             sim.paths.delete(f.name);
           }
         } else if (f.workState === 'toStorehouse') {

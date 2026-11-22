@@ -168,10 +168,7 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  leg, like carryingGrain for the harvest, but never stocked, so
  *  it rides on the founder, not the registry). v9 saves migrate
  *  with no bridges and carryingWater 0 (no path had met a river
- *  yet, the world keeps working, the same as before). NOTE: the
- *  parked Tamsin stash (BUILD 1061, stash@{0}) ALSO claims v4
- *  for the newcomer — when it resumes it must rebase its
- *  migration to v13 (this v12 means "has a granary"). v11
+ *  yet, the world keeps working, the same as before). v11
  *  (BUILD 1089, 0x18): the MINES (mines.ts — the mine sites, the
  *  quarry site, the lumber site) and each founder's carried ORE
  *  (carryingOre — the mine leg, like carryingStone for the
@@ -183,8 +180,15 @@ export const FOUNDERS_SAVE_KEY = 'ag-3d-founders-v1';
  *  now the granary's counts, not the camp store's; fresh worlds
  *  start with an empty granary, no more magic 30). v11 saves
  *  migrate with the granary seeded from their foodStock/
- *  grainStock (the same fields, the new store). */
-export const FOUNDER_SAVE_VERSION = 12;
+ *  grainStock (the same fields, the new store). v13 (BUILD 1103,
+ *  0x26): the NEWCOMER (population.ts — Tamsin arrives when the
+ *  settlement is ready, affinity-gated; the parked BUILD 1061
+ *  stash@{0} claimed v4 for her, rebased here to v13). A v12
+ *  save migrates with no newcomer invented — she arrives only
+ *  when the conditions are met, never by migration; a v13 save
+ *  with Tamsin keeps her (name, camp bed, workState, social keys
+ *  toward her). */
+export const FOUNDER_SAVE_VERSION = 13;
 
 /** Camp centre (surveyed on the real fresh world, 2026-11-15):
  *  4 trees within 12 tiles, 7 within 25, nearest tree 4 tiles
@@ -210,9 +214,19 @@ export const FOUNDER_SLEEP_TILES = [
 /** New founders — none of these names is in the old 47-roster. */
 export const FOUNDER_NAMES = ['Marlow', 'Greta', 'Perrin'];
 
+/** BUILD 1103 (0x26, Phase 4.4) — the first newcomer (G27, population growth, resumed from the parked BUILD 1061 stash@{0}).
+ *  Tamsin is a new name: none of the three founders, none of the old 47 roster (townsfolk3d.ts ROSTER_3D — Wren and Sable are both taken there), none of the pool (RESIDENT_NAMES). She arrives when the settlement is ready (population.ts) and sleeps at the camp's old centre sleep tile (124,119) — free since the founders moved into the hut. No second hut in this build; Tamsin sleeping under the stars is exactly why the second hut is wanted next. */
+export const NEWCOMER_NAME = 'Tamsin';
+/** Every settler who can live at the camp (3 founders + newcomer). */
+export const ALL_SETTLER_NAMES = [...FOUNDER_NAMES, NEWCOMER_NAME];
+/** The newcomer's bed: the founders' old camp-centre sleep tile. */
+export const NEWCOMER_SLEEP_TILE = { x: 124, y: 119 };
+
 /** A founder's bed: which hut (site index) and which sleep tile.
  *  Saved (v5) — the bed is the housing capacity a resident
- *  occupies, so it must survive a reload. */
+ *  occupies, so it must survive a reload. hut -1 (BUILD 1103) is
+ *  the camp bed: the newcomer sleeps at NEWCOMER_SLEEP_TILE, not
+ *  in any hut — validSavedBed accepts only that one tile for -1. */
 export type FounderBed = { hut: number; x: number; y: number };
 
 /** Newcomer names for the chain's arrivals (BUILD 1066) — none is
@@ -353,8 +367,8 @@ export function deliverFounderWood(stockpileWood: number, carrying: number): num
 // authority, and the view calls them. The founders save keeps its
 // v4 shape (stockpileWood/foodStock/carrying numbers); the registry
 // is rebuilt from those numbers on load and written back into them
-// on save, so no save version moves in this build and the parked
-// Tamsin stash's v4 claim is untouched.
+// on save, so no save version moves in this build (the Tamsin
+// design it mentions has since resumed as BUILD 1103, v13).
 
 /**
  * Seed the camp store from the founders save numbers (load path):
@@ -1497,6 +1511,11 @@ function validSavedBed(value: unknown): FounderBed | null {
   const hut = Number(b.hut);
   const x = Number(b.x);
   const y = Number(b.y);
+  // BUILD 1103: the camp bed — hut -1, only the newcomer's tile
+  // (124,119). Any other -1 bed is invalid, like any bad hut bed.
+  if (hut === -1) {
+    return x === NEWCOMER_SLEEP_TILE.x && y === NEWCOMER_SLEEP_TILE.y ? { hut: -1, x, y } : null;
+  }
   if (!Number.isInteger(hut) || hut < 0 || hut >= HUT_SITES.length) return null;
   if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
   if (!HUT_SITES[hut].sleepTiles.some((t) => t.x === x && t.y === y)) return null;
@@ -1520,14 +1539,14 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
   const affinityDay: Record<string, number> = { ...fresh.affinityDay };
   if (v.affinity && typeof v.affinity === 'object') {
     for (const [k, raw] of Object.entries(v.affinity as Record<string, unknown>)) {
-      if (k === selfName || !FOUNDER_NAMES.includes(k)) continue;
+      if (k === selfName || !ALL_SETTLER_NAMES.includes(k)) continue;
       const n = Number(raw);
       if (Number.isFinite(n)) affinity[k] = Math.max(0, Math.min(100, Math.round(n)));
     }
   }
   if (v.affinityDay && typeof v.affinityDay === 'object') {
     for (const [k, raw] of Object.entries(v.affinityDay as Record<string, unknown>)) {
-      if (k === selfName || !FOUNDER_NAMES.includes(k)) continue;
+      if (k === selfName || !ALL_SETTLER_NAMES.includes(k)) continue;
       const n = Number(raw);
       if (Number.isFinite(n)) affinityDay[k] = Math.max(0, Math.floor(n));
     }
@@ -1538,7 +1557,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
       if (!m || typeof m !== 'object') continue;
       const r = m as Record<string, unknown>;
       if (r.type !== 'build' && r.type !== 'eat' && r.type !== 'rest' && r.type !== 'sleep') continue;
-      if (typeof r.other !== 'string' || r.other === selfName || !FOUNDER_NAMES.includes(r.other)) continue;
+      if (typeof r.other !== 'string' || r.other === selfName || !ALL_SETTLER_NAMES.includes(r.other)) continue;
       const day = Number(r.day);
       const abs = Number(r.abs);
       if (!Number.isFinite(day) || !Number.isFinite(abs)) continue;
@@ -1550,7 +1569,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 }
 
 /**
- * Migrate an unknown founders save to the current version (v12).
+ * Migrate an unknown founders save to the current version (v13).
  * Missing version field =
  * v0 (defaults filled); version 1 = validated + clamped (unknown
  * founder names dropped, missing founders restored at camp,
@@ -1573,7 +1592,7 @@ export function validateFounderSocial(value: unknown, selfName: string): Founder
 export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== 7 && v.version !== 8 && v.version !== 9 && v.version !== 10 && v.version !== 11 && v.version !== FOUNDER_SAVE_VERSION) return null;
+  if (v.version !== undefined && v.version !== 0 && v.version !== 1 && v.version !== 2 && v.version !== 3 && v.version !== 4 && v.version !== 5 && v.version !== 6 && v.version !== 7 && v.version !== 8 && v.version !== 9 && v.version !== 10 && v.version !== 11 && v.version !== 12 && v.version !== FOUNDER_SAVE_VERSION) return null;
   const rawFounders = Array.isArray(v.founders) ? v.founders : [];
   // BUILD 1066 (v5): construction from the save — a v5 save has the
   // per-site list (`sites`); a v4-or-earlier save has the single-hut
@@ -1709,9 +1728,14 @@ export function migrateFoundersSave(value: unknown): FoundersSaveState | null {
         : 'toTree';
     if (construction.sites[0].state === 'done' && (rWorkState === 'toSite' || rWorkState === 'building')) rWorkState = 'toTree';
     const rBed = validSavedBed(r.bed);
+    // BUILD 1103: the newcomer's bed is the camp bed, never a hut
+    // bed — a saved Tamsin without a valid bed falls back to it
+    // (a pool resident falls back to the first free hut bed).
     const bed = rBed && !takenBeds.has(rBed.hut + ',' + rBed.x + ',' + rBed.y)
       ? rBed
-      : freeBed(construction, takenBeds) ?? { hut: 0, x: HUT_SLEEP_TILES[0].x, y: HUT_SLEEP_TILES[0].y };
+      : rName === NEWCOMER_NAME
+        ? { hut: -1, x: NEWCOMER_SLEEP_TILE.x, y: NEWCOMER_SLEEP_TILE.y }
+        : freeBed(construction, takenBeds) ?? { hut: 0, x: HUT_SLEEP_TILES[0].x, y: HUT_SLEEP_TILES[0].y };
     takenBeds.add(bed.hut + ',' + bed.x + ',' + bed.y);
     founders.push({
       id: rId,
@@ -2013,6 +2037,9 @@ export function foundersStateOf(save: FoundersSaveState): FounderState[] {
       bed = savedBed;
     } else if (idx >= 0) {
       bed = { hut: 0, x: FOUNDER_SLEEP_TILES[idx].x, y: FOUNDER_SLEEP_TILES[idx].y };
+    } else if (s.name === NEWCOMER_NAME) {
+      // BUILD 1103: the newcomer's bed is the camp bed — never a hut bed.
+      bed = { hut: -1, x: NEWCOMER_SLEEP_TILE.x, y: NEWCOMER_SLEEP_TILE.y };
     } else {
       bed = freeBed(save.construction, taken) ?? { hut: 0, x: FOUNDER_SLEEP_TILES[0].x, y: FOUNDER_SLEEP_TILES[0].y };
     }

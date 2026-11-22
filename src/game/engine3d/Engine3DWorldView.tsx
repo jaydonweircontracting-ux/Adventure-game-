@@ -106,7 +106,7 @@ import { ROSTER_3D, buildStaticAnchors, buildAnchors, npcWalkable, quantizeTile,
 import { formatDayClock, waitOptionsFor, waitInterrupted, waitRemainingLabel, WAIT_STEP_MINUTES, WAIT_STEP_MS, waitStepsFor } from './worldclock';
 // BUILD 1057: founder settlers — the first NPCs of the empty world
 // (needs-driven, chopping wood to a visible camp stockpile).
-import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
+import { FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_STOCKPILE_TILE, FOUNDER_EAT_TILE, FOUNDER_NAMES, ALL_SETTLER_NAMES, FOUNDER_START_FOOD, FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, decayFounderNeeds, founderAbsMinutes, defaultFounderState, nearestTreeTile, loadFoundersSave, saveFoundersSave, foundersSaveOf, foundersStateOf, seedCampStore, seedCarrierStore, eatFounderMealFromRegistry, fellTreeToCarrier, harvestFarmTileToCarrier, FOUNDER_HARVEST_TICKS, campWoodInRegistry, campFoodInRegistry, campStoneInRegistry, spawnResident, type FounderState, type FounderPathState } from './founders';
 import { freshPen, validatePenState, PEN_RECT, HUNTABLE_KINDS, simPreyFor, nearestBankTile, type PenState } from './animalHusbandry';
 import { chooseScoredActivity, founderDistToSite } from './utility';
 import { professionLabel } from './professions';
@@ -2717,7 +2717,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // (probe setup — lets a probe give two founders a history
       // without waiting for days of shared meals).
       getFounderSocial:()=>foundersRef.current.map(f=>({name:f.name,affinity:{...f.social.affinity},affinityDay:{...f.social.affinityDay},memories:f.social.memories.map(m=>({...m})),closest:closestFounder(f.social,clockRef.current.day)})),
-      setFounderAffinity:(name:string,other:string,value:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(!f||!FOUNDER_NAMES.includes(other)||other===name)return false;f.social={...f.social,affinity:{...f.social.affinity,[other]:Math.max(0,Math.min(100,Math.round(value)))},affinityDay:{...f.social.affinityDay,[other]:clockRef.current.day}};return true;},
+      setFounderAffinity:(name:string,other:string,value:number)=>{const f=foundersRef.current.find(x=>x.name===name);if(!f||!ALL_SETTLER_NAMES.includes(other)||other===name)return false;f.social={...f.social,affinity:{...f.social.affinity,[other]:Math.max(0,Math.min(100,Math.round(value)))},affinityDay:{...f.social.affinityDay,[other]:clockRef.current.day}};return true;},
       getFounderRenderPos:(name:string)=>{const r=renderer.npcRender.get('founder:'+name);return r?{x:r.x,y:r.y}:null;},
       // BUILD 1058 test hooks (probes only — no gameplay effect):
       // read the hut construction (state/progress/wood spent +

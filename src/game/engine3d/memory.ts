@@ -120,6 +120,19 @@ export function freshFounderSocial(names: string[]): FounderSocial {
   return { affinity, affinityDay, memories: [] };
 }
 
+/** BUILD 1103: add a new settler to a founder's social state — the
+ *  key starts neutral (50) on the given day, no memories. No-op
+ *  when the key already exists (a re-welcome never resets a real
+ *  bond). Returns a new state; the input is untouched. Pure. */
+export function addSocialKey(social: FounderSocial, name: string, day: number): FounderSocial {
+  if (social.affinity[name] !== undefined) return social;
+  return {
+    affinity: { ...social.affinity, [name]: AFFINITY_START },
+    affinityDay: { ...social.affinityDay, [name]: Math.max(0, Math.floor(day)) },
+    memories: social.memories,
+  };
+}
+
 /** Pull an affinity toward neutral by `days` days of drift (1/day,
  *  never crossing 50). Pure. */
 export function pullTowardNeutral(affinity: number, days: number): number {
