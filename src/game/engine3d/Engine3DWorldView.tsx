@@ -22,7 +22,7 @@ import { LANTERN_POST_H, LANTERN_POST_W, LANTERN_BOX, LANTERN_CAP, LANTERN_TIMBE
 import { absMinutes, farmStageAt, readyFarmTiles, FARM_HARVEST_WHEAT, FARM_SOIL, FARM_FURROW, FARM_VILLAGER_RADIUS, type FarmStage } from './farm';
 import { campGrainInRegistry } from './food';
 import { GRANARY_CAPACITY_FLOUR, granaryFlourInRegistry, granaryMeatInRegistry, granaryFishInRegistry } from './granary';
-import { MILL_CENTRE, MILL_RECT, MILL_DOOR, MILL_APPROACH, BAKERY_CENTRE, BAKERY_RECT, BAKERY_DOOR, BAKERY_APPROACH, freshFoodChain, reconcileFoodChain, millPlacementExists, bakeryPlacementExists, type FoodChainState } from './foodChain';
+import { MILL_CENTRE, MILL_RECT, MILL_DOOR, MILL_APPROACH, BAKERY_CENTRE, BAKERY_RECT, BAKERY_DOOR, BAKERY_APPROACH, freshFoodChain, reconcileFoodChain, millPlacementExists, bakeryPlacementExists, placedWindmillRects, type FoodChainState } from './foodChain';
 import { SMELTER_CENTRE, SMELTER_RECT, SMELTER_DOOR, SMELTER_APPROACH, BLACKSMITH_CENTRE, BLACKSMITH_RECT, BLACKSMITH_DOOR, BLACKSMITH_APPROACH, SAWMILL_CENTRE, SAWMILL_RECT, SAWMILL_DOOR, SAWMILL_APPROACH, CARPENTER_CENTRE, CARPENTER_RECT, CARPENTER_DOOR, CARPENTER_APPROACH, WORKSHOP_CENTRE, WORKSHOP_RECT, WORKSHOP_DOOR, WORKSHOP_APPROACH, freshMetalChain, reconcileMetalChain, smelterPlacementExists, blacksmithPlacementExists, sawmillPlacementExists, carpenterPlacementExists, workshopPlacementExists, workshopStallReason, metalChainCoalInRegistry, metalChainIngotsInRegistry, metalChainToolsInRegistry, metalChainTimberInRegistry, metalChainFurnitureInRegistry, type MetalChainState } from './metalChain';
 import { INN_APPROACH, INN_CENTRE, INN_RECT, INN_DOOR, INN_SITE_ID, MARKET_STALL_TILE, freshHousing, reconcileHousing, seedInnStore, innFoodInRegistry, innPlacementExists, marketStallListing, nightSleepers, type HousingState } from './housing';
 import { sitePlanFromSave, type SettlementPlan } from './sitePlan';
@@ -2745,7 +2745,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1094 (3.3): the food chain (probes only) — the mill +
       // the bakery state + progress, their placements, and the flour
       // in the granary. Read-only.
-      getFoodChain:()=>({mill:{...foodChainRef.current.mill,centre:{...MILL_CENTRE},rect:{...MILL_RECT},door:{...MILL_DOOR},approach:{...MILL_APPROACH},placed:millPlacementExists(stateRef.current.world)},bakery:{...foodChainRef.current.bakery,centre:{...BAKERY_CENTRE},rect:{...BAKERY_RECT},door:{...BAKERY_DOOR},approach:{...BAKERY_APPROACH},placed:bakeryPlacementExists(stateRef.current.world)},flour:granaryFlourInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current)}),
+      getFoodChain:()=>({mill:{...foodChainRef.current.mill,centre:{...MILL_CENTRE},rect:{...MILL_RECT},door:{...MILL_DOOR},approach:{...MILL_APPROACH},placed:millPlacementExists(stateRef.current.world)},bakery:{...foodChainRef.current.bakery,centre:{...BAKERY_CENTRE},rect:{...BAKERY_RECT},door:{...BAKERY_DOOR},approach:{...BAKERY_APPROACH},placed:bakeryPlacementExists(stateRef.current.world)},flour:granaryFlourInRegistry(registryRef.current),grain:campGrainInRegistry(registryRef.current),food:campFoodInRegistry(registryRef.current),placedWindmills:placedWindmillRects(stateRef.current.world).length}),
       // BUILD 1095 (3.4): the metal + timber chain (probes only) — the
       // five buildings' state + progress, their placements, the
       // storehouse counts, and the workshop stall reason (null when

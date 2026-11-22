@@ -80,6 +80,7 @@ import {
   MILL_APPROACH, MILL_CENTRE, MILL_SITE_ID, MILL_TICKS_PER_SHIFT, MILL_WOOD_PER_STEP, BAKERY_WOOD_PER_STEP,
   bakeFlourToMeals, canBuildBakery, canBuildMill, canStartBakery, canStartMill,
   finishBakery, finishMill, foodChainFlourInRegistry, grindGrainToFlour,
+  grindPlacedWindmills, markPlacedWindmillGround, placedWindmillBatchesDue, placedWindmillRects,
   reconcileFoodChain, spendBakeryStepFromRegistry, spendMillStepFromRegistry,
   type FoodChainState,
 } from './foodChain';
@@ -318,6 +319,21 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
       // the founders rebuild from the pile.
       const reconciledFoodChain=reconcileFoodChain(foodChainRef.current,world);
       if(reconciledFoodChain!==foodChainRef.current){foodChainRef.current=reconciledFoodChain;hutChanged=true;}
+      // BUILD 1106: player-placed windmills grind on the wind — one
+      // batch (2 grain -> 2 flour) per windmill per game-hour, from
+      // the granary, capped at 100 flour like the founder mill. No
+      // placed windmill in the sim worlds, so the M1069 numbers
+      // cannot move; the watermark advances even when nothing
+      // grinds (no grain / flour full), so the hour is not retried.
+      const placedWindmills=placedWindmillRects(world);
+      if(placedWindmills.length>0){
+        const windmillDue=placedWindmillBatchesDue(foodChainRef.current,nowAbs);
+        if(windmillDue.batchesPerWindmill>0){
+          const ground=grindPlacedWindmills(registryRef.current,placedWindmills.length,windmillDue.batchesPerWindmill);
+          if(ground.ground>0){registryRef.current=ground.registry;stockChanged=true;}
+        }
+        foodChainRef.current=markPlacedWindmillGround(foodChainRef.current,windmillDue.nextHour);
+      }
       // BUILD 1095: reconcile the chain the same way — a 'done'
       // building whose placement is gone resets to 'none', so the
       // founders rebuild from the pile.

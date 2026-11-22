@@ -50,9 +50,15 @@
  * finishes (the mill stamps a 'house-windmill' placement, the
  * bakery stamps a 'house' placement — there is no 'house-bakery'
  * palette kind, and this build does not invent one). A
- * player-placed windmill does NOT mill — milling is tied to the
- * founder-built mill site (this module's state), out of scope
- * for this build.
+ * BUILD 1106: a player-placed windmill DOES mill — on the wind,
+ * one batch (2 grain -> 2 flour) per windmill per game-hour
+ * (placedWindmillRects / grindPlacedWindmills below, driven by
+ * the hour watermark on this state). The wind works the mill,
+ * so no founder is needed; the founder mill stays the fast
+ * path (a worked 3-tick shift grinds 6 flour). The founder
+ * mill's own stamp (exactly MILL_RECT) is excluded — it grinds
+ * through the founder miller, never through this path, so it
+ * must not double-grind.
  *
  * SITES (surveyed on the real fresh world, verify1094 survey):
  * - Mill: south of the storehouse, clear of the farm, clear of
@@ -224,6 +230,12 @@ export type FoodChainSiteState = {
 export type FoodChainState = {
   mill: FoodChainSiteState;
   bakery: FoodChainSiteState;
+  /** BUILD 1106: the last game-hour index (floor(absMin / 60))
+   *  a placed windmill ground for, -1 = never. Session
+   *  bookkeeping carried on this state so the live tick and the
+   *  sim share one code path (a compatible field, defaulted when
+   *  absent — the 1093 'stages' precedent; NO version move). */
+  placedWindmillGrindHour: number;
 };
 
 function freshSite(totalSteps: number): FoodChainSiteState {
@@ -232,7 +244,7 @@ function freshSite(totalSteps: number): FoodChainSiteState {
 
 /** A fresh food chain — no mill, no bakery. Pure. */
 export function freshFoodChain(): FoodChainState {
-  return { mill: freshSite(MILL_WORK_STEPS), bakery: freshSite(BAKERY_WORK_STEPS) };
+  return { mill: freshSite(MILL_WORK_STEPS), bakery: freshSite(BAKERY_WORK_STEPS), placedWindmillGrindHour: -1 };
 }
 
 // --- Stage plans (0x1C: foundation -> frame -> finished) ---
@@ -531,6 +543,92 @@ export function bakeFlourToMeals(
   return { registry: next, baked: made, flourUsed: withdrawn.taken - leftoverFlour };
 }
 
+// --- Player-placed windmills (BUILD 1106) ---
+
+/** Game-minutes per placed-windmill grind batch: one batch per
+ *  windmill per game-hour — the catalogue's `produces:
+ *  { flour, perHour: 2 }` for the Windmills entry. */
+export const PLACED_WINDMILL_GRIND_MINUTES = 60;
+/** Catch-up cap: one tick never grinds more than a day's worth
+ *  of batches per windmill — after a long wait (or a clock jump)
+ *  the remaining hours grind on later ticks, one day per tick. */
+export const PLACED_WINDMILL_MAX_CATCHUP_BATCHES = 24;
+
+/** The player-placed windmills in the world: 'house' +
+ *  'windmill' placements that are NOT the founder mill's own
+ *  stamp (the founder mill stamps exactly MILL_RECT — it grinds
+ *  through the founder miller, never through this path, so it
+ *  must not double-grind). A windmill the player removed is
+ *  gone from the list, so it grinds nothing. Pure read. */
+export function placedWindmillRects(world: IsoWorld): { x0: number; y0: number; x1: number; y1: number }[] {
+  return (world.placements ?? [])
+    .filter(
+      (p) =>
+        p.kind === 'house' &&
+        (p as { variant?: string }).variant === 'windmill' &&
+        !(p.x0 === MILL_RECT.x0 && p.y0 === MILL_RECT.y0 && p.x1 === MILL_RECT.x1 && p.y1 === MILL_RECT.y1),
+    )
+    .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1 }));
+}
+
+/**
+ * Grind granary grain into flour on the wind: one batch per
+ * windmill per call (2 grain -> 2 flour each), reusing
+ * grindGrainToFlour with the wind as the worker — so the same
+ * R-1 conservation and the same flour cap (100) bind here as
+ * at the founder mill. The loop stops early when a batch
+ * grounds nothing (no grain, or the flour store is full), so a
+ * huge batch count never burns time on empty grinds. Pure.
+ */
+export function grindPlacedWindmills(
+  registry: ResourceRegistry,
+  windmillCount: number,
+  batchesPerWindmill: number,
+): { registry: ResourceRegistry; ground: number; grainUsed: number; batches: number } {
+  let next = registry;
+  let ground = 0;
+  let grainUsed = 0;
+  let batches = 0;
+  const total = Math.max(0, Math.floor(windmillCount)) * Math.max(0, Math.floor(batchesPerWindmill));
+  for (let i = 0; i < total; i++) {
+    const r = grindGrainToFlour(next, true);
+    if (r.ground <= 0) break;
+    next = r.registry;
+    ground += r.ground;
+    grainUsed += r.grainUsed;
+    batches++;
+  }
+  return { registry: next, ground, grainUsed, batches };
+}
+
+/**
+ * How many grind batches each placed windmill is due, from the
+ * food chain's hour watermark and the current absolute
+ * game-minutes. -1 (never ground — a fresh chain, or a
+ * hand-built state without the field) initialises the watermark
+ * and grinds nothing; a backwards clock (a new world, a reload
+ * onto an earlier hour) resets the watermark instead of
+ * grinding. The catch-up is capped at a day's worth per call.
+ * Pure.
+ */
+export function placedWindmillBatchesDue(
+  foodChain: FoodChainState,
+  nowAbsMin: number,
+): { batchesPerWindmill: number; nextHour: number } {
+  const nowHour = Math.floor(nowAbsMin / PLACED_WINDMILL_GRIND_MINUTES);
+  const last = typeof foodChain.placedWindmillGrindHour === 'number' ? foodChain.placedWindmillGrindHour : -1;
+  if (last < 0 || nowHour < last) return { batchesPerWindmill: 0, nextHour: nowHour };
+  return { batchesPerWindmill: Math.min(nowHour - last, PLACED_WINDMILL_MAX_CATCHUP_BATCHES), nextHour: nowHour };
+}
+
+/** Advance the placed-windmill grind watermark to an hour index
+ *  (the tick does this after grinding — or after initialising /
+ *  resetting — so each game-hour grinds at most once). Pure. */
+export function markPlacedWindmillGround(foodChain: FoodChainState, hour: number): FoodChainState {
+  if (foodChain.placedWindmillGrindHour === hour) return foodChain;
+  return { ...foodChain, placedWindmillGrindHour: hour };
+}
+
 /**
  * Validate a saved food-chain state (the founders-save load path):
  * a corrupt / missing / partial value falls back to a fresh chain
@@ -563,6 +661,12 @@ export function validateFoodChainState(value: unknown): FoodChainState {
   return {
     mill: validateSite(v.mill, MILL_WORK_STEPS, MILL_COST_WOOD),
     bakery: validateSite(v.bakery, BAKERY_WORK_STEPS, BAKERY_COST_WOOD),
+    placedWindmillGrindHour:
+      typeof v.placedWindmillGrindHour === 'number' &&
+      Number.isFinite(v.placedWindmillGrindHour) &&
+      v.placedWindmillGrindHour >= -1
+        ? Math.floor(v.placedWindmillGrindHour)
+        : -1,
   };
 }
 

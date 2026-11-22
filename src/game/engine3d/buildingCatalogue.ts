@@ -498,7 +498,7 @@ export const BUILDING_CATALOGUE: CatalogueEntry[] = [
   },
   {
     id: 'windmills', name: 'Windmills', category: 'food',
-    blurb: 'A stone tower with sails that grinds grain into flour: the mill is the first link of the food chain (BUILD 1094 — grain -> flour -> bakery -> meals). Founder-built through the staged construction path (6 wood, 6 steps, foundation -> frame -> finished); a mill with no worker or no grain produces nothing. Also placeable freely from the Build menu (a player-placed windmill does not mill — milling is tied to the founder-built mill site).',
+    blurb: 'A stone tower with sails that grinds grain into flour: the mill is the first link of the food chain (BUILD 1094 — grain -> flour -> bakery -> meals). Founder-built through the staged construction path (6 wood, 6 steps, foundation -> frame -> finished); a mill with no worker or no grain produces nothing. Also placeable freely from the Build menu (BUILD 1106 — a player-placed windmill grinds on the wind: 2 grain -> 2 flour per game-hour, from the granary, flour capped at 100; slower than a founder-worked mill, but it needs no worker).',
     materials: [{ resource: 'wood', qty: 6 }],
     costStatus: 'enforced', footprint: { w: 3, h: 3 }, capacity: 0, capacityUnit: 'none', workers: 1,
     produces: { resource: 'flour', perHour: 2 }, maintenance: { resource: 'wood', qtyPerDay: 1 },

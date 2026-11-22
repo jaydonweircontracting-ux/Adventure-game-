@@ -151,6 +151,7 @@ import {
   MILL_APPROACH, MILL_CENTRE, MILL_SITE_ID, MILL_TICKS_PER_SHIFT, MILL_WOOD_PER_STEP, BAKERY_WOOD_PER_STEP,
   bakeFlourToMeals, canBuildBakery, canBuildMill, canStartBakery, canStartMill,
   finishBakery, finishMill, foodChainFlourInRegistry, freshFoodChain, grindGrainToFlour,
+  grindPlacedWindmills, markPlacedWindmillGround, placedWindmillBatchesDue, placedWindmillRects,
   reconcileFoodChain, spendBakeryStepFromRegistry, spendMillStepFromRegistry,
   type FoodChainState,
 } from './foodChain';
@@ -648,6 +649,23 @@ export function advanceSettlementTick(sim: SettlementSim): void {
   // 'done' building whose placement is gone resets to 'none', so
   // the founders rebuild from the pile.
   sim.foodChain = reconcileFoodChain(sim.foodChain, world);
+  // BUILD 1106: player-placed windmills grind on the wind (see
+  // worldSimulation3d.ts) — one batch per windmill per game-hour,
+  // from the granary, capped at 100 flour. No placed windmill in
+  // the sim worlds, so the M1069 numbers cannot move.
+  const placedWindmills = placedWindmillRects(world);
+  if (placedWindmills.length > 0) {
+    const windmillDue = placedWindmillBatchesDue(sim.foodChain, nowAbs);
+    if (windmillDue.batchesPerWindmill > 0) {
+      const ground = grindPlacedWindmills(sim.registry, placedWindmills.length, windmillDue.batchesPerWindmill);
+      if (ground.ground > 0) {
+        sim.registry = ground.registry;
+        ledger.flourMilled += ground.ground;
+        ledger.grainGround += ground.grainUsed;
+      }
+    }
+    sim.foodChain = markPlacedWindmillGround(sim.foodChain, windmillDue.nextHour);
+  }
   // BUILD 1095: reconcile the chain the same way — a 'done'
   // building whose placement is gone resets to 'none', so the
   // founders rebuild from the pile.
