@@ -40,9 +40,10 @@ import { mineralRenderColor } from './geology';
 import { SAPLING_MATURE_GROWTH } from './ecosystems';
 import { emitGroundDetail3d } from './groundDetail3d';
 import {
-  treeShapeForTile, TREE_SHAPES, generatedBushAt, bushParamsForTile,
+  treeShapeForTile, TREE_SHAPES, generatedBushAt, generatedHerbAt, bushParamsForTile,
   propKindToCrateKind, type CratePropKind,
 } from './vegetation';
+import { isGathered } from './gathering';
 import {
   wildTreeAt, wildRockAt, wildObstacleAt, cellIsMixed, effTerrainFor,
   surfaceElevation, renderTerrain,
@@ -518,6 +519,15 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const w=0.25+0.45*f, h=0.35+0.55*f;
     houseBox(tx+.5,ty+.5,0.12,0.5,0.12,baseY,[.4,.28,.14]);
     houseBox(tx+.5,ty+.5,w,h,w,baseY+0.5,[.25,.55,.2]);
+  };
+  // BUILD 1110 (0x2D): a stump — the visible remainder of a felled
+  // tree while its sapling grows. A wide short trunk box with a
+  // lighter cut top (the rings), same houseBox vocabulary as
+  // saplingAt, so a stump reads as a cut tree, never a second tree
+  // system. It clears when the sapling matures (applyMaturedTrees).
+  const stumpAt=(tx:number,ty:number,baseY=0)=>{
+    houseBox(tx+.5,ty+.5,0.5,0.32,0.5,baseY,[.4,.28,.14]);
+    houseBox(tx+.5,ty+.5,0.46,0.06,0.46,baseY+0.32,[.62,.47,.26]);
   };
   // BUILD 1049: a generated/authored market stall renders as a stall,
   // not a tree (the 986 placeholder). Counter + two back posts + a
@@ -1077,6 +1087,15 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     saplingAt(s.x,s.y,surfaceElevation(effTerrain,s.x+.5,s.y+.5),s.growth);
     if(si%16===15)yield;
   }
+  // BUILD 1110 (0x2D): stumps render where trees were felled — the
+  // temporary remainder while the sapling regrows.
+  const stumps=world.stumps??[];
+  for(let si=0;si<stumps.length;si++){
+    const st=stumps[si];
+    if(effTerrain(st.x,st.y)==='water')continue;
+    stumpAt(st.x,st.y,surfaceElevation(effTerrain,st.x+.5,st.y+.5));
+    if(si%16===15)yield;
+  }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
   // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x
   // world-XZ noise). Natural tufts seed by tile so they never reshuffle
@@ -1197,7 +1216,38 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         if (bushBlocked.has(bx + ',' + by)) continue;
         if ((bx < 0 || by < 0 || bx >= world.w || by >= world.h) && wildObstacleAt(bx, by)) continue;
         if (!generatedBushAt(bx, by)) continue;
+        // BUILD 1110 (0x2D): a gathered bush stays gone until its
+        // regrow day clears the record (the day advance does that).
+        if (isGathered(world, 'bush', bx, by)) continue;
         emitGenBush(bx, by);
+      }
+      if ((by - fY0) % 16 === 15) yield;
+    }
+    // BUILD 1110 (0x2D): wild herbs — small dark-green tufts on
+    // grass tiles the bush rule did not claim (a herb never fights
+    // a bush for the same tile) and no placed kind occupies. Same
+    // scan discipline as the bush loop above (16-row yields, same
+    // skips), and a gathered herb stays gone until its regrow day.
+    const emitHerb=(hx:number,hy:number):void=>{
+      const gy=surfaceElevation(effTerrain,hx+.5,hy+.5);
+      const h=hash2(hx*3.1+41,hy*7.7+43);
+      const lean=(h-0.5)*0.12;
+      box(hx+.5+lean,hy+.5,0.1,0.5,0.1,gy,[.16,.42,.16]);
+      box(hx+.5-lean,hy+.5,0.1,0.38,0.1,gy,[.2,.5,.2]);
+      box(hx+.5,hy+.5+lean,0.1,0.44,0.1,gy,[.14,.38,.14]);
+    };
+    for (let by = fY0; by <= fY1; by++) {
+      for (let bx = fX0; bx <= fX1; bx++) {
+        if (effTerrain(bx, by) !== 'grass') continue;
+        if (bushBlocked.has(bx + ',' + by)) continue;
+        if ((bx < 0 || by < 0 || bx >= world.w || by >= world.h) && wildObstacleAt(bx, by)) continue;
+        // A tile whose hashes claim both a bush and a herb shows
+        // the bush first; once the bush is gathered, the herb under
+        // it shows (and can be gathered).
+        if (generatedBushAt(bx, by) && !isGathered(world, 'bush', bx, by)) continue;
+        if (!generatedHerbAt(bx, by)) continue;
+        if (isGathered(world, 'herb', bx, by)) continue;
+        emitHerb(bx, by);
       }
       if ((by - fY0) % 16 === 15) yield;
     }

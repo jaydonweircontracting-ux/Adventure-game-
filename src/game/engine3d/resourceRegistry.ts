@@ -102,8 +102,12 @@ import type { IsoWorld } from '../iso/isoWorld';
 // BUILD 1081: copper and silver join gold as registry kinds — the
 // 1.2 deposits are the first copper/silver in the game (gold's only
 // 3D source before this was looting dead NPCs).
-export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture' | 'meat';
-export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour', 'ingot', 'furniture', 'meat'];
+export type RegistryKind = Resource | 'gold' | 'copper' | 'silver' | 'flour' | 'ingot' | 'furniture' | 'meat' | 'stick' | 'berry' | 'fibre' | 'herb' | 'torch';
+// BUILD 1110 (0x2D): stick/berry/fibre/herb/torch join the registry —
+// the gathering engine's goods (bushes, herbs, hand-crafting) are
+// real conserved resources, not record-only keepsakes, so they ride
+// the one shared database the spec's section 7 demands.
+export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', 'silver', 'flour', 'ingot', 'furniture', 'meat', 'stick', 'berry', 'fibre', 'herb', 'torch'];
 
 /** The player's inventory key for a registry kind: wheat is grain
  *  (the 3D farm crop is the civilization grain kind — the HUD keeps
@@ -113,6 +117,10 @@ export const REGISTRY_KINDS: RegistryKind[] = [...RESOURCES, 'gold', 'copper', '
 export function playerKeyFor(kind: RegistryKind): string | null {
   if (kind === 'grain') return 'wheat';
   if (kind === 'wood' || kind === 'stone' || kind === 'gold' || kind === 'food') return kind;
+  // BUILD 1110 (0x2D): mined ore + gathering goods are carried kinds
+  // now (the player mines iron/copper/coal/silver and gathers
+  // sticks/berries/fibre/herbs; torches are carried too).
+  if (kind === 'iron' || kind === 'copper' || kind === 'coal' || kind === 'silver' || kind === 'stick' || kind === 'berry' || kind === 'fibre' || kind === 'herb' || kind === 'torch') return kind;
   return null;
 }
 
@@ -122,6 +130,8 @@ export function playerKeyFor(kind: RegistryKind): string | null {
 export function kindForPlayerKey(key: string): RegistryKind | null {
   if (key === 'wheat') return 'grain';
   if (key === 'wood' || key === 'stone' || key === 'gold' || key === 'food') return key;
+  // BUILD 1110 (0x2D): mined ore + gathering goods (see playerKeyFor).
+  if (key === 'iron' || key === 'copper' || key === 'coal' || key === 'silver' || key === 'stick' || key === 'berry' || key === 'fibre' || key === 'herb' || key === 'torch') return key as RegistryKind;
   return null;
 }
 
@@ -135,7 +145,12 @@ export function kindForPlayerKey(key: string): RegistryKind | null {
 // registry-tracked for the player like the other carried kinds, so
 // the hotbar can use one. The settlement sim never touches the
 // player store's food (founders eat from the granary store).
-export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat', 'food'];
+// BUILD 1110 (0x2D): mined ore + gathering goods join the bridge
+// (the 1109 food precedent — kindForPlayerKey already mapped them
+// once this build, but the mirror never copied them, so a mined
+// iron ore would have been deposited and then invisible, the exact
+// bug 1108/1109 fixed for tools/food).
+export const PLAYER_RESOURCE_KEYS = ['wood', 'stone', 'gold', 'wheat', 'food', 'iron', 'copper', 'coal', 'silver', 'stick', 'berry', 'fibre', 'herb', 'torch'];
 
 /** How more of a resource is obtained (null = cannot be extracted
  *  — gold is looted/earned, never mined). */
@@ -582,6 +597,25 @@ export function addDeposit(registry: ResourceRegistry, entry: RegistryEntry): Re
   const next = copyRegistry(registry);
   next.entries[entry.id] = { ...entry, location: entry.location ? { ...entry.location } : null };
   return next;
+}
+
+/**
+ * Take part of a world deposit: `qty` units leave the deposit and
+ * the entry's qty drops by that much (a mineral hit takes `damage`
+ * ore — the entry stays until it hits 0, when the caller removes
+ * it with extractDeposit). Returns the new registry and how many
+ * units actually came out (never more than the deposit holds).
+ * Pure.
+ */
+export function reduceDeposit(registry: ResourceRegistry, depositId: string, qty: number): { registry: ResourceRegistry; taken: number } {
+  const want = Math.max(0, Math.floor(qty));
+  if (want <= 0) return { registry, taken: 0 };
+  const e = registry.entries[depositId];
+  if (!e || e.storeId !== null || e.qty <= 0) return { registry, taken: 0 };
+  const taken = Math.min(want, Math.floor(e.qty));
+  const next = copyRegistry(registry);
+  next.entries[depositId] = { ...e, qty: e.qty - taken };
+  return { registry: next, taken };
 }
 
 /**

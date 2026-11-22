@@ -120,7 +120,8 @@ import { initialInventory, loadPlayerInventoryIntoRegistry, refreshPlayerInvento
 // BUILD 1108 (0x2B): the slot inventory engine (pure) + the panel.
 // The registry stays the one authority for totals; this module owns
 // only the slot distribution (see playerInventory.ts).
-import { HOTBAR_SLOT_COUNT, equipItem, itemMetaFor, moveSlot, readHotbarSelected, readSlotLayout, reconcileSlots, splitSlot, unequipItem, useEffectFor, writeHotbarSelected, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
+import { HOTBAR_SLOT_COUNT, equipItem, itemMetaFor, moveSlot, readHotbarSelected, readSlotLayout, reconcileSlots, damageTool, splitSlot, unequipItem, useEffectFor, writeHotbarSelected, writeSlotLayout, type EquipSlotId, type PlayerInventoryLayout } from './playerInventory';
+import { HAND_RECIPES, canCraftHand, handRecipeFor, maxDurabilityFor } from './gathering';
 import { InventoryPanel } from './inventoryPanel3d';
 import { Hotbar } from './hotbar3d';
 import { createBuildingInteractions, type BuildingContext } from './buildingInteractions3d';
@@ -530,6 +531,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [sprintingUi,setSprintingUi]=useState(false);
   const inventoryRef=useRef<Inventory3D>(inventory); inventoryRef.current=inventory;
   const invLayoutRef=useRef<PlayerInventoryLayout>(invLayout); invLayoutRef.current=invLayout;
+  // BUILD 1110 (0x2D): the torch-lit flag the renderer reads per
+  // frame — synced the same way as invLayoutRef above.
+  const torchLitRef=useRef(false); torchLitRef.current=invLayout.equipped.tool==='torch';
   const healthRef=useRef<number>(health); healthRef.current=health;
   // BUILD 1003: sprint hold (button or Shift key) + stamina. Session-only:
   // staminaRef starts full on every mount and is never written to storage.
@@ -808,6 +812,64 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     healthRef.current=healed;setHealth(healed);try{localStorage.setItem(HEALTH_KEY,String(healed));}catch{}
     setMessage('Ate a meal · +'+effect.heal+' health');
     refreshResourceUi();
+  };
+  // BUILD 1110 (0x2D): how much of a craft material the player
+  // holds — registry player-store kinds (wood, stone, stick, coal)
+  // read from the store, anything else from the inventory record.
+  // The hand recipes use only store kinds, so the fallback is a
+  // safety net, not a live path.
+  const playerHeldQty=(kind:string):number=>{
+    const rk=kindForPlayerKey(kind);
+    if(rk)return storeQty(registryRef.current,PLAYER_STORE_ID,rk);
+    return inventoryRef.current[kind]??0;
+  };
+  // The live affordability snapshot for the Craft panel (recomputed
+  // every render from the refs, so the panel never shows a stale
+  // Can/Cannot).
+  const craftHeld:Record<string,number>={};
+  for(const k of ['wood','stone','stick','coal'])craftHeld[k]=playerHeldQty(k);
+  // BUILD 1110 (0x2D): hand-crafting — materials leave the registry
+  // player store (withdrawFrom per material — a craft that cannot
+  // afford every material never starts, so nothing is half-spent);
+  // stackable products land back in the player store (depositInto),
+  // tools land in the inventory record (the 1108 gear channel).
+  // The normal refresh re-derives the slots, and reconcile fills a
+  // new tool's durability to full.
+  const handleCraftHand=(id:string)=>{
+    const recipe=handRecipeFor(id);
+    if(!recipe)return;
+    const held:Record<string,number>={};
+    for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);
+    if(!canCraftHand(recipe,held)){setMessage('Not enough materials to craft '+recipe.name+'.');return;}
+    let reg=registryRef.current;
+    for(const m of recipe.materials){
+      const rk=kindForPlayerKey(m.kind);
+      if(rk){const w=withdrawFrom(reg,PLAYER_STORE_ID,rk,m.qty);reg=w.registry;}
+      else{const cur=inventoryRef.current[m.kind]??0;const next={...inventoryRef.current};if(cur<=m.qty)delete next[m.kind];else next[m.kind]=cur-m.qty;inventoryRef.current=next;setInventory({...next});}
+    }
+    registryRef.current=reg;
+    const prk=kindForPlayerKey(recipe.product);
+    if(prk){const dep=depositInto(reg,PLAYER_STORE_ID,prk,recipe.productQty,{type:'entity',id:'craft:'+recipe.id},{location:{x:Math.round(stateRef.current.position.x),y:Math.round(stateRef.current.position.y)},ownerId:'player'});registryRef.current=dep.registry;}
+    else{inventoryRef.current={...inventoryRef.current,[recipe.product]:(inventoryRef.current[recipe.product]??0)+recipe.productQty};setInventory({...inventoryRef.current});}
+    setMessage('Crafted '+recipe.name+(recipe.productQty>1?' \u00d7'+recipe.productQty:'')+'.');
+    refreshResourceUi();
+  };
+  // BUILD 1110 (0x2D): tool wear — one hit off the equipped tool.
+  // A break removes one unit of the kind from the inventory record
+  // and reconciles, which clears the equip slot (a spare, if any,
+  // becomes the equipped one at full durability).
+  const handleToolHit=():{broken:boolean;kind:string|null}=>{
+    const kind=invLayoutRef.current.equipped.tool;
+    if(!kind)return {broken:false,kind:null};
+    const res=damageTool(invLayoutRef.current,'tool');
+    commitInvLayout(res.layout);
+    if(!res.broken)return {broken:false,kind};
+    const cur=inventoryRef.current[kind]??0;
+    const next={...inventoryRef.current};
+    if(cur<=1)delete next[kind];else next[kind]=cur-1;
+    inventoryRef.current=next;setInventory({...next});
+    refreshResourceUi();
+    return {broken:true,kind};
   };
   // BUILD 1078 (0x0D, area 8): the living-world sync lives in
   // worldSync3d.ts now — the view builds the context once and calls
@@ -1933,6 +1995,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       saveKey: SAVE_KEY, npcSaveKey: NPC_SAVE_KEY, healthKey: HEALTH_KEY,
       onToggleInventory: () => setInventoryOpen((v) => !v),
       onHotbarSelect: (index: number) => commitHotbarSelected(index),
+      getEquippedTool: () => invLayoutRef.current.equipped.tool,
+      onToolHit: handleToolHit,
     };
     const controls = createPlayerControls(playerCtx);
 
@@ -2560,7 +2624,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       world, saveKey: SAVE_KEY,
       isAreaSelectDragging: () => areaSelectDragging !== null,
       isAreaMoveDragging: () => areaMoveDragging !== null,
-      stateRef, clockRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, foundingRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, penRef, staminaPublishCountRef, areaSelectionRef, buildRef,
+      stateRef, clockRef, torchLitRef, waitingRef, insideHutRef, playerPathRef, playerPathWaitRef, playerPathStuckRef, slidePerpRef, sprintHeldRef, sprintLatchRef, sprintRearmRef, staminaRef, sprintingRef, drivingRef, carYawRef, carRef, prevPlayerRef, needsWorldRebuild, rebuildUrgent, worldBuilderRef, buildFramesRef, buildMsRef, rebuildStepStatsRef, rebuildCountRef, diagRef, onDiagnosticsRef, customAssetsRef, skyDriftRef, firstPersonRef, fpAutoRef, npcActorsRef, transientActorsRef, foundersRef, foundingRef, animalActorsRef, registryRef, constructionRef, storehouseRef, foodChainRef, metalChainRef, housingRef, penRef, staminaPublishCountRef, areaSelectionRef, buildRef,
       setPosition, setMessage, setStaminaUi, setSprintingUi, setSprintLatchedUi, setSprintRearmUi, setFirstPersonOn,
       walkableAt: controls.walkableAt, replanPlayerPath: controls.replanPlayerPath, followPlayerPath: controls.followPlayerPath, positionAreaSelectRect, areaSelectionLabel,
     });
@@ -2840,6 +2904,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getHotbarSelected:()=>hotbarSelectedRef.current,
       selectHotbar:(index:number)=>{handleHotbarSelect(index);return hotbarSelectedRef.current;},
       useHotbar:(index:number)=>{handleHotbarUse(index);return {health:healthRef.current,slots:JSON.parse(JSON.stringify(invLayoutRef.current.slots.slice(0,9)))};},
+      // BUILD 1110 (0x2D): gathering hooks (probes only — no
+      // gameplay effect): craftHand drives the live craft handler;
+      // getGatherState reads the world's gather health / gathered /
+      // stump records; get/setToolDurability read + set the equipped
+      // tool's remaining hits (the probe break test); getRecipes
+      // lists the hand recipes with live affordability.
+      craftHand:(id:string)=>{handleCraftHand(id);return {slots:JSON.parse(JSON.stringify(invLayoutRef.current.slots)),equipped:{...invLayoutRef.current.equipped}};},
+      getGatherState:()=>JSON.parse(JSON.stringify({gatherHealth:stateRef.current.world.gatherHealth??{},gatheredAt:stateRef.current.world.gatheredAt??{},stumps:stateRef.current.world.stumps??[]})),
+      getToolDurability:()=>{const kind=invLayoutRef.current.equipped.tool;if(!kind)return null;const max=maxDurabilityFor(kind);if(max===null)return null;return invLayoutRef.current.equippedDurability.tool??max;},
+      setToolDurability:(n:number)=>{const kind=invLayoutRef.current.equipped.tool;if(!kind)return false;const max=maxDurabilityFor(kind);if(max===null)return false;const next={...invLayoutRef.current,equippedDurability:{...invLayoutRef.current.equippedDurability,tool:Math.max(0,Math.min(max,Math.floor(n)))}};commitInvLayout(next);return true;},
+      getRecipes:()=>HAND_RECIPES.map((recipe)=>{const held:Record<string,number>={};for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);return {id:recipe.id,name:recipe.name,product:recipe.product,canCraft:canCraftHand(recipe,held)};}),
       // BUILD 1109 (0x2C): health read/write for the hotbar probe (the
       // meal heal is only observable through the live health value).
       getHealth:()=>healthRef.current,
@@ -3213,7 +3288,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       <span ref={placePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#fff',fontSize:12,fontWeight:700}}></span>
     </div>
     <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
-    <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} onClose={()=>setInventoryOpen(false)} />
+    <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} recipes={HAND_RECIPES.map((recipe)=>({recipe,canCraft:canCraftHand(recipe,craftHeld)}))} onCraft={handleCraftHand} onClose={()=>setInventoryOpen(false)} />
     {!hideUi && <Hotbar layout={invLayout} selected={hotbarSelected} onSelect={handleHotbarSelect} onUse={handleHotbarUse} />}
   </div>;
 }

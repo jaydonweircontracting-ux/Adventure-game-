@@ -100,6 +100,22 @@ export function generatedBushAt(x: number, y: number): boolean {
   return hash2(x * 5.3 + 91, y * 9.1 + 57) < BUSH_DENSITY;
 }
 
+/** Fraction of eligible grass tiles growing a wild herb plant. At
+ *  0.008 the ±64 detail range holds ~100-150 herbs — sparser than
+ *  bushes, so the apothecary's ingredient stays worth seeking.
+ *  Herbs are walk-through gatherables like bushes (never blocking),
+ *  rendered as small green tufts (worldRender3d.ts). */
+export const HERB_DENSITY = 0.008;
+
+/** True when a tile grows a wild herb plant. Pure tile hash (salt
+ *  131), independent of the bush (91), tree-shape (11), flower
+ *  (41), pebble (53), tuft, and scatter bands — so a herb tile is
+ *  its own thing and never fights a bush for the same tile (the
+ *  render loop skips herb tiles that already hold a bush). */
+export function generatedHerbAt(x: number, y: number): boolean {
+  return hash2(x * 7.7 + 131, y * 6.3 + 137) < HERB_DENSITY;
+}
+
 export interface BushParams {
   /** Tile-local offsets of the two blobs. */
   ox1: number; oz1: number; ox2: number; oz2: number;

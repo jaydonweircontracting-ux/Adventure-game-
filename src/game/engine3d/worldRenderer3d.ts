@@ -159,6 +159,10 @@ export interface WorldRendererDeps {
   skyDriftRef: { current: number };
   firstPersonRef: { current: boolean };
   fpAutoRef: { current: boolean };
+  // BUILD 1110 (0x2D): whether the player has a torch equipped in
+  // the tool slot — the renderer glows it above the player (fx
+  // buffer, per frame, no rebuild when it equips or breaks).
+  torchLitRef: { current: boolean };
   npcActorsRef: { current: { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean; looted?: boolean }[] };
   transientActorsRef: { current: TransientActor[] };
   foundersRef: { current: FounderState[] };
@@ -241,7 +245,7 @@ export class WorldRenderer {
   keys = new Set<string>();
   // ---- render state ----
   worldVertCount = 0;
-  lastFxStats = {houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,stockpileTiles:0,stockpileVerts:0,penSheep:0,penVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0};
+  lastFxStats = {houses:0,chimneys:0,litHouses:0,smokeVerts:0,totalVerts:0,windmills:0,millVerts:0,lanterns:0,lanternVerts:0,wheatTiles:0,wheatVerts:0,stockpileTiles:0,stockpileVerts:0,penSheep:0,penVerts:0,ceilingVerts:0,wallVerts:0,hearthGlow:0,hearthVerts:0,torchGlow:0,torchVerts:0};
   lastBuildX = 0;
   lastBuildY = 0;
   figureState = new Map<string, FigureState>();
@@ -511,6 +515,7 @@ export class WorldRenderer {
   draw(): void {
     const stateRef = this.deps.stateRef;
     const clockRef = this.deps.clockRef;
+    const torchLitRef = this.deps.torchLitRef;
     const waitingRef = this.deps.waitingRef;
     const insideHutRef = this.deps.insideHutRef;
     const playerPathRef = this.deps.playerPathRef;
@@ -976,8 +981,12 @@ export class WorldRenderer {
     // the same fx call as the founders' huts — at progress 6 the real
     // hut placement renders instead.
     if(FOUNDERS_ENABLED&&foundingRef.current&&foundingRef.current.hut.state==='building'){const fnd=foundingRef.current;const fSite=fnd.site;if(fSite)siteInputs.push({baseY:surfaceElevation(effTerrainDraw,fSite.hut.centre.x+.5,fSite.hut.centre.y+.5),progress:fnd.hut.progress,site:fSite.hut});}
-    const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs,penInputs);
-    this.lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,penSheep:fxCounts.penSheep,penVerts:fxCounts.penVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts};
+    // BUILD 1110 (0x2D): the equipped torch's glow input — the
+    // player's tile + heightfield base y (the fx module never
+    // samples the terrain itself, the lantern precedent).
+    const torchInput = torchLitRef.current ? { x: Math.floor(player.x), y: Math.floor(player.y), baseY: surfaceElevation(effTerrainDraw, player.x + .5, player.y + .5) } : null;
+    const fxCounts=emitHouseFx(fxArr,houseFxInputsFor(world,insideHutRef.current),clockRef.current.minutes,skyDriftRef.current,lanternInputs,wheatInputs,interiorFx,stockpileInputs,siteInputs,penInputs,torchInput);
+    this.lastFxStats={houses:fxCounts.houses,chimneys:fxCounts.chimneys,litHouses:fxCounts.litHouses,smokeVerts:fxCounts.smokeVerts,totalVerts:fxCounts.totalVerts,windmills:fxCounts.windmills,millVerts:fxCounts.millVerts,lanterns:fxCounts.lanterns,lanternVerts:fxCounts.lanternVerts,wheatTiles:fxCounts.wheatTiles,wheatVerts:fxCounts.wheatVerts,stockpileTiles:fxCounts.stockpileTiles,stockpileVerts:fxCounts.stockpileVerts,penSheep:fxCounts.penSheep,penVerts:fxCounts.penVerts,ceilingVerts:fxCounts.ceilingVerts,wallVerts:fxCounts.wallVerts,hearthGlow:fxCounts.hearthGlow,hearthVerts:fxCounts.hearthVerts,torchGlow:fxCounts.torchGlow,torchVerts:fxCounts.torchVerts};
     if(fxCounts.totalVerts>0){
     gl.bindBuffer(gl.ARRAY_BUFFER,fxBuffer);gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array(fxArr));gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
     if(fxCounts.nightVerts>0)gl.drawArrays(gl.TRIANGLES,0,fxCounts.nightVerts);

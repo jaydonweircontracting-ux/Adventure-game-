@@ -443,6 +443,11 @@ export interface HouseFxCounts {
   lanterns: number;
   /** BUILD 1040: lantern glow verts (in the lit segment). */
   lanternVerts: number;
+  /** BUILD 1110 (0x2D): 1 when the equipped torch glowed this
+   *  frame (in the lit segment), else 0. */
+  torchGlow: number;
+  /** BUILD 1110 (0x2D): torch glow verts (in the lit segment). */
+  torchVerts: number;
   /** BUILD 1041: farm tiles whose wheat stalks were emitted this
    *  frame (in the night segment). Planted tiles emit nothing. */
   wheatTiles: number;
@@ -499,6 +504,13 @@ export const HEARTH_GLOW: Vec3 = [1.0, 0.55, 0.18];
  *  (0.4 wide), so its faces sit proud and cannot z-fight the fire. */
 export const HEARTH_GLOW_BOX = 0.5;
 
+/** BUILD 1110 (0x2D): torch glow colour — hotter orange than the
+ *  lanterns' window yellow (a torch is an open flame). */
+export const TORCH_GLOW: Vec3 = [1.0, 0.62, 0.2];
+/** Torch glow box size, tiles — a small flame above the player's
+ *  head, smaller than the lantern glow (0.26). */
+export const TORCH_GLOW_BOX = 0.24;
+
 /** One axis-aligned glow box (12 tris, 36 verts), all faces the
  *  same colour — a lantern's night glow is self-luminous, so no
  *  face shading (unlike the smoke puff box). The caller draws it
@@ -517,6 +529,11 @@ function pushGlowBox(out: number[], cx: number, cy: number, cz: number, size: nu
 /** A placed lantern, with its heightfield base y (the view computes
  *  it — the fx module never samples the terrain itself). */
 export interface LanternFxInput { tx: number; ty: number; baseY: number; }
+
+/** BUILD 1110 (0x2D): a torch equipped in the tool slot — the
+ *  player's tile + heightfield base y (the renderer computes it,
+ *  the fx module never samples the terrain itself). */
+export interface TorchFxInput { x: number; y: number; baseY: number; }
 
 /** BUILD 1057: one founders' log pile — the pile tile, its heightfield
  *  base y, and the REAL stockpile count (the pile grows with
@@ -594,7 +611,7 @@ export function penSheepTrisFor(x: number, y: number, baseY: number): WheatTri[]
   ];
 }
 
-export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = [], site: ConstructionSiteFxInput[] = [], pen: PenFxInput[] = []): HouseFxCounts {
+export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: number, driftSec: number, lanterns: LanternFxInput[] = [], wheat: FarmWheatInput[] = [], interior: InteriorFxInput | null = null, stockpile: StockpileFxInput[] = [], site: ConstructionSiteFxInput[] = [], pen: PenFxInput[] = [], torch: TorchFxInput | null = null): HouseFxCounts {
   const base = out.length;
   const fits = (verts: number): boolean => (out.length - base) / 6 + verts <= FX_MAX_VERTS;
   const details = resolveHouseFx(inputs, minutes);
@@ -728,6 +745,18 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
     litLanterns++;
     lanternGlowVerts += 36;
   }
+  // BUILD 1110 (0x2D): a torch equipped in the tool slot glows
+  // above the player — a small warm flame box in the lit segment
+  // (self-luminous, the lantern precedent), whenever equipped,
+  // day or night: the player holds it deliberately, so it reads
+  // as a carried light, not a scheduled house light. The flame
+  // sits 1.7 tiles above the base — above the player's head.
+  let torchGlow = 0, torchVerts = 0;
+  if (torch && fits(36)) {
+    pushGlowBox(out, torch.x + 0.5, torch.baseY + 1.7, torch.y + 0.5, TORCH_GLOW_BOX, TORCH_GLOW);
+    torchGlow = 1;
+    torchVerts = 36;
+  }
   // BUILD 1050: the entered hut's hearth glow — a warm fire box on
   // the hearth, in the lit segment (self-luminous, the lantern
   // precedent: it stays full orange against the night-darkened
@@ -747,5 +776,5 @@ export function emitHouseFx(out: number[], inputs: HouseFxInput[], minutes: numb
       pushPane(out, s.face, s.a, s.y, panePlaneFor(s.face, r.cx, r.cz, r.w, r.d), GLASS_LIT);
     }
   }
-  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, siteTiles, siteVerts, penSheep, penVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
+  return { nightVerts, totalVerts: (out.length - base) / 6, houses: details.length, chimneys, litHouses, smokeVerts, windmills, millVerts, lanterns: litLanterns, lanternVerts: lanternGlowVerts, torchGlow, torchVerts, wheatTiles, wheatVerts, stockpileTiles, stockpileVerts, siteTiles, siteVerts, penSheep, penVerts, ceilingVerts, wallVerts, hearthGlow, hearthVerts };
 }

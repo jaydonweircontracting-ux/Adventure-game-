@@ -20,7 +20,7 @@
 // (place/remove/move/save-area) are area 6.
 
 import type { MutableRefObject } from 'react';
-import { saveWorld, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
+import { saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
 import { nearestDoorHut, interiorTileWalkable } from './interiors';
 import type { DayClock } from './townsfolk3d';
 import {
@@ -42,8 +42,9 @@ import {
 } from './construction';
 import { STOREHOUSE_CENTRE, STOREHOUSE_WORK_STEPS, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, type StorehouseState } from './storehouse';
 import { crateId, rockId, treeId, wildTreeId, npcSpawnIdFor } from './entityIds';
+import { depositIdFor } from './geology';
 import {
-  depositInto, extractDeposit, CAMP_STORE_ID, PLAYER_STORE_ID,
+  depositInto, extractDeposit, reduceDeposit, CAMP_STORE_ID, PLAYER_STORE_ID,
   type ResourceRegistry, type RegistryKind,
 } from './resourceRegistry';
 import {
@@ -52,7 +53,9 @@ import {
 } from './placements';
 import { absMinutes, farmStageAt, harvestFarmTile } from './farm';
 import { campGrainInRegistry } from './food';
-import { depositNear, examineDeposit } from './geology';
+import { depositNear, examineDeposit, mineralName } from './geology';
+import { hitGatherNode, isGathered, maxHealthForNode, toolDefFor, playGatherSound, type GatherNode } from './gathering';
+import { generatedBushAt, generatedHerbAt } from './vegetation';
 import { riverNear, examineRiver } from './rivers';
 import { wildTreeAt, wildRockAt, isWildWalkable } from './wildTerrain';
 import { isCarNear, carBlocksTile, type CarState } from './car';
@@ -119,6 +122,14 @@ export interface PlayerControlsContext {
   // — digits 1-9 select hotbar slots 0-8. Optional: old callers pass
   // none and the digits do nothing.
   onHotbarSelect?: (index: number) => void;
+  // BUILD 1110 (0x2D): the gathering engine reads the equipped tool
+  // (a getter — the view's slot layout is the truth, and a ref would
+  // go stale the moment the tool breaks) and wears it (the view
+  // applies damageTool and returns whether it broke + which kind).
+  // Optional: old callers pass none and every hit is a hand hit
+  // with no wear.
+  getEquippedTool?: () => string | null;
+  onToolHit?: () => { broken: boolean; kind: string | null };
   // BUILD 1102: the pen (the view's penRef) — the E stockpile
   // report quotes it. Optional: old callers pass none and the
   // report omits the pen line.
@@ -556,6 +567,20 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     refreshResourceUi();
     return dep.added;
   };
+  // BUILD 1110 (0x2D): gathering helpers — the hit engine clones
+  // the world's gather state, so the handler adopts the three
+  // gather fields back into the live world; the tool-wear call runs
+  // after a hit lands and returns the break note for the message
+  // line (a hand hit wears nothing).
+  const equippedTool=ctx.getEquippedTool?.()??null;
+  const adoptGather=(w:IsoWorld)=>{world.gatherHealth=w.gatherHealth;world.gatheredAt=w.gatheredAt;world.stumps=w.stumps;};
+  const applyToolWear=():string=>{
+    const tool=toolDefFor(equippedTool);
+    if(!tool)return '';
+    const r=ctx.onToolHit?.();
+    if(r&&r.broken)return ' · Your '+tool.name+' broke!';
+    return '';
+  };
   // BUILD 1108 (0x2B): I opens/closes the inventory panel. Not while
   // typing in a text field (library search, rename, paste name).
   if(k==='i'){if(!(e.target instanceof HTMLInputElement)&&!(e.target instanceof HTMLTextAreaElement))ctx.onToggleInventory?.();return;}
@@ -676,13 +701,36 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       if(sh.state==='building'){const b=foundersRef.current.find(f=>f.workState==='building'||f.workState==='toSite');setMessage('Storehouse: '+sh.progress+'/'+STOREHOUSE_WORK_STEPS+' built · '+sh.spentWood+' wood · '+sh.spentStone+' stone spent'+(b?' · '+b.name+' is building':' · waiting for wood and stone'));return;}
       setMessage('The storehouse site — the founders will build it here once the huts are done.');return;
     }
-    // BUILD 1081 (1.2): a mineral deposit answers E with its Examine
-    // text (mineral + remaining) — mining it is Phase 2, so E only
-    // looks, never takes. The deposit is a rock outcrop: it blocks
-    // like a rock, so the player stands beside it, within the
-    // shared 1-tile reach.
+    // BUILD 1110 (0x2D): a mineral deposit answers E with a MINING
+    // hit now (1081's "Phase 2" — E only looked, never took). The
+    // deposit's health IS its remaining: a hit extracts `damage`
+    // ore into the player store, and the registry deposit entry
+    // and the world's remaining drop by the same amount, so the
+    // ledger stays conserved. Mined out at 0 — deposits never
+    // regrow (the 1081 rule). The deposit is a rock outcrop: it
+    // blocks like a rock, so the player stands beside it, within
+    // the shared 1-tile reach.
     const deposit=depositNear(world,Math.round(p.x),Math.round(p.y));
-    if(deposit){setMessage(examineDeposit(deposit));return}
+    if(deposit){
+      const depId=depositIdFor(deposit.mineral,deposit.x,deposit.y);
+      const node:GatherNode={kind:'deposit',id:depId,x:deposit.x,y:deposit.y,mineral:deposit.mineral,depositId:depId};
+      const res=hitGatherNode(world,node,clockRef.current.day,equippedTool,deposit.remaining);
+      if(res.damage<=0){setMessage(examineDeposit(deposit));return}
+      adoptGather(res.world);
+      const red=reduceDeposit(registryRef.current,depId,res.damage);
+      registryRef.current=red.registry;
+      const mined=red.taken;
+      const remaining=Math.max(0,deposit.remaining-mined);
+      const drec=world.mineralDeposits?.find(dd=>dd.x===deposit.x&&dd.y===deposit.y);
+      if(drec)drec.remaining=remaining;
+      if(mined>0)depositPlayer(deposit.mineral as RegistryKind,mined,depId);
+      saveWorld(world);
+      const brokeNote=applyToolWear();
+      playGatherSound(remaining<=0?'fell':'mine');
+      if(remaining<=0)setMessage('Mined out the '+mineralName(deposit.mineral)+' deposit · +'+mined+' '+deposit.mineral+brokeNote);
+      else setMessage('Mined '+mined+' '+deposit.mineral+' · '+remaining+' remaining'+brokeNote);
+      return;
+    }
     // BUILD 1082 (1.3): a river answers E with its Examine text
     // (which way it flows) — the river is water, so it blocks
     // like water, and the player stands beside it, within the
@@ -698,17 +746,41 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // its source.
     if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const ex=extractDeposit(registryRef.current,crateId(crate.tx,crate.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:1,crateId(crate.tx,crate.ty));needsWorldRebuild.current=true;setMessage('Collected 1 wood');return}
     const rock=world.rocks.find(c=>key(c.tx,c.ty));
-    // BUILD 1064 (R-1): the rock's deposit is extracted (1 stone;
-    // a missing deposit falls back to 1) and the yield lands in
-    // the player store with the rock as its source.
-    if(rock){world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const ex=extractDeposit(registryRef.current,rockId(rock.tx,rock.ty));registryRef.current=ex.registry;depositPlayer('stone',ex.qty>0?ex.qty:1,rockId(rock.tx,rock.ty));needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+    // BUILD 1110 (0x2D): a rock takes hits now (6 health — 6 by
+    // hand, 2 with a wooden pickaxe, 1 with a stone pickaxe). A
+    // half-mined rock stays half-mined until it is finished or the
+    // rock regrows (3 days). The deposit is extracted only when
+    // the rock breaks (1064's 1-stone yield, unchanged).
+    if(rock){
+      const node:GatherNode={kind:'rock',id:rockId(rock.tx,rock.ty),x:rock.tx,y:rock.ty};
+      const res=hitGatherNode(world,node,clockRef.current.day,equippedTool);
+      adoptGather(res.world);
+      playGatherSound(res.depleted?'fell':'mine');
+      const brokeNote=applyToolWear();
+      if(!res.depleted){saveWorld(world);setMessage('You hit the rock · '+res.healthLeft+'/'+maxHealthForNode(node)+' left'+brokeNote);return;}
+      world.rocks=world.rocks.filter(c=>c!==rock);if(!world.removedRocks)world.removedRocks=[];const rk=terrainKey(rock.tx,rock.ty);if(!world.removedRocks.includes(rk))world.removedRocks.push(rk);saveWorld(world);const ex=extractDeposit(registryRef.current,rockId(rock.tx,rock.ty));registryRef.current=ex.registry;depositPlayer('stone',ex.qty>0?ex.qty:1,rockId(rock.tx,rock.ty));needsWorldRebuild.current=true;setMessage('Mined 1 stone'+brokeNote);return;
+    }
     const tree=world.trees.find(c=>key(c.tx,c.ty));
+    // BUILD 1110 (0x2D): a tree takes hits now (6 health — 6 by
+    // hand, 2 with a wooden axe, 1 with a stone axe). A half-chopped
+    // tree stays half-chopped until it falls. When it falls it
+    // leaves a stump (gathering.ts — the stump clears when the
+    // sapling matures) and the 1061 record + sapling + 2-wood yield
+    // run exactly as before.
     // BUILD 1061: a chopped tree is recorded in removedTrees (the
     // rock branch above has done this since 987 for the same
     // reason) — the tree-density migration in loadWorld re-stamps
     // trees from the rule, and without the record a chopped tree
     // would resurrect on the next load.
-    if(tree){world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);plantSapling(world,tree.tx,tree.ty);saveWorld(world);const ex=extractDeposit(registryRef.current,treeId(tree.tx,tree.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:2,treeId(tree.tx,tree.ty));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+    if(tree){
+      const node:GatherNode={kind:'tree',id:treeId(tree.tx,tree.ty),x:tree.tx,y:tree.ty};
+      const res=hitGatherNode(world,node,clockRef.current.day,equippedTool);
+      adoptGather(res.world);
+      playGatherSound(res.depleted?'fell':'chop');
+      const brokeNote=applyToolWear();
+      if(!res.depleted){saveWorld(world);setMessage('You hit the tree · '+res.healthLeft+'/'+maxHealthForNode(node)+' left'+brokeNote);return;}
+      world.trees=world.trees.filter(c=>c!==tree);if(!world.removedTrees)world.removedTrees=[];const tk=terrainKey(tree.tx,tree.ty);if(!world.removedTrees.includes(tk))world.removedTrees.push(tk);plantSapling(world,tree.tx,tree.ty);saveWorld(world);const ex=extractDeposit(registryRef.current,treeId(tree.tx,tree.ty));registryRef.current=ex.registry;depositPlayer('wood',ex.qty>0?ex.qty:2,treeId(tree.tx,tree.ty));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood'+brokeNote);return;
+    }
     // BUILD 1024: wild trees/rocks past the old edge harvest the
     // same way (2 wood / 1 stone) and stay gone via the
     // removedWildTrees / removedWildRocks sets. Same 1-tile reach
@@ -725,8 +797,75 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
     // deposits (a hash rule, not a stored list — the F-1
     // treatment) — the yield lands in the player store with
     // the wild id as its source, no deposit to extract.
-    if(wildFound==='tree'){if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);const [wx,wy]=wildKey.split(',').map(Number);depositPlayer('wood',2,wildTreeId(wx,wy));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
-    if(wildFound==='rock'){if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);const [wx,wy]=wildKey.split(',').map(Number);depositPlayer('stone',1,rockId(wx,wy));needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+    // BUILD 1110 (0x2D): wild trees/rocks take hits too (same 6
+    // health), but they are hash-rule nodes outside the map — no
+    // stump (nothing can regrow out there) and no regrowth record;
+    // the removedWild* record keeps them gone, exactly as before.
+    if(wildFound==='tree'){
+      const [wx,wy]=wildKey.split(',').map(Number);
+      const node:GatherNode={kind:'tree',id:wildTreeId(wx,wy),x:wx,y:wy};
+      const res=hitGatherNode(world,node,clockRef.current.day,equippedTool,undefined,{stump:false,regrow:false});
+      adoptGather(res.world);
+      playGatherSound(res.depleted?'fell':'chop');
+      const brokeNote=applyToolWear();
+      if(!res.depleted){saveWorld(world);setMessage('You hit the tree · '+res.healthLeft+'/'+maxHealthForNode(node)+' left'+brokeNote);return;}
+      if(!world.removedWildTrees)world.removedWildTrees=[];world.removedWildTrees.push(wildKey);saveWorld(world);depositPlayer('wood',2,wildTreeId(wx,wy));needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood'+brokeNote);return;
+    }
+    if(wildFound==='rock'){
+      const [wx,wy]=wildKey.split(',').map(Number);
+      const node:GatherNode={kind:'rock',id:rockId(wx,wy),x:wx,y:wy};
+      const res=hitGatherNode(world,node,clockRef.current.day,equippedTool,undefined,{regrow:false});
+      adoptGather(res.world);
+      playGatherSound(res.depleted?'fell':'mine');
+      const brokeNote=applyToolWear();
+      if(!res.depleted){saveWorld(world);setMessage('You hit the rock · '+res.healthLeft+'/'+maxHealthForNode(node)+' left'+brokeNote);return;}
+      if(!world.removedWildRocks)world.removedWildRocks=[];world.removedWildRocks.push(wildKey);saveWorld(world);depositPlayer('stone',1,rockId(wx,wy));needsWorldRebuild.current=true;setMessage('Mined 1 stone'+brokeNote);return;
+    }
+    // BUILD 1110 (0x2D): generated bushes and wild herbs are
+    // gatherable by hand (no tool helps — 2 hits for a bush, 1 for
+    // a herb). Only the hash-rule wild ones: placed bushes (Build
+    // mode) and garden plants are tended decor, not resources. A
+    // bush drops a stick, a fibre and a berry; a herb drops 2
+    // herbs. Both regrow after a day (the day advance clears the
+    // record). A tile whose hashes claim both shows the bush first;
+    // once it is gathered, the herb under it can be gathered.
+    {
+      const px=Math.round(p.x), py=Math.round(p.y);
+      let bushHit:{x:number;y:number}|null=null;
+      let herbHit:{x:number;y:number}|null=null;
+      for(let by=py-1;by<=py+1&&!bushHit;by++)for(let bx=px-1;bx<=px+1;bx++){
+        if(terrainAt(world,bx,by)!=='grass')continue;
+        if(generatedBushAt(bx,by)&&!isGathered(world,'bush',bx,by)){bushHit={x:bx,y:by};break;}
+      }
+      if(bushHit){
+        const node:GatherNode={kind:'bush',id:'bush:'+bushHit.x+','+bushHit.y,x:bushHit.x,y:bushHit.y};
+        const res=hitGatherNode(world,node,clockRef.current.day,equippedTool);
+        adoptGather(res.world);
+        playGatherSound(res.depleted?'pick':'chop');
+        if(!res.depleted){saveWorld(world);setMessage('You hit the bush · '+res.healthLeft+'/'+maxHealthForNode(node)+' left');return;}
+        saveWorld(world);
+        for(const y of res.yield)depositPlayer(y.kind as RegistryKind,y.qty,node.id);
+        needsWorldRebuild.current=true;
+        setMessage('Gathered the bush · +1 stick, +1 fibre, +1 berry');
+        return;
+      }
+      for(let by=py-1;by<=py+1&&!herbHit;by++)for(let bx=px-1;bx<=px+1;bx++){
+        if(terrainAt(world,bx,by)!=='grass')continue;
+        if(generatedBushAt(bx,by)&&!isGathered(world,'bush',bx,by))continue;
+        if(generatedHerbAt(bx,by)&&!isGathered(world,'herb',bx,by)){herbHit={x:bx,y:by};break;}
+      }
+      if(herbHit){
+        const node:GatherNode={kind:'herb',id:'herb:'+herbHit.x+','+herbHit.y,x:herbHit.x,y:herbHit.y};
+        const res=hitGatherNode(world,node,clockRef.current.day,equippedTool);
+        adoptGather(res.world);
+        playGatherSound('pick');
+        saveWorld(world);
+        for(const y of res.yield)depositPlayer(y.kind as RegistryKind,y.qty,node.id);
+        needsWorldRebuild.current=true;
+        setMessage('Gathered wild herbs · +2 herbs');
+        return;
+      }
+    }
     // BUILD 1041: farm land — E harvests a ready wheat tile
     // within the shared 1-tile reach (the same key() test as
     // crates/trees/rocks). The tile resets to planted and

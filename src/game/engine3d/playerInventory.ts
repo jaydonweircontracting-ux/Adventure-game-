@@ -31,11 +31,17 @@
 // health). Use goes through the registry (the totals authority);
 // the pure consumeSlot() below pins the layout semantics only.
 
+import { maxDurabilityFor } from './gathering';
+
 export type EquipSlotId = 'weapon' | 'tool' | 'armor';
 
 export interface InventorySlot {
   kind: string | null;
   qty: number;
+  /** BUILD 1110 (0x2D): remaining hits for a tool in this slot
+   *  (undefined = not a tool, or a tool that has not been given a
+   *  value yet — reconcileSlots fills it with full durability). */
+  durability?: number;
 }
 
 export interface EquippedSlots {
@@ -44,9 +50,16 @@ export interface EquippedSlots {
   armor: string | null;
 }
 
+/** BUILD 1110 (0x2D): durability is per INSTANCE, so it cannot ride
+ *  in the equip slot's kind string (equipItem moves the unit OUT of
+ *  its slot). The parallel map holds the equipped unit's remaining
+ *  hits; the slot's own `durability` holds a stored unit's. The two
+ *  never disagree: equip copies slot -> map, unequip copies map ->
+ *  slot, and reconcile clears the map entry when the kind is gone. */
 export interface PlayerInventoryLayout {
   slots: InventorySlot[];
   equipped: EquippedSlots;
+  equippedDurability: Partial<Record<EquipSlotId, number>>;
 }
 
 /** The main inventory grid: 3 rows of 9, Minecraft-style. */
@@ -101,6 +114,16 @@ export const ITEM_META: Record<string, ItemMeta> = {
   ingot: { name: 'Ingot', icon: '🔶', description: 'A smelted ingot. The blacksmith forges tools from it.', stackMax: 64, equipSlot: null, useEffect: null },
   furniture: { name: 'Furniture', icon: '🪑', description: 'Furniture from the carpenter. The settlement furnishes its homes.', stackMax: 64, equipSlot: null, useEffect: null },
   meat: { name: 'Meat', icon: '🍖', description: 'Meat from the hunt. The granary stores it.', stackMax: 64, equipSlot: null, useEffect: null },
+  // BUILD 1110 (0x2D): gathering goods + hand-crafted tools + torch.
+  stick: { name: 'Stick', icon: '🥢', description: 'A sturdy stick from a bush or a split log. Craft tools with it.', stackMax: 64, equipSlot: null, useEffect: null },
+  berry: { name: 'Berry', icon: '🫐', description: 'Berries from a bush. Food for the road.', stackMax: 64, equipSlot: null, useEffect: null },
+  fibre: { name: 'Fibre', icon: '🧵', description: 'Plant fibre from a bush. For cordage and cloth, when the looms come.', stackMax: 64, equipSlot: null, useEffect: null },
+  herb: { name: 'Herb', icon: '🌿', description: 'Herbs from wild plants. The apothecary will want these.', stackMax: 64, equipSlot: null, useEffect: null },
+  torch: { name: 'Torch', icon: '🔥', description: 'A lit torch. Equip it in the tool slot and it lights your way at night.', stackMax: 64, equipSlot: 'tool', useEffect: null },
+  'wooden-axe': { name: 'Wooden Axe', icon: '🪓', description: 'A wooden axe — 3 wood + 2 sticks. Chops a tree in 2 hits. Wears out after 30 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'stone-axe': { name: 'Stone Axe', icon: '🪓', description: 'A stone axe — 3 stone + 2 sticks. Chops a tree in 1 hit. Wears out after 60 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'wooden-pickaxe': { name: 'Wooden Pickaxe', icon: '⛏️', description: 'A wooden pickaxe — 3 wood + 2 sticks. Mines rock and ore in 2 hits. Wears out after 30 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
+  'stone-pickaxe': { name: 'Stone Pickaxe', icon: '⛏️', description: 'A stone pickaxe — 3 stone + 2 sticks. Mines rock and ore in 1 hit. Wears out after 60 hits.', stackMax: 1, equipSlot: 'tool', useEffect: null },
 };
 
 const KEEPSAKE_META: ItemMeta = { name: '', icon: '🎁', description: 'A keepsake from a fallen traveller. Memorabilia, not a resource.', stackMax: 64, equipSlot: null, useEffect: null };
@@ -150,7 +173,7 @@ export function consumeSlot(layout: PlayerInventoryLayout, index: number): { lay
   if (!effect) return null;
   const next = cloneLayout(layout);
   next.slots[index].qty -= 1;
-  if (next.slots[index].qty <= 0) { next.slots[index].kind = null; next.slots[index].qty = 0; }
+  if (next.slots[index].qty <= 0) { next.slots[index].kind = null; next.slots[index].qty = 0; delete next.slots[index].durability; }
   return { layout: next, effect };
 }
 
@@ -172,13 +195,15 @@ export function emptyLayout(): PlayerInventoryLayout {
   return {
     slots: Array.from({ length: INVENTORY_SLOT_COUNT }, () => ({ kind: null, qty: 0 })),
     equipped: { weapon: null, tool: null, armor: null },
+    equippedDurability: {},
   };
 }
 
 function cloneLayout(layout: PlayerInventoryLayout): PlayerInventoryLayout {
   return {
-    slots: layout.slots.map((s) => ({ kind: s.kind, qty: s.qty })),
+    slots: layout.slots.map((s) => (s.durability !== undefined ? { kind: s.kind, qty: s.qty, durability: s.durability } : { kind: s.kind, qty: s.qty })),
     equipped: { ...layout.equipped },
+    equippedDurability: { ...(layout.equippedDurability ?? {}) },
   };
 }
 
@@ -228,14 +253,15 @@ export function reconcileSlots(record: Record<string, number>, prev: PlayerInven
   // The grid never shrinks below its base size; it grows by whole rows.
   while (next.slots.length < INVENTORY_SLOT_COUNT) next.slots.push({ kind: null, qty: 0 });
   const equipped = next.equipped;
-  // An equipped kind the record no longer holds is gone — clear it.
+  // An equipped kind the record no longer holds is gone — clear it
+  // (and its durability with it — a gone tool has no wear left).
   for (const slotId of ['weapon', 'tool', 'armor'] as EquipSlotId[]) {
     const kind = equipped[slotId];
-    if (kind && !want[kind]) equipped[slotId] = null;
+    if (kind && !want[kind]) { equipped[slotId] = null; delete next.equippedDurability[slotId]; }
   }
   // Empty slots for kinds the record no longer holds.
   for (const slot of next.slots) {
-    if (slot.kind && !want[slot.kind]) { slot.kind = null; slot.qty = 0; }
+    if (slot.kind && !want[slot.kind]) { slot.kind = null; slot.qty = 0; delete slot.durability; }
   }
   // Adjust each wanted kind to its total (equipped unit counts).
   for (const [kind, total] of Object.entries(want)) {
@@ -283,6 +309,24 @@ export function reconcileSlots(record: Record<string, number>, prev: PlayerInven
       }
     }
   }
+  // BUILD 1110 (0x2D): durability — a tool-kind slot (or equipped
+  // tool) without a value gets FULL durability (a crafted or
+  // test-granted tool arrives without a stored value). An existing
+  // value is NEVER reset here: wear persists across reconciles.
+  // A non-tool kind never carries durability.
+  for (const slot of next.slots) {
+    if (!slot.kind) { delete slot.durability; continue; }
+    const max = maxDurabilityFor(slot.kind);
+    if (max !== null && slot.durability === undefined) slot.durability = max;
+    if (max === null && slot.durability !== undefined) delete slot.durability;
+  }
+  for (const slotId of ['weapon', 'tool', 'armor'] as EquipSlotId[]) {
+    const kind = next.equipped[slotId];
+    if (!kind) { delete next.equippedDurability[slotId]; continue; }
+    const max = maxDurabilityFor(kind);
+    if (max !== null && next.equippedDurability[slotId] === undefined) next.equippedDurability[slotId] = max;
+    if (max === null) delete next.equippedDurability[slotId];
+  }
   // Trim trailing empty rows past the base size (keeps the grid stable).
   while (next.slots.length > INVENTORY_SLOT_COUNT) {
     const lastRow = next.slots.slice(next.slots.length - INVENTORY_SLOTS_PER_ROW);
@@ -306,8 +350,10 @@ export function moveSlot(layout: PlayerInventoryLayout, from: number, to: number
   if (!dst.kind) {
     nDst.kind = nSrc.kind;
     nDst.qty = nSrc.qty;
+    if (nSrc.durability !== undefined) nDst.durability = nSrc.durability;
     nSrc.kind = null;
     nSrc.qty = 0;
+    delete nSrc.durability;
     return next;
   }
   if (dst.kind === src.kind) {
@@ -357,9 +403,35 @@ export function equipItem(layout: PlayerInventoryLayout, index: number): PlayerI
   if (layout.equipped[slotId] === src.kind) return layout;
   const next = cloneLayout(layout);
   next.equipped[slotId] = src.kind;
+  // BUILD 1110 (0x2D): the equipped unit's wear rides in the map —
+  // the slot's value if it has one, else full (a tool granted
+  // without a stored value starts fresh).
+  const max = maxDurabilityFor(src.kind);
+  if (max !== null) next.equippedDurability[slotId] = src.durability !== undefined ? src.durability : max;
   next.slots[index].qty -= 1;
-  if (next.slots[index].qty <= 0) { next.slots[index].kind = null; next.slots[index].qty = 0; }
+  if (next.slots[index].qty <= 0) { next.slots[index].kind = null; next.slots[index].qty = 0; delete next.slots[index].durability; }
   return next;
+}
+
+/** Wear one hit off the equipped tool in a slot. Returns the new
+ *  layout + whether the tool BROKE (durability hit 0 — the caller
+ *  removes one unit of the kind from the record and reconciles,
+ *  which clears the equip slot). A non-tool, an empty slot, or a
+ *  tool with no wear left is a no-op (broken false). Pure. */
+export function damageTool(layout: PlayerInventoryLayout, slotId: EquipSlotId): { layout: PlayerInventoryLayout; broken: boolean } {
+  const kind = layout.equipped[slotId];
+  if (!kind) return { layout, broken: false };
+  const max = maxDurabilityFor(kind);
+  if (max === null) return { layout, broken: false };
+  const cur = layout.equippedDurability[slotId] ?? max;
+  const next = cloneLayout(layout);
+  const left = cur - 1;
+  if (left <= 0) {
+    delete next.equippedDurability[slotId];
+    return { layout: next, broken: true };
+  }
+  next.equippedDurability[slotId] = left;
+  return { layout: next, broken: false };
 }
 
 /** Unequip an equip slot back into the inventory: the first stack of
@@ -370,6 +442,9 @@ export function unequipItem(layout: PlayerInventoryLayout, slotId: EquipSlotId):
   if (!kind) return layout;
   const next = cloneLayout(layout);
   next.equipped[slotId] = null;
+  // BUILD 1110 (0x2D): the unit takes its wear back with it.
+  const dur = next.equippedDurability[slotId];
+  delete next.equippedDurability[slotId];
   const max = stackMaxFor(kind);
   let dst = next.slots.find((s) => s.kind === kind && s.qty < max);
   if (!dst) dst = next.slots.find((s) => s.kind === null);
@@ -380,6 +455,7 @@ export function unequipItem(layout: PlayerInventoryLayout, slotId: EquipSlotId):
   if (!dst) return layout;
   dst.kind = kind;
   dst.qty += 1;
+  if (dur !== undefined) dst.durability = dur;
   return next;
 }
 
@@ -408,6 +484,25 @@ export function readSlotLayout(): PlayerInventoryLayout {
       for (const slotId of ['weapon', 'tool', 'armor'] as EquipSlotId[]) {
         const k = (eq as EquippedSlots)[slotId];
         layout.equipped[slotId] = typeof k === 'string' ? k : null;
+      }
+    }
+    // BUILD 1110 (0x2D): durability rides in the saved layout (a
+    // slot's `durability`, the equipped map) — corrupt or missing
+    // values fall back to undefined, and reconcile fills a tool's
+    // missing value with full durability on the next sync.
+    const rawSlots = (parsed as { slots?: Array<{ durability?: unknown }> }).slots;
+    if (Array.isArray(rawSlots)) {
+      rawSlots.slice(0, 512).forEach((rs, i) => {
+        if (!rs || typeof rs !== 'object' || i >= layout.slots.length) return;
+        const d = Math.floor(Number(rs.durability));
+        if (Number.isFinite(d) && d >= 0 && layout.slots[i].kind) layout.slots[i].durability = d;
+      });
+    }
+    const eqDur = (parsed as { equippedDurability?: Record<string, unknown> }).equippedDurability;
+    if (eqDur && typeof eqDur === 'object') {
+      for (const slotId of ['weapon', 'tool', 'armor'] as EquipSlotId[]) {
+        const d = Math.floor(Number(eqDur[slotId]));
+        if (Number.isFinite(d) && d >= 0 && layout.equipped[slotId]) layout.equippedDurability[slotId] = d;
       }
     }
     return layout;

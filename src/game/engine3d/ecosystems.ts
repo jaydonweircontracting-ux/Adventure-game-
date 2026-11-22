@@ -444,6 +444,11 @@ export function applyMaturedTrees(world: IsoWorld, matured: MaturedTree[]): void
   if (world.removedTrees) {
     world.removedTrees = world.removedTrees.filter((k) => !keys.has(k));
   }
+  // BUILD 1110 (0x2D): the tree is back, so its stump is gone — a
+  // stump only ever stands while its sapling grows.
+  if (world.stumps) {
+    world.stumps = world.stumps.filter((st) => !keys.has(st.x + ',' + st.y));
+  }
 }
 
 /**

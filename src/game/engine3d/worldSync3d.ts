@@ -18,7 +18,8 @@ import { applyMaturedTrees, stampAnimalPopulations } from './ecosystems';
 import { FOUNDER_CAMP, FOUNDERS_ENABLED, type FounderState } from './founders';
 import { CAMP_SETTLEMENT_ID, advanceLivingWorldDay, saveLivingWorldState, type LivingWorld3DState } from './livingWorld';
 import { seasonArrivalMessage, seasonForDay } from './climate';
-import { addDeposit, treeDeposit, mirrorCampStoresToSettlement, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { addDeposit, rockDeposit, treeDeposit, mirrorCampStoresToSettlement, syncCampStoreFromSettlement, type ResourceRegistry } from './resourceRegistry';
+import { advanceGatherRegrowth } from './gathering';
 import type { DayClock } from './townsfolk3d';
 
 export interface WorldSyncContext {
@@ -131,6 +132,30 @@ export function syncLivingWorld(ctx: LivingWorldSyncContext, world: IsoWorld): b
   // founders can chop it and the player can too.
   world.saplings=res.saplings;world.animalPopulations=res.populations;world.animalKills=res.kills;
   if(res.matured.length>0){applyMaturedTrees(world,res.matured);for(const t of res.matured)ctx.registry.current=addDeposit(ctx.registry.current,treeDeposit(t.x,t.y));}
+  // BUILD 1110 (0x2D): gathered-node regrowth rides the same day
+  // advance — bushes/herbs come back by clearing their record
+  // (they are hash-rule nodes, so the record is all that hid
+  // them); a rock comes back as a real rock (world list + removed
+  // record cleared + registry deposit), so it can be mined again.
+  // Trees are not here (the sapling path owns them); deposits never
+  // regrow. The sim never gathers, so its worlds have no gathered
+  // nodes and this is a no-op there — M1069 never moves.
+  {
+    const regrow = advanceGatherRegrowth(world, ctx.clock.current.day);
+    if (regrow.regrown.length > 0) {
+      world.gatheredAt = regrow.world.gatheredAt;
+      for (const r of regrow.regrown) {
+        if (r.kind !== 'rock') continue;
+        if (!(world.rocks ?? []).some((t) => t.tx === r.x && t.ty === r.y)) {
+          if (!world.rocks) world.rocks = [];
+          world.rocks.push({ tx: r.x, ty: r.y });
+        }
+        if (world.removedRocks) world.removedRocks = world.removedRocks.filter((k) => k !== r.x + ',' + r.y);
+        ctx.registry.current = addDeposit(ctx.registry.current, rockDeposit(r.x, r.y));
+      }
+      ctx.needsWorldRebuild.current = true;
+    }
+  }
   if(res.planted.length>0){
     world.trees=[...world.trees,...res.planted];
     // BUILD 1064: a regrown tree is a new deposit (2 wood, chop).

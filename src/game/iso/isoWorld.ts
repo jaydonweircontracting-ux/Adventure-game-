@@ -211,6 +211,15 @@ export interface IsoWorld {
    *  saplings at the same growth. Old saves load with none (the first
    *  chop plants the first sapling). */
   saplings?: Array<{ x: number; y: number; growth: number }>;
+  /** BUILD 1110 (0x2D) — gathering state (gathering.ts): per-node
+   *  remaining health (absent = untouched = full), the day a node
+   *  was depleted (bush/herb/rock regrowth), and the stumps left
+   *  where trees were felled (a stump clears when its sapling
+   *  matures). Plain data, saved wholesale with the world; old
+   *  saves load with none (every node starts untouched). */
+  gatherHealth?: Record<string, number>;
+  gatheredAt?: Record<string, number>;
+  stumps?: Array<{ x: number; y: number }>;
   /** BUILD 1085 — animal populations (ecosystems.ts): the regional
    *  population per 3D animal kind (bird/goat/deer/wolf/chicken),
    *  ported from the 2.5D population model — fractional, so births
