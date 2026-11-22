@@ -16718,6 +16718,90 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
 }
 
 
+
+
+console.log('Testing the slot inventory engine — reconcile / move / split / equip + 24h M1069 identical (BUILD 1108, 0x2B)...');
+{
+  const PI1108 = await import('../src/game/engine3d/playerInventory.js');
+  const RR1108 = await import('../src/game/engine3d/resourceRegistry.js');
+  // --- Metadata: stack caps, equip slots, display names. ---
+  assert(PI1108.stackMaxFor('wood') === 64, 'M1108: wood stacks to 64');
+  assert(PI1108.stackMaxFor('tools') === 1, 'M1108: tools stack to 1 (unstackable gear)');
+  assert(PI1108.stackMaxFor('weapons') === 1 && PI1108.stackMaxFor('armor') === 1, 'M1108: weapons and armor stack to 1');
+  assert(PI1108.equipSlotFor('tools') === 'tool' && PI1108.equipSlotFor('weapons') === 'weapon' && PI1108.equipSlotFor('armor') === 'armor', 'M1108: gear maps to its equip slot');
+  assert(PI1108.equipSlotFor('wood') === null && PI1108.equipSlotFor('stone') === null, 'M1108: resources have no equip slot');
+  assert(PI1108.itemMetaFor('grain').name === 'Wheat', 'M1108: grain displays as Wheat');
+  assert(PI1108.itemMetaFor('some-unknown-loot').icon === '🎁', 'M1108: an unknown keepsake kind falls back to the gift icon');
+  // --- Reconcile: the record drives the grid; layout is preserved. ---
+  const rec1108 = { wood: 10, stone: 5 };
+  const lay1108 = PI1108.reconcileSlots(rec1108, PI1108.emptyLayout());
+  assert(lay1108.slots[0].kind === 'wood' && lay1108.slots[0].qty === 10 && lay1108.slots[1].kind === 'stone' && lay1108.slots[1].qty === 5, 'M1108: reconcile places wood 10 + stone 5 in the first slots');
+  assert(lay1108.slots.length === 27, 'M1108: the base grid is 27 slots');
+  const big1108 = PI1108.reconcileSlots({ wood: 2000 }, PI1108.emptyLayout());
+  assert(big1108.slots.length === 36 && big1108.slots.filter((s: { kind: string | null }) => s.kind === 'wood').length === 32, 'M1108: 2000 wood grows the grid by a row (32 stacks in 36 slots)');
+  const grown1108 = PI1108.reconcileSlots({ wood: 70 }, PI1108.emptyLayout());
+  assert(grown1108.slots[0].qty === 64 && grown1108.slots[1].qty === 6, 'M1108: 70 wood fills the first stack to 64 and spills 6');
+  const shrunk1108 = PI1108.reconcileSlots({ wood: 3 }, grown1108);
+  assert(JSON.stringify(PI1108.layoutTotals(shrunk1108)) === JSON.stringify({ wood: 3 }), 'M1108: reconcile trims the grid when the record shrinks');
+  // --- Move: merge, swap, totals preserved. ---
+  const mergeBase1108 = PI1108.reconcileSlots({ wood: 30 }, PI1108.emptyLayout());
+  const splitForMerge1108 = PI1108.splitSlot(mergeBase1108, 0);
+  assert(splitForMerge1108.slots[0].qty === 15 && splitForMerge1108.slots[1].qty === 15, 'M1108: split halves 30 wood into 15/15');
+  const merged1108 = PI1108.moveSlot(splitForMerge1108, 1, 0);
+  assert(merged1108.slots[0].qty === 30 && merged1108.slots[1].kind === null, 'M1108: dragging a stack onto the same kind merges it back');
+  const swapBase1108 = PI1108.reconcileSlots({ wood: 10, stone: 5 }, PI1108.emptyLayout());
+  const swapped1108 = PI1108.moveSlot(swapBase1108, 0, 1);
+  assert(swapped1108.slots[0].kind === 'stone' && swapped1108.slots[1].kind === 'wood', 'M1108: dragging wood onto stone swaps the two stacks');
+  assert(JSON.stringify(PI1108.layoutTotals(swapped1108)) === JSON.stringify({ wood: 10, stone: 5 }), 'M1108: totals are preserved across a swap');
+  // --- Split: halves round down; qty 1 is a no-op. ---
+  const odd1108 = PI1108.splitSlot(PI1108.reconcileSlots({ wood: 9 }, PI1108.emptyLayout()), 0);
+  assert(odd1108.slots[0].qty === 5 && odd1108.slots[1].qty === 4, 'M1108: split rounds down — 9 keeps 5, moves 4');
+  const one1108 = PI1108.splitSlot(PI1108.reconcileSlots({ wood: 1 }, PI1108.emptyLayout()), 0);
+  assert(one1108.slots[0].qty === 1 && one1108.slots[1].kind === null, 'M1108: splitting a single unit is a no-op');
+  // --- Equip / unequip: one unit to the slot, totals preserved, back again. ---
+  const gear1108 = PI1108.reconcileSlots({ tools: 1, wood: 5 }, PI1108.emptyLayout());
+  const equipped1108 = PI1108.equipItem(gear1108, 0);
+  assert(equipped1108.equipped.tool === 'tools' && PI1108.layoutTotals(equipped1108).tools === undefined, 'M1108: equipping tools moves the unit out of the grid into the tool slot');
+  assert(JSON.stringify(PI1108.layoutTotals(equipped1108)) === JSON.stringify({ wood: 5 }), 'M1108: grid totals after equip are wood 5 only');
+  const unequipped1108 = PI1108.unequipItem(equipped1108, 'tool');
+  assert(unequipped1108.equipped.tool === null && PI1108.layoutTotals(unequipped1108).tools === 1, 'M1108: unequipping returns the tool to the grid');
+  const noEquip1108 = PI1108.equipItem(PI1108.reconcileSlots({ wood: 5 }, PI1108.emptyLayout()), 0);
+  assert(noEquip1108.equipped.tool === null && noEquip1108.equipped.weapon === null && noEquip1108.equipped.armor === null, 'M1108: wood cannot be equipped');
+  // --- Persistence: the layout round-trips through the 1056 stand-in; corrupt falls back. ---
+  const ls1108 = (globalThis as unknown as { localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } }).localStorage;
+  PI1108.writeSlotLayout(swapped1108);
+  assert(ls1108.getItem(PI1108.INVENTORY_SLOTS_KEY) !== null, 'M1108: the layout persists under ag-3d-inventory-slots-v1');
+  const reloaded1108 = PI1108.readSlotLayout();
+  assert(reloaded1108.slots[0].kind === 'stone' && reloaded1108.slots[1].kind === 'wood', 'M1108: the persisted layout round-trips (stone/wood swap survives)');
+  ls1108.setItem(PI1108.INVENTORY_SLOTS_KEY, '{corrupt');
+  const corrupt1108 = PI1108.readSlotLayout();
+  assert(corrupt1108.slots.every((s: { kind: string | null }) => s.kind === null) && corrupt1108.equipped.tool === null, 'M1108: a corrupt layout save falls back to an empty layout');
+  // --- Grant routing: gear has no registry kind and rides the record. ---
+  assert(RR1108.kindForPlayerKey('tools') === null, 'M1108: tools has no registry kind (gear rides the record, not the registry)');
+  assert(RR1108.kindForPlayerKey('wheat') === 'grain', 'M1108: wheat maps to the grain registry kind');
+  assert(JSON.stringify(RR1108.keepsakesOf({ tools: 1, wood: 2 })) === JSON.stringify({ tools: 1 }), 'M1108: keepsakesOf passes gear through, keeps resources out');
+  // --- The 24h run: the inventory engine must not move the sim (M1069 identical). ---
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const world24_1108 = W.defaultWorld();
+  const sim24_1108 = SS.createSettlementSim(world24_1108);
+  SS.advanceSettlement(sim24_1108, 1600);
+  const L24_1108 = sim24_1108.ledger;
+  assert(L24_1108.ticks === 1600, 'M1108: the 24h run counts 1600 ticks');
+  assert(L24_1108.woodChopped === 54 && L24_1108.woodDelivered === 50 && L24_1108.woodSpent === 24, 'M1108: 24h wood 54/50/24 (M1069 identical to BUILD 1104)');
+  assert(L24_1108.grainHarvested === 60 && L24_1108.grainDelivered === 58, 'M1108: 24h grain 60/58 (M1069 identical to BUILD 1104)');
+  assert(L24_1108.mealsBaked === 28 && L24_1108.mealsEaten === 13, 'M1108: 24h meals 28/13 (M1069 identical to BUILD 1104)');
+  assert(L24_1108.flourMilled === 58 && L24_1108.flourBaked === 56, 'M1108: 24h flour 58/56 (M1069 identical to BUILD 1104)');
+  assert(L24_1108.jobsCompleted.chop === 27 && L24_1108.jobsCompleted.build === 4 && L24_1108.jobsCompleted.deliver === 54 && L24_1108.jobsCompleted.harvest === 30, 'M1108: 24h jobs chop/build/deliver/harvest 27/4/54/30 (M1069 identical to BUILD 1104)');
+  assert(L24_1108.hutsCompleted === 2 && L24_1108.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1108: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1108.starvedTicks === 0 && Math.round(L24_1108.minHealth) === 100, 'M1108: nobody starves in 24h');
+  assert(sim24_1108.founders.length === 7, 'M1108: the population is 7 after 24h');
+  assert(F.campWoodInRegistry(sim24_1108.registry) === 14 && F.campFoodInRegistry(sim24_1108.registry) === 15 && SS.settlementGrain(sim24_1108) === 0 && FC.foodChainFlourInRegistry(sim24_1108.registry) === 2, 'M1108: final wood/food/grain/flour 14/15/0/2 (M1069 identical to BUILD 1104)');
+  console.log('M1108: slot inventory verified (reconcile/move/split/equip/persistence/routing, 24h M1069 identical)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
