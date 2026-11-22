@@ -1223,15 +1223,35 @@ export function stepFounderMove(
   }
   const blockedTicks = p.blockedTicks + 1;
   if (blockedAction(blockedTicks) === 'replan') {
+    // FIX-2 (BUILD 1104): route AROUND the blocker, not through them.
+    // A head-on pair in the camp<->bakery corridor (pinched to 2 tiles
+    // wide by the hut at (126,119)-(129,121) and the bakery at
+    // (128,124)-(130,126)) danced forever and starved 147 ticks in the
+    // first 800: the detour avoided only the single blocked tile, so it
+    // routed through the adjacent row the other founder was about to
+    // step onto; the sidestep was a bare single tile, so the next tick
+    // replanned the shortest path straight back into the corridor.
+    // Two parts: (a) the detour avoids a 3x3 bubble around the blocked
+    // tile (a moving blocker may step onto any neighbour next tick);
+    // (b) a sidestep is followed by a detour from the aside tile, so
+    // the founder stays routed around instead of replanning the
+    // shortest path back. The goal tile stays exempt from the bubble
+    // (planPathNpc exempts it); a null detour falls back to the old
+    // bare sidestep, so tight spots keep the old behaviour.
+    const bubble = new Set<string>();
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) bubble.add((next.x + dx) + ',' + (next.y + dy));
+    }
     if (!p.detour) {
-      const detour = planPathNpc(world, pos, dest, 4000, new Set([next.x + ',' + next.y]));
+      const detour = planPathNpc(world, pos, dest, 4000, bubble);
       if (detour) {
         return { pos, path: { destKey, path: detour, index: 0, noPathTicks: 0, blockedTicks: 0, detour: true }, arrived: false };
       }
     }
     const aside = sidestepTile(world, pos, next, occupied);
     if (aside) {
-      return { pos, path: { destKey, path: [aside], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false }, arrived: false };
+      const onward = planPathNpc(world, aside, dest, 4000, bubble) ?? [];
+      return { pos, path: { destKey, path: [aside, ...onward], index: 0, noPathTicks: 0, blockedTicks: 0, detour: onward.length > 0 }, arrived: false };
     }
     return { pos, path: { destKey, path: [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false }, arrived: false };
   }
