@@ -276,8 +276,18 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       const east = surfaceElevation(effTerrain, x + 1.5, y + 0.5);
       const north = surfaceElevation(effTerrain, x + 0.5, y - 0.5);
       const south = surfaceElevation(effTerrain, x + 0.5, y + 1.5);
-      quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],c);
-      const soil: Vec3 = terrain === 'stone' ? [0.34,0.35,0.34] : [0.34,0.25,0.16];
+      // BUILD 1117: altitude-aware voxel surface materials. Snow settles
+      // on the highest ridges, exposed rock appears above the tree line,
+      // and grass remains on foothills/lowlands. Coordinate hash keeps
+      // sparse snow variation stable while avoiding a noisy checkerboard.
+      const alpine = top >= 7.0;
+      const rocky = top >= 4.0;
+      const snowPatch = alpine && hash2(x * 3.1 + 17, y * 2.7 - 9) > 0.16;
+      const topColor: Vec3 = snowPatch ? [0.82,0.86,0.88]
+        : rocky ? [0.48,0.50,0.49]
+        : [c[0],c[1],c[2]];
+      quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],topColor);
+      const soil: Vec3 = rocky ? [0.39,0.40,0.39] : [0.34,0.25,0.16];
       if (west < top - 0.24) quad([x,west,y],[x,top,y],[x,top,y+1],[x,west,y+1],shadeRgb(soil,SUN_SHADE.west));
       if (east < top - 0.24) quad([x+1,east,y+1],[x+1,top,y+1],[x+1,top,y],[x+1,east,y],shadeRgb(soil,SUN_SHADE.east));
       if (north < top - 0.24) quad([x+1,north,y],[x+1,top,y],[x,top,y],[x,north,y],shadeRgb(soil,SUN_SHADE.north));
