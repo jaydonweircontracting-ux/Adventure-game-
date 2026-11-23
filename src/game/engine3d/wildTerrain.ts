@@ -204,11 +204,47 @@ export function isWildWalkable(w: IsoWorld, x: number, y: number): boolean {
  *  empty, so a world edit can never read a stale entry from an older
  *  closure; an edit DURING a time-sliced rebuild is corrected by the
  *  rebuild the edit itself queues. */
-export function effTerrainFor(world: IsoWorld): (x: number, y: number) => Terrain {
+type EffectiveTerrainSampler = ((x: number, y: number) => Terrain) & {
+  riverValleyAt?: (x: number, y: number) => number;
+};
+
+/** River valley cut is precomputed once per immutable world snapshot.
+ *  The drainage courses are stable after world stamping, so rebuilding
+ *  this distance field every frame would be wasted work. */
+const riverValleyCache = new WeakMap<IsoWorld, Map<number, number>>();
+function riverValleyField(world: IsoWorld): Map<number, number> {
+  const cached = riverValleyCache.get(world);
+  if (cached) return cached;
+  const field = new Map<number, number>();
+  const key = (x:number,y:number):number => tileKeyInt(x,y);
+  const sources: Array<{x:number;y:number}> = [];
+  for (const river of world.rivers ?? []) {
+    sources.push(...(river.tiles ?? []), ...(river.widthTiles ?? []));
+  }
+  const depthByRing = [0, 1.35, 0.9, 0.42, 0.12];
+  for (const source of sources) {
+    for (let dy=-4;dy<=4;dy++) for (let dx=-4;dx<=4;dx++) {
+      const distance = Math.hypot(dx,dy);
+      const ring = Math.ceil(distance);
+      if (ring < 1 || ring > 4) continue;
+      const depth = depthByRing[ring] * (1 - Math.max(0,distance-(ring-1))*0.22);
+      const k = key(source.x+dx,source.y+dy);
+      if (depth > (field.get(k) ?? 0)) field.set(k,depth);
+    }
+  }
+  riverValleyCache.set(world,field);
+  return field;
+}
+
+/** The effective terrain at a tile — placed water wins, then placed
+ *  paths read as dirt, then stored terrain, then wild terrain past the
+ *  edge. The placement key Sets are built once per call. */
+export function effTerrainFor(world: IsoWorld): EffectiveTerrainSampler {
   const placedWater = placedWaterKeyInts(world);
   const placedPaths = placedPathKeyInts(world);
   const cache = new Map<number, Terrain>();
-  return (x, y) => {
+  const valley = riverValleyField(world);
+  const sample = ((x, y) => {
     const k = tileKeyInt(x, y);
     if (placedWater.has(k)) return 'water';
     if (placedPaths.has(k)) return 'dirt';
@@ -218,7 +254,15 @@ export function effTerrainFor(world: IsoWorld): (x: number, y: number) => Terrai
       return t;
     }
     return wildTerrainAt(x, y);
+  }) as EffectiveTerrainSampler;
+  sample.riverValleyAt = (x, y) => {
+    const fx=Math.floor(x), fy=Math.floor(y), ux=x-fx, uy=y-fy;
+    const at=(tx:number,ty:number)=>valley.get(tileKeyInt(tx,ty)) ?? 0;
+    const north=at(fx,fy)+(at(fx+1,fy)-at(fx,fy))*ux;
+    const south=at(fx,fy+1)+(at(fx+1,fy+1)-at(fx,fy+1))*ux;
+    return north+(south-north)*uy;
   };
+  return sample;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +341,8 @@ export function landBlendAt(effTerrain: (x: number, y: number) => Terrain, x: nu
  *  terrain record. */
 export const MOUNTAIN_BOOST = 0.6;
 export function surfaceElevation(effTerrain: (x: number, y: number) => Terrain, x: number, z: number): number {
-  const base = worldGroundElevation(x, z) * landBlendAt(effTerrain, x, z);
+  const valleyCut = (effTerrain as EffectiveTerrainSampler).riverValleyAt?.(x,z) ?? 0;
+  const base = (worldGroundElevation(x, z) - valleyCut) * landBlendAt(effTerrain, x, z);
   if (effTerrain(Math.floor(x), Math.floor(z)) === 'stone') return base + MOUNTAIN_BOOST;
   return base;
 }
