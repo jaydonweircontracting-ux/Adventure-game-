@@ -2728,20 +2728,17 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         ];
         const blocked=new Set<string>();
         const mark=(x:number,y:number)=>blocked.add(x+','+y);
-        for(const h of w.huts)for(let y=h.y0;y<=h.y1;y++)for(let x=h.x0;x<=h.x1;x++)mark(x,y);
-        for(const h of w.stalls)for(let y=h.y0;y<=h.y1;y++)for(let x=h.x0;x<=h.x1;x++)mark(x,y);
-        for(const a of [...w.trees,...w.rocks,...w.crates])mark(a.x,a.y);
-        for(const a of w.walls)mark(a.x,a.y);
+        // Existing placements and live actors are indexed directly;
+        // walkableWithPlacements below checks terrain, buildings, props,
+        // walls and resource blockers without duplicating their schemas.
         for(const item of w.placements??[])for(let y=item.y0;y<=item.y1;y++)for(let x=item.x0;x<=item.x1;x++)mark(x,y);
-        for(const n of w.npcSpawns??[]){mark(n.x,n.y);for(const q of n.waypoints??[])mark(q.x,q.y);}
-        for(const l of w.landmarks??[])for(const b of l.blocks??[])mark(b.x,b.y);
         for(const n of npcTiles)mark(n.x,n.y);
         mark(playerTile.x,playerTile.y);
         for(let y=12;y<w.h-12;y++){
           for(let x=12;x<w.w-20;x++){
             if(Math.hypot(x-FOUNDER_CAMP.x,y-FOUNDER_CAMP.y)<32)continue;
             const line=Array.from({length:8},(_,i)=>({x:x+i,y}));
-            if(line.some(t=>blocked.has(t.x+','+t.y)||terrainAt(w,t.x,t.y)==='water'))continue;
+            if(line.some(t=>blocked.has(t.x+','+t.y)||terrainAt(w,t.x,t.y)==='water'||!walkableWithPlacements(w,w.crates,t.x,t.y)))continue;
             const near={x,y},far={x:x+3,y};
             if(!walkableWithPlacements(w,w.crates,near.x,near.y)||!walkableWithPlacements(w,w.crates,far.x,far.y))continue;
             const nearPath=validatePlacement(w,'path',near.x,near.y,playerTile,npcTiles,0);
