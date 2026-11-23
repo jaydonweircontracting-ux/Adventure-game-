@@ -279,7 +279,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],c);
       const soil: Vec3 = terrain === 'stone' ? [0.34,0.35,0.34] : [0.34,0.25,0.16];
       if (west < top - 0.24) quad([x,west,y],[x,top,y],[x,top,y+1],[x,west,y+1],shadeRgb(soil,SUN_SHADE.west));
-      if (east < top - 0.24) quad([x+1,west===top?east:Math.min(east,top),y+1],[x+1,top,y+1],[x+1,top,y],[x+1,east,y],shadeRgb(soil,SUN_SHADE.east));
+      if (east < top - 0.24) quad([x+1,east,y+1],[x+1,top,y+1],[x+1,top,y],[x+1,east,y],shadeRgb(soil,SUN_SHADE.east));
       if (north < top - 0.24) quad([x+1,north,y],[x+1,top,y],[x,top,y],[x,north,y],shadeRgb(soil,SUN_SHADE.north));
       if (south < top - 0.24) quad([x,south,y+1],[x,top,y+1],[x+1,top,y+1],[x+1,south,y+1],shadeRgb(soil,SUN_SHADE.south));
     } else {
