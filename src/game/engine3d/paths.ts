@@ -413,6 +413,18 @@ export function bridgeSitePlacementExists(world: IsoWorld, site: BridgeSite): bo
   return bridgeSiteSpan(site).every((tile) => bridgePlacementExists(world, tile.x, tile.y));
 }
 
+/** A candidate cannot overlap an existing bridge or another site's reserved span. */
+export function bridgeSpanAlreadyClaimed(
+  world: IsoWorld,
+  bridges: readonly BridgeSite[],
+  span: readonly { x: number; y: number }[],
+): boolean {
+  return span.some((tile) =>
+    bridgePlacementExists(world, tile.x, tile.y) ||
+    bridges.some((site) => bridgeSiteSpan(site).some((other) => other.x === tile.x && other.y === tile.y)),
+  );
+}
+
 /** Validate the entire bridge span before mutating the world, then stamp
  * every tile with the same persisted visual profile. A blocked tile means
  * the whole bridge waits; no half-bridge or partial collision is possible. */
@@ -528,7 +540,9 @@ function bestBridgeRiverNeighbour(
   const candidates: Array<{ x:number; y:number; score:number }> = [];
   for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
     const x=tile.x+dx, y=tile.y+dy;
-    if ((riverWidthAt(world,x,y) <= 0 && !riverAt(world,x,y)) || bridgePlacementExists(world,x,y) || bridgeSiteAt(state.bridges,x,y)) continue;
+    if (riverWidthAt(world,x,y) <= 0 && !riverAt(world,x,y)) continue;
+    const span = bridgeSpanForCrossing(world, tile, { x, y });
+    if (bridgeSpanAlreadyClaimed(world, state.bridges, span)) continue;
     if (!bridgeWorkTileFor(world,x,y)) continue;
     candidates.push({x,y,score:scoreBridgeCrossing(world,tile,{x,y})});
   }
@@ -615,14 +629,14 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       const nx = tile.x + dx, ny = tile.y + dy;
       if (!rivers.has(nx + ',' + ny)) continue;
       if (terrainAt(world, nx, ny) !== 'water') continue;
-      if (bridgePlacementExists(world, nx, ny)) continue;
-      if (bridgeSiteAt(state.bridges, nx, ny) || found.some((s) => s.x === nx && s.y === ny)) continue;
+      const spanTiles = bridgeSpanForCrossing(world, tile, { x: nx, y: ny });
+      if (bridgeSpanAlreadyClaimed(world, state.bridges, spanTiles) ||
+          found.some((site) => bridgeSiteSpan(site).some((existing) => spanTiles.some((candidate) => candidate.x === existing.x && candidate.y === existing.y)))) continue;
       const workTile = bridgeWorkTileFor(world, nx, ny);
       if (!workTile) continue;
       // Rank sites using the same bank/width/road-alignment score as
-      // event-driven detection. Existing save/state shape is unchanged.
+      // event-driven detection. Each physical span can be claimed only once.
       const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
-      const spanTiles = bridgeSpanForCrossing(world, tile, { x: nx, y: ny });
       const style = bridgeStyleForCrossing(world, tile, { x: nx, y: ny });
       found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny })), { _candidateScore: score } as object));
     }
