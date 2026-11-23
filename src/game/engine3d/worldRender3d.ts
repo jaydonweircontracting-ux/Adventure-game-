@@ -1392,23 +1392,39 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     cube(gc[0],gc[2],LANTERN_BOX,LANTERN_BOX,LANTERN_BOX,LANTERN_GLASS_DARK,gc[1]-LANTERN_BOX/2);
     houseBox(cx,cz,LANTERN_CAP,.06,LANTERN_CAP,ly+LANTERN_POST_H+LANTERN_BOX,LANTERN_TIMBER);
   }
-  // BUILD 1040: placed wooden bridges — a plank deck over water. Four
-  // plank strips (wood browns, small gaps between them so the water
-  // shows through) plus two low side beams, at the water surface +
-  // 0.06 (the water surface is the heightfield blended to 0, so the
-  // deck sits just above it). Unlike the tree/rock loops above, this
-  // loop does NOT skip water tiles — the water is the whole point.
-  // The deck is flat quads, so the player (standing at the surface)
-  // reads as walking on the planks.
+  // BUILD 1124: bridge profiles are original, deterministic shapes.
+  // The saved axis keeps each deck aligned with its crossing direction;
+  // every water tile in a multi-tile span receives the same profile.
   for(const br of placedBridgeTiles(world)){
     const bwy=renderSurfaceElevation(br.tx+.5,br.ty+.5)+0.06;
-    const plank:Vec3=[.55,.4,.22], plank2:Vec3=[.48,.35,.2];
-    for(let i=0;i<4;i++){
-      const z0=br.ty+0.06+i*0.24, z1=z0+0.2;
-      quad([br.tx+0.02,bwy,z0],[br.tx+0.98,bwy,z0],[br.tx+0.98,bwy,z1],[br.tx+0.02,bwy,z1],i%2===0?plank:plank2);
+    const narrow=br.style==='narrow-stream'||br.style==='footbridge';
+    const deckWidth=br.style==='narrow-stream'?.54:br.style==='footbridge'?.7:.94;
+    const count=br.style==='narrow-stream'?2:br.style==='footbridge'?3:br.style==='stone'?4:br.style==='large-road'?5:br.style==='wide-river'?6:4;
+    const stone=br.style==='stone';
+    const plank:Vec3=stone?[.48,.5,.52]:[.55,.4,.22];
+    const plank2:Vec3=stone?[.4,.43,.46]:[.48,.35,.2];
+    const railColor:Vec3=stone?[.34,.38,.42]:LANTERN_TIMBER;
+    for(let i=0;i<count;i++){
+      const step=.88/count, a=.06+i*step, b=a+step*.82;
+      if(br.axis==='x'){
+        const z0=br.ty+(1-deckWidth)/2+a*deckWidth, z1=br.ty+(1-deckWidth)/2+b*deckWidth;
+        quad([br.tx+.02,bwy,z0],[br.tx+.98,bwy,z0],[br.tx+.98,bwy,z1],[br.tx+.02,bwy,z1],i%2===0?plank:plank2);
+      }else{
+        const x0=br.tx+(1-deckWidth)/2+a*deckWidth, x1=br.tx+(1-deckWidth)/2+b*deckWidth;
+        quad([x0,bwy,br.ty+.02],[x1,bwy,br.ty+.02],[x1,bwy,br.ty+.98],[x0,bwy,br.ty+.98],i%2===0?plank:plank2);
+      }
     }
-    houseBox(br.tx+.5,br.ty+.08,.98,.1,.08,bwy,LANTERN_TIMBER);
-    houseBox(br.tx+.5,br.ty+.92,.98,.1,.08,bwy,LANTERN_TIMBER);
+    if(!narrow){
+      if(br.axis==='x'){
+        const z0=br.ty+(1-deckWidth)/2+.035, z1=br.ty+(1+deckWidth)/2-.035;
+        houseBox(br.tx+.5,z0, .98,.1,.07,bwy,railColor);
+        houseBox(br.tx+.5,z1, .98,.1,.07,bwy,railColor);
+      }else{
+        const x0=br.tx+(1-deckWidth)/2+.035, x1=br.tx+(1+deckWidth)/2-.035;
+        houseBox(x0,br.ty+.5,.07,.1,.98,bwy,railColor);
+        houseBox(x1,br.ty+.5,.07,.1,.98,bwy,railColor);
+      }
+    }
   }
   // BUILD 1114: river surface detail — restrained current ribbons and
   // brighter downstream markers make generated rivers read as flowing
