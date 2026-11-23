@@ -71,7 +71,7 @@ import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
   finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
-  spendBridgeStepFromRegistry, wellApproachFor, wellTile,
+  spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
 import { CAMP_STORE_ID, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
