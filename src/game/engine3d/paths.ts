@@ -495,7 +495,7 @@ export function detectBridgeSite(
  */
 export function scanForBridgeSites(world: IsoWorld, state: PathState, day: number): BridgeSite[] {
   const found: BridgeSite[] = [];
-  if (day < BRIDGE_START_DAY) return found;
+  if (day < BRIDGE_START_DAY || day <= state.lastBridgeScanDay) return found;
   const rivers = new Set<string>();
   // BUILD 1113: river v2 stores the centreline separately from
   // widthTiles. A bridge scan that reads only r.tiles silently
@@ -524,15 +524,18 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
   }
   if (found.length > 0) {
     found.sort((a,b) => ((b as BridgeSite & { _candidateScore?: number })._candidateScore ?? 0) - ((a as BridgeSite & { _candidateScore?: number })._candidateScore ?? 0) || a.x-b.x || a.y-b.y);
-    // Strip the transient ranking value before it can enter the persisted
-    // BridgeSite list; the versioned save schema remains byte-compatible.
-    state.bridges = [...state.bridges, ...found.map(({ ...site }) => {
-      delete (site as BridgeSite & { _candidateScore?: number })._candidateScore;
-      return site;
-    })];
+    // One site per daily scan: commit only the highest-scoring crossing.
+    // This prevents a single scan from opening every road/riverside
+    // contact at once, while preserving deterministic tie-breaking.
+    // Strip the transient score before it enters the saved BridgeSite list.
+    const best = found[0] as BridgeSite & { _candidateScore?: number };
+    const { _candidateScore: _score, ...site } = best;
+    state.bridges = [...state.bridges, site];
+    state.lastBridgeScanDay = day;
+    return [site];
   }
   state.lastBridgeScanDay = day;
-  return found;
+  return [];
 }
 
 // --- BUILD 1093 (0x1C Phase 3.2): the bridge goes up in the

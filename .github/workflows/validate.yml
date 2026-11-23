@@ -59,6 +59,8 @@ jobs:
         run: npm run test:world-dev-foundation
       - name: Settlement economy regression test
         run: npm run test:settlement-economy
+      - name: River bridge ranking regression test
+        run: npm run test:river-bridge-ranking
       - name: Unified living-world simulation regression test
         run: npm run test:world-simulation
       - name: Caravan trade regression test
