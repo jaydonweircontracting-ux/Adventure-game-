@@ -521,13 +521,10 @@ export function scoreBridgeCrossing(
   const width = Math.max(span.length, riverWidthAt(world, riverTile.x, riverTile.y));
   score += width <= 1 ? 18 : width === 2 ? 10 : 2;
   const farX = riverTile.x + dx * span.length, farY = riverTile.y + dy * span.length;
-  if (terrainAt(world, farX, farY) !== 'water' &&
-      walkableWithPlacements(world, world.crates, farX, farY)) {
-    score += 24;
-    if (isPathTile(world, farX, farY)) score += 80;
-  } else {
-    score -= 30;
-  }
+  if (terrainAt(world, farX, farY) === 'water' ||
+      !walkableWithPlacements(world, world.crates, farX, farY)) return -Infinity;
+  score += 24;
+  if (isPathTile(world, farX, farY)) score += 80;
   if (isPathTile(world, pathTile.x, pathTile.y)) score += 12;
   return score - Math.max(0, span.length - 1) * 8;
 }
@@ -544,7 +541,9 @@ function bestBridgeRiverNeighbour(
     const span = bridgeSpanForCrossing(world, tile, { x, y });
     if (bridgeSpanAlreadyClaimed(world, state.bridges, span)) continue;
     if (!bridgeWorkTileFor(world,x,y)) continue;
-    candidates.push({x,y,score:scoreBridgeCrossing(world,tile,{x,y})});
+    const score = scoreBridgeCrossing(world,tile,{x,y});
+    if (!Number.isFinite(score)) continue;
+    candidates.push({x,y,score});
   }
   candidates.sort((a,b)=>b.score-a.score || a.x-b.x || a.y-b.y);
   return candidates[0] ?? null;
@@ -637,6 +636,7 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       // Rank sites using the same bank/width/road-alignment score as
       // event-driven detection. Each physical span can be claimed only once.
       const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
+      if (!Number.isFinite(score)) continue;
       const style = bridgeStyleForCrossing(world, tile, { x: nx, y: ny });
       found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny })), { _candidateScore: score } as object));
     }
