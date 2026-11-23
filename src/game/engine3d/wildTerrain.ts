@@ -47,7 +47,7 @@
 // wilderness is player-only by construction — "empty chunks", as
 // ordered: landscape, no town, no NPCs, no quests.
 import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, scatterTreeAt, type Terrain } from '../iso/isoWorld';
-import { groundNoise, groundElevation, worldGroundElevation } from './townLook';
+import { groundNoise, worldGroundElevation } from './townLook';
 import { placedPathKeyInts, placedWaterKeyInts, tileKeyInt } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
 
