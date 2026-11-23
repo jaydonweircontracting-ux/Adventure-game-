@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { defaultWorld } from '../src/game/iso/isoWorld';
-import { bridgeAxisForCrossing, bridgeSitePlacementExists, bridgeSpanForCrossing, bridgeStyleForCrossing, scoreBridgeCrossing, finishBridge, freshBridgeSite, freshPathState, placeBridgeSpan, reconcileBridges, scanForBridgeSites, validateBridgeSite } from '../src/game/engine3d/paths';
+import { bridgeAxisForCrossing, bridgeSitePlacementExists, bridgeSpanForCrossing, bridgeStyleForCrossing, scoreBridgeCrossing, finishBridge, freshBridgeSite, freshPathState, placeBridgeSpan, pathConnects, planBankApproachTiles, reconcileBridges, scanForBridgeSites, validateBridgeSite } from '../src/game/engine3d/paths';
 import { placedBridgeTiles } from '../src/game/engine3d/placements';
+import { riverNear } from '../src/game/engine3d/rivers';
 
 // A controlled world with two independent river crossings; this fixture is deterministic. The first has
 // a matching path on both banks; the second only has a near-bank approach.
@@ -91,6 +92,7 @@ const savedSite = validateBridgeSite({ ...spanSite, state: 'building', progress:
 assert.deepEqual(savedSite?.spanTiles, three, 'span tiles survive founders-save validation');
 assert.equal(savedSite?.style, 'large-road', 'bridge profile survives founders-save validation');
 assert.equal(savedSite?.axis, 'x', 'bridge axis survives founders-save validation');
+assert.deepEqual(savedSite?.nearBank, { x: 149, y: 140 }, 'the near-bank approach anchor survives founders-save validation');
 const legacySite = validateBridgeSite({ x: 9, y: 9, workTile: { x: 8, y: 9 }, state: 'none' });
 assert.deepEqual(legacySite?.spanTiles, [{ x: 9, y: 9 }], 'legacy bridge saves migrate to a one-tile span');
 assert.equal(legacySite?.style, 'wooden', 'legacy bridge saves retain the wooden appearance');
@@ -107,8 +109,45 @@ assert.equal(placedBridgeTiles(placedWorld).length, 3, 'every water tile receive
 assert.equal(placedBridgeTiles(placedWorld).every((tile) => tile.style === 'large-road' && tile.axis === 'x'), true, 'profile and axis persist on every bridge tile');
 assert.equal(bridgeSitePlacementExists(placedWorld, placedSite), true, 'reconciliation sees a complete span');
 const done = finishBridge([placedSite], placedSite.id);
-placedWorld.placements!.pop();
+const missingBridgeIndex = placedWorld.placements!.findIndex((item) => item.kind === 'bridge' && item.x0 === 152 && item.y0 === 140);
+assert.ok(missingBridgeIndex >= 0, 'a bridge deck tile exists to remove for the reconciliation test');
+placedWorld.placements!.splice(missingBridgeIndex, 1);
+assert.equal(pathConnects(placedWorld, { x: 149, y: 140 }, [{ x: 153, y: 140 }]), false, 'a missing deck tile breaks the connected bridge route');
 assert.equal(reconcileBridges(done, placedWorld)[0].state, 'none', 'a partial/missing span cannot remain marked complete');
+
+// Bank-following approaches connect both settlements to the bridge without placing paths in water.
+const bankWorld = defaultWorld();
+bankWorld.huts = []; bankWorld.stalls = []; bankWorld.trees = []; bankWorld.rocks = [];
+bankWorld.crates = []; bankWorld.walls = []; bankWorld.npcSpawns = [];
+bankWorld.placements = [];
+bankWorld.terrain = {};
+const centreline = Array.from({ length: 7 }, (_, i) => ({ x: 150, y: 140 + i, dx: 0, dy: 1, width: 3 }));
+const widthTiles = Array.from({ length: 7 }, (_, i) => [
+  { x: 149, y: 140 + i, dx: 0, dy: 1, width: 3 },
+  { x: 151, y: 140 + i, dx: 0, dy: 1, width: 3 },
+]).flat();
+for (const tile of [...centreline, ...widthTiles]) bankWorld.terrain[tile.x + ',' + tile.y] = 'water';
+bankWorld.rivers = [{ id: 'bank-follow', tiles: centreline, widthTiles, mouth: { x: 150, y: 147 } }] as any;
+bankWorld.placements!.push(
+  { kind: 'path', x0: 148, y0: 146, x1: 148, y1: 146 },
+  { kind: 'path', x0: 152, y0: 146, x1: 152, y1: 146 },
+);
+const bankNear = { x: 148, y: 142 }, bankFar = { x: 152, y: 142 };
+const bankSpan = bridgeSpanForCrossing(bankWorld, bankNear, { x: 149, y: 142 });
+assert.equal(bankSpan.length, 3, 'the bank approach fixture crosses the full three-tile river width');
+assert.ok(riverNear(bankWorld, bankNear.x, bankNear.y, 1), 'near entrance is adjacent to the riverbank');
+assert.ok(riverNear(bankWorld, bankFar.x, bankFar.y, 1), 'far entrance is adjacent to the riverbank');
+const bankSite = freshBridgeSite(149, 142, bankNear, bankSpan, 'large-road', 'x', bankNear);
+const bankResult = placeBridgeSpan(bankWorld, bankSite, { x: 0, y: 0 }, []);
+assert.equal(bankResult.ok, true, 'bridge placement also creates dry bank approaches');
+const bankApproaches = bankResult.approachTiles;
+assert.ok(bankApproaches.some((tile) => tile.x === 148 && tile.y === 142), 'near-bank entrance receives a path');
+assert.ok(bankApproaches.some((tile) => tile.x === 152 && tile.y === 142), 'far-bank entrance receives a path');
+assert.ok(bankApproaches.some((tile) => tile.x === 148 && tile.y === 145), 'near approach follows the riverbank to the existing settlement path');
+assert.ok(bankApproaches.some((tile) => tile.x === 152 && tile.y === 145), 'far approach follows the riverbank to the existing settlement path');
+assert.equal(bankApproaches.every((tile) => bankWorld.terrain[tile.x + ',' + tile.y] !== 'water' && !!riverNear(bankWorld, tile.x, tile.y, 1)), true, 'every generated approach tile stays dry and bank-adjacent');
+assert.equal(pathConnects(bankWorld, { x: 148, y: 146 }, [{ x: 152, y: 146 }]), true, 'path connectivity crosses the complete bridge span');
+assert.equal(planBankApproachTiles(bankWorld, bankFar).length, 0, 'an existing approach is not duplicated on repeat planning');
 
 const blockedWorld = defaultWorld();
 blockedWorld.huts = []; blockedWorld.stalls = []; blockedWorld.trees = []; blockedWorld.rocks = [];
