@@ -219,7 +219,11 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // turquoise-to-blue cross-section without changing terrain or saves.
   const riverDepthByTile = new Map<number, number>();
   const riverTileKey = (x:number,y:number):number => (x+2048)*4096+(y+2048);
-  for (const river of world.rivers ?? []) {
+  const riverCourses = (world.rivers ?? []) as unknown as Array<{
+    tiles?: Array<{x:number;y:number;shallow?:boolean}>;
+    widthTiles?: Array<{x:number;y:number}>;
+  }>;
+  for (const river of riverCourses) {
     for (const tile of river.tiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), tile.shallow ? 1 : 0);
     for (const tile of river.widthTiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), 1);
   }
@@ -321,7 +325,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       const emitStrataFace = (
         topA: [number,number,number], topB: [number,number,number],
         lowA: [number,number,number], lowB: [number,number,number],
-        shade: Vec3, seed: number,
+        shade: number, seed: number,
       ) => {
         const height = Math.max(0, topA[1] - lowA[1]);
         if (height < 0.24) return;
