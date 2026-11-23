@@ -287,11 +287,39 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         : rocky ? [0.48,0.50,0.49]
         : [c[0],c[1],c[2]];
       quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],topColor);
+      // BUILD 1118: exposed voxel faces use readable geological strata
+      // instead of one flat brown/grey wall. A thin grass cap sits under
+      // the turf, compacted earth forms the middle layer, and stone
+      // appears at the base. Each band is part of the same face (no
+      // floating cubes or extra tile draw calls), with deterministic
+      // per-column variation so long cliffs do not look like wallpaper.
       const soil: Vec3 = rocky ? [0.39,0.40,0.39] : [0.34,0.25,0.16];
-      if (west < top - 0.24) quad([x,west,y],[x,top,y],[x,top,y+1],[x,west,y+1],shadeRgb(soil,SUN_SHADE.west));
-      if (east < top - 0.24) quad([x+1,east,y+1],[x+1,top,y+1],[x+1,top,y],[x+1,east,y],shadeRgb(soil,SUN_SHADE.east));
-      if (north < top - 0.24) quad([x+1,north,y],[x+1,top,y],[x,top,y],[x,north,y],shadeRgb(soil,SUN_SHADE.north));
-      if (south < top - 0.24) quad([x,south,y+1],[x,top,y+1],[x+1,top,y+1],[x+1,south,y+1],shadeRgb(soil,SUN_SHADE.south));
+      const dirtBand: Vec3 = [0.39,0.29,0.18];
+      const rockBand: Vec3 = [0.29,0.31,0.30];
+      const grassBand: Vec3 = [0.25,0.34,0.18];
+      const emitStrataFace = (
+        topA: [number,number,number], topB: [number,number,number],
+        lowA: [number,number,number], lowB: [number,number,number],
+        shade: Vec3, seed: number,
+      ) => {
+        const height = Math.max(0, topA[1] - lowA[1]);
+        if (height < 0.24) return;
+        const at = (a: [number,number,number], b: [number,number,number], t: number): [number,number,number] =>
+          [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t, a[2] + (b[2]-a[2])*t];
+        const grassEnd = rocky ? 0 : Math.min(0.18, 0.18 / height);
+        const dirtEnd = Math.min(0.68, Math.max(grassEnd, 0.68 / height));
+        const bandColor = (color: Vec3, salt: number): Vec3 => {
+          const variation = 0.94 + hash2(x * 7.1 + seed + salt, y * 5.3 - seed) * 0.12;
+          return shadeRgb([color[0]*variation,color[1]*variation,color[2]*variation],shade);
+        };
+        if (grassEnd > 0) quad(at(topA,lowA,0),at(topB,lowB,0),at(topB,lowB,grassEnd),at(topA,lowA,grassEnd),bandColor(grassBand,1));
+        if (dirtEnd > grassEnd) quad(at(topA,lowA,grassEnd),at(topB,lowB,grassEnd),at(topB,lowB,dirtEnd),at(topA,lowA,dirtEnd),bandColor(dirtBand,2));
+        if (dirtEnd < 1) quad(at(topA,lowA,dirtEnd),at(topB,lowB,dirtEnd),at(topB,lowB,1),at(topA,lowA,1),bandColor(rockBand,3));
+      };
+      if (west < top - 0.24) emitStrataFace([x,top,y],[x,top,y+1],[x,west,y],[x,west,y+1],SUN_SHADE.west,1);
+      if (east < top - 0.24) emitStrataFace([x+1,top,y+1],[x+1,top,y],[x+1,east,y+1],[x+1,east,y],SUN_SHADE.east,2);
+      if (north < top - 0.24) emitStrataFace([x+1,top,y],[x,top,y],[x+1,north,y],[x,north,y],SUN_SHADE.north,3);
+      if (south < top - 0.24) emitStrataFace([x,top,y+1],[x+1,top,y+1],[x,south,y+1],[x+1,south,y+1],SUN_SHADE.south,4);
     } else {
       quadV([x,yAt(x,y),y],colAt(x,y),[x+1,yAt(x+1,y),y],colAt(x+1,y),[x+1,yAt(x+1,y+1),y+1],colAt(x+1,y+1),[x,yAt(x,y+1),y+1],colAt(x,y+1));
     }
