@@ -47,7 +47,7 @@
 // wilderness is player-only by construction — "empty chunks", as
 // ordered: landscape, no town, no NPCs, no quests.
 import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, scatterTreeAt, type Terrain } from '../iso/isoWorld';
-import { groundNoise, groundElevation } from './townLook';
+import { groundNoise, groundElevation, worldGroundElevation } from './townLook';
 import { placedPathKeyInts, placedWaterKeyInts, tileKeyInt } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
 
@@ -297,7 +297,7 @@ export function landBlendAt(effTerrain: (x: number, y: number) => Terrain, x: nu
  *  terrain record. */
 export const MOUNTAIN_BOOST = 0.6;
 export function surfaceElevation(effTerrain: (x: number, y: number) => Terrain, x: number, z: number): number {
-  const base = groundElevation(x, z) * landBlendAt(effTerrain, x, z);
+  const base = worldGroundElevation(x, z) * landBlendAt(effTerrain, x, z);
   if (effTerrain(Math.floor(x), Math.floor(z)) === 'stone') return base + MOUNTAIN_BOOST;
   return base;
 }
@@ -390,7 +390,7 @@ export function renderTerrain(effTerrain: (x: number, y: number) => Terrain, x: 
   const t = effTerrain(x, y);
   if (t === 'grass') {
     if (isShoreSand(effTerrain, t, x, y)) return 'sand';
-    if (groundElevation(x + 0.5, y + 0.5) > STONE_ELEV) return 'stone';
+    if (worldGroundElevation(x + 0.5, y + 0.5) > STONE_ELEV) return 'stone';
     return 'grass';
   }
   if (t === 'water' && isFoam(t, x, y)) return 'foam';
