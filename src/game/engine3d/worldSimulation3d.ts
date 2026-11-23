@@ -71,7 +71,7 @@ import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
   finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
-  spendBridgeStepFromRegistry, wellApproachFor, wellTile,
+  spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
 import { CAMP_STORE_ID, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
@@ -1602,9 +1602,8 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                       // progress is banked, no wood is spent twice (the
                       // ready-site rule).
                       const site=bridgeSiteById(pathsRef.current.bridges,myJob!.targetId);
-                      const placed=site?validatePlacement(world,'bridge',site.x,site.y,playerTile,npcTiles,0):{ok:false as const,reason:'no site'};
+                      const placed=site?placeBridgeSpan(world,site,playerTile,npcTiles):{ok:false as const,reason:'no site'};
                       if(placed.ok){
-                        addPlacement(world,placed.item);
                         saveWorld(world);worldDirty=true;
                         pathsRef.current={...pathsRef.current,bridges:finishBridge(pathsRef.current.bridges,myJob!.targetId)};
                         if(myJob&&myJob.kind==='build'){jobBoardRef.current=completeJob(jobBoardRef.current,myJob.id);myJob=undefined;}

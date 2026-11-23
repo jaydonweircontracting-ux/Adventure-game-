@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { hutAt, inBounds, isWalkableWorld, loadWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, inBounds, isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
@@ -106,7 +106,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // Build menu lists it (entries with a palette kind arm that tool;
 // the rest are listed, locked, with the reason why).
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
-import { freshPathState, pathTiles, reconcileBridges, wellTile, type PathState } from './paths';
+import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState } from './paths';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
 // BUILD 1064 (R-1): the unified resource registry — the one
 // authoritative record of what exists, where it is, and where it
@@ -2713,6 +2713,61 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // uses it to prove a placed item gets a stable id at creation
       // and keeps it across a reload.
       placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(result.item));},
+      // BUILD 1124 bridge integration probe: in testmode only, create a
+      // short, isolated two-tile river crossing in unused wilderness,
+      // stamp both bank paths and the real multi-tile bridge placements,
+      // and return the coordinates so Playwright can walk the player over it.
+      createBridgeCrossingForTest:()=>{
+        if(!window.location.search.includes('testmode=1'))return null;
+        const w=stateRef.current.world, p=stateRef.current.position;
+        const playerTile={x:Math.round(p.x),y:Math.round(p.y)};
+        const npcTiles=[
+          ...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),
+          ...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)})),
+          ...foundersRef.current.map(f=>({x:Math.round(f.x),y:Math.round(f.y)})),
+        ];
+        const blocked=new Set<string>();
+        const mark=(x:number,y:number)=>blocked.add(x+','+y);
+        // Existing placements and live actors are indexed directly;
+        // walkableWithPlacements below checks terrain, buildings, props,
+        // walls and resource blockers without duplicating their schemas.
+        for(const item of w.placements??[])for(let y=item.y0;y<=item.y1;y++)for(let x=item.x0;x<=item.x1;x++)mark(x,y);
+        for(const n of npcTiles)mark(n.x,n.y);
+        mark(playerTile.x,playerTile.y);
+        for(let y=12;y<w.h-12;y+=3){
+          for(let x=12;x<w.w-20;x+=3){
+            if(Math.hypot(x-FOUNDER_CAMP.x,y-FOUNDER_CAMP.y)<32)continue;
+            const line=Array.from({length:8},(_,i)=>({x:x+i,y}));
+            if(line.some(t=>blocked.has(t.x+','+t.y)||terrainAt(w,t.x,t.y)==='water'||!walkableWithPlacements(w,w.crates,t.x,t.y)))continue;
+            const near={x,y},far={x:x+3,y};
+            if(!walkableWithPlacements(w,w.crates,near.x,near.y)||!walkableWithPlacements(w,w.crates,far.x,far.y))continue;
+            const nearPath=validatePlacement(w,'path',near.x,near.y,playerTile,npcTiles,0);
+            const farPath=validatePlacement(w,'path',far.x,far.y,playerTile,npcTiles,0);
+            if(!nearPath.ok||!farPath.ok)continue;
+            const span=[{x:x+1,y},{x:x+2,y}];
+            const river={id:'bridge-probe-'+x+'-'+y,tiles:span.map(tile=>({...tile,dx:1,dy:0,width:2})),mouth:{...far}} as any;
+            const oldRivers=w.rivers??[];
+            const oldTerrain=span.map(tile=>({key:terrainKey(tile.x,tile.y),value:w.terrain[terrainKey(tile.x,tile.y)]}));
+            for(const tile of span)w.terrain[terrainKey(tile.x,tile.y)]='water';
+            w.rivers=[...oldRivers,river];
+            const spanTiles=bridgeSpanForCrossing(w,near,span[0]);
+            if(spanTiles.length!==2||!Number.isFinite(scoreBridgeCrossing(w,near,span[0]))){
+              w.rivers=oldRivers;for(const item of oldTerrain){if(item.value===undefined)delete w.terrain[item.key];else w.terrain[item.key]=item.value;}continue;
+            }
+            const style=bridgeStyleForCrossing(w,near,span[0]);
+            const site=freshBridgeSite(span[0].x,span[0].y,near,spanTiles,style,bridgeAxisForCrossing(near,span[0]));
+            const placed=placeBridgeSpan(w,site,playerTile,npcTiles);
+            if(!placed.ok){
+              w.rivers=oldRivers;for(const item of oldTerrain){if(item.value===undefined)delete w.terrain[item.key];else w.terrain[item.key]=item.value;}continue;
+            }
+            addPlacement(w,nearPath.item);addPlacement(w,farPath.item);
+            pathsRef.current={...pathsRef.current,bridges:finishBridge([...pathsRef.current.bridges,site],site.id)};
+            commitWorld(worldSyncCtx,w);saveWorld(w);
+            return {near,far,span:spanTiles,style,axis:'x'};
+          }
+        }
+        return null;
+      },
       // BUILD 1041 test hook (read-only): farm tiles with their live
       // growth stage (probes only — no gameplay effect).
       getFarmTiles:()=>placedFarmTiles(stateRef.current.world).map(t=>({tx:t.tx,ty:t.ty,plantedAt:t.plantedAt??null,stage:farmStageAt(t.plantedAt,absMinutes(clockRef.current.day,clockRef.current.minutes),growthFactorAt(stateRef.current.world,clockRef.current.day,t.tx,t.ty))})),

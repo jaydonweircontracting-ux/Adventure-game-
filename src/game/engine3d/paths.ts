@@ -60,8 +60,8 @@
  * No React, no WebGL, no localStorage — the sim and the standalone
  * asserts import it directly.
  */
-import { terrainAt, inBounds, type IsoWorld } from '../iso/isoWorld';
-import { walkableWithPlacements, placementsOf, addPlacement } from './placements';
+import { terrainAt, inBounds, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement } from './placements';
 import { riverAt, riverWidthAt } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import {
@@ -109,6 +109,7 @@ export const BRIDGE_COST_WOOD = BRIDGE_WORK_STEPS * BRIDGE_WOOD_PER_STEP;
 
 /** One bridge site's progress (saved in the founders save, v10 —
  *  the same shape as one hut SiteState, wood only). */
+export type BridgeStyle = 'wooden' | 'stone' | 'footbridge' | 'large-road' | 'narrow-stream' | 'wide-river';
 export type BridgeSiteStateKind = 'none' | 'building' | 'done';
 export type BridgeSite = {
   /** Stable id ('bridge-<x>-<y>') — the build job's target. */
@@ -118,6 +119,12 @@ export type BridgeSite = {
   y: number;
   /** The walkable bank tile the builder stands on. */
   workTile: { x: number; y: number };
+  /** Every consecutive river-water tile crossed by this bridge. Optional on legacy saves. */
+  spanTiles?: Array<{ x: number; y: number }>;
+  /** Visual profile selected from the span and both-bank road geometry. Optional on legacy saves. */
+  style?: BridgeStyle;
+  /** Crossing direction; x = east/west span, y = north/south span. */
+  axis?: 'x' | 'y';
   state: BridgeSiteStateKind;
   /** Completed work steps, 0..BRIDGE_WORK_STEPS. */
   progress: number;
@@ -152,8 +159,21 @@ export function bridgeSiteIdFor(x: number, y: number): string {
 
 /** Fresh bridge site: nothing started, on the river tile, the
  *  builder standing on the bank tile. */
-export function freshBridgeSite(x: number, y: number, workTile: { x: number; y: number }): BridgeSite {
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile }, state: 'none', progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } };
+export function freshBridgeSite(
+  x: number,
+  y: number,
+  workTile: { x: number; y: number },
+  spanTiles: Array<{ x: number; y: number }> = [{ x, y }],
+  style: BridgeStyle = 'wooden',
+  axis: 'x' | 'y' = 'x',
+): BridgeSite {
+  const uniqueSpan = [...new Map(spanTiles.map((tile) => [tile.x + ',' + tile.y, { ...tile }])).values()].slice(0, 6);
+  if (!uniqueSpan.some((tile) => tile.x === x && tile.y === y)) uniqueSpan.unshift({ x, y });
+  return {
+    id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile },
+    spanTiles: uniqueSpan, style, axis, state: 'none', progress: 0, spentWood: 0,
+    stages: { ...ZERO_STAGE_STEPS },
+  };
 }
 
 /** Validate a saved bridge site (v10 migration): unknown states /
@@ -185,7 +205,18 @@ export function validateBridgeSite(value: unknown): BridgeSite | null {
   // valid (it sums to the total); an old save without it derives
   // the stages from the total (the sequential split).
   const stages = stageProgressOf({ progress, stages: (v as { stages?: StageSteps }).stages }, BRIDGE_WORK_STEPS);
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, state, progress, spentWood, stages };
+  const rawSpan = Array.isArray(v.spanTiles) ? v.spanTiles : [];
+  const spanTiles = rawSpan
+    .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === 'object')
+    .map((raw) => ({ x: Number(raw.x), y: Number(raw.y) }))
+    .filter((tile) => Number.isInteger(tile.x) && Number.isInteger(tile.y))
+    .filter((tile, index, all) => all.findIndex((other) => other.x === tile.x && other.y === tile.y) === index)
+    .slice(0, 6);
+  if (!spanTiles.some((tile) => tile.x === x && tile.y === y)) spanTiles.unshift({ x, y });
+  const styles: BridgeStyle[] = ['wooden', 'stone', 'footbridge', 'large-road', 'narrow-stream', 'wide-river'];
+  const style = styles.includes(v.style as BridgeStyle) ? v.style as BridgeStyle : 'wooden';
+  const axis = v.axis === 'y' ? 'y' : 'x';
+  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, spanTiles, style, axis, state, progress, spentWood, stages };
 }
 
 /** Validate a saved bridge list (v10 migration): corrupt entries
@@ -367,9 +398,50 @@ export function wellApproachFor(w: IsoWorld, well: { x: number; y: number }, cam
 
 // --- Bridges ---
 
+/** The water tiles covered by a bridge site (legacy saves are one tile). */
+export function bridgeSiteSpan(site: BridgeSite): Array<{ x: number; y: number }> {
+  return site.spanTiles?.length ? site.spanTiles : [{ x: site.x, y: site.y }];
+}
+
 /** True when a bridge placement spans the river tile. */
 export function bridgePlacementExists(world: IsoWorld, x: number, y: number): boolean {
   return placementsOf(world).some((p) => p.kind === 'bridge' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
+/** True only when every tile in a bridge's saved span is placed. */
+export function bridgeSitePlacementExists(world: IsoWorld, site: BridgeSite): boolean {
+  return bridgeSiteSpan(site).every((tile) => bridgePlacementExists(world, tile.x, tile.y));
+}
+
+/** A candidate cannot overlap an existing bridge or another site's reserved span. */
+export function bridgeSpanAlreadyClaimed(
+  world: IsoWorld,
+  bridges: readonly BridgeSite[],
+  span: readonly { x: number; y: number }[],
+): boolean {
+  return span.some((tile) =>
+    bridgePlacementExists(world, tile.x, tile.y) ||
+    bridges.some((site) => bridgeSiteSpan(site).some((other) => other.x === tile.x && other.y === tile.y)),
+  );
+}
+
+/** Validate the entire bridge span before mutating the world, then stamp
+ * every tile with the same persisted visual profile. A blocked tile means
+ * the whole bridge waits; no half-bridge or partial collision is possible. */
+export function placeBridgeSpan(
+  world: IsoWorld,
+  site: BridgeSite,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): { ok: true; placed: PlacedItem[] } | { ok: false; reason: string } {
+  const items: PlacedItem[] = [];
+  for (const tile of bridgeSiteSpan(site)) {
+    const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    items.push(result.item);
+  }
+  for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
+  return { ok: true, placed: items };
 }
 
 /**
@@ -387,6 +459,55 @@ export function bridgePlacementExists(world: IsoWorld, x: number, y: number): bo
  * Higher is better; the deterministic tie-break is west-to-east then
  * north-to-south in the caller.
  */
+/** The direction the bridge deck runs across the water. */
+export function bridgeAxisForCrossing(
+  pathTile: { x: number; y: number },
+  riverTile: { x: number; y: number },
+): 'x' | 'y' {
+  return riverTile.x !== pathTile.x ? 'x' : 'y';
+}
+
+/** Consecutive river tiles along the road's crossing axis, capped at six. */
+export function bridgeSpanForCrossing(
+  world: IsoWorld,
+  pathTile: { x: number; y: number },
+  riverTile: { x: number; y: number },
+): Array<{ x: number; y: number }> {
+  const dx = riverTile.x - pathTile.x;
+  const dy = riverTile.y - pathTile.y;
+  if (Math.abs(dx) + Math.abs(dy) !== 1) return [{ ...riverTile }];
+  const span = [{ ...riverTile }];
+  while (span.length < 6) {
+    const last = span[span.length - 1];
+    const next = { x: last.x + dx, y: last.y + dy };
+    if (terrainAt(world, next.x, next.y) !== 'water' || !riverAt(world, next.x, next.y)) break;
+    span.push(next);
+  }
+  return span;
+}
+
+/** Choose a distinct, deterministic bridge profile from water width and
+ * both-bank access. These are original in-game profiles, not source-game assets. */
+export function bridgeStyleForCrossing(
+  world: IsoWorld,
+  pathTile: { x: number; y: number },
+  riverTile: { x: number; y: number },
+): BridgeStyle {
+  const span = bridgeSpanForCrossing(world, pathTile, riverTile);
+  const dx = riverTile.x - pathTile.x, dy = riverTile.y - pathTile.y;
+  const farBank = { x: riverTile.x + dx * span.length, y: riverTile.y + dy * span.length };
+  const farWalkable = terrainAt(world, farBank.x, farBank.y) !== 'water' &&
+    walkableWithPlacements(world, world.crates, farBank.x, farBank.y);
+  const farPath = farWalkable && isPathTile(world, farBank.x, farBank.y);
+  const effectiveWidth = Math.max(span.length, riverWidthAt(world, riverTile.x, riverTile.y));
+  if (effectiveWidth >= 4) return 'wide-river';
+  if (effectiveWidth >= 3) return 'large-road';
+  if (effectiveWidth === 2) return farPath ? 'stone' : 'wooden';
+  if (farPath) return 'wooden';
+  if (farWalkable) return 'footbridge';
+  return 'narrow-stream';
+}
+
 export function scoreBridgeCrossing(
   world: IsoWorld,
   pathTile: { x: number; y: number },
@@ -396,27 +517,16 @@ export function scoreBridgeCrossing(
   const dy = riverTile.y - pathTile.y;
   if (Math.abs(dx) + Math.abs(dy) !== 1 || (riverWidthAt(world, riverTile.x, riverTile.y) <= 0 && !riverAt(world, riverTile.x, riverTile.y))) return -Infinity;
   let score = 10;
-  const width = riverWidthAt(world, riverTile.x, riverTile.y);
+  const span = bridgeSpanForCrossing(world, pathTile, riverTile);
+  const width = Math.max(span.length, riverWidthAt(world, riverTile.x, riverTile.y));
   score += width <= 1 ? 18 : width === 2 ? 10 : 2;
-  // Follow the crossing axis through the complete water strip to find
-  // the far bank. A matching path there is the strongest evidence that
-  // this is a real road crossing rather than a path ending at water.
-  let farX = riverTile.x + dx, farY = riverTile.y + dy;
-  let span = 1;
-  while (span < 6 && terrainAt(world, farX, farY) === 'water') {
-    farX += dx; farY += dy; span++;
-  }
-  if (terrainAt(world, farX, farY) !== 'water' &&
-      walkableWithPlacements(world, world.crates, farX, farY)) {
-    score += 24;
-    if (isPathTile(world, farX, farY)) score += 80;
-  } else {
-    score -= 30;
-  }
-  // A straight approach is preferable to a diagonal/side-bank access.
-  const nearBank = { x: pathTile.x, y: pathTile.y };
-  if (isPathTile(world, nearBank.x, nearBank.y)) score += 12;
-  return score - Math.max(0, span - 1) * 8;
+  const farX = riverTile.x + dx * span.length, farY = riverTile.y + dy * span.length;
+  if (terrainAt(world, farX, farY) === 'water' ||
+      !walkableWithPlacements(world, world.crates, farX, farY)) return -Infinity;
+  score += 24;
+  if (isPathTile(world, farX, farY)) score += 80;
+  if (isPathTile(world, pathTile.x, pathTile.y)) score += 12;
+  return score - Math.max(0, span.length - 1) * 8;
 }
 
 function bestBridgeRiverNeighbour(
@@ -427,9 +537,13 @@ function bestBridgeRiverNeighbour(
   const candidates: Array<{ x:number; y:number; score:number }> = [];
   for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
     const x=tile.x+dx, y=tile.y+dy;
-    if ((riverWidthAt(world,x,y) <= 0 && !riverAt(world,x,y)) || bridgePlacementExists(world,x,y) || bridgeSiteAt(state.bridges,x,y)) continue;
+    if (riverWidthAt(world,x,y) <= 0 && !riverAt(world,x,y)) continue;
+    const span = bridgeSpanForCrossing(world, tile, { x, y });
+    if (bridgeSpanAlreadyClaimed(world, state.bridges, span)) continue;
     if (!bridgeWorkTileFor(world,x,y)) continue;
-    candidates.push({x,y,score:scoreBridgeCrossing(world,tile,{x,y})});
+    const score = scoreBridgeCrossing(world,tile,{x,y});
+    if (!Number.isFinite(score)) continue;
+    candidates.push({x,y,score});
   }
   candidates.sort((a,b)=>b.score-a.score || a.x-b.x || a.y-b.y);
   return candidates[0] ?? null;
@@ -477,7 +591,9 @@ export function detectBridgeSite(
   if (!candidate) return null;
   const workTile = bridgeWorkTileFor(world, candidate.x, candidate.y);
   if (!workTile) return null;
-  const site = freshBridgeSite(candidate.x, candidate.y, workTile);
+  const spanTiles = bridgeSpanForCrossing(world, tile, { x: candidate.x, y: candidate.y });
+  const style = bridgeStyleForCrossing(world, tile, { x: candidate.x, y: candidate.y });
+  const site = freshBridgeSite(candidate.x, candidate.y, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: candidate.x, y: candidate.y }));
   state.bridges = [...state.bridges, site];
   return site;
 }
@@ -512,14 +628,17 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       const nx = tile.x + dx, ny = tile.y + dy;
       if (!rivers.has(nx + ',' + ny)) continue;
       if (terrainAt(world, nx, ny) !== 'water') continue;
-      if (bridgePlacementExists(world, nx, ny)) continue;
-      if (bridgeSiteAt(state.bridges, nx, ny) || found.some((s) => s.x === nx && s.y === ny)) continue;
+      const spanTiles = bridgeSpanForCrossing(world, tile, { x: nx, y: ny });
+      if (bridgeSpanAlreadyClaimed(world, state.bridges, spanTiles) ||
+          found.some((site) => bridgeSiteSpan(site).some((existing) => spanTiles.some((candidate) => candidate.x === existing.x && candidate.y === existing.y)))) continue;
       const workTile = bridgeWorkTileFor(world, nx, ny);
       if (!workTile) continue;
       // Rank sites using the same bank/width/road-alignment score as
-      // event-driven detection. Existing save/state shape is unchanged.
+      // event-driven detection. Each physical span can be claimed only once.
       const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
-      found.push(Object.assign(freshBridgeSite(nx, ny, workTile), { _candidateScore: score } as object));
+      if (!Number.isFinite(score)) continue;
+      const style = bridgeStyleForCrossing(world, tile, { x: nx, y: ny });
+      found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny })), { _candidateScore: score } as object));
     }
   }
   if (found.length > 0) {
@@ -726,7 +845,7 @@ export function finishBridge(bridges: readonly BridgeSite[], siteId: string): Br
 export function reconcileBridges(bridges: readonly BridgeSite[], world: IsoWorld): BridgeSite[] {
   let changed = false;
   const next = bridges.map((s) => {
-    const placed = bridgePlacementExists(world, s.x, s.y);
+    const placed = bridgeSitePlacementExists(world, s);
     if (s.state === 'done' && !placed) {
       changed = true;
       return { ...s, state: 'none' as BridgeSiteStateKind, progress: 0, spentWood: 0, stages: { ...ZERO_STAGE_STEPS } };
