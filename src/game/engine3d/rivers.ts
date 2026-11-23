@@ -524,7 +524,12 @@ function extractRivers(world: IsoWorld, ff: FlowField, ex: Exclusions): River[] 
       if (w < 2) continue;
       const left: [number, number] = [t.dy, -t.dx];
       const right: [number, number] = [-t.dy, t.dx];
-      const sides: Array<[number, number]> = w >= 3 ? [left, right] : [((t.x + t.y) % 2 === 0) ? left : right];
+      // BUILD 1115: keep a width-2 shoulder on the same bank for the
+      // whole river. Alternating sides tile-by-tile made the channel
+      // zigzag between banks and produced a checkerboard shoreline.
+      // Wider channels still expand on both sides of the centreline.
+      const bankSide: [number, number] = n % 2 === 0 ? left : right;
+      const sides: Array<[number, number]> = w >= 3 ? [left, right] : [bankSide];
       for (const [sx, sy] of sides) {
         const wx = t.x + sx, wy = t.y + sy;
         if (wx < 0 || wy < 0 || wx >= W || wy >= H) continue;
