@@ -347,14 +347,10 @@ export function isShoreSand(effTerrain: (x: number, y: number) => Terrain, t: Te
   const coast = oceanCoastX(y);
   if (x >= coast && x < coast + SHORE_SAND_DIST) return true;
   if (x >= POND_RECT.x0 - 2 && x <= POND_RECT.x1 + 2 && y >= POND_RECT.y0 - 2 && y <= POND_RECT.y1 + 2) return true;
-  // BUILD 1099: river banks — grass next to river/placed water renders
-  // as sand, so a river reads as water with banks instead of a flat
-  // blue strip cut straight into grass. (Ocean/pond/lake water is
-  // excluded by isRiverWater, so their own shore rules still own them.)
-  if ((effTerrain(x - 1, y) === 'water' && isRiverWater(effTerrain, x - 1, y))
-    || (effTerrain(x + 1, y) === 'water' && isRiverWater(effTerrain, x + 1, y))
-    || (effTerrain(x, y - 1) === 'water' && isRiverWater(effTerrain, x, y - 1))
-    || (effTerrain(x, y + 1) === 'water' && isRiverWater(effTerrain, x, y + 1))) return true;
+  // BUILD 1117: river banks remain grass. A full tile of tan sand
+  // beside narrow shoulder water produced alternating blue/tan squares
+  // instead of a shoreline. A narrow edge material belongs in the river
+  // mesh, not in the terrain classification for an entire land tile.
   const n = lakeNoiseAt(x, y);
   if (n <= LAKE_SHORE_LO || n > WILD_LAKE_THRESHOLD) return false;
   // Lake edge: a direct neighbour is lake water.
