@@ -15,8 +15,8 @@ const FP_AUTO_KEY = 'ag-first-person-auto-v1';
 const HIDE_UI_KEY = 'ag-hide-ui-v1';
 // BUILD 1017: the controls sentences, moved verbatim off the 3D play
 // screen (Engine3DWorldView) into Options > Controls.
-const HELP_ORBIT = 'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint';
-const HELP_FP = 'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door · Hold Sprint/Shift: sprint';
+const HELP_ORBIT = 'Tap ground to move · arrow keys/WASD to steer · drag left/right to orbit · drag up/down to change height · pinch to zoom · E: interact · F/Space: attack · Enter: use door · Shift: sprint';
+const HELP_FP = 'Arrow keys/WASD move relative to your view · drag to look · pinch to leave first person · E: interact · F/Space: attack · Enter: use door · Shift: sprint';
 
 function initialMode(): GraphicsMode {
   // Always boot into the established 2.5D game, regardless of a previously
@@ -86,16 +86,16 @@ export default function GraphicsModeHost() {
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value =>
           <button key={value} type="button" onClick={() => choose(value)} aria-pressed={value === mode} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:value===mode?'#526d42':'#22392d',color:'#fff',fontWeight:value===mode?700:500}}>
-            {value === '2.5d' ? '2.5D Isometric' : value === '3d' ? '3D Experimental' : '2D'}
+            {value === '2.5d' ? '2.5D Isometric' : value === '3d' ? '3D World' : '2D'}
             {value === mode ? ' ✓' : ''}
           </button>
         )}
-        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D now reads the data-driven tile world and uses collision-checked movement. Existing 2D/2.5D remains available.</p>
+        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D uses the separate world renderer with orbit and first-person views. Your existing 2D and 2.5D worlds remain available.</p>
         <strong style={{display:'block',marginTop:14,marginBottom:6}}>First person</strong>
         <button type="button" data-testid="fp-auto-toggle" onClick={() => { const next = !fpAuto; try { localStorage.setItem(FP_AUTO_KEY, next ? '1' : '0'); } catch {} setFpAuto(next); }} aria-pressed={fpAuto} style={{display:'block',width:'100%',textAlign:'left',padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:fpAuto?'#526d42':'#22392d',color:'#fff',fontWeight:fpAuto?700:500}}>
           First person: auto on full zoom {fpAuto ? '✓' : ''}
         </button>
-        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>Zoom all the way in to step into first person and look around by dragging; zoom out to return to orbit. Turn this off to stay in orbit at full zoom.</p>
+        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>Zoom in fully to enter first person; zoom out to return to orbit. Turn this off to keep orbit view at maximum zoom.</p>
         {/* BUILD 1017: the 3D play screen is clean now — the banner, the
             controls help, and the diagnostic line moved here. The dialog
             is capped at 100vh-380px so its bottom always clears the
