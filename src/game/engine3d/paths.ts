@@ -495,7 +495,7 @@ export function detectBridgeSite(
  */
 export function scanForBridgeSites(world: IsoWorld, state: PathState, day: number): BridgeSite[] {
   const found: BridgeSite[] = [];
-  if (day < BRIDGE_START_DAY) return found;
+  if (day < BRIDGE_START_DAY || day <= state.lastBridgeScanDay) return found;
   const rivers = new Set<string>();
   // BUILD 1113: river v2 stores the centreline separately from
   // widthTiles. A bridge scan that reads only r.tiles silently
