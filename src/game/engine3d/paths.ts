@@ -394,7 +394,7 @@ export function scoreBridgeCrossing(
 ): number {
   const dx = riverTile.x - pathTile.x;
   const dy = riverTile.y - pathTile.y;
-  if (Math.abs(dx) + Math.abs(dy) !== 1 || !riverAt(world, riverTile.x, riverTile.y)) return -Infinity;
+  if (Math.abs(dx) + Math.abs(dy) !== 1 || (riverWidthAt(world, riverTile.x, riverTile.y) <= 0 && !riverAt(world, riverTile.x, riverTile.y))) return -Infinity;
   let score = 10;
   const width = riverWidthAt(world, riverTile.x, riverTile.y);
   score += width <= 1 ? 18 : width === 2 ? 10 : 2;
@@ -427,7 +427,7 @@ function bestBridgeRiverNeighbour(
   const candidates: Array<{ x:number; y:number; score:number }> = [];
   for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
     const x=tile.x+dx, y=tile.y+dy;
-    if (!riverAt(world,x,y) || bridgePlacementExists(world,x,y) || bridgeSiteAt(state.bridges,x,y)) continue;
+    if ((riverWidthAt(world,x,y) <= 0 && !riverAt(world,x,y)) || bridgePlacementExists(world,x,y) || bridgeSiteAt(state.bridges,x,y)) continue;
     if (!bridgeWorkTileFor(world,x,y)) continue;
     candidates.push({x,y,score:scoreBridgeCrossing(world,tile,{x,y})});
   }
