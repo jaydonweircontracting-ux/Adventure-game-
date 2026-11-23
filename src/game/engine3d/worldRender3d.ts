@@ -52,6 +52,7 @@ import {
 import { rotateCustomXZ, type CustomAsset } from './customAssets';
 import { sameHut, interiorBoxes, interiorFloorColor, INTERIOR_FLOOR_Y } from './interiors';
 import { productionKindForRect, productionInteriorBoxes } from './productionInteriors';
+import { groundNoise } from './townLook';
 
 export type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -296,9 +297,16 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       const alpine = top >= 7.0;
       const rocky = top >= 4.0;
       const snowPatch = alpine && hash2(x * 3.1 + 17, y * 2.7 - 9) > 0.16;
+      // BUILD 1121: broad moisture bands create coherent meadow,
+      // lush lowland and dry-grass regions. The field is slow-changing
+      // across dozens of tiles, so it reads as a biome, not random noise.
+      const moisture = groundNoise(x + 913.7, y - 427.3, 54);
+      const grassBiome: Vec3 = moisture > 0.64 ? [0.22,0.36,0.18]
+        : moisture < 0.30 ? [0.43,0.42,0.23]
+        : [c[0],c[1],c[2]];
       const topColor: Vec3 = snowPatch ? [0.82,0.86,0.88]
         : rocky ? [0.48,0.50,0.49]
-        : [c[0],c[1],c[2]];
+        : grassBiome;
       quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],topColor);
       // BUILD 1118: exposed voxel faces use readable geological strata
       // instead of one flat brown/grey wall. A thin grass cap sits under
