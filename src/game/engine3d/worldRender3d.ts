@@ -1315,23 +1315,37 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     houseBox(br.tx+.5,br.ty+.08,.98,.1,.08,bwy,LANTERN_TIMBER);
     houseBox(br.tx+.5,br.ty+.92,.98,.1,.08,bwy,LANTERN_TIMBER);
   }
-  // BUILD 1082 (1.3): river flow chevrons — every 3rd tile along
-  // each course carries a small pale triangle pointing downstream,
-  // at the water surface + 0.06 (the bridge deck height, so it
-  // sits on the water, not under it). No culling is enabled in
-  // the renderer, so winding is free. A tile whose terrain is no
-  // longer water (the player Removed it — removedWater wins)
-  // shows no chevron. The chevron is the visible half of the
-  // flow direction; the other half is the Examine text.
+  // BUILD 1114: river surface detail — restrained current ribbons and
+  // brighter downstream markers make generated rivers read as flowing
+  // channels rather than flat ocean-blue ground tiles. Details are
+  // deterministic, sparse, and visual-only: no terrain, collision,
+  // pathfinding, or save data changes. Keep them just above the water
+  // surface so the ground quad cannot z-fight them.
+  const RIVER_GLINT:Vec3=[.34,.68,.76];
+  const RIVER_FOAM:Vec3=[.66,.86,.86];
   for(const rv of world.rivers ?? []){
-    for(let i=0;i<rv.tiles.length;i+=3){
+    for(let i=0;i<rv.tiles.length;i+=2){
       const t=rv.tiles[i];
       if(effTerrain(t.x,t.y)!=='water')continue;
-      const wy=surfaceElevation(effTerrain,t.x+.5,t.y+.5)+0.06;
+      const wy=surfaceElevation(effTerrain,t.x+.5,t.y+.5)+.065;
       const dl=Math.hypot(t.dx,t.dy)||1, ux=t.dx/dl, uz=t.dy/dl;
       const px=-uz, pz=ux;
       const cx=t.x+.5, cz=t.y+.5;
-      tri([cx+ux*.32,wy,cz+uz*.32],[cx-ux*.12+px*.22,wy,cz-uz*.12+pz*.22],[cx-ux*.12-px*.22,wy,cz-uz*.12-pz*.22],COLORS.foam);
+      // A short, narrow highlight ribbon aligned to the current.
+      // Alternate sides and lengths to avoid a repeated dotted pattern.
+      const side=(i%4===0?1:-1), length=(i%6===0?.34:.24);
+      const sx=cx+px*side*.17, sz=cz+pz*side*.17;
+      const ax=sx-ux*length*.5, az=sz-uz*length*.5;
+      const bx=sx+ux*length*.5, bz=sz+uz*length*.5;
+      const half=.018;
+      quad([ax+px*half,wy,az+pz*half],[bx+px*half,wy,bz+pz*half],
+        [bx-px*half,wy,bz-pz*half],[ax-px*half,wy,az-pz*half],RIVER_GLINT);
+      // Every fourth centreline tile gets a small downstream chevron.
+      if(i%4===0){
+        tri([cx+ux*.34,wy+.002,cz+uz*.34],
+          [cx-ux*.13+px*.2,wy+.002,cz-uz*.13+pz*.2],
+          [cx-ux*.13-px*.2,wy+.002,cz-uz*.13-pz*.2],RIVER_FOAM);
+      }
     }
   }
   // BUILD 1024: wild trees + rocks past the old map edge. The stored

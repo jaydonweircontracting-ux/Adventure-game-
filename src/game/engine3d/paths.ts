@@ -447,7 +447,16 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
   const found: BridgeSite[] = [];
   if (day < BRIDGE_START_DAY) return found;
   const rivers = new Set<string>();
-  for (const r of world.rivers ?? []) for (const t of r.tiles) rivers.add(t.x + ',' + t.y);
+  // BUILD 1113: river v2 stores the centreline separately from
+  // widthTiles. A bridge scan that reads only r.tiles silently
+  // misses the shallow shoulder water, leaving a one-tile-wide
+  // gap in otherwise detected crossings. Include every stamped
+  // water tile; riverAt/terrainAt below still reject stale stamps.
+  for (const raw of world.rivers ?? []) {
+    const river = raw as unknown as { tiles?: Array<{ x: number; y: number }>; widthTiles?: Array<{ x: number; y: number }> };
+    for (const t of river.tiles ?? []) rivers.add(t.x + ',' + t.y);
+    for (const t of river.widthTiles ?? []) rivers.add(t.x + ',' + t.y);
+  }
   for (const tile of pathTiles(world)) {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nx = tile.x + dx, ny = tile.y + dy;
