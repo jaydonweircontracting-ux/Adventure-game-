@@ -188,7 +188,7 @@ import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
   finishBridge, freshPathState, reconcileBridges, recordTraffic, scanForBridgeSites, seedWell,
-  spendBridgeStepFromRegistry, wellApproachFor, wellTile,
+  spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
 import { closestFounder, recordSharedEvent, restTileFor, addSocialKey } from './memory';
