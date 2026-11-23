@@ -36,7 +36,6 @@ import {
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
 } from './placements';
 import { gardenFencesFor, gardenPlantsFor } from './gardens';
-import { allRiverTiles } from './rivers';
 import { marketStallSpots, stampLandmarks, type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
 import { emitGroundDetail3d } from './groundDetail3d';
@@ -2734,8 +2733,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         for(const a of [...w.trees,...w.rocks,...w.crates])mark(a.x,a.y);
         for(const a of w.walls)mark(a.x,a.y);
         for(const item of w.placements??[])for(let y=item.y0;y<=item.y1;y++)for(let x=item.x0;x<=item.x1;x++)mark(x,y);
-        for(const n of w.npcSpawns){mark(n.x,n.y);for(const q of n.waypoints)mark(q.x,q.y);}
-        for(const l of w.landmarks??[])for(const b of l.blocks)mark(b.x,b.y);
+        for(const n of w.npcSpawns??[]){mark(n.x,n.y);for(const q of n.waypoints??[])mark(q.x,q.y);}
+        for(const l of w.landmarks??[])for(const b of l.blocks??[])mark(b.x,b.y);
         for(const n of npcTiles)mark(n.x,n.y);
         mark(playerTile.x,playerTile.y);
         for(let y=12;y<w.h-12;y++){
