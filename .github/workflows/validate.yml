@@ -82,3 +82,5 @@ jobs:
         run: node tests/real-game/smoke.mjs
       - name: Real-game movement and doorway test
         run: node tests/real-game/movement.mjs
+      - name: Phone-size generated bridge traversal probe
+        run: node tests/real-game/bridge-crossing.mjs
