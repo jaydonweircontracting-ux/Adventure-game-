@@ -36,4 +36,5 @@ assert.equal(state.bridges[0].id, 'bridge-120-120', 'bridge identity remains sta
 assert.equal('_candidateScore' in state.bridges[0], false, 'transient ranking data is never persisted');
 assert.equal(state.lastBridgeScanDay, 3, 'the daily scan marker advances');
 assert.deepEqual(scanForBridgeSites(world, state, 3), [], 'a second same-day scan does not create duplicates');
+// BUILD 1123 release-gate test.
 console.log('River bridge ranking tests passed (day gate, best crossing, one site/day, stable persistence).');
