@@ -212,6 +212,16 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // ground, the surface, the picker and the camera all read one
   // definition instead of a local copy.
   const effTerrain=effTerrainFor(world);
+  // BUILD 1119: remember the generated river depth class while building
+  // the ground mesh. Centreline water can be deep or shallow; width
+  // shoulders are always shallow. This gives the channel a readable
+  // turquoise-to-blue cross-section without changing terrain or saves.
+  const riverDepthByTile = new Map<number, number>();
+  const riverTileKey = (x:number,y:number):number => (x+2048)*4096+(y+2048);
+  for (const river of world.rivers ?? []) {
+    for (const tile of river.tiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), tile.shallow ? 1 : 0);
+    for (const tile of river.widthTiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), 1);
+  }
   // BUILD 1034: the ground corners are shared between adjacent cells,
   // so the surface is computed once per corner per rebuild (a Map
   // keyed by the integer corner coords) instead of 4x per cell. Without
@@ -256,7 +266,10 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // surface, so the window rolls with the hills and adjacent tiles
     // share corner heights exactly — no cracks, no floating tiles.
     const terrain=renderTerrain(effTerrain,x,y);
-    const c=COLORS[terrain]||COLORS.grass;
+    const riverDepth = terrain === 'water' ? riverDepthByTile.get(riverTileKey(x,y)) : undefined;
+    const c: Vec3 = riverDepth === 1 ? [0.16,0.48,0.59]
+      : riverDepth === 0 ? [0.07,0.25,0.43]
+      : (COLORS[terrain]||COLORS.grass);
     // BUILD 1009: tint evaluated PER CORNER from the continuous 1009
     // field (see townLook groundTintDelta). Adjacent tiles share corner
     // positions and therefore corner colours exactly — the near field
