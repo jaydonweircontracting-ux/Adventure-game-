@@ -62,7 +62,7 @@
  */
 import { terrainAt, inBounds, type IsoWorld } from '../iso/isoWorld';
 import { walkableWithPlacements, placementsOf, addPlacement } from './placements';
-import { riverAt } from './rivers';
+import { riverAt, riverWidthAt } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import {
   stagePlanFor,
@@ -380,6 +380,61 @@ export function bridgePlacementExists(world: IsoWorld, x: number, y: number): bo
  * the river tile is walled in on every side (no bank to stand on).
  * Pure.
  */
+/**
+ * Score a candidate bridge crossing without changing the persisted
+ * BridgeSite shape. A good crossing has a clear opposite bank, road
+ * alignment on both sides, and the narrowest practical water span.
+ * Higher is better; the deterministic tie-break is west-to-east then
+ * north-to-south in the caller.
+ */
+export function scoreBridgeCrossing(
+  world: IsoWorld,
+  pathTile: { x: number; y: number },
+  riverTile: { x: number; y: number },
+): number {
+  const dx = riverTile.x - pathTile.x;
+  const dy = riverTile.y - pathTile.y;
+  if (Math.abs(dx) + Math.abs(dy) !== 1 || !riverAt(world, riverTile.x, riverTile.y)) return -Infinity;
+  let score = 10;
+  const width = riverWidthAt(world, riverTile.x, riverTile.y);
+  score += width <= 1 ? 18 : width === 2 ? 10 : 2;
+  // Follow the crossing axis through the complete water strip to find
+  // the far bank. A matching path there is the strongest evidence that
+  // this is a real road crossing rather than a path ending at water.
+  let farX = riverTile.x + dx, farY = riverTile.y + dy;
+  let span = 1;
+  while (span < 6 && terrainAt(world, farX, farY) === 'water') {
+    farX += dx; farY += dy; span++;
+  }
+  if (terrainAt(world, farX, farY) !== 'water' &&
+      walkableWithPlacements(world, world.crates, farX, farY)) {
+    score += 24;
+    if (isPathTile(world, farX, farY)) score += 80;
+  } else {
+    score -= 30;
+  }
+  // A straight approach is preferable to a diagonal/side-bank access.
+  const nearBank = { x: pathTile.x, y: pathTile.y };
+  if (isPathTile(world, nearBank.x, nearBank.y)) score += 12;
+  return score - Math.max(0, span - 1) * 8;
+}
+
+function bestBridgeRiverNeighbour(
+  world: IsoWorld,
+  state: PathState,
+  tile: { x: number; y: number },
+): { x: number; y: number; score: number } | null {
+  const candidates: Array<{ x:number; y:number; score:number }> = [];
+  for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
+    const x=tile.x+dx, y=tile.y+dy;
+    if (!riverAt(world,x,y) || bridgePlacementExists(world,x,y) || bridgeSiteAt(state.bridges,x,y)) continue;
+    if (!bridgeWorkTileFor(world,x,y)) continue;
+    candidates.push({x,y,score:scoreBridgeCrossing(world,tile,{x,y})});
+  }
+  candidates.sort((a,b)=>b.score-a.score || a.x-b.x || a.y-b.y);
+  return candidates[0] ?? null;
+}
+
 export function bridgeWorkTileFor(world: IsoWorld, rx: number, ry: number): { x: number; y: number } | null {
   const ring4 = [
     { x: rx + 1, y: ry },
@@ -418,18 +473,13 @@ export function detectBridgeSite(
   day: number,
 ): BridgeSite | null {
   if (day < BRIDGE_START_DAY) return null;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-    const nx = tile.x + dx, ny = tile.y + dy;
-    if (!riverAt(world, nx, ny)) continue;
-    if (bridgePlacementExists(world, nx, ny)) continue;
-    if (bridgeSiteAt(state.bridges, nx, ny)) continue;
-    const workTile = bridgeWorkTileFor(world, nx, ny);
-    if (!workTile) continue;
-    const site = freshBridgeSite(nx, ny, workTile);
-    state.bridges = [...state.bridges, site];
-    return site;
-  }
-  return null;
+  const candidate = bestBridgeRiverNeighbour(world, state, tile);
+  if (!candidate) return null;
+  const workTile = bridgeWorkTileFor(world, candidate.x, candidate.y);
+  if (!workTile) return null;
+  const site = freshBridgeSite(candidate.x, candidate.y, workTile);
+  state.bridges = [...state.bridges, site];
+  return site;
 }
 
 /**
@@ -466,10 +516,21 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       if (bridgeSiteAt(state.bridges, nx, ny) || found.some((s) => s.x === nx && s.y === ny)) continue;
       const workTile = bridgeWorkTileFor(world, nx, ny);
       if (!workTile) continue;
-      found.push(freshBridgeSite(nx, ny, workTile));
+      // Rank sites using the same bank/width/road-alignment score as
+      // event-driven detection. Existing save/state shape is unchanged.
+      const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
+      found.push(Object.assign(freshBridgeSite(nx, ny, workTile), { _candidateScore: score } as object));
     }
   }
-  if (found.length > 0) state.bridges = [...state.bridges, ...found];
+  if (found.length > 0) {
+    found.sort((a,b) => ((b as BridgeSite & { _candidateScore?: number })._candidateScore ?? 0) - ((a as BridgeSite & { _candidateScore?: number })._candidateScore ?? 0) || a.x-b.x || a.y-b.y);
+    // Strip the transient ranking value before it can enter the persisted
+    // BridgeSite list; the versioned save schema remains byte-compatible.
+    state.bridges = [...state.bridges, ...found.map(({ ...site }) => {
+      delete (site as BridgeSite & { _candidateScore?: number })._candidateScore;
+      return site;
+    })];
+  }
   state.lastBridgeScanDay = day;
   return found;
 }
