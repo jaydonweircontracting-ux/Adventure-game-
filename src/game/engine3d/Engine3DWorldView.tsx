@@ -2734,8 +2734,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         for(const item of w.placements??[])for(let y=item.y0;y<=item.y1;y++)for(let x=item.x0;x<=item.x1;x++)mark(x,y);
         for(const n of npcTiles)mark(n.x,n.y);
         mark(playerTile.x,playerTile.y);
-        for(let y=12;y<w.h-12;y++){
-          for(let x=12;x<w.w-20;x++){
+        for(let y=12;y<w.h-12;y+=3){
+          for(let x=12;x<w.w-20;x+=3){
             if(Math.hypot(x-FOUNDER_CAMP.x,y-FOUNDER_CAMP.y)<32)continue;
             const line=Array.from({length:8},(_,i)=>({x:x+i,y}));
             if(line.some(t=>blocked.has(t.x+','+t.y)||terrainAt(w,t.x,t.y)==='water'||!walkableWithPlacements(w,w.crates,t.x,t.y)))continue;
