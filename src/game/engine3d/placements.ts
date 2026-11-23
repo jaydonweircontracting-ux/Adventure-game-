@@ -1759,10 +1759,10 @@ export function placedOreTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
  *  — a bridge sits ON water and makes it walkable (see
  *  walkableWithPlacements). It renders as wooden planks above the
  *  water surface, never as a water tile. */
-export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number; style: NonNullable<PlacedItem['bridgeStyle']> }> {
   return placementsOf(w)
     .filter((p) => p.kind === 'bridge')
-    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+    .map((p) => ({ tx: p.x0, ty: p.y0, style: p.bridgeStyle ?? 'wooden' }));
 }
 
 /** Placed farm-land tiles (BUILD 1041). Single tiles, like placed
