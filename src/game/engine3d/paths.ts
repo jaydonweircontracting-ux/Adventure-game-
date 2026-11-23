@@ -123,6 +123,8 @@ export type BridgeSite = {
   spanTiles?: Array<{ x: number; y: number }>;
   /** Visual profile selected from the span and both-bank road geometry. Optional on legacy saves. */
   style?: BridgeStyle;
+  /** Crossing direction; x = east/west span, y = north/south span. */
+  axis?: 'x' | 'y';
   state: BridgeSiteStateKind;
   /** Completed work steps, 0..BRIDGE_WORK_STEPS. */
   progress: number;
@@ -163,12 +165,13 @@ export function freshBridgeSite(
   workTile: { x: number; y: number },
   spanTiles: Array<{ x: number; y: number }> = [{ x, y }],
   style: BridgeStyle = 'wooden',
+  axis: 'x' | 'y' = 'x',
 ): BridgeSite {
   const uniqueSpan = [...new Map(spanTiles.map((tile) => [tile.x + ',' + tile.y, { ...tile }])).values()].slice(0, 6);
   if (!uniqueSpan.some((tile) => tile.x === x && tile.y === y)) uniqueSpan.unshift({ x, y });
   return {
     id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile },
-    spanTiles: uniqueSpan, style, state: 'none', progress: 0, spentWood: 0,
+    spanTiles: uniqueSpan, style, axis, state: 'none', progress: 0, spentWood: 0,
     stages: { ...ZERO_STAGE_STEPS },
   };
 }
@@ -212,7 +215,8 @@ export function validateBridgeSite(value: unknown): BridgeSite | null {
   if (!spanTiles.some((tile) => tile.x === x && tile.y === y)) spanTiles.unshift({ x, y });
   const styles: BridgeStyle[] = ['wooden', 'stone', 'footbridge', 'large-road', 'narrow-stream', 'wide-river'];
   const style = styles.includes(v.style as BridgeStyle) ? v.style as BridgeStyle : 'wooden';
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, spanTiles, style, state, progress, spentWood, stages };
+  const axis = v.axis === 'y' ? 'y' : 'x';
+  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, spanTiles, style, axis, state, progress, spentWood, stages };
 }
 
 /** Validate a saved bridge list (v10 migration): corrupt entries
@@ -424,7 +428,7 @@ export function placeBridgeSpan(
     if (!result.ok) return { ok: false, reason: result.reason };
     items.push(result.item);
   }
-  for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden' });
+  for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
   return { ok: true, placed: items };
 }
 
@@ -443,6 +447,14 @@ export function placeBridgeSpan(
  * Higher is better; the deterministic tie-break is west-to-east then
  * north-to-south in the caller.
  */
+/** The direction the bridge deck runs across the water. */
+export function bridgeAxisForCrossing(
+  pathTile: { x: number; y: number },
+  riverTile: { x: number; y: number },
+): 'x' | 'y' {
+  return riverTile.x !== pathTile.x ? 'x' : 'y';
+}
+
 /** Consecutive river tiles along the road's crossing axis, capped at six. */
 export function bridgeSpanForCrossing(
   world: IsoWorld,
@@ -568,7 +580,7 @@ export function detectBridgeSite(
   if (!workTile) return null;
   const spanTiles = bridgeSpanForCrossing(world, tile, { x: candidate.x, y: candidate.y });
   const style = bridgeStyleForCrossing(world, tile, { x: candidate.x, y: candidate.y });
-  const site = freshBridgeSite(candidate.x, candidate.y, workTile, spanTiles, style);
+  const site = freshBridgeSite(candidate.x, candidate.y, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: candidate.x, y: candidate.y }));
   state.bridges = [...state.bridges, site];
   return site;
 }
@@ -612,7 +624,7 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
       const spanTiles = bridgeSpanForCrossing(world, tile, { x: nx, y: ny });
       const style = bridgeStyleForCrossing(world, tile, { x: nx, y: ny });
-      found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style), { _candidateScore: score } as object));
+      found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny })), { _candidateScore: score } as object));
     }
   }
   if (found.length > 0) {
