@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { defaultWorld } from '../src/game/iso/isoWorld';
 import { freshPathState, scanForBridgeSites } from '../src/game/engine3d/paths';
 
-// A controlled world with two independent river crossings. The first has
+// A controlled world with two independent river crossings; this fixture is deterministic. The first has
 // a matching path on both banks; the second only has a near-bank approach.
 const world = defaultWorld();
 world.huts = [];
