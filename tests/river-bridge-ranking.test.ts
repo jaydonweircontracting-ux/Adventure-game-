@@ -12,6 +12,7 @@ world.trees = [];
 world.rocks = [];
 world.crates = [];
 world.walls = [];
+world.npcSpawns = [];
 world.placements = [
   { kind: 'path', x0: 119, y0: 120, x1: 119, y1: 120 },
   { kind: 'path', x0: 121, y0: 120, x1: 121, y1: 120 },
@@ -74,6 +75,7 @@ world.placements!.push(
 );
 assert.equal(bridgeSpanForCrossing(world, { x: 149, y: 140 }, three[0]).length, 3, 'the bridge span follows all three river tiles');
 assert.equal(bridgeAxisForCrossing({ x: 149, y: 140 }, three[0]), 'x', 'west/east crossings save the x axis');
+assert.equal(bridgeAxisForCrossing({ x: 150, y: 139 }, three[0]), 'y', 'north/south crossings save the y axis');
 assert.equal(bridgeStyleForCrossing(world, { x: 159, y: 140 }, one[0]), 'wooden', 'a road-aligned narrow crossing selects wood');
 assert.equal(bridgeStyleForCrossing(world, { x: 169, y: 140 }, two[0]), 'stone', 'a two-tile crossing selects stone');
 assert.equal(bridgeStyleForCrossing(world, { x: 149, y: 140 }, three[0]), 'large-road', 'a three-tile crossing selects a road bridge');
