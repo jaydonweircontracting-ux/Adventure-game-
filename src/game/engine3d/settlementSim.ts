@@ -2379,10 +2379,9 @@ export function advanceSettlementTick(sim: SettlementSim): void {
                   // ready-site rule).
                   const site = bridgeSiteById(sim.pathState.bridges, myJob!.targetId);
                   const placed = site
-                    ? validatePlacement(world, 'bridge', site.x, site.y, { x: 0, y: 0 }, npcTiles, 0)
+                    ? placeBridgeSpan(world, site, { x: 0, y: 0 }, npcTiles)
                     : { ok: false as const, reason: 'no site' };
                   if (placed.ok) {
-                    addPlacement(world, placed.item);
                     sim.pathState = { ...sim.pathState, bridges: finishBridge(sim.pathState.bridges, myJob!.targetId) };
                     ledger.bridgesCompleted++;
                     if (myJob && myJob.kind === 'build') {
