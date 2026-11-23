@@ -524,7 +524,11 @@ function extractRivers(world: IsoWorld, ff: FlowField, ex: Exclusions): River[] 
       if (w < 2) continue;
       const left: [number, number] = [t.dy, -t.dx];
       const right: [number, number] = [-t.dy, t.dx];
-      const sides: Array<[number, number]> = w >= 3 ? [left, right] : [((t.x + t.y) % 2 === 0) ? left : right];
+      // BUILD 1117: keep a narrow river's shoulder on one consistent
+      // bank along the course. Alternating sides tile-by-tile made a
+      // checkerboard channel instead of a continuous river edge.
+      const bankSide: [number, number] = n % 2 === 0 ? left : right;
+      const sides: Array<[number, number]> = w >= 3 ? [left, right] : [bankSide];
       for (const [sx, sy] of sides) {
         const wx = t.x + sx, wy = t.y + sy;
         if (wx < 0 || wy < 0 || wx >= W || wy >= H) continue;

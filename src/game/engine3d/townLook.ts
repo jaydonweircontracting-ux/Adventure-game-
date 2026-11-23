@@ -473,8 +473,47 @@ export function groundNoise(x: number, z: number, spacing: number): number {
  */
 export const GROUND_FIELD_SPACING = 64;
 export const GROUND_FIELD_AMPLITUDE = 1.5;
+
+/** Original authored-map height field. Kept unchanged inside the 200x200
+ *  authored world so the starting town, roads, buildings and saved layouts
+ *  do not move when the wilderness terrain is upgraded. */
 export function groundElevation(x: number, z: number): number {
   return (groundNoise(x, z, GROUND_FIELD_SPACING) * 2 - 1) * GROUND_FIELD_AMPLITUDE;
+}
+
+/** BUILD 1116 — deterministic voxel wilderness elevation.
+ *  Broad continental uplift creates mountain belts; a ridged field gives
+ *  ranges sharp spines; smaller octaves break up slopes. Quantizing to
+ *  half-tile steps gives the renderer stable block terraces instead of a
+ *  smooth plastic heightfield. The authored 200x200 map is deliberately
+ *  excluded and transitions into the new field over a 32-tile apron. */
+export const VOXEL_WORLD_EDGE = 200;
+export const VOXEL_HEIGHT_STEP = 0.5;
+const smooth01 = (v: number): number => {
+  const t = Math.max(0, Math.min(1, v));
+  return t * t * (3 - 2 * t);
+};
+export function voxelElevation(x: number, z: number): number {
+  const old = groundElevation(x, z);
+  const outside = Math.max(0, -x, x - VOXEL_WORLD_EDGE, -z, z - VOXEL_WORLD_EDGE);
+  if (outside <= 0) return old;
+  const macro = groundNoise(x + 170.3, z - 91.7, 190);
+  const range = groundNoise(x - 63.1, z + 211.9, 92);
+  const ridgeNoise = groundNoise(x + 401.7, z + 37.4, 38);
+  const detail = groundNoise(x - 17.8, z - 307.2, 13);
+  const ridge = 1 - Math.abs(range * 2 - 1);
+  const mountainMask = smooth01((macro - 0.34) / 0.42);
+  const foothills = (macro - 0.5) * 5.5 + (ridgeNoise - 0.5) * 3.2;
+  const mountains = mountainMask * (ridge * 8.5 + (ridgeNoise - 0.5) * 3.5);
+  const raw = Math.max(-1.5, foothills + mountains + (detail - 0.5) * 1.15);
+  const stepped = Math.round(raw / VOXEL_HEIGHT_STEP) * VOXEL_HEIGHT_STEP;
+  const blend = smooth01(outside / 32);
+  return old + (stepped - old) * blend;
+}
+
+/** Shared world elevation sampler used by terrain, props, picker and camera. */
+export function worldGroundElevation(x: number, z: number): number {
+  return voxelElevation(x, z);
 }
 
 /** BUILD 988 ground tint, REWORKED in BUILD 1009: deterministic colour
