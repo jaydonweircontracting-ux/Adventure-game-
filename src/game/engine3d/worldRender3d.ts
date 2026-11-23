@@ -265,7 +265,26 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // same field at their own corners.
     const colAt=(cx:number,cy:number):Vec3=>{const t=tintAt(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
     const yAt=(cx:number,cy:number):number=>surfAt(cx,cy);
-    quadV([x,yAt(x,y),y],colAt(x,y),[x+1,yAt(x+1,y),y],colAt(x+1,y),[x+1,yAt(x+1,y+1),y+1],colAt(x+1,y+1),[x,yAt(x,y+1),y+1],colAt(x,y+1));
+    if (!inBounds(world, x, y) && terrain !== 'water') {
+      // BUILD 1116: outside the authored map, render each land tile as a
+      // quantized voxel cap and expose only the sides facing lower tiles.
+      // The same deterministic elevation sampler drives props, picking
+      // and the camera through surfaceElevation; water remains a level
+      // surface and the authored town keeps its original heightfield.
+      const top = surfaceElevation(effTerrain, x + 0.5, y + 0.5);
+      const west = surfaceElevation(effTerrain, x - 0.5, y + 0.5);
+      const east = surfaceElevation(effTerrain, x + 1.5, y + 0.5);
+      const north = surfaceElevation(effTerrain, x + 0.5, y - 0.5);
+      const south = surfaceElevation(effTerrain, x + 0.5, y + 1.5);
+      quad([x,top,y],[x+1,top,y],[x+1,top,y+1],[x,top,y+1],c);
+      const soil: Vec3 = terrain === 'stone' ? [0.34,0.35,0.34] : [0.34,0.25,0.16];
+      if (west < top - 0.24) quad([x,west,y],[x,top,y],[x,top,y+1],[x,west,y+1],shadeRgb(soil,SUN_SHADE.west));
+      if (east < top - 0.24) quad([x+1,west===top?east:Math.min(east,top),y+1],[x+1,top,y+1],[x+1,top,y],[x+1,east,y],shadeRgb(soil,SUN_SHADE.east));
+      if (north < top - 0.24) quad([x+1,north,y],[x+1,top,y],[x,top,y],[x,north,y],shadeRgb(soil,SUN_SHADE.north));
+      if (south < top - 0.24) quad([x,south,y+1],[x,top,y+1],[x+1,top,y+1],[x+1,south,y+1],shadeRgb(soil,SUN_SHADE.south));
+    } else {
+      quadV([x,yAt(x,y),y],colAt(x,y),[x+1,yAt(x+1,y),y],colAt(x+1,y),[x+1,yAt(x+1,y+1),y+1],colAt(x+1,y+1),[x,yAt(x,y+1),y+1],colAt(x,y+1));
+    }
     if(x===maxX&&(y-minY)%4===3)yield;
   }
   // BUILD 1022: path slabs + cobble shoulders render for the WHOLE map,
