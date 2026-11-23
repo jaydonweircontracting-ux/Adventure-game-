@@ -12,7 +12,7 @@
 // Area 2 covers rendering/terrain — the terrain geometry is the
 // largest, most separable piece; the renderer/camera/draw follow.
 
-import { terrainAt, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
+import { terrainAt, terrainKey, inBounds, type HutRect, type IsoWorld } from '../iso/isoWorld';
 import {
   houseDesignFor, houseDesignForVariant, HOUSE_VARIANTS, streetSlabsFor, cobbleSquaresFor,
   SKY_HORIZON, COBBLE_GAP, MORTAR, DIRT_TAN, hash2, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H,
