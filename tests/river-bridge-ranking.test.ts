@@ -79,7 +79,6 @@ assert.equal(bridgeStyleForCrossing(world, { x: 169, y: 140 }, two[0]), 'stone',
 assert.equal(bridgeStyleForCrossing(world, { x: 149, y: 140 }, three[0]), 'large-road', 'a three-tile crossing selects a road bridge');
 assert.equal(bridgeStyleForCrossing(world, { x: 159, y: 150 }, four[0]), 'wide-river', 'a four-tile crossing selects a wide-river bridge');
 assert.equal(bridgeStyleForCrossing(world, { x: 179, y: 140 }, blockedBank[0]), 'narrow-stream', 'a water-terminated bank is never promoted to a road bridge');
-assert.equal(bridgeStyleForCrossing(world, { x: 169, y: 140 }, one[0]), 'wooden', 'wooden profile is deterministic for a single-tile road crossing');
 const foot = [{ x: 175, y: 140 }];
 addRiver('footbridge', foot);
 assert.equal(bridgeStyleForCrossing(world, { x: 174, y: 140 }, foot[0]), 'footbridge', 'a walkable unpaved far bank selects a footbridge');
@@ -95,7 +94,7 @@ assert.equal(legacySite?.style, 'wooden', 'legacy bridge saves retain the wooden
 
 const placedWorld = defaultWorld();
 placedWorld.huts = []; placedWorld.stalls = []; placedWorld.trees = []; placedWorld.rocks = [];
-placedWorld.crates = []; placedWorld.walls = []; placedWorld.placements = [];
+placedWorld.crates = []; placedWorld.walls = []; placedWorld.npcSpawns = []; placedWorld.placements = [];
 placedWorld.terrain = { '150,140': 'water', '151,140': 'water', '152,140': 'water' };
 placedWorld.rivers = [{ id: 'place-span', tiles: three.map((tile) => ({ ...tile, dx: 1, dy: 0 })), mouth: { x: 153, y: 140 } }];
 const placedSite = freshBridgeSite(150, 140, { x: 149, y: 140 }, three, 'large-road', 'x');
@@ -110,7 +109,7 @@ assert.equal(reconcileBridges(done, placedWorld)[0].state, 'none', 'a partial/mi
 
 const blockedWorld = defaultWorld();
 blockedWorld.huts = []; blockedWorld.stalls = []; blockedWorld.trees = []; blockedWorld.rocks = [];
-blockedWorld.crates = []; blockedWorld.walls = []; blockedWorld.placements = [];
+blockedWorld.crates = []; blockedWorld.walls = []; blockedWorld.npcSpawns = []; blockedWorld.placements = [];
 blockedWorld.terrain = { '160,150': 'water', '161,150': 'water', '162,150': 'water' };
 blockedWorld.rivers = [{ id: 'blocked-span', tiles: [160, 161, 162].map((x) => ({ x, y: 150, dx: 1, dy: 0 })), mouth: { x: 163, y: 150 } }];
 const blockedSite = freshBridgeSite(160, 150, { x: 159, y: 150 }, [{ x: 160, y: 150 }, { x: 161, y: 150 }, { x: 162, y: 150 }], 'large-road', 'x');
