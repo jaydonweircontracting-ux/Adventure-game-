@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { defaultWorld } from '../src/game/iso/isoWorld';
-import { bridgeAxisForCrossing, bridgeSitePlacementExists, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, freshBridgeSite, freshPathState, placeBridgeSpan, reconcileBridges, scanForBridgeSites, validateBridgeSite } from '../src/game/engine3d/paths';
+import { bridgeAxisForCrossing, bridgeSitePlacementExists, bridgeSpanForCrossing, bridgeStyleForCrossing, scoreBridgeCrossing, finishBridge, freshBridgeSite, freshPathState, placeBridgeSpan, reconcileBridges, scanForBridgeSites, validateBridgeSite } from '../src/game/engine3d/paths';
 import { placedBridgeTiles } from '../src/game/engine3d/placements';
 
 // A controlled world with two independent river crossings; this fixture is deterministic. The first has
@@ -81,6 +81,7 @@ assert.equal(bridgeStyleForCrossing(world, { x: 169, y: 140 }, two[0]), 'stone',
 assert.equal(bridgeStyleForCrossing(world, { x: 149, y: 140 }, three[0]), 'large-road', 'a three-tile crossing selects a road bridge');
 assert.equal(bridgeStyleForCrossing(world, { x: 159, y: 150 }, four[0]), 'wide-river', 'a four-tile crossing selects a wide-river bridge');
 assert.equal(bridgeStyleForCrossing(world, { x: 179, y: 140 }, blockedBank[0]), 'narrow-stream', 'a water-terminated bank is never promoted to a road bridge');
+assert.equal(scoreBridgeCrossing(world, { x: 179, y: 140 }, blockedBank[0]), -Infinity, 'a crossing with no dry far bank is rejected entirely');
 const foot = [{ x: 175, y: 140 }];
 addRiver('footbridge', foot);
 assert.equal(bridgeStyleForCrossing(world, { x: 174, y: 140 }, foot[0]), 'footbridge', 'a walkable unpaved far bank selects a footbridge');
