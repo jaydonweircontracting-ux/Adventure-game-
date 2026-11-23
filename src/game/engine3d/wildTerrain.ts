@@ -244,7 +244,7 @@ export function effTerrainFor(world: IsoWorld): EffectiveTerrainSampler {
   const placedPaths = placedPathKeyInts(world);
   const cache = new Map<number, Terrain>();
   const valley = riverValleyField(world);
-  const sample = ((x, y) => {
+  const sample = ((x: number, y: number): Terrain => {
     const k = tileKeyInt(x, y);
     if (placedWater.has(k)) return 'water';
     if (placedPaths.has(k)) return 'dirt';
