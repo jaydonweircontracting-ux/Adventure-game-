@@ -639,8 +639,19 @@ export class WorldRenderer {
     // that advances anything.
     if(!waitingRef.current&&heldKeys.length>0){
     if(playerPathRef.current||this.moveTarget){playerPathRef.current=null;this.moveTarget=null;playerPathWaitRef.current=null;playerPathStuckRef.current=null;}
-    moveDx=(heldKeys.includes('d')||heldKeys.includes('arrowright')?1:0)-(heldKeys.includes('a')||heldKeys.includes('arrowleft')?1:0);
-    moveDy=(heldKeys.includes('s')||heldKeys.includes('arrowdown')?1:0)-(heldKeys.includes('w')||heldKeys.includes('arrowup')?1:0);
+    const strafe=(heldKeys.includes('d')||heldKeys.includes('arrowright')?1:0)-(heldKeys.includes('a')||heldKeys.includes('arrowleft')?1:0);
+    const forward=(heldKeys.includes('s')||heldKeys.includes('arrowdown')?1:0)-(heldKeys.includes('w')||heldKeys.includes('arrowup')?1:0);
+    if(this.deps.firstPersonRef.current){
+      // First-person controls are camera-relative: Up follows the
+      // view direction, Down backs away, and Left/Right strafe.
+      // yaw 0 faces north (-z), matching the camera's lookAt basis.
+      const sin=Math.sin(this.yaw),cos=Math.cos(this.yaw);
+      moveDx=strafe*cos-forward*sin;
+      moveDy=-strafe*sin-forward*cos;
+    }else{
+      moveDx=strafe;
+      moveDy=forward;
+    }
     hasInput=true;
     }else if(!waitingRef.current&&this.moveTarget){
     // Entering a hut ends an outdoor tap journey (the waypoints
