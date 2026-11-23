@@ -213,6 +213,19 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // ground, the surface, the picker and the camera all read one
   // definition instead of a local copy.
   const effTerrain=effTerrainFor(world);
+  // BUILD 1122 — voxel-step elevation for the endless wilderness.
+  // Minecraft's readable block terrain comes from level top faces and
+  // exposed vertical sides, not from a smooth per-vertex slope. Snap
+  // only out-of-map wilderness samples to half-block levels; the authored
+  // settlement/map keeps its exact existing heightfield. This sampler
+  // is shared by ground and prop placement in this builder, so trees and
+  // rocks sit on the same stepped surface as their terrain caps. Water
+  // remains at its existing zero surface through landBlendAt.
+  const renderSurfaceElevation=(x:number,z:number):number=>{
+    const h=surfaceElevation(effTerrain,x,z);
+    if(inBounds(world,Math.floor(x),Math.floor(z))) return h;
+    return Math.round(h*2)*0.5;
+  };
   // BUILD 1119: remember the generated river depth class while building
   // the ground mesh. Centreline water can be deep or shallow; width
   // shoulders are always shallow. This gives the channel a readable
@@ -240,7 +253,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   const surfAt=(cx:number,cy:number):number=>{
     const key=(cx+2048)*4096+(cy+2048);
     let v=surfCache.get(key);
-    if(v===undefined){v=surfaceElevation(effTerrain,cx,cy);surfCache.set(key,v);}
+    if(v===undefined){v=renderSurfaceElevation(cx,cy);surfCache.set(key,v);}
     return v;
   };
   // BUILD 1035: per-rebuild tint cache. groundTintDelta is pure in
@@ -289,11 +302,11 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
       // The same deterministic elevation sampler drives props, picking
       // and the camera through surfaceElevation; water remains a level
       // surface and the authored town keeps its original heightfield.
-      const top = surfaceElevation(effTerrain, x + 0.5, y + 0.5);
-      const west = surfaceElevation(effTerrain, x - 0.5, y + 0.5);
-      const east = surfaceElevation(effTerrain, x + 1.5, y + 0.5);
-      const north = surfaceElevation(effTerrain, x + 0.5, y - 0.5);
-      const south = surfaceElevation(effTerrain, x + 0.5, y + 1.5);
+      const top = renderSurfaceElevation( x + 0.5, y + 0.5);
+      const west = renderSurfaceElevation( x - 0.5, y + 0.5);
+      const east = renderSurfaceElevation( x + 1.5, y + 0.5);
+      const north = renderSurfaceElevation( x + 0.5, y - 0.5);
+      const south = renderSurfaceElevation( x + 0.5, y + 1.5);
       // BUILD 1117: altitude-aware voxel surface materials. Snow settles
       // on the highest ridges, exposed rock appears above the tree line,
       // and grass remains on foothills/lowlands. Coordinate hash keeps
@@ -379,7 +392,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     if(terrain==='dirt'){
       const slabs=streetSlabsFor(x,y);
       for(let i=0;i<slabs.length;i++){
-        const s=slabs[i],sy=surfaceElevation(effTerrain,x+s.dx+s.w/2,y+s.dz+s.d/2)+.03+i*.002;
+        const s=slabs[i],sy=renderSurfaceElevation(x+s.dx+s.w/2,y+s.dz+s.d/2)+.03+i*.002;
         quad([x+s.dx,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz],[x+s.dx+s.w,sy,y+s.dz+s.d],[x+s.dx,sy,y+s.dz+s.d],[s.shade,s.shade,s.shade*.96]);
       }
     } else if(terrain==='grass'||terrain==='stone'){
@@ -388,7 +401,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         const cY=(cx:number,cy:number):number=>surfAt(cx,cy)+.018;
         quadV([x,cY(x,y),y],COBBLE_GAP,[x+1,cY(x+1,y),y],COBBLE_GAP,[x+1,cY(x+1,y+1),y+1],COBBLE_GAP,[x,cY(x,y+1),y+1],COBBLE_GAP);
         for(const sq of cobbleSquaresFor(x,y)){
-          const qy=surfaceElevation(effTerrain,x+sq.dx+sq.size/2,y+sq.dz+sq.size/2)+.022;
+          const qy=renderSurfaceElevation(x+sq.dx+sq.size/2,y+sq.dz+sq.size/2)+.022;
           quad([x+sq.dx,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz],[x+sq.dx+sq.size,qy,y+sq.dz+sq.size],[x+sq.dx,qy,y+sq.dz+sq.size],[sq.shade,sq.shade,sq.shade*.97]);
         }
       }
@@ -398,7 +411,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // strips, so a field reads as ploughed earth even before the
     // wheat grows. The wheat itself is per-frame fx (houseFx.ts).
     if(farmKeys.has(tileKeyInt(x,y))){
-      const sy=surfaceElevation(effTerrain,x+.5,y+.5)+.03;
+      const sy=renderSurfaceElevation(x+.5,y+.5)+.03;
       quad([x,sy,y],[x+1,sy,y],[x+1,sy,y+1],[x,sy,y+1],FARM_SOIL);
       for(let f=0;f<3;f++){
         const fz=y+.22+f*.28,fy=sy+.002;
@@ -761,7 +774,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // generated wall tile (placedWallTiles carries the h, but the 3D
   // cube is orientation-agnostic — the h only matters to the 2.5D
   // wall-run merge). BUILD 1034: walls stand on the heightfield.
-  for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32],surfaceElevation(effTerrain,wall.x+.5,wall.y+.5));
+  for(const wall of [...world.walls, ...placedWallTiles(world)]) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32],renderSurfaceElevation(wall.x+.5,wall.y+.5));
   // BUILD 1042: placed fences — a low wooden fence: four corner posts
   // plus two rails on each side, timber brown, standing on the
   // heightfield. One tile reads as a fence segment; a run of tiles
@@ -770,7 +783,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // emitter (fenceAt) for both, so the two can never drift apart.
   const FENCE_TIMBER:Vec3=[.45,.32,.18];
   const fenceAt=(tx:number,ty:number)=>{
-    const fy=surfaceElevation(effTerrain,tx+.5,ty+.5);
+    const fy=renderSurfaceElevation(tx+.5,ty+.5);
     for(const [px,pz] of [[.08,.08],[.92,.08],[.08,.92],[.92,.92]] as const) cube(tx+px,ty+pz,.09,.55,.09,FENCE_TIMBER,fy);
     for(const ry of [.22,.42]){
       cube(tx+.5,ty+.06,.84,.07,.05,FENCE_TIMBER,fy+ry);
@@ -789,19 +802,19 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // User-PLACED stalls keep the brown counter cube below — a
   // deliberate Build-panel choice is never silently converted.
   // BUILD 1007: stalls render at whole-world range (were window-culled).
-  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) stallAt(x,stall.y0,surfaceElevation(effTerrain,x+.5,stall.y0+.5));
-  for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],surfaceElevation(effTerrain,x+.5,stall.y0+.5));
+  for(const stall of world.stalls) for(let x=stall.x0;x<=stall.x1;x++) stallAt(x,stall.y0,renderSurfaceElevation(x+.5,stall.y0+.5));
+  for(const stall of placedStallRects(world)) for(let x=stall.x0;x<=stall.x1;x++) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16],renderSurfaceElevation(x+.5,stall.y0+.5));
   // BUILD 1111 (0x2E): placed crafting stations render as a coloured
   // counter cube in the station's colour, with a pale work-surface cap
   // on top — the same shape language as placed stalls, so a station
   // reads as a thing you walk up to and use. Whole-world range like stalls.
-  for(const st of placedStationRects(world)){const def=stationDefFor(st.station);const by=surfaceElevation(effTerrain,st.x0+.5,st.y0+.5);cube(st.x0+.5,st.y0+.5,1,.75,1,def.color,by);cube(st.x0+.5,st.y0+.5,.8,.1,.8,[.9,.85,.7],by+.75);}
+  for(const st of placedStationRects(world)){const def=stationDefFor(st.station);const by=renderSurfaceElevation(st.x0+.5,st.y0+.5);cube(st.x0+.5,st.y0+.5,1,.75,1,def.color,by);cube(st.x0+.5,st.y0+.5,.8,.1,.8,[.9,.85,.7],by+.75);}
   // BUILD 1051: fixed wild landmarks (settlements.ts) — the ruined
   // tower, the standing stones, the hunter's camp. Whole-world range
   // like the stalls (the tower is the distance marker), one
   // landmarkAt per solid tile, on the heightfield. The stone
   // circle's centre is open ground and renders nothing.
-  for(const lm of world.landmarks ?? []) for(const b of lm.blocks) landmarkAt(b.x,b.y,lm.kind as LandmarkKind,surfaceElevation(effTerrain,b.x+.5,b.y+.5),!!(lm.broken&&lm.broken.x===b.x&&lm.broken.y===b.y),b.part);
+  for(const lm of world.landmarks ?? []) for(const b of lm.blocks) landmarkAt(b.x,b.y,lm.kind as LandmarkKind,renderSurfaceElevation(b.x+.5,b.y+.5),!!(lm.broken&&lm.broken.x===b.x&&lm.broken.y===b.y),b.part);
   yield;
   // BUILD 997: uploaded custom meshes — static vertex-colour
   // triangles in the world buffer (like placed stalls, not the
@@ -819,7 +832,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const asset=customAssets.find(a=>a.id===p.assetId);if(!asset)continue;
     const ccx=(p.x0+p.x1+1)/2,ccz=(p.y0+p.y1+1)/2;
     // BUILD 1034: the mesh sits on the heightfield at its centre.
-    const baseY=surfaceElevation(effTerrain,ccx,ccz);
+    const baseY=renderSurfaceElevation(ccx,ccz);
     const prot=(p.rot??0) as 0|1|2|3;
     for(let i=0;i<asset.indices.length;i+=3){
       const a=asset.indices[i]*3,b=asset.indices[i+1]*3,c=asset.indices[i+2]*3;
@@ -885,7 +898,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // floating or buried. The 1034 harness proves the worst footprint
     // variation is 0.25 tiles, so one base y per hut is enough (no
     // per-corner tilt).
-    const hy=surfaceElevation(effTerrain,x,z);
+    const hy=renderSurfaceElevation(x,z);
     const hutDist=Math.hypot(x-(center.x+.5),z-(center.y+.5));
     // BUILD 990 shell-hide overlay: the entered house renders its
     // generated interior INSTEAD of its shell — no walls, roof,
@@ -1162,7 +1175,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // tile, same collision, same positions. BUILD 986: now the shared
     // treeAt renderer (identical geometry). BUILD 1034: the tree
     // stands on the heightfield.
-    treeAt(t.tx,t.ty,surfaceElevation(effTerrain,t.tx+.5,t.ty+.5));
+    treeAt(t.tx,t.ty,renderSurfaceElevation(t.tx+.5,t.ty+.5));
     if(ti%16===15)yield;
   }
   // BUILD 1085 (1.6): saplings render as young trees where a chopped
@@ -1172,7 +1185,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   for(let si=0;si<saplings.length;si++){
     const s=saplings[si];
     if(effTerrain(s.x,s.y)==='water')continue;
-    saplingAt(s.x,s.y,surfaceElevation(effTerrain,s.x+.5,s.y+.5),s.growth);
+    saplingAt(s.x,s.y,renderSurfaceElevation(s.x+.5,s.y+.5),s.growth);
     if(si%16===15)yield;
   }
   // BUILD 1110 (0x2D): stumps render where trees were felled — the
@@ -1181,7 +1194,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   for(let si=0;si<stumps.length;si++){
     const st=stumps[si];
     if(effTerrain(st.x,st.y)==='water')continue;
-    stumpAt(st.x,st.y,surfaceElevation(effTerrain,st.x+.5,st.y+.5));
+    stumpAt(st.x,st.y,renderSurfaceElevation(st.x+.5,st.y+.5));
     if(si%16===15)yield;
   }
   // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
@@ -1226,7 +1239,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const rw=.5+hash2(r.tx*3.1+21,r.ty*7.7+21)*.5;
     const rh=.4+hash2(r.tx*5.3+23,r.ty*9.1+23)*.5;
     const sh=.8+hash2(r.tx*7.7+27,r.ty*3.3+27)*.25;
-    cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,r.tx+.5,r.ty+.5));
+    cube(r.tx+.5,r.ty+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],renderSurfaceElevation(r.tx+.5,r.ty+.5));
     if(ri%16===15)yield;
   }
   // BUILD 1081: mineral deposits — distinct rock outcrops (taller
@@ -1238,7 +1251,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // re-derives it.
   for (const d of world.mineralDeposits ?? []) {
     if (effTerrain(d.x, d.y) === 'water') continue;
-    const by = surfaceElevation(effTerrain, d.x + .5, d.y + .5);
+    const by = renderSurfaceElevation( d.x + .5, d.y + .5);
     if (d.remaining <= 0) {
       cube(d.x + .5, d.y + .5, .8, .3, .8, [.16, .15, .14], by);
       continue;
@@ -1255,7 +1268,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // (bushes are excluded there, like grass). box() (not houseBox):
   // the blobs are seen from orbit above, so they need top faces.
   for(const b of placedBushTiles(world)){
-    const by=surfaceElevation(effTerrain,b.tx+.5,b.ty+.5);
+    const by=renderSurfaceElevation(b.tx+.5,b.ty+.5);
     const s1=hash2(b.tx*3.7+41,b.ty*11.3+41), s2=hash2(b.tx*5.1+43,b.ty*7.9+43);
     const g1:Vec3=[.13+.03*s1,.30+.04*s1,.14+.02*s1], g2:Vec3=[.16+.03*s2,.34+.03*s2,.16+.02*s2];
     const cx=b.tx+.5, cz=b.ty+.5;
@@ -1291,7 +1304,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // a hashed one, so the two can never drift apart.
     const emitGenBush = (bx: number, by: number): void => {
       const p = bushParamsForTile(bx, by);
-      const gy = surfaceElevation(effTerrain, bx + .5, by + .5);
+      const gy = renderSurfaceElevation( bx + .5, by + .5);
       const g1: Vec3 = [.13 + .03 * p.g1, .30 + .04 * p.g1, .14 + .02 * p.g1];
       const g2: Vec3 = [.16 + .03 * p.g2, .34 + .03 * p.g2, .16 + .02 * p.g2];
       const s = p.scale;
@@ -1317,7 +1330,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // scan discipline as the bush loop above (16-row yields, same
     // skips), and a gathered herb stays gone until its regrow day.
     const emitHerb=(hx:number,hy:number):void=>{
-      const gy=surfaceElevation(effTerrain,hx+.5,hy+.5);
+      const gy=renderSurfaceElevation(hx+.5,hy+.5);
       const h=hash2(hx*3.1+41,hy*7.7+43);
       const lean=(h-0.5)*0.12;
       box(hx+.5+lean,hy+.5,0.1,0.5,0.1,gy,[.16,.42,.16]);
@@ -1356,7 +1369,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // nothing on it.
   for(const o of placedOreTiles(world)){
     if(effTerrain(o.tx,o.ty)==='water')continue;
-    const oy=surfaceElevation(effTerrain,o.tx+.5,o.ty+.5);
+    const oy=renderSurfaceElevation(o.tx+.5,o.ty+.5);
     const rw=.5+hash2(o.tx*3.1+21,o.ty*7.7+21)*.5;
     const rh=.4+hash2(o.tx*5.3+23,o.ty*9.1+23)*.5;
     const sh=.8+hash2(o.tx*7.7+27,o.ty*3.3+27)*.25;
@@ -1372,7 +1385,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // heightfield; the glass box centre is lanternBoxCentre (lantern.ts)
   // so the static box and the fx glow box can never disagree.
   for(const l of placedLanternTiles(world)){
-    const ly=surfaceElevation(effTerrain,l.tx+.5,l.ty+.5);
+    const ly=renderSurfaceElevation(l.tx+.5,l.ty+.5);
     const cx=l.tx+.5, cz=l.ty+.5;
     houseBox(cx,cz,LANTERN_POST_W,LANTERN_POST_H,LANTERN_POST_W,ly,LANTERN_TIMBER);
     const gc=lanternBoxCentre(l.tx,l.ty,ly);
@@ -1388,7 +1401,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // The deck is flat quads, so the player (standing at the surface)
   // reads as walking on the planks.
   for(const br of placedBridgeTiles(world)){
-    const bwy=surfaceElevation(effTerrain,br.tx+.5,br.ty+.5)+0.06;
+    const bwy=renderSurfaceElevation(br.tx+.5,br.ty+.5)+0.06;
     const plank:Vec3=[.55,.4,.22], plank2:Vec3=[.48,.35,.2];
     for(let i=0;i<4;i++){
       const z0=br.ty+0.06+i*0.24, z1=z0+0.2;
@@ -1409,7 +1422,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     for(let i=0;i<rv.tiles.length;i+=2){
       const t=rv.tiles[i];
       if(effTerrain(t.x,t.y)!=='water')continue;
-      const wy=surfaceElevation(effTerrain,t.x+.5,t.y+.5)+.065;
+      const wy=renderSurfaceElevation(t.x+.5,t.y+.5)+.065;
       const dl=Math.hypot(t.dx,t.dy)||1, ux=t.dx/dl, uz=t.dy/dl;
       const px=-uz, pz=ux;
       const cx=t.x+.5, cz=t.y+.5;
@@ -1444,12 +1457,12 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     if(x>=0&&y>=0&&x<world.w&&y<world.h) continue;
     const wkey=x+','+y;
     // BUILD 1034: wild trees and rocks stand on the heightfield too.
-    if(wildTreeAt(x,y)&&!(world.removedWildTrees??[]).includes(wkey)) treeAt(x,y,surfaceElevation(effTerrain,x+.5,y+.5));
+    if(wildTreeAt(x,y)&&!(world.removedWildTrees??[]).includes(wkey)) treeAt(x,y,renderSurfaceElevation(x+.5,y+.5));
     else if(wildRockAt(x,y)&&!(world.removedWildRocks??[]).includes(wkey)) {
       const rw=.5+hash2(x*3.1+21,y*7.7+21)*.5;
       const rh=.4+hash2(x*5.3+23,y*9.1+23)*.5;
       const sh=.8+hash2(x*7.7+27,y*3.3+27)*.25;
-      cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],surfaceElevation(effTerrain,x+.5,y+.5));
+      cube(x+.5,y+.5,rw,rh,rw,[.43*sh,.45*sh,.44*sh],renderSurfaceElevation(x+.5,y+.5));
     }
     if(x===fX1&&(y-fY0)%4===3)yield;
   }
@@ -1459,11 +1472,11 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   // Data untouched — the wood interaction still finds and removes the
   // crate entry (see the E-key handler).
   // BUILD 1034: crates stand on the heightfield.
-  for(let ci=0;ci<world.crates.length;ci++){const c=world.crates[ci];crateAt(c.tx,c.ty,surfaceElevation(effTerrain,c.tx+.5,c.ty+.5),(world.crateKinds?.[terrainKey(c.tx,c.ty)] as CratePropKind|undefined)??'crate');if(ci%16===15)yield;}
+  for(let ci=0;ci<world.crates.length;ci++){const c=world.crates[ci];crateAt(c.tx,c.ty,renderSurfaceElevation(c.tx+.5,c.ty+.5),(world.crateKinds?.[terrainKey(c.tx,c.ty)] as CratePropKind|undefined)??'crate');if(ci%16===15)yield;}
   // BUILD 1049: non-solid town decor (fountain, statue) — the same
   // crateAt shapes, but these never block (they are not in crates)
   // and are never removable. A decor tile stays walkable.
-  for(const d of world.propDecor ?? []) crateAt(d.tx,d.ty,surfaceElevation(effTerrain,d.tx+.5,d.ty+.5),propKindToCrateKind(d.kind));
+  for(const d of world.propDecor ?? []) crateAt(d.tx,d.ty,renderSurfaceElevation(d.tx+.5,d.ty+.5),propKindToCrateKind(d.kind));
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
   // houses) was removed at the user's request — no skyline, no foot
   // houses. The blue sky gradient pass above is unchanged.
