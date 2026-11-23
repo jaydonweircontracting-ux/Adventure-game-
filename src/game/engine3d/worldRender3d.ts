@@ -1398,7 +1398,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
   for(const br of placedBridgeTiles(world)){
     const bwy=renderSurfaceElevation(br.tx+.5,br.ty+.5)+0.06;
     const narrow=br.style==='narrow-stream'||br.style==='footbridge';
-    const deckWidth=br.style==='narrow-stream'?.54:br.style==='footbridge'?.7:.94;
+    const deckWidth=br.style==='narrow-stream' ? 0.54 : br.style==='footbridge' ? 0.7 : 0.94;
     const count=br.style==='narrow-stream'?2:br.style==='footbridge'?3:br.style==='stone'?4:br.style==='large-road'?5:br.style==='wide-river'?6:4;
     const stone=br.style==='stone';
     const plank:Vec3=stone?[.48,.5,.52]:[.55,.4,.22];
