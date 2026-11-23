@@ -90,3 +90,21 @@ Adventure's `src/game/iso/isoWorld.ts` is the data model/persistence/edit-operat
 - `Minecraft 1.14.4 Java Edition/Minecraft 1.14.4 Portable/server/minecraft_server.1.14.4.jar`
 - Client resources: `assets/minecraft/models/block/cube.json`, `cube_column.json`, `water.json`, `blockstates/grass_block.json`, `blockstates/stone.json`, `blockstates/water.json`
 - Adventure source: `src/game/engine3d/rivers.ts`, `src/game/iso/isoWorld.ts`
+
+
+## 8. Adventure implementation — BUILD 1122
+
+Commit: `03e46d7376f41f4c2ef702c155ca8b8d45716066`
+
+File changed: `src/game/engine3d/worldRender3d.ts`
+
+- Added a shared `renderSurfaceElevation` sampler to the world-mesh builder.
+- Samples inside the authored 200×200 map remain unchanged.
+- Samples outside the authored map are snapped to half-world-unit elevation steps (`Math.round(height * 2) * 0.5`), producing level voxel caps and more legible exposed cliff faces.
+- The same sampler now feeds the terrain corner cache and the renderer's surface/prop placement call sites, so wilderness trees and rocks use the same stepped ground height as the terrain.
+- Water remains governed by the existing land/water blend and is not snapped into raised solid blocks.
+- No world save schema, river drainage, road layout, settlement placement, collision, or walkability code was changed.
+
+**Verification:** the commit was pushed to `main`; GitHub Actions deployment run `45094328347` was observed starting. Its typecheck, regression suite, and deployment result must be checked before calling this change verified or live.
+
+**Scope reminder:** this is a first implementation pass toward the Minecraft-like wilderness terrain. It does not yet add textured block atlases, true 3D chunk section storage, dynamic lighting, or a recovered Minecraft Java renderer. The report remains a static package inspection, not an REA-generated reverse-engineering evidence bundle.
