@@ -2418,7 +2418,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!renderer.drag)return;
       if(Math.hypot(e.clientX-renderer.gestureStartX,e.clientY-renderer.gestureStartY)>7)renderer.gestureMoved=true;
       if(!renderer.gestureMoved)return;
-      renderer.yaw+=(e.clientX-renderer.lx)*.008;
+      // Drag right must turn the view right in both orbit and first-person.
+      // The camera's forward vector is (-sin(yaw), -cos(yaw)); adding
+      // yaw here made a rightward drag rotate the view left.
+      renderer.yaw-=(e.clientX-renderer.lx)*.008;
       // BUILD 1023: first-person pitch is drag-up = look up. It was
       // inverted (drag up looked down: +dy raised lookPitch, and
       // lookPitch+ is gaze-up). Orbit keeps its existing sign below.
@@ -2608,8 +2611,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               else{if(result.item.kind==='farm')result.item.farmPlantedAt=absMinutes(clockRef.current.day,clockRef.current.minutes);addPlacement(world,result.item);commitWorld(worldSyncCtx,world);buildIx.pushHistory({kind:'place',item:result.item});setMessage('Placed '+buildIx.placementLabel(result.item));}
             }
           }
-        } else if(!areaTapConsumed&&!waitingRef.current) {
-          // BUILD 1056: taps never start a walk while waiting.
+        } else if(!areaTapConsumed&&!waitingRef.current&&!firstPersonRef.current) {
+          // BUILD 1124: first-person is keyboard/touch-D-pad driven;
+          // ground taps never create a hidden auto-walk journey.
           const destination=renderer.pickGround(e.clientX,e.clientY);
           if(!destination){/* no ground picked — nothing to do */}
           else if(!controls.walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
