@@ -218,7 +218,11 @@ function riverValleyField(world: IsoWorld): Map<number, number> {
   const field = new Map<number, number>();
   const key = (x:number,y:number):number => tileKeyInt(x,y);
   const sources: Array<{x:number;y:number}> = [];
-  for (const river of world.rivers ?? []) {
+  const riverCourses = (world.rivers ?? []) as unknown as Array<{
+    tiles?: Array<{x:number;y:number}>;
+    widthTiles?: Array<{x:number;y:number}>;
+  }>;
+  for (const river of riverCourses) {
     sources.push(...(river.tiles ?? []), ...(river.widthTiles ?? []));
   }
   const depthByRing = [0, 1.35, 0.9, 0.42, 0.12];
