@@ -49,7 +49,7 @@ import {
   toggleSelectionMember,
   type AreaSelection,
 } from './areaSelect';
-import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, validateCustomPlacement, removeCustomAssetPlacements, customFootprint, rotateCustomXZ, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset, type GlbUploadResult, type GltfDependency } from './customAssets';
+import { loadCustomAssets, parseGlbUpload, parseGltfUpload, parseObjUpload, parseFbxUpload, validateCustomPlacement, removeCustomAssetPlacements, customFootprint, rotateCustomXZ, MAX_FILE_BYTES, CUSTOM_ASSETS_KEY, type CustomAsset, type GlbUploadResult, type GltfDependency } from './customAssets';
 import { createAssetStore, createIndexedDbAssetBackend, writeAssetManifest, describeStoreError, type AssetStore } from './assetStore';
 import { parseZipUpload, writeZipArchive } from './zipImport';
 import { buildAssetPack } from './assetPack';
@@ -1305,7 +1305,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         filesDone++;await yieldToLoop();
         continue;
       }
-      if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')){
+      if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')||lower.endsWith('.fbx')){
         if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 5 MB');filesDone++;await yieldToLoop();continue;}
         try{
           if(lower.endsWith('.glb')){
@@ -1325,7 +1325,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         filesDone++;await yieldToLoop();
         continue;
       }
-      failed.push(file.name+': not a supported file (.glb, .gltf, .obj, or .zip)');
+      failed.push(file.name+': not a supported file (.glb, .gltf, .obj, .fbx, or .zip)');
       filesDone++;await yieldToLoop();
     }
     // BUILD 1046: an image file no model referenced is noted, not
