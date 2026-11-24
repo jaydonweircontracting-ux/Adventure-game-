@@ -401,7 +401,7 @@ function finishAsset(
   const nv = colors.length / 3;
   for (let i = 0; i < colors.length; i += 3) { ar += colors[i]; ag += colors[i + 1]; ab += colors[i + 2]; }
   const avg: [number, number, number] = nv > 0 ? [ar / nv, ag / nv, ab / nv] : [...DEFAULT_COLOR];
-  const stem = fileName.replace(/\.[^.]*$/, '').trim().slice(0, 40) || 'Custom model';
+  const stem = fileName.replace(/\\/g, '/').split('/').pop()!.replace(/\.[^.]*$/, '').trim().slice(0, 40) || 'Custom model';
   return {
     ok: true,
     asset: {
