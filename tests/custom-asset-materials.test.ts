@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { normalizePbrMaterial } from '../src/game/engine3d/materialRuntime';
-import { validAsset } from '../src/game/engine3d/customAssets';
+import { extractGltfTextureImages, validAsset } from '../src/game/engine3d/customAssets';
 import { decodedAssetBytes } from '../src/game/engine3d/assetStore';
 
 const base = {
@@ -19,6 +19,7 @@ const base = {
     baseColorTexture: { textureIndex: 2, texCoord: 0 },
   })],
   materialIndices: [0, 0, 0],
+  textureImages: ['data:image/png;base64,AQID'],
 };
 
 const parsed = validAsset(base);
@@ -27,6 +28,23 @@ assert.deepEqual(parsed?.uvs, base.uvs);
 assert.deepEqual(parsed?.materialIndices, base.materialIndices);
 assert.equal(parsed?.materials?.[0].name, 'Leather');
 assert.equal(parsed?.materials?.[0].textures.baseColor?.textureIndex, 2);
+assert.deepEqual(parsed?.textureImages, ['data:image/png;base64,AQID']);
+const embeddedImages = extractGltfTextureImages({
+  images: [{ uri: 'data:image/png;base64,AQID' }],
+  textures: [{ source: 0 }],
+} as any, new Uint8Array(), '');
+assert.deepEqual(embeddedImages, ['data:image/png;base64,AQID']);
+const companionImages = extractGltfTextureImages({
+  images: [{ uri: 'textures/armor.png' }],
+  textures: [{ source: 0 }],
+} as any, new Uint8Array(), 'models', new Map([['textures/armor.png', new Uint8Array([1, 2, 3]).buffer]]));
+assert.deepEqual(companionImages, ['data:image/png;base64,AQID']);
+const bufferViewImages = extractGltfTextureImages({
+  images: [{ bufferView: 0, mimeType: 'image/png' }],
+  textures: [{ source: 0 }],
+  bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 3 }],
+} as any, new Uint8Array([1, 2, 3]), '');
+assert.deepEqual(bufferViewImages, ['data:image/png;base64,AQID']);
 
 const animatedTextured = validAsset({
   ...base,
@@ -50,10 +68,12 @@ const legacy = { ...base };
 delete (legacy as Partial<typeof base>).uvs;
 delete (legacy as Partial<typeof base>).materials;
 delete (legacy as Partial<typeof base>).materialIndices;
+delete (legacy as Partial<typeof base>).textureImages;
 const oldRecord = validAsset(legacy);
 assert.ok(oldRecord);
 assert.equal(oldRecord?.uvs, undefined);
 assert.equal(oldRecord?.materials, undefined);
+assert.equal(oldRecord?.textureImages, undefined);
 
 const withoutMetadata = decodedAssetBytes(oldRecord!);
 const withMetadata = decodedAssetBytes(parsed!);
