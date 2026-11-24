@@ -1305,6 +1305,7 @@ export class WorldRenderer {
     const gl = this.gl;
     gl.deleteBuffer(this.worldBuffer);
     gl.deleteBuffer(this.actorBuffer);
+    gl.deleteBuffer(this.customActorBuffer);
     gl.deleteBuffer(this.corpseBuffer);
     gl.deleteBuffer(this.skyBuffer);
     gl.deleteBuffer(this.skyObjBuffer);
