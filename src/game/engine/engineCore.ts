@@ -42,6 +42,18 @@ export type EngineScene = {
   entities: EngineEntity[];
 };
 
+export type EnginePrefab = {
+  id: string;
+  name: string;
+  rootEntityId: string;
+  entities: EngineEntity[];
+};
+
+export type EnginePrefabInstantiation = {
+  project: EngineProject;
+  rootEntityId: string;
+};
+
 export type EngineProject = {
   schemaVersion: typeof ENGINE_PROJECT_SCHEMA_VERSION;
   runtimeVersion: string;
@@ -50,6 +62,7 @@ export type EngineProject = {
   activeSceneId: string;
   nextId: number;
   scenes: EngineScene[];
+  prefabs?: EnginePrefab[];
 };
 
 export type EngineResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -102,6 +115,7 @@ export function createEngineProject(name = 'Untitled Project', id = 'adventure-p
     activeSceneId: scene.id,
     nextId: 1,
     scenes: [scene],
+    prefabs: [],
   };
 }
 
@@ -408,6 +422,95 @@ export function removeEngineEntity(
   };
 }
 
+/**
+ * Capture an entity and all descendants as a reusable prefab template.
+ * Child transforms remain local to their parent; the selected root is detached.
+ */
+export function createEnginePrefab(
+  project: EngineProject,
+  sceneId: string,
+  entityId: string,
+  name?: string,
+): EngineResult<EngineProject> {
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  const root = scene.entities.find((item) => item.id === entityId);
+  if (!root) return { ok: false, error: 'Entity not found: ' + entityId };
+  const included = new Set<string>([entityId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entity of scene.entities) {
+      if (entity.parentId && included.has(entity.parentId) && !included.has(entity.id)) {
+        included.add(entity.id);
+        changed = true;
+      }
+    }
+  }
+  const entities = scene.entities.filter((entity) => included.has(entity.id)).map((entity) => ({
+    ...cloneJson(entity),
+    parentId: entity.id === entityId ? null : entity.parentId,
+  }));
+  const prefab: EnginePrefab = {
+    id: project.id + '-prefab-' + project.nextId,
+    name: cleanName(name ?? root.name, 'Prefab'),
+    rootEntityId: entityId,
+    entities,
+  };
+  return { ok: true, value: { ...project, nextId: project.nextId + 1, prefabs: [...(project.prefabs ?? []), prefab] } };
+}
+
+export function renameEnginePrefab(project: EngineProject, prefabId: string, name: string): EngineResult<EngineProject> {
+  if (!(project.prefabs ?? []).some((prefab) => prefab.id === prefabId)) return { ok: false, error: 'Prefab not found: ' + prefabId };
+  return { ok: true, value: { ...project, prefabs: (project.prefabs ?? []).map((prefab) =>
+    prefab.id === prefabId ? { ...prefab, name: cleanName(name, 'Prefab') } : prefab) } };
+}
+
+export function removeEnginePrefab(project: EngineProject, prefabId: string): EngineResult<EngineProject> {
+  if (!(project.prefabs ?? []).some((prefab) => prefab.id === prefabId)) return { ok: false, error: 'Prefab not found: ' + prefabId };
+  return { ok: true, value: { ...project, prefabs: (project.prefabs ?? []).filter((prefab) => prefab.id !== prefabId) } };
+}
+
+/** Instantiate a prefab with fresh IDs; the supplied position offsets its root. */
+export function instantiateEnginePrefab(
+  project: EngineProject,
+  sceneId: string,
+  prefabId: string,
+  position: [number, number, number] = [0, 0, 0],
+): EngineResult<EnginePrefabInstantiation> {
+  if (!isFiniteTuple(position)) return { ok: false, error: 'Prefab placement position must contain three finite numbers' };
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  const prefab = (project.prefabs ?? []).find((item) => item.id === prefabId);
+  if (!prefab) return { ok: false, error: 'Prefab not found: ' + prefabId };
+  if (!prefab.entities.some((entity) => entity.id === prefab.rootEntityId)) return { ok: false, error: 'Prefab root entity is missing' };
+  const idMap = new Map<string, string>();
+  let nextId = project.nextId;
+  for (const entity of prefab.entities) { idMap.set(entity.id, project.id + '-entity-' + nextId); nextId += 1; }
+  const copies = prefab.entities.map((entity) => {
+    const isRoot = entity.id === prefab.rootEntityId;
+    const transform = cloneJson(entity.transform);
+    if (isRoot) transform.position = [
+      transform.position[0] + position[0], transform.position[1] + position[1], transform.position[2] + position[2],
+    ];
+    return {
+      ...cloneJson(entity),
+      id: idMap.get(entity.id)!,
+      parentId: entity.parentId === null ? null : idMap.get(entity.parentId) ?? null,
+      transform,
+    };
+  });
+  const rootEntityId = idMap.get(prefab.rootEntityId)!;
+  return {
+    ok: true,
+    value: {
+      project: { ...project, nextId, scenes: project.scenes.map((item) => item.id === sceneId
+        ? { ...item, entities: [...item.entities, ...copies] } : item) },
+      rootEntityId,
+    },
+  };
+}
+
 export function serializeEngineProject(project: EngineProject): string {
   const validation = validateEngineProject(project);
   if (!validation.ok) throw new Error(validation.error);
@@ -438,6 +541,26 @@ export function validateEngineProject(value: unknown): EngineResult<EngineProjec
     || !Number.isInteger(project.nextId) || (project.nextId ?? 0) < 1
     || !Array.isArray(project.scenes) || project.scenes.length === 0) {
     return { ok: false, error: 'Project metadata or scenes are invalid' };
+  }
+  if (project.prefabs !== undefined && !Array.isArray(project.prefabs)) return { ok: false, error: 'Project prefabs must be an array' };
+  const prefabIds = new Set<string>();
+  for (const prefab of project.prefabs ?? []) {
+    if (!prefab || typeof prefab.id !== 'string' || !prefab.id.trim() || prefabIds.has(prefab.id)
+      || typeof prefab.name !== 'string' || !prefab.name.trim() || typeof prefab.rootEntityId !== 'string'
+      || !Array.isArray(prefab.entities) || prefab.entities.length === 0) {
+      return { ok: false, error: 'Prefab metadata is invalid or duplicated' };
+    }
+    prefabIds.add(prefab.id);
+    const ids = new Set(prefab.entities.map((entity) => entity?.id));
+    if (!ids.has(prefab.rootEntityId)) return { ok: false, error: 'Prefab root entity does not exist' };
+    for (const entity of prefab.entities) {
+      if (!entity || typeof entity.id !== 'string' || !entity.id.trim() || typeof entity.name !== 'string' || !entity.name.trim()
+        || typeof entity.active !== 'boolean' || !isFiniteTuple(entity.transform?.position)
+        || !isFiniteTuple(entity.transform?.rotation) || !isFiniteTuple(entity.transform?.scale)
+        || !Array.isArray(entity.components) || (entity.parentId !== null && !ids.has(entity.parentId))) {
+        return { ok: false, error: 'Prefab entity data is invalid' };
+      }
+    }
   }
   const sceneIds = new Set<string>();
   const entityIds = new Set<string>();
