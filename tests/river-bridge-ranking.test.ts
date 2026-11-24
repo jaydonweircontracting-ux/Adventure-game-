@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { defaultWorld } from '../src/game/iso/isoWorld';
 import { bridgeAxisForCrossing, bridgeSitePlacementExists, bridgeSpanForCrossing, bridgeStyleForCrossing, scoreBridgeCrossing, finishBridge, freshBridgeSite, freshPathState, placeBridgeSpan, pathConnects, planBankApproachTiles, reconcileBridges, scanForBridgeSites, validateBridgeSite } from '../src/game/engine3d/paths';
-import { placedBridgeTiles } from '../src/game/engine3d/placements';
+import { placedBridgeTiles, walkableWithPlacements } from '../src/game/engine3d/placements';
 import { riverNear } from '../src/game/engine3d/rivers';
+import { npcWalkable, planPathNpc } from '../src/game/engine3d/townsfolk3d';
+import { stepFounderMove } from '../src/game/engine3d/founders';
+import { playerWalkable } from '../src/game/engine3d/playerPath';
+import { stepAnimal } from '../src/game/engine3d/animals';
 
 // A controlled world with two independent river crossings; this fixture is deterministic. The first has
 // a matching path on both banks; the second only has a near-bank approach.
@@ -159,4 +163,46 @@ const beforeBlocked = blockedWorld.placements.length;
 assert.equal(placeBridgeSpan(blockedWorld, blockedSite, { x: 161, y: 150 }, []).ok, false, 'a player standing in the span blocks the whole bridge');
 assert.equal(blockedWorld.placements.length, beforeBlocked, 'blocked placement never leaves a partial bridge');
 
-console.log('River bridge tests passed (ranking, full spans, six styles, axis, save migration, atomic placement).');
+// BUILD 1126 / NEURON HEX 0x32 — all three movement classes share the same
+// water/bridge rule: deep water is blocked, a placed bridge is walkable,
+// NPCs and animals route around a missing crossing, and both use the deck
+// when it is the shortest valid route.
+const navigationWorld = defaultWorld();
+navigationWorld.huts = []; navigationWorld.stalls = []; navigationWorld.trees = []; navigationWorld.rocks = [];
+navigationWorld.crates = []; navigationWorld.walls = []; navigationWorld.npcSpawns = [];
+navigationWorld.landmarks = []; navigationWorld.mineralDeposits = []; navigationWorld.placements = [];
+navigationWorld.terrain = {};
+navigationWorld.rivers = [];
+for (let y = 96; y <= 104; y++) navigationWorld.terrain['120,' + y] = 'water';
+const navStart = { x: 119, y: 100 }, navGoal = { x: 121, y: 100 }, navDeck = { x: 120, y: 100 };
+assert.equal(walkableWithPlacements(navigationWorld, navigationWorld.crates, navDeck.x, navDeck.y), false, 'unbridged deep water is not walkable');
+assert.equal(playerWalkable(navigationWorld, navDeck.x, navDeck.y), false, 'the player cannot step into deep water');
+assert.equal(npcWalkable(navigationWorld, navDeck.x, navDeck.y), false, 'NPC navigation treats river water as an obstacle');
+const dryDetour = planPathNpc(navigationWorld, navStart, navGoal);
+assert.ok(dryDetour && dryDetour.length > 2, 'an NPC can reroute around a river when no crossing exists');
+assert.equal(dryDetour!.some((tile) => navigationWorld.terrain[tile.x + ',' + tile.y] === 'water'), false, 'an NPC detour never walks through water');
+const emptyFounderPath: any = { destKey: '', path: [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+const founderDetour = stepFounderMove(navigationWorld, navStart, navGoal, emptyFounderPath, () => false);
+assert.notEqual(navigationWorld.terrain[founderDetour.pos.x + ',' + founderDetour.pos.y], 'water', 'a founder step never enters unbridged water');
+const goatWithoutBridge: any = { id: 'goat-no-bridge', kind: 'goat', state: 'wandering', x: navStart.x, y: navStart.y, seed: 17, pauseTicks: 0, fleeTicks: 0, relocateTicks: 0, flightTo: null };
+const animalTargetPath: any = { dest: navGoal.x + ',' + navGoal.y, path: [navDeck, navGoal], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+stepAnimal(navigationWorld, goatWithoutBridge, animalTargetPath, () => false, { x: 10, y: 10 }, { x: 10, y: 10 });
+assert.notEqual(navigationWorld.terrain[Math.round(goatWithoutBridge.x) + ',' + Math.round(goatWithoutBridge.y)], 'water', 'a roaming animal never enters unbridged water');
+
+navigationWorld.placements!.push({ kind: 'bridge', x0: navDeck.x, y0: navDeck.y, x1: navDeck.x, y1: navDeck.y } as any);
+assert.equal(walkableWithPlacements(navigationWorld, navigationWorld.crates, navDeck.x, navDeck.y), true, 'a bridge deck overrides the underlying water collision');
+assert.equal(playerWalkable(navigationWorld, navDeck.x, navDeck.y), true, 'the player can walk onto a bridge deck');
+assert.equal(npcWalkable(navigationWorld, navDeck.x, navDeck.y), true, 'NPC navigation can use a bridge deck');
+const bridgeRoute = planPathNpc(navigationWorld, navStart, navGoal);
+assert.ok(bridgeRoute?.some((tile) => tile.x === navDeck.x && tile.y === navDeck.y), 'an NPC route across the river uses the bridge');
+const founderBridgeStep = stepFounderMove(navigationWorld, navStart, navGoal, emptyFounderPath, () => false);
+assert.deepEqual(founderBridgeStep.pos, navDeck, 'a founder takes the bridge as the first crossing step');
+const goatWithBridge: any = { id: 'goat-with-bridge', kind: 'goat', state: 'wandering', x: navStart.x, y: navStart.y, seed: 19, pauseTicks: 0, fleeTicks: 0, relocateTicks: 0, flightTo: null };
+const animalTargetPathWithBridge: any = { dest: navGoal.x + ',' + navGoal.y, path: [navDeck, navGoal], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+let goatBridgePath = animalTargetPathWithBridge;
+for (let tick = 0; tick < 4 && Math.round(goatWithBridge.x) !== navDeck.x; tick++) {
+  goatBridgePath = stepAnimal(navigationWorld, goatWithBridge, goatBridgePath, () => false, { x: 10, y: 10 }, { x: 10, y: 10 }).path as any;
+}
+assert.deepEqual({ x: Math.round(goatWithBridge.x), y: Math.round(goatWithBridge.y) }, navDeck, 'a roaming animal uses the bridge instead of the longer dry detour');
+
+console.log('River bridge tests passed (ranking, full spans, six styles, axis, save migration, atomic placement, bank roads, NPC/player/animal navigation).');
