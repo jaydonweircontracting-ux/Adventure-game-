@@ -58,12 +58,21 @@ These are scoped findings from the files listed above, not a claim that no relat
 
 No test or deployment result is inferred from a source inspection.
 
-## Recommended first implementation slice
+## First implementation slice (added on the engine branch)
 
-1. Establish the real baseline in a reproducible checkout/CI run.
-2. Add focused tests for `WorldCore` serialization, seeded RNG restore, schema-v1 migration and event queue ordering.
-3. Define a small engine-core contract (stable IDs, entity/component ownership, transforms, lifecycle and serialization) in a new isolated module.
-4. Connect one existing gameplay transition through that contract, then prove save/load and existing gameplay regressions.
-5. Only after that, proceed to scene hierarchy/editor UI.
+- `src/game/engine/engineCore.ts`: renderer-agnostic versioned project/scene/entity model, stable IDs, parent hierarchy, transforms, versioned JSON components, immutable scene/entity/component operations, validation, and JSON serialization/deserialization.
+- `src/game/engine/adventureWorldAdapter.ts`: stores the existing authoritative `WorldCore` save as an `adventure.world-core` component; supports snapshot, sync, and restore without introducing a parallel simulation clock.
+- `tests/engine-core.test.ts`: project, scene, entity, hierarchy, transform, component, validation and JSON round-trip coverage.
+- `tests/adventure-engine-adapter.test.ts`: verifies WorldCore snapshot/sync/project save/restore and deterministic RNG continuation.
+- `tests/world-core.test.ts`: covers deterministic RNG, clock boundaries, events, save/load and schema-v1 migration.
+- All three tests are registered in `package.json` and the Pages workflow. The workflow now also declares a pull-request validation trigger and guards deployment so PR validation cannot publish a Pages site.
 
-The first implementation must be an adapter over existing game state, not a second disconnected world.
+## Remaining integration gates
+
+1. Run a reproducible typecheck, production build and all new tests in GitHub Actions. No run has been observed yet for this branch; do not treat these tests as passed.
+2. Connect the project model to an actual creator-facing scene hierarchy/inspector and play-in-editor flow.
+3. Add an explicit compatibility adapter for the 3D `DayClock` and the existing 2.5D save without changing either live save format.
+4. Integrate renderer resources/materials and asset import with the scene component registry.
+5. Validate save/load and existing gameplay, river/bridge and mobile regressions before merge/deploy.
+
+The new adapter is a tested-in-source integration seam, not yet a live runtime hook in the game UI. The first engine slice is not complete until the CI and in-game integration gates pass.
