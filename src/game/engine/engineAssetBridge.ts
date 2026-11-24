@@ -62,3 +62,53 @@ export function resolveEngineMeshInstance(
     asset,
   } : null;
 }
+
+/**
+ * Expand resolved indexed meshes into the renderer's interleaved XYZ/RGB
+ * triangle stream. Entity transforms are applied in local-to-parent order.
+ */
+export function buildEngineMeshVertexData(instances: readonly EngineMeshInstance[]): Float32Array {
+  const byId = new Map(instances.map((instance) => [instance.entityId, instance]));
+  const output: number[] = [];
+  const transformPoint = (point: [number, number, number], transform: Transform3D): [number, number, number] => {
+    let [x, y, z] = point;
+    x *= transform.scale[0]; y *= transform.scale[1]; z *= transform.scale[2];
+    const [rx, ry, rz] = transform.rotation;
+    let cy = Math.cos(rx), sy = Math.sin(rx);
+    [y, z] = [y * cy - z * sy, y * sy + z * cy];
+    cy = Math.cos(ry); sy = Math.sin(ry);
+    [x, z] = [x * cy + z * sy, -x * sy + z * cy];
+    cy = Math.cos(rz); sy = Math.sin(rz);
+    [x, y] = [x * cy - y * sy, x * sy + y * cy];
+    return [x + transform.position[0], y + transform.position[1], z + transform.position[2]];
+  };
+  for (const instance of instances) {
+    const { asset } = instance;
+    if (!asset.positions.length || !asset.indices.length) continue;
+    const chain: Transform3D[] = [];
+    let parentId: string | null = instance.entityId;
+    const seen = new Set<string>();
+    while (parentId) {
+      if (seen.has(parentId)) break;
+      seen.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      chain.push(parent.transform);
+      parentId = parent.parentId;
+    }
+    const colorAt = (vertex: number, channel: number): number => {
+      const value = asset.colors[vertex * 3 + channel];
+      return Number.isFinite(value) ? value : asset.avgColor[channel] ?? 0.7;
+    };
+    for (const index of asset.indices) {
+      const offset = index * 3;
+      if (offset < 0 || offset + 2 >= asset.positions.length) continue;
+      let point: [number, number, number] = [
+        asset.positions[offset], asset.positions[offset + 1], asset.positions[offset + 2],
+      ];
+      for (const transform of chain) point = transformPoint(point, transform);
+      output.push(...point, colorAt(index, 0), colorAt(index, 1), colorAt(index, 2));
+    }
+  }
+  return new Float32Array(output);
+}
