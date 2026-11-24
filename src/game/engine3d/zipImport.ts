@@ -22,7 +22,7 @@
 // ZIP (no central directory) throws, and the caller shows that as
 // one message.
 
-import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, type GlbUploadResult } from './customAssets';
+import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, parseFbxUpload, type GlbUploadResult } from './customAssets';
 
 /** One ZIP file, at most 5 MB. */
 export const MAX_ZIP_BYTES = 5_000_000;
@@ -287,7 +287,7 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
     } else if (lower.endsWith('.gltf')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseGltfUpload(text, base, allFiles, dir) });
-    } else if (lower.endsWith('.obj')) {
+    } else if (lower.endsWith('.fbx')) {\n      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), base) });\n    } else if (lower.endsWith('.obj')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseObjUpload(text, base) });
     } else if (base === PACK_MANIFEST_NAME) {
@@ -314,7 +314,7 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
         }
       } catch { /* the manifest is informational only */ }
     } else if (!lower.endsWith('.bin')) {
-      result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, or .obj)' });
+      result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, .obj, or .fbx)' });
     }
   }
   if (manifestRows) {
