@@ -10,10 +10,10 @@ export interface TexturedActorInstance {
   phase: number;
 }
 
-type Batch = { vertices: number[]; textureUri: string | null; cutoff: number };
+type Batch = { vertices: number[]; textureUri: string | null; cutoff: number; alphaMode: 'OPAQUE' | 'MASK' | 'BLEND'; opacity: number };
 
 const VERTEX_SHADER = 'attribute vec3 aPosition; attribute vec3 aColor; attribute vec2 aUv; uniform mat4 uViewProjection; varying vec3 vColor; varying vec2 vUv; void main(){gl_Position=uViewProjection*vec4(aPosition,1.0);vColor=aColor;vUv=aUv;}';
-const FRAGMENT_SHADER = 'precision mediump float; uniform sampler2D uTexture; uniform float uUseTexture; uniform float uNight; uniform float uWarm; uniform float uAlphaCutoff; varying vec3 vColor; varying vec2 vUv; void main(){vec4 texel=mix(vec4(1.0),texture2D(uTexture,vUv),uUseTexture);vec4 surface=vec4(vColor*texel.rgb,texel.a);if(uAlphaCutoff>=0.0&&surface.a<uAlphaCutoff)discard;vec3 warm=mix(surface.rgb,surface.rgb*vec3(1.0,0.72,0.45),uWarm*0.45);vec3 lit=mix(warm,vec3(0.035,0.045,0.09),uNight);gl_FragColor=vec4(lit,surface.a);}';
+const FRAGMENT_SHADER = 'precision mediump float; uniform sampler2D uTexture; uniform float uUseTexture; uniform float uNight; uniform float uWarm; uniform float uAlphaCutoff; uniform float uOpacity; uniform float uAlphaMode; varying vec3 vColor; varying vec2 vUv; void main(){vec4 texel=mix(vec4(1.0),texture2D(uTexture,vUv),uUseTexture);vec4 surface=vec4(vColor*texel.rgb,uAlphaMode<0.5?1.0:texel.a*uOpacity);if(uAlphaCutoff>=0.0&&surface.a<uAlphaCutoff)discard;vec3 warm=mix(surface.rgb,surface.rgb*vec3(1.0,0.72,0.45),uWarm*0.45);vec3 lit=mix(warm,vec3(0.035,0.045,0.09),uNight);gl_FragColor=vec4(lit,surface.a);}';
 
 function compile(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type);
@@ -42,6 +42,8 @@ export class CustomActorTexturePass {
   private readonly night: WebGLUniformLocation;
   private readonly warm: WebGLUniformLocation;
   private readonly alphaCutoff: WebGLUniformLocation;
+  private readonly opacity: WebGLUniformLocation;
+  private readonly alphaMode: WebGLUniformLocation;
   private readonly textures = new Map<string, { texture: WebGLTexture; ready: boolean }>();
 
   constructor(gl: WebGLRenderingContext) {
@@ -73,7 +75,9 @@ export class CustomActorTexturePass {
     this.night = gl.getUniformLocation(program, 'uNight')!;
     this.warm = gl.getUniformLocation(program, 'uWarm')!;
     this.alphaCutoff = gl.getUniformLocation(program, 'uAlphaCutoff')!;
-    if (this.position < 0 || this.color < 0 || this.uv < 0 || !this.matrix || !this.sampler || !this.useTexture || !this.night || !this.warm || !this.alphaCutoff) {
+    this.opacity = gl.getUniformLocation(program, 'uOpacity')!;
+    this.alphaMode = gl.getUniformLocation(program, 'uAlphaMode')!;
+    if (this.position < 0 || this.color < 0 || this.uv < 0 || !this.matrix || !this.sampler || !this.useTexture || !this.night || !this.warm || !this.alphaCutoff || !this.opacity || !this.alphaMode) {
       throw new Error('Custom actor program is missing required attributes or uniforms');
     }
   }
@@ -127,7 +131,7 @@ export class CustomActorTexturePass {
         const key = asset.id + ':' + materialIndex + ':' + (uri || 'flat');
         let batch = batches.get(key);
         if (!batch) {
-          batch = { vertices: [], textureUri: uri, cutoff: material?.alphaMode === 'MASK' ? material.alphaCutoff : -1 };
+          batch = { vertices: [], textureUri: uri, cutoff: material?.alphaMode === 'MASK' ? material.alphaCutoff : -1, alphaMode: material?.alphaMode || 'OPAQUE', opacity: material?.baseColor[3] ?? 1 };
           batches.set(key, batch);
         }
         for (let corner = 0; corner < 3; corner++) {
@@ -158,9 +162,7 @@ export class CustomActorTexturePass {
     gl.vertexAttribPointer(this.color, 3, gl.FLOAT, false, 32, 12);
     gl.vertexAttribPointer(this.uv, 2, gl.FLOAT, false, 32, 24);
     gl.activeTexture(gl.TEXTURE0);
-    gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.depthMask(false);
     for (const batch of batches.values()) {
       const data = new Float32Array(batch.vertices);
       if (!data.length) continue;
@@ -168,6 +170,10 @@ export class CustomActorTexturePass {
       gl.bindTexture(gl.TEXTURE_2D, tex?.texture || null);
       gl.uniform1f(this.useTexture, tex ? 1 : 0);
       gl.uniform1f(this.alphaCutoff, batch.cutoff);
+      gl.uniform1f(this.opacity, batch.opacity);
+      gl.uniform1f(this.alphaMode, batch.alphaMode === 'OPAQUE' ? 0 : 1);
+      if (batch.alphaMode === 'BLEND') { gl.enable(gl.BLEND); gl.depthMask(false); }
+      else { gl.disable(gl.BLEND); gl.depthMask(true); }
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, data.length / 8);
     }
