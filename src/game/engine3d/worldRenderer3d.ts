@@ -1272,13 +1272,13 @@ export class WorldRenderer {
         const asset = personForNpc(npc.name), st = npcRender.get(npc.name);
         if (asset && st) instances.push({
           asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
-          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5),
+          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5), phase: st.phase,
         });
       }
       if (playerPeople && playerModelPose && !firstPersonRef.current && !drivingRef.current) {
         instances.push({
           asset: playerPeople, x: player.x + .5, z: player.y + .5,
-          yaw: playerModelPose.yaw, baseY: playerBaseY,
+          yaw: playerModelPose.yaw, baseY: playerBaseY, phase: playerModelPose.phase,
         });
       }
       this.customTexturePass.draw(instances, mat, nightFactor, skyGrad.warm);
