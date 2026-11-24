@@ -1280,7 +1280,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const noteDeps=(asset:CustomAsset,deps?:GltfDependency[])=>{
       if(!deps)return;
       for(const d of deps){
-        if(!d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was named but not found — the model still imported; textures are not rendered, so nothing was applied');
+        if(!d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was not found — the model imported with its material colour fallback');
+        if(d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was found and stored with the model');
         if(d.found&&d.kind==='buffer'&&d.resolvedPath&&d.resolvedPath.includes('/'))notes.push('\''+asset.name+'\': its data file "'+d.resolvedPath+'" was found in a subfolder');
       }
     };
@@ -1342,7 +1343,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const hasFbxTexture=parsed.some(a=>a.format==='fbx'&&a.textureImages?.some(Boolean));
     for(const f of files.filter(f=>/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))){
       const rel=relPathOf(f);
-      if(!hasFbxTexture&&!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file — images are only used as glTF texture references, and no imported model used it, so it was ignored');
+      if(!hasFbxTexture&&!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file that no imported model referenced, so it was not added to the asset library');
     }
     setProgress(null);
     if(parsed.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
