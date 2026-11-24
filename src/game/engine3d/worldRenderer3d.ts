@@ -32,6 +32,7 @@ import { placedLanternTiles, placedFarmTiles, seedRectForHut, type PaletteKind }
 import { effTerrainFor, surfaceElevation, rayHitSurface } from './wildTerrain';
 import { type AreaSelection } from './areaSelect';
 import { type CustomAsset } from './customAssets';
+import { CustomActorTexturePass, type TexturedActorInstance } from './customActorTexturePass';
 import { deserializeEngineProject } from '../engine/engineCore';
 import { buildEngineMeshInstances, buildEngineMeshVertexData } from '../engine/engineAssetBridge';
 import { interiorCeilingFor, interiorWallBandFor, interiorHearthFor } from './interiors';
@@ -218,6 +219,7 @@ export class WorldRenderer {
   private actorBuffer!: WebGLBuffer;
   private customActorBuffer!: WebGLBuffer;
   private customActorCapacity = 0;
+  private customTexturePass!: CustomActorTexturePass;
   private corpseBuffer!: WebGLBuffer;
   private skyObjBuffer!: WebGLBuffer;
   private fxBuffer!: WebGLBuffer;
@@ -358,6 +360,7 @@ export class WorldRenderer {
     ]),gl.DYNAMIC_DRAW);
     
     this.gl = gl;
+    this.customTexturePass = new CustomActorTexturePass(gl);
     this.vs = vs;
     this.fs = fs;
     this.program = program;
@@ -1260,43 +1263,25 @@ export class WorldRenderer {
     playerModelPose=pose;
     if(!playerPeople)emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y,undefined,playerBaseY);
     }
-    // One dynamic vertex buffer batches the imported character meshes. This
-    // avoids changing the fixed procedural figure-slot layout and keeps the
-    // imported model path isolated from the rest of the renderer.
-    if(peoplePool.length){
-      const verts:number[]=[];
-      const appendPerson=(asset:CustomAsset,cx:number,cz:number,yaw:number,baseY:number,phase:number)=>{
-        const frames=asset.animationFrames;
-        const cycle=((phase%(Math.PI*2))+(Math.PI*2))%(Math.PI*2);
-        const frame=frames?.length?frames[Math.min(frames.length-1,Math.floor(cycle/(Math.PI*2)*frames.length))]:undefined;
-        const posePositions=frame??asset.positions;
-        const count=Math.min(asset.indices.length,30000);
-        const c=Math.cos(yaw),sn=Math.sin(yaw);
-        for(let i=0;i<count;i++){
-          const vi=asset.indices[i];
-          const p=vi*3;
-          if(p+2>=posePositions.length)continue;
-          const x=posePositions[p],y=posePositions[p+1],z=posePositions[p+2];
-          const q=vi*3;
-          const wx=cx+x*c+z*sn,wz=cz-x*sn+z*c;
-          verts.push(wx,baseY+y,wz,asset.colors[q]??asset.avgColor[0],asset.colors[q+1]??asset.avgColor[1],asset.colors[q+2]??asset.avgColor[2]);
-        }
-      };
-      for(const npc of npcActorsRef.current){
-        if(npc.looted||!npc.alive)continue;
-        const asset=personForNpc(npc.name),st=npcRender.get(npc.name);
-        if(asset&&st)appendPerson(asset,st.x+.5,st.y+.5,st.yaw,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5),st.phase);
-        if(verts.length>=600000)break;
+    // Imported custom characters use the textured material pass; procedural
+    // villagers remain the fallback when no imported actor pack is installed.
+    if (peoplePool.length) {
+      const instances: TexturedActorInstance[] = [];
+      for (const npc of npcActorsRef.current) {
+        if (npc.looted || !npc.alive) continue;
+        const asset = personForNpc(npc.name), st = npcRender.get(npc.name);
+        if (asset && st) instances.push({
+          asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
+          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5),
+        });
       }
-      if(playerPeople&&playerModelPose&&!firstPersonRef.current&&!drivingRef.current)appendPerson(playerPeople,player.x+.5,player.y+.5,playerModelPose.yaw,playerBaseY,playerModelPose.phase);
-      if(verts.length){
-        const data=new Float32Array(verts);
-        gl.bindBuffer(gl.ARRAY_BUFFER,this.customActorBuffer);
-        if(data.byteLength>this.customActorCapacity){this.customActorCapacity=Math.max(data.byteLength,Math.ceil(this.customActorCapacity*1.5),262144);gl.bufferData(gl.ARRAY_BUFFER,this.customActorCapacity,gl.DYNAMIC_DRAW);}
-        gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
-        gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
-        gl.drawArrays(gl.TRIANGLES,0,data.length/6);
+      if (playerPeople && playerModelPose && !firstPersonRef.current && !drivingRef.current) {
+        instances.push({
+          asset: playerPeople, x: player.x + .5, z: player.y + .5,
+          yaw: playerModelPose.yaw, baseY: playerBaseY,
+        });
       }
+      this.customTexturePass.draw(instances, mat, nightFactor, skyGrad.warm);
     }
     this.motionStats={emitted,reused,drawn};
     // BUILD 1033: the red sports car — a small per-frame buffer (the
@@ -1350,6 +1335,7 @@ export class WorldRenderer {
     gl.deleteBuffer(this.worldBuffer);
     gl.deleteBuffer(this.actorBuffer);
     gl.deleteBuffer(this.customActorBuffer);
+    this.customTexturePass.dispose();
     gl.deleteBuffer(this.corpseBuffer);
     gl.deleteBuffer(this.skyBuffer);
     gl.deleteBuffer(this.engineMeshBuffer);
