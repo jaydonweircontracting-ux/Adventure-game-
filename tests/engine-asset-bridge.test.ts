@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEngineMeshInstances, resolveEngineMeshInstance } from '../src/game/engine/engineAssetBridge';
+import { buildEngineMeshInstances, buildEngineMeshVertexData, resolveEngineMeshInstance } from '../src/game/engine/engineAssetBridge';
 import { createEngineEntity, createEngineProject, addEngineComponent, type EngineEntity } from '../src/game/engine/engineCore';
 import type { CustomAsset } from '../src/game/engine3d/customAssets';
 
@@ -37,6 +37,11 @@ assert.equal(instances.length, 1);
 assert.equal(instances[0].entityId, entityId);
 assert.equal(instances[0].asset, asset, 'bridge returns the stored geometry by reference, not a duplicate');
 assert.equal(instances[0].asset.indices.length, 3);
+const meshData = buildEngineMeshVertexData(instances);
+assert.equal(meshData.length, 18, 'one indexed triangle expands to three interleaved XYZ/RGB vertices');
+assert.deepEqual(Array.from(meshData.slice(0, 6)), [0, 0, 0, 1, 0, 0]);
+assert.deepEqual(Array.from(meshData.slice(6, 12)), [1, 0, 0, 0, 1, 0]);
+assert.deepEqual(Array.from(meshData.slice(12, 18)), [0, 1, 0, 0, 0, 1]);
 
 const missingAsset = buildEngineMeshInstances(project, sceneId, []);
 assert.equal(missingAsset.length, 0, 'missing library references are skipped safely');
