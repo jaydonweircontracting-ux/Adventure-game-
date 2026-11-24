@@ -319,6 +319,63 @@ export function upsertEngineComponent(
   };
 }
 
+export function updateEngineComponent(
+  project: EngineProject,
+  sceneId: string,
+  entityId: string,
+  componentIndex: number,
+  component: EngineComponent,
+): EngineResult<EngineProject> {
+  if (!component.type.trim() || !Number.isInteger(component.version) || component.version < 1
+    || !component.data || typeof component.data !== 'object' || Array.isArray(component.data)
+    || !isJsonValue(component.data)) {
+    return { ok: false, error: 'Component type, version and JSON data are invalid' };
+  }
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  const entity = scene.entities.find((item) => item.id === entityId);
+  if (!entity) return { ok: false, error: 'Entity not found: ' + entityId };
+  if (!Number.isInteger(componentIndex) || componentIndex < 0 || componentIndex >= entity.components.length) {
+    return { ok: false, error: 'Component index is out of range' };
+  }
+  const components = entity.components.map((item, index) => index === componentIndex ? cloneJson(component) : item);
+  return {
+    ok: true,
+    value: {
+      ...project,
+      scenes: project.scenes.map((item) => item.id === sceneId
+        ? { ...item, entities: item.entities.map((entry) => entry.id === entityId ? { ...entry, components } : entry) }
+        : item),
+    },
+  };
+}
+
+export function removeEngineComponent(
+  project: EngineProject,
+  sceneId: string,
+  entityId: string,
+  componentIndex: number,
+): EngineResult<EngineProject> {
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  const entity = scene.entities.find((item) => item.id === entityId);
+  if (!entity) return { ok: false, error: 'Entity not found: ' + entityId };
+  if (!Number.isInteger(componentIndex) || componentIndex < 0 || componentIndex >= entity.components.length) {
+    return { ok: false, error: 'Component index is out of range' };
+  }
+  return {
+    ok: true,
+    value: {
+      ...project,
+      scenes: project.scenes.map((item) => item.id === sceneId
+        ? { ...item, entities: item.entities.map((entry) => entry.id === entityId
+          ? { ...entry, components: entry.components.filter((_, index) => index !== componentIndex) }
+          : entry) }
+        : item),
+    },
+  };
+}
+
 export function removeEngineEntity(
   project: EngineProject,
   sceneId: string,
