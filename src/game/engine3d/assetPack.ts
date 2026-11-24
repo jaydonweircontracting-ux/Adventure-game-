@@ -36,7 +36,7 @@ import { PACK_MANIFEST_NAME, type ZipArchiveEntry } from './zipImport';
 export interface AssetPackEntry {
   id: string;
   name: string;
-  format: 'glb' | 'gltf' | 'obj';
+  format: 'glb' | 'gltf' | 'obj' | 'fbx';
   category: string;
   tags: string[];
   /** Footprint width in tiles. */
@@ -152,7 +152,7 @@ export function parsePackManifest(raw: unknown): AssetPackManifest | null {
     if (!r || typeof r !== 'object') return null;
     const a = r as Record<string, unknown>;
     if (typeof a.name !== 'string' || typeof a.file !== 'string') return null;
-    if (a.format !== 'glb' && a.format !== 'gltf' && a.format !== 'obj') return null;
+    if (a.format !== 'glb' && a.format !== 'gltf' && a.format !== 'obj' && a.format !== 'fbx') return null;
     assets.push({
       id: typeof a.id === 'string' ? a.id : '',
       name: a.name,
