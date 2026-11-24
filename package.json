@@ -32,7 +32,8 @@
     "test:npc-combat": "npx tsx scripts/sim/npc-combat.test.ts",
     "test:body-loot": "npx tsx tests/body-loot-selection.test.ts",
     "test:character-creator": "npx tsx tests/character-creator-restrictions.test.ts",
-    "test:world-simulation": "npx tsx tests/world-simulation.test.ts"
+    "test:world-simulation": "npx tsx tests/world-simulation.test.ts",
+    "benchmark:world": "npx tsx scripts/benchmark-world.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
