@@ -26,11 +26,14 @@ assert.equal(MINUTES_PER_TICK, 10);
 assert.deepEqual(events, ['hour_changed']);
 
 const beforeMidnight = new WorldCore(77);
+const midnightEvents: string[] = [];
+beforeMidnight.subscribe('day_changed', () => midnightEvents.push('day_changed'));
 beforeMidnight.advance(107); // 06:00 -> 23:50
 assert.equal(beforeMidnight.getClock().day, 1);
 beforeMidnight.advance(1);
 assert.equal(beforeMidnight.getClock().day, 2);
 assert.equal(beforeMidnight.getClock().hour, 0);
+assert.deepEqual(midnightEvents, ['day_changed'], 'midnight emits one day-boundary event');
 assert.deepEqual(events, ['hour_changed'], 'unrelated instances do not share listeners');
 
 // Queued events are ordered and only drain when due.
