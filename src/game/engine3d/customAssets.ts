@@ -135,7 +135,7 @@ export interface CustomAsset {
   /** Which importer produced this asset ('glb' for 997-era uploads,
    *  which predate the field and load as 'glb'). Shown in the Import
    *  Hub so the player can tell what came from where. */
-  format?: 'glb' | 'gltf' | 'obj';
+  format?: 'glb' | 'gltf' | 'obj' | 'fbx';
   /** BUILD 1045: library metadata. sourceFile is the file the model
    *  came from (the name as picked, or the ZIP entry path); category
    *  is one of ASSET_CATEGORIES in assetLibrary.ts (the player's own
