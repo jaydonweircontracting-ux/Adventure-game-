@@ -28,6 +28,19 @@ assert.deepEqual(parsed?.materialIndices, base.materialIndices);
 assert.equal(parsed?.materials?.[0].name, 'Leather');
 assert.equal(parsed?.materials?.[0].textures.baseColor?.textureIndex, 2);
 
+const animatedTextured = validAsset({
+  ...base,
+  textureImages: ['data:image/png;base64,AA=='],
+  animationFrames: [base.positions, base.positions.map((v, i) => v + (i % 3 === 1 ? 0.1 : 0))],
+  animationFps: 8,
+});
+assert.ok(animatedTextured);
+assert.equal(animatedTextured?.textureImages?.[0], 'data:image/png;base64,AA==');
+assert.equal(animatedTextured?.animationFrames?.length, 2);
+assert.equal(animatedTextured?.animationFps, 8);
+assert.equal(validAsset({ ...base, animationFrames: [base.positions, [0, 1, 2]] }), null);
+assert.equal(validAsset({ ...base, textureImages: ['javascript:alert(1)'] }), null);
+
 assert.equal(validAsset({ ...base, uvs: [0, 0] }), null);
 assert.equal(validAsset({ ...base, materialIndices: [0, 0] }), null);
 assert.equal(validAsset({ ...base, materialIndices: [1, 1, 1] }), null);
@@ -45,5 +58,6 @@ assert.equal(oldRecord?.materials, undefined);
 const withoutMetadata = decodedAssetBytes(oldRecord!);
 const withMetadata = decodedAssetBytes(parsed!);
 assert.ok(withMetadata > withoutMetadata);
+assert.ok(decodedAssetBytes(animatedTextured!) > decodedAssetBytes(parsed!));
 
-console.log('BUILD 1115 custom asset preservation: 12 assertions passed');
+console.log('BUILD 1120 custom asset texture/animation preservation: 18 assertions passed');
