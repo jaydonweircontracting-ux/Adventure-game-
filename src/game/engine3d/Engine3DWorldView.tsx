@@ -1323,7 +1323,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           }else{
             const buf=await file.arrayBuffer();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
-            accept(await parseFbxUpload(buf,file.name),file.name);
+            accept(await parseFbxUpload(buf,file.name,companionFiles),file.name);
           }
         }catch{failed.push(file.name+': could not read the file');}
         filesDone++;await yieldToLoop();
