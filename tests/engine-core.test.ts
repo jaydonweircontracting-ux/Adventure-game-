@@ -3,6 +3,10 @@ import {
   addEngineComponent,
   createEngineEntity,
   createEngineProject,
+  createEnginePrefab,
+  instantiateEnginePrefab,
+  renameEnginePrefab,
+  removeEnginePrefab,
   createEngineScene,
   deserializeEngineProject,
   removeEngineEntity,
@@ -103,6 +107,47 @@ assert.equal(componentRemoved.ok, true);
 if (!componentRemoved.ok) throw new Error(componentRemoved.error);
 assert.equal(componentRemoved.value.scenes[0].entities[0].components.length, 0);
 assert.equal(removeEngineComponent(project, firstSceneId, parentId, 9).ok, false);
+
+// Prefabs capture complete hierarchies and instantiate with fresh IDs.
+const prefabSource = createEngineProject('Prefab Test', 'prefab-test');
+const prefabSceneId = prefabSource.activeSceneId;
+const prefabParentResult = createEngineEntity(prefabSource, prefabSceneId, 'House');
+assert.equal(prefabParentResult.ok, true);
+if (!prefabParentResult.ok) throw new Error(prefabParentResult.error);
+const prefabParentId = prefabParentResult.value.scenes[0].entities[0].id;
+const prefabChildResult = createEngineEntity(prefabParentResult.value, prefabSceneId, 'Door', prefabParentId);
+assert.equal(prefabChildResult.ok, true);
+if (!prefabChildResult.ok) throw new Error(prefabChildResult.error);
+const prefabChildId = prefabChildResult.value.scenes[0].entities[1].id;
+const prefabWithComponent = addEngineComponent(prefabChildResult.value, prefabSceneId, prefabChildId, {
+  type: 'adventure.door', version: 1, enabled: true, data: { locked: false },
+});
+assert.equal(prefabWithComponent.ok, true);
+if (!prefabWithComponent.ok) throw new Error(prefabWithComponent.error);
+const capturedPrefab = createEnginePrefab(prefabWithComponent.value, prefabSceneId, prefabParentId, 'House Kit');
+assert.equal(capturedPrefab.ok, true);
+if (!capturedPrefab.ok) throw new Error(capturedPrefab.error);
+assert.equal(capturedPrefab.value.prefabs?.[0].entities.length, 2);
+assert.equal(capturedPrefab.value.prefabs?.[0].entities.find((entity) => entity.name === 'Door')?.parentId, prefabParentId);
+const renamedPrefab = renameEnginePrefab(capturedPrefab.value, capturedPrefab.value.prefabs![0].id, 'Village House');
+assert.equal(renamedPrefab.ok, true);
+if (!renamedPrefab.ok) throw new Error(renamedPrefab.error);
+const placedPrefab = instantiateEnginePrefab(renamedPrefab.value, prefabSceneId, capturedPrefab.value.prefabs![0].id, [10, 0, -4]);
+assert.equal(placedPrefab.ok, true);
+if (!placedPrefab.ok) throw new Error(placedPrefab.error);
+const placedScene = placedPrefab.value.project.scenes[0];
+const placedRoot = placedScene.entities.find((entity) => entity.id === placedPrefab.value.rootEntityId)!;
+assert.deepEqual(placedRoot.transform.position, [10, 0, -4]);
+assert.notEqual(placedRoot.id, prefabParentId);
+const placedDoor = placedScene.entities.find((entity) => entity.parentId === placedRoot.id);
+assert.ok(placedDoor, 'instantiated child keeps its remapped parent link');
+assert.equal(placedDoor?.components[0].type, 'adventure.door');
+assert.equal(validateEngineProject(placedPrefab.value.project).ok, true);
+const removedPrefab = removeEnginePrefab(renamedPrefab.value, renamedPrefab.value.prefabs![0].id);
+assert.equal(removedPrefab.ok, true);
+if (!removedPrefab.ok) throw new Error(removedPrefab.error);
+assert.equal(removedPrefab.value.prefabs?.length, 0);
+assert.equal(validateEngineProject({ ...capturedPrefab.value, prefabs: [{ ...capturedPrefab.value.prefabs![0], rootEntityId: 'missing' }] }).ok, false);
 
 // Project files round-trip through JSON without losing hierarchy or data.
 const serialized = serializeEngineProject(project);
