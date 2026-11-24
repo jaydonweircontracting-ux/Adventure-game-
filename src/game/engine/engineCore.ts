@@ -120,9 +120,13 @@ export function createEngineProject(name = 'Untitled Project', id = 'adventure-p
 }
 
 export function createEngineScene(project: EngineProject, name = 'New Scene'): EngineResult<EngineProject> {
-  const id = project.id + '-scene-' + project.nextId;
-  if (project.scenes.some((scene) => scene.id === id)) {
-    return { ok: false, error: 'Engine scene ID collision: ' + id };
+  // Older project snapshots may have nextId pointing at the initial scene.
+  // Advance past occupied scene IDs instead of failing the first new-scene action.
+  let nextId = project.nextId;
+  let id = project.id + '-scene-' + nextId;
+  while (project.scenes.some((scene) => scene.id === id)) {
+    nextId += 1;
+    id = project.id + '-scene-' + nextId;
   }
   const scene: EngineScene = {
     id,
@@ -134,7 +138,7 @@ export function createEngineScene(project: EngineProject, name = 'New Scene'): E
     ok: true,
     value: {
       ...project,
-      nextId: project.nextId + 1,
+      nextId: nextId + 1,
       scenes: [...project.scenes.map((item) => ({ ...item, active: false })), scene],
       activeSceneId: id,
     },
