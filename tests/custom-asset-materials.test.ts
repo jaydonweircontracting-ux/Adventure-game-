@@ -46,4 +46,4 @@ const withoutMetadata = decodedAssetBytes(oldRecord!);
 const withMetadata = decodedAssetBytes(parsed!);
 assert.ok(withMetadata > withoutMetadata);
 
-console.log('BUILD 1115 custom asset preservation: 10 assertions passed');
+console.log('BUILD 1115 custom asset preservation: 12 assertions passed');
