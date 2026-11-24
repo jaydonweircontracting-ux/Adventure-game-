@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { defaultWorld } from '../src/game/iso/isoWorld';
 import { generateRivers, stampRivers } from '../src/game/engine3d/rivers';
 
-// BUILD 1130 river drainage regression: flat filled basins must drain by
-// priority-flood discovery order, not row-major coordinate tie-breaks.
+// BUILD 1132 temporary river regression: generated courses are deterministic
+// straight raster channels with a consistent 3–4 tile target width.
 const world = defaultWorld();
 const first = generateRivers(world);
 const second = generateRivers(world);
@@ -13,6 +13,11 @@ assert.deepEqual(second, first, 'river courses remain deterministic');
 const occupied = new Set<string>();
 for (const river of first) {
   assert.ok(river.tiles.length >= 10, 'every shipped channel is a river, not a short rill');
+  assert.ok(river.tiles.every(tile => tile.width === 4), 'straight river centrelines target four tiles across');
+  const sx = Math.sign(river.mouth.x - river.tiles[0].x);
+  const sy = Math.sign(river.mouth.y - river.tiles[0].y);
+  assert.ok(river.tiles.every(tile => Math.sign(tile.dx) === sx && Math.sign(tile.dy) === sy),
+    'straight channels never reverse direction or meander back');
   const local = new Set<string>();
   for (let i = 0; i < river.tiles.length; i++) {
     const tile = river.tiles[i];
@@ -39,7 +44,7 @@ legacy.rivers = [{
   mouth: { x: 181, y: 180 },
 }];
 assert.equal(stampRivers(legacy), true, 'legacy river stamps are regenerated');
-assert.equal(legacy.riverGeneration, 3, 'the new river generation stamp is persisted');
+assert.equal(legacy.riverGeneration, 4, 'the straight-river generation stamp is persisted');
 assert.ok(legacy.rivers!.every(r => r.id !== 'legacy-row-major'), 'the legacy course is replaced');
 assert.equal(legacy.terrain['119,81'], 'water', 'the authored pond remains water');
 assert.equal(stampRivers(legacy), false, 'the new river stamp is idempotent');

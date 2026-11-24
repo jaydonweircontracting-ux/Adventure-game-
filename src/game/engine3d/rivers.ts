@@ -585,9 +585,81 @@ function extractRivers(world: IsoWorld, ff: FlowField, ex: Exclusions): River[] 
  *  over the landforms elevation field, with widths, banks and
  *  road crossings. Pure — no randomness, no I/O, no mutation. */
 export function generateRivers(world: IsoWorld): River[] {
+  // Temporary BUILD 1132 river pass: keep the existing source/mouth
+  // locations, but replace every drainage meander with a deterministic
+  // straight raster line. Curves and tributary shaping are deliberately
+  // deferred until the basic channel silhouette is approved.
   const ex = buildExclusions(world);
   const ff = computeFlowField(world, ex);
-  return extractRivers(world, ff, ex);
+  const sourceRivers = extractRivers(world, ff, ex);
+  const W = world.w, H = world.h;
+  const lineBetween = (ax: number, ay: number, bx: number, by: number): Array<{x:number;y:number}> => {
+    const points: Array<{x:number;y:number}> = [];
+    let x = ax, y = ay;
+    const dx = Math.abs(bx - ax), sx = ax < bx ? 1 : -1;
+    const dy = -Math.abs(by - ay), sy = ay < by ? 1 : -1;
+    let err = dx + dy;
+    while (x !== bx || y !== by) {
+      points.push({ x, y });
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x += sx; }
+      if (e2 <= dx) { err += dx; y += sy; }
+    }
+    return points;
+  };
+  const claimed = new Set<string>();
+  const straight: River[] = [];
+  for (const source of sourceRivers) {
+    if (source.tiles.length === 0) continue;
+    const first = source.tiles[0];
+    const points = lineBetween(first.x, first.y, source.mouth.x, source.mouth.y);
+    if (points.length < RIVER_MIN_LEN) continue;
+    // Do not draw a straight channel through the settlement, a hut,
+    // a placed structure, or an occupied resource. Invalid courses are
+    // omitted rather than bent back into the old meandering shape.
+    if (points.some((p, i) => i > 0 && isExcluded(ex, p.x, p.y))) continue;
+    if (points.some(p => p.x < 0 || p.y < 0 || p.x >= W || p.y >= H)) continue;
+    const tiles: RiverTile[] = points.map((p, i) => {
+      const next = points[i + 1] ?? source.mouth;
+      return { x: p.x, y: p.y, dx: Math.sign(next.x - p.x), dy: Math.sign(next.y - p.y), shallow: true, width: 4 };
+    });
+    if (tiles.some(t => claimed.has(key(t.x, t.y)))) continue;
+    for (const t of tiles) claimed.add(key(t.x, t.y));
+    straight.push({ ...source, tiles, widthTiles: [] });
+  }
+  // Four tiles across: centreline + two tiles on one bank + one on
+  // the opposite bank. If the outer shoulder is obstructed, the
+  // channel remains a clean three-wide run at that point.
+  for (let ri = 0; ri < straight.length; ri++) {
+    const river = straight[ri];
+    const widthTiles: RiverTile[] = [];
+    for (let i = 0; i < river.tiles.length; i++) {
+      const t = river.tiles[i];
+      const left: [number, number] = [t.dy, -t.dx];
+      const right: [number, number] = [-t.dy, t.dx];
+      const nearSide = ri % 2 === 0 ? left : right;
+      const farSide = ri % 2 === 0 ? right : left;
+      const candidates = [
+        { x: t.x + nearSide[0], y: t.y + nearSide[1] },
+        { x: t.x + farSide[0], y: t.y + farSide[1] },
+        { x: t.x + nearSide[0] * 2, y: t.y + nearSide[1] * 2 },
+      ];
+      for (const p of candidates) {
+        if (p.x < 0 || p.y < 0 || p.x >= W || p.y >= H) continue;
+        if (isWaterTile(world, p.x, p.y) || isExcluded(ex, p.x, p.y)) continue;
+        const k = key(p.x, p.y);
+        if (claimed.has(k)) continue;
+        claimed.add(k);
+        widthTiles.push({ x: p.x, y: p.y, dx: t.dx, dy: t.dy, shallow: true });
+      }
+    }
+    river.widthTiles = widthTiles;
+    river.order = 1;
+    river.roadCrossings = river.tiles
+      .filter(t => (t.x >= ROAD_BAND_X.x0 && t.x <= ROAD_BAND_X.x1) || (t.y >= ROAD_BAND_Y.y0 && t.y <= ROAD_BAND_Y.y1))
+      .map(t => ({ x: t.x, y: t.y }));
+  }
+  return straight;
 }
 
 /** The filled (drainage) elevation at each centreline tile of
@@ -611,7 +683,7 @@ export function filledElevationsFor(world: IsoWorld, rivers: River[]): number[][
  *  when it generated (the caller saves the world then). A world
  *  that already has rivers is left untouched — this is what
  *  keeps a river from moving or vanishing across reloads. */
-export const RIVER_GENERATION_VERSION = 3;
+export const RIVER_GENERATION_VERSION = 4;
 
 export function stampRivers(world: IsoWorld): boolean {
   // Rebuild legacy river stamps exactly once. Older saves contain the
