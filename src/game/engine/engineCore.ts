@@ -423,7 +423,7 @@ export function deserializeEngineProject(source: string): EngineResult<EnginePro
   }
   const validation = validateEngineProject(parsed);
   if (!validation.ok) return validation;
-  return { ok: true, value: cloneJson(parsed) };
+  return { ok: true, value: cloneJson(validation.value) };
 }
 
 export function validateEngineProject(value: unknown): EngineResult<EngineProject> {
