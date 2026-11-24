@@ -12,7 +12,6 @@ import {
   setActiveScene,
   updateEntityTransform,
   type EngineProject,
-  type EngineResult,
   type Transform3D,
 } from './engineCore';
 
@@ -43,17 +42,6 @@ function initialProject(): EngineProject {
     }
   } catch {}
   return createEngineProject('My Game Project', 'my-game-project');
-}
-
-function applyResult(
-  result: EngineResult<EngineProject>,
-  setProject: (project: EngineProject) => void,
-  setError: (message: string) => void,
-) {
-  if (result.ok) {
-    setProject(result.value);
-    setError('');
-  } else setError(result.error);
 }
 
 export default function EngineStudio({ onClose }: { onClose: () => void }) {
