@@ -21,7 +21,7 @@ assert.deepEqual(stepped.value, [1, 2, 3]);
 const cubic = sampleAnimationSampler({
   times: [0, 1],
   // key 0: in, value, out; key 1: in, value, out
-  values: [0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0],
+  values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
   components: 3,
   interpolation: 'CUBICSPLINE',
 }, 0.5, 'translation');
