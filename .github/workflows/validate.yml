@@ -131,3 +131,27 @@ jobs:
         run: node tests/real-game/movement.mjs
       - name: Phone-size generated bridge traversal probe
         run: node tests/real-game/bridge-crossing.mjs
+
+  performance:
+    name: World performance baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Benchmark production world systems
+        run: npm run benchmark:world
+      - name: Preserve benchmark measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-performance-${{ github.sha }}
+          path: work/experiments/benchmark-world.json
+          if-no-files-found: warn
