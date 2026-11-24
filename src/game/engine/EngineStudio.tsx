@@ -55,6 +55,8 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
   const [componentDrafts, setComponentDrafts] = useState<Record<string, string>>({});
+  const [dragPreview, setDragPreview] = useState<{ id: string; position: [number, number, number] } | null>(null);
+  const dragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; startPosition: [number, number, number] } | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const scene = useMemo(
@@ -204,9 +206,34 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
           <section style={{ marginBottom: 14, border: '1px solid #43584c', borderRadius: 9, overflow: 'hidden', background: '#15211d' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #354a40' }}>
               <strong style={{ fontSize: 12 }}>Scene Viewport · Top-down X/Z</strong>
-              <span style={muted}>Select an object to inspect</span>
+              <span style={muted}>Drag markers to move · select to inspect</span>
             </div>
-            <svg viewBox="0 0 600 360" role="img" aria-label="Top-down scene viewport showing entity positions on an editor grid" style={{ display: 'block', width: '100%', maxHeight: 260, background: '#1b3028', touchAction: 'pan-y' }}>
+            <svg viewBox="0 0 600 360" role="img" aria-label="Top-down scene viewport. Drag entity markers to move them on the X and Z axes." style={{ display: 'block', width: '100%', maxHeight: 260, background: '#1b3028', touchAction: 'none', cursor: dragPreview ? 'grabbing' : 'default' }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const dx = (event.clientX - drag.startX) * 600 / rect.width / 12;
+                const dz = (event.clientY - drag.startY) * 360 / rect.height / 12;
+                setDragPreview({ id: drag.id, position: [drag.startPosition[0] + dx, drag.startPosition[1], drag.startPosition[2] + dz] });
+              }}
+              onPointerUp={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const dx = (event.clientX - drag.startX) * 600 / rect.width / 12;
+                const dz = (event.clientY - drag.startY) * 360 / rect.height / 12;
+                const entity = scene.entities.find((item) => item.id === drag.id);
+                if (entity) {
+                  const position: [number, number, number] = [drag.startPosition[0] + dx, drag.startPosition[1], drag.startPosition[2] + dz];
+                  commit(updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position }).ok
+                    ? (updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position }) as { ok: true; value: EngineProject }).value
+                    : project);
+                }
+                dragRef.current = null;
+                setDragPreview(null);
+              }}
+              onPointerCancel={() => { dragRef.current = null; setDragPreview(null); }}>
               {Array.from({ length: 21 }, (_, index) => {
                 const offset = 60 + index * 24;
                 return <g key={index} stroke={index === 10 ? '#829d86' : '#395448'} strokeWidth={index === 10 ? 1.5 : 0.7} opacity={index === 10 ? 0.9 : 0.7}>
@@ -218,10 +245,19 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
               <text x="300" y="24" fill="#b9cbbb" fontSize="12">Z</text>
               <circle cx="300" cy="180" r="4" fill="#a4bda8" />
               {scene.entities.map((entity) => {
-                const x = Math.max(60, Math.min(540, 300 + entity.transform.position[0] * 12));
-                const y = Math.max(60, Math.min(300, 180 + entity.transform.position[2] * 12));
+                const position = dragPreview?.id === entity.id ? dragPreview.position : entity.transform.position;
+                const x = Math.max(60, Math.min(540, 300 + position[0] * 12));
+                const y = Math.max(60, Math.min(300, 180 + position[2] * 12));
                 const active = selectedEntityId === entity.id;
-                return <g key={entity.id} onClick={() => setSelectedEntityId(entity.id)} style={{ cursor: 'pointer' }}>
+                return <g key={entity.id}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setSelectedEntityId(entity.id);
+                    dragRef.current = { id: entity.id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startPosition: [...entity.transform.position] as [number, number, number] };
+                    event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
+                  }}
+                  style={{ cursor: 'grab', touchAction: 'none' }}>
                   {active && <circle cx={x} cy={y} r="17" fill="none" stroke="#f5d78b" strokeWidth="2" />}
                   <circle cx={x} cy={y} r="9" fill={active ? '#f5d78b' : entity.active ? '#78b88a' : '#87938b'} stroke="#102019" strokeWidth="2" />
                   <text x={x + 12} y={y - 10} fill="#f0f5ef" fontSize="11">{entity.name.slice(0, 18)}</text>
@@ -249,8 +285,8 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                   onChange={(event) => run(renameEngineScene(project, scene.id, event.target.value))} />
               </label>
               <div style={{ marginTop: 16, border: '1px dashed #536b5c', borderRadius: 9, padding: 12 }}>
-                <strong>Viewport integration is next</strong>
-                <p style={muted}>This first editor slice provides editable scene data, hierarchy, inspector, project files and undo/redo. It does not yet draw or manipulate 3D objects in a viewport.</p>
+                <strong>Scene tools</strong>
+                <p style={muted}>Drag entity markers directly in the viewport to reposition them on the X/Z plane. Use the inspector for exact transforms and Y elevation.</p>
               </div>
             </div>
           ) : (
