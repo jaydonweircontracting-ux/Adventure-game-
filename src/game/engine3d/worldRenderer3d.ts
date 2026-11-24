@@ -1265,14 +1265,18 @@ export class WorldRenderer {
     // imported model path isolated from the rest of the renderer.
     if(peoplePool.length){
       const verts:number[]=[];
-      const appendPerson=(asset:CustomAsset,cx:number,cz:number,yaw:number,baseY:number)=>{
+      const appendPerson=(asset:CustomAsset,cx:number,cz:number,yaw:number,baseY:number,phase:number)=>{
+        const frames=asset.animationFrames;
+        const cycle=((phase%(Math.PI*2))+(Math.PI*2))%(Math.PI*2);
+        const frame=frames?.length?frames[Math.min(frames.length-1,Math.floor(cycle/(Math.PI*2)*frames.length))]:undefined;
+        const posePositions=frame??asset.positions;
         const count=Math.min(asset.indices.length,30000);
         const c=Math.cos(yaw),sn=Math.sin(yaw);
         for(let i=0;i<count;i++){
           const vi=asset.indices[i];
           const p=vi*3;
-          if(p+2>=asset.positions.length)continue;
-          const x=asset.positions[p],y=asset.positions[p+1],z=asset.positions[p+2];
+          if(p+2>=posePositions.length)continue;
+          const x=posePositions[p],y=posePositions[p+1],z=posePositions[p+2];
           const q=vi*3;
           const wx=cx+x*c+z*sn,wz=cz-x*sn+z*c;
           verts.push(wx,baseY+y,wz,asset.colors[q]??asset.avgColor[0],asset.colors[q+1]??asset.avgColor[1],asset.colors[q+2]??asset.avgColor[2]);
@@ -1281,10 +1285,10 @@ export class WorldRenderer {
       for(const npc of npcActorsRef.current){
         if(npc.looted||!npc.alive)continue;
         const asset=personForNpc(npc.name),st=npcRender.get(npc.name);
-        if(asset&&st)appendPerson(asset,st.x+.5,st.y+.5,st.yaw,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+        if(asset&&st)appendPerson(asset,st.x+.5,st.y+.5,st.yaw,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5),st.phase);
         if(verts.length>=600000)break;
       }
-      if(playerPeople&&playerModelPose&&!firstPersonRef.current&&!drivingRef.current)appendPerson(playerPeople,player.x+.5,player.y+.5,playerModelPose.yaw,playerBaseY);
+      if(playerPeople&&playerModelPose&&!firstPersonRef.current&&!drivingRef.current)appendPerson(playerPeople,player.x+.5,player.y+.5,playerModelPose.yaw,playerBaseY,playerModelPose.phase);
       if(verts.length){
         const data=new Float32Array(verts);
         gl.bindBuffer(gl.ARRAY_BUFFER,this.customActorBuffer);
