@@ -17,13 +17,13 @@ jobs:
           - label: river-v2
             sha: ca5b9ced5104970762ec32005edc7b2f0ee379dc
           - label: voxel-and-bridge-detection
-            sha: e522f71f5c2f5b6fdbd4c5e7c6b6f1e4c4b9c8a0
+            sha: e522f71afbc3fce2d98c056d6ad086ae2c707779
           - label: half-block-elevation
             sha: 03e46d7376f41f4c2ef702c155ca8b8d45716066
           - label: bridge-ranking
-            sha: d262f66b17053dd53711d1f262ef1adece5334d4
+            sha: 932a9a1c5b3033ddf6fba9bec74239f95d700f3b
           - label: bridge-spans
-            sha: c30f1f063103ec2db2c51a910c6238f8ae30d574
+            sha: 9ee78afae3883d580dd4c6370ee1818511612767
           - label: bank-approaches
             sha: 4fe822af6a87fa9b47ea545c84b4ca35e1f88518
     runs-on: ubuntu-latest
