@@ -1113,7 +1113,7 @@ export class WorldRenderer {
     // the shared asset library. Prefer the better-export variants; keep the
     // royalty models out of the ordinary resident pool. Until a pack is
     // imported, the established procedural figures remain the fallback.
-    const fbxPeople=customAssetsRef.current.filter(a=>a.format==='fbx'&&/people_unity|unral_better_export/i.test(a.sourceFile||''));
+    const fbxPeople=customAssetsRef.current.filter(a=>a.format==='fbx'&&(/people_unity|unral_better_export/i.test(a.sourceFile||'')||/^(peasant|city_dwellers|rich_citizzens|rich_citizens|king|queen)/i.test(a.name)));
     const preferredPeople=fbxPeople.filter(a=>/unral_better_export/i.test(a.sourceFile||''));
     const peoplePool=(preferredPeople.length?preferredPeople:fbxPeople).filter(a=>!/king|queen/i.test((a.sourceFile||'')+' '+a.name));
     const playerPeople=peoplePool.find(a=>/peasant_1/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
