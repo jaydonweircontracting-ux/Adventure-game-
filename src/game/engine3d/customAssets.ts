@@ -436,7 +436,7 @@ function bytesToImageDataUrl(bytes: Uint8Array, mimeType: string): string | null
 }
 
 /** Persist image bytes with the model; texture indices map through glTF textures[].source. */
-function extractGltfTextureImages(json: GltfJson, bin: Uint8Array, basePath: string, files?: Map<string, ArrayBuffer>): Array<string | null> {
+export function extractGltfTextureImages(json: GltfJson, bin: Uint8Array, basePath: string, files?: Map<string, ArrayBuffer>): Array<string | null> {
   const images = (json.images || []).map(img => {
     if (img.uri?.startsWith('data:')) {
       const match = /^data:(image\/(?:png|jpeg|webp|gif|bmp|avif));base64,([\s\S]*)$/i.exec(img.uri);
