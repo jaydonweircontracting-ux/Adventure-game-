@@ -793,7 +793,12 @@ export function placeBridgeSpan(
   const first = span[0], last = span[span.length - 1];
   const dx = first.x - nearBank.x, dy = first.y - nearBank.y;
   const farBank = { x: last.x + dx, y: last.y + dy };
-  const approachTiles = [
+  const items: PlacedItem[] = [];
+  for (const tile of span) {
+    const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    items.push(result.item);
+  }  const approachTiles = [
     ...planBankApproachTiles(world, nearBank),
     ...planBankApproachTiles(world, farBank),
   ].filter((tile, index, all) =>
@@ -808,12 +813,6 @@ export function placeBridgeSpan(
     const isEntrance = (tile.x === nearBank.x && tile.y === nearBank.y) || (tile.x === farBank.x && tile.y === farBank.y);
     const item = stampPathTile(world, tile.x, tile.y, isEntrance ? 'stone' : 'road', playerTile, npcTiles);
     if (item) pathItems.push(item);
-  }
-  const items: PlacedItem[] = [];
-  for (const tile of span) {
-    const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
-    if (!result.ok) return { ok: false, reason: result.reason };
-    items.push(result.item);
   }
   // BUILD 1128 (0x31): a ford under the deck is replaced by the
   // bridge — the deck is the upgrade, and leaving the ford would
