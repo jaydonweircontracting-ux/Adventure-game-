@@ -254,12 +254,12 @@ type GltfJson = {
     name?: string;
     pbrMetallicRoughness?: {
       baseColorFactor?: number[]; metallicFactor?: number; roughnessFactor?: number;
-      baseColorTexture?: { index: number; texCoord?: number };
-      metallicRoughnessTexture?: { index: number; texCoord?: number };
+      baseColorTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+      metallicRoughnessTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
     };
-    normalTexture?: { index: number; texCoord?: number; scale?: number };
-    occlusionTexture?: { index: number; texCoord?: number; strength?: number };
-    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number };
+    normalTexture?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    occlusionTexture?: { index: number; texCoord?: number; strength?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number[]; scale?: number[]; texCoord?: number } } };
     alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND'; alphaCutoff?: number; doubleSided?: boolean;
   }>;
   accessors?: Array<{ bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean; sparse?: unknown }>;
@@ -496,7 +496,13 @@ function buildAssetFromGltf(
   const materialIndices: number[] = [];
   const materials = (json.materials || []).map((mat, i) => {
     const p = mat.pbrMetallicRoughness || {};
-    const slot = (v?: { index: number; texCoord?: number; scale?: number }) => v ? { textureIndex: v.index, texCoord: v.texCoord ?? 0, ...(v.scale !== undefined ? { scale: v.scale } : {}) } : undefined;
+    const slot = (v?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } }) => {
+      if (!v) return undefined;
+      const t = v.extensions?.KHR_texture_transform;
+      return { textureIndex: v.index, texCoord: t?.texCoord ?? v.texCoord ?? 0,
+        ...(v.scale !== undefined ? { scale: v.scale } : {}),
+        ...(t ? { transform: { offset: [t.offset?.[0] ?? 0, t.offset?.[1] ?? 0], rotation: t.rotation ?? 0, scale: [t.scale?.[0] ?? 1, t.scale?.[1] ?? 1], ...(t.texCoord !== undefined ? { texCoord: t.texCoord } : {}) } } : {}) };
+    };
     const input: PbrMaterialInput = {
       name: mat.name || 'Material ' + (i + 1), baseColorFactor: p.baseColorFactor,
       metallicFactor: p.metallicFactor, roughnessFactor: p.roughnessFactor,
