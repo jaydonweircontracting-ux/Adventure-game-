@@ -17187,6 +17187,82 @@ console.log('Testing river generation v2 — elevation-following drainage rivers
   console.log('M1112: river generation v2 verified (drainage channels / crossings / exclusions, 24h M1069 re-pinned)');
 }
 
+console.log('Testing player-placed windmills — a placed windmill grinds grain to flour on the wind (BUILD 1106, 0x29)...');
+{
+  const FC = await import('../src/game/engine3d/foodChain.js');
+  const SS = await import('../src/game/engine3d/settlementSim.js');
+  const W = await import('../src/game/iso/isoWorld.js');
+  const F = await import('../src/game/engine3d/founders.js');
+  const RR = await import('../src/game/engine3d/resourceRegistry.js');
+  const GR = await import('../src/game/engine3d/granary.js');
+  const BC = await import('../src/game/engine3d/buildingCatalogue.js');
+  // --- The gates: the founder mill stamp is excluded, a placed mill grinds 2 -> 2 per game-hour. ---
+  const worldA1106: any = W.defaultWorld();
+  worldA1106.placements = [];
+  assert(FC.placedWindmillRects(worldA1106).length === 0, 'M1106: an empty world has no placed windmills');
+  worldA1106.placements.push({ kind: 'house', variant: 'windmill', x0: FC.MILL_RECT.x0, y0: FC.MILL_RECT.y0, x1: FC.MILL_RECT.x1, y1: FC.MILL_RECT.y1 });
+  assert(FC.placedWindmillRects(worldA1106).length === 0, 'M1106: the founder mill stamp (exact MILL_RECT) is NOT a placed windmill');
+  worldA1106.placements.push({ kind: 'house', variant: 'windmill', x0: 140, y0: 140, x1: 142, y1: 142 });
+  assert(FC.placedWindmillRects(worldA1106).length === 1, 'M1106: one placed windmill at (140,140) is found with its rect');
+  const regA1106: any = RR.setStoreQty(RR.setStoreQty(RR.createRegistry(), RR.GRANARY_STORE_ID, 'grain', 10, { type: 'loaded' }, { capacity: 200 }), RR.GRANARY_STORE_ID, 'flour', 0, { type: 'loaded' }, { capacity: GR.GRANARY_CAPACITY_FLOUR });
+  const gA1106 = FC.grindPlacedWindmills(regA1106, 1, 1);
+  assert(gA1106.ground === 2 && gA1106.grainUsed === 2 && gA1106.batches === 1, 'M1106: 1 windmill x 1 batch grinds 2 grain -> 2 flour');
+  const regCap1106: any = RR.setStoreQty(RR.setStoreQty(RR.createRegistry(), RR.GRANARY_STORE_ID, 'grain', 10, { type: 'loaded' }, { capacity: 200 }), RR.GRANARY_STORE_ID, 'flour', 99, { type: 'loaded' }, { capacity: GR.GRANARY_CAPACITY_FLOUR });
+  const gCap1106 = FC.grindPlacedWindmills(regCap1106, 1, 3);
+  assert(gCap1106.ground === 1 && gCap1106.grainUsed === 1, 'M1106: the flour cap binds at 100 (1 flour from 1 grain, then stops)');
+  const gEmpty1106 = FC.grindPlacedWindmills(regA1106, 0, 5);
+  assert(gEmpty1106.ground === 0 && gEmpty1106.batches === 0, 'M1106: zero windmills grind nothing');
+  const fresh1106 = FC.freshFoodChain();
+  assert(fresh1106.placedWindmillGrindHour === -1, 'M1106: a fresh food chain has watermark -1');
+  const due1106 = FC.placedWindmillBatchesDue(FC.markPlacedWindmillGround(fresh1106, 8), 540);
+  assert(due1106.batchesPerWindmill === 1 && due1106.nextHour === 9, 'M1106: one hour later, 1 batch is due per windmill');
+  const dueCap1106 = FC.placedWindmillBatchesDue(FC.markPlacedWindmillGround(fresh1106, 8), 480 + 100 * 60);
+  assert(dueCap1106.batchesPerWindmill === 24, 'M1106: catch-up caps at 24 batches per tick after a 100-hour jump');
+  const dueBack1106 = FC.placedWindmillBatchesDue(FC.markPlacedWindmillGround(fresh1106, 20), 480);
+  assert(dueBack1106.batchesPerWindmill === 0 && dueBack1106.nextHour === 8, 'M1106: a backwards clock resets the watermark instead of grinding');
+  const vOld1106: any = FC.validateFoodChainState({ mill: { state: 'done', progress: 6 }, bakery: { state: 'none', progress: 0 } });
+  assert(vOld1106.placedWindmillGrindHour === -1 && vOld1106.mill.state === 'done', 'M1106: an old save without the watermark defaults to -1 (no version move)');
+  const windEntry1106 = BC.catalogueEntryFor('windmills');
+  assert(windEntry1106 !== undefined && windEntry1106.blurb.includes('BUILD 1106') && !windEntry1106.blurb.includes('does not mill'), 'M1106: the catalogue no longer says a placed windmill does not mill');
+  // --- The sim: a placed windmill grinds in the live tick path; removal stops it. ---
+  const worldS1106: any = W.defaultWorld();
+  worldS1106.placements = [{ kind: 'house', variant: 'windmill', x0: 140, y0: 140, x1: 142, y1: 142 }];
+  const simS1106: any = SS.createSettlementSim(worldS1106);
+  simS1106.registry = RR.setStoreQty(simS1106.registry, RR.GRANARY_STORE_ID, 'grain', 20, { type: 'loaded' }, { capacity: 200 });
+  SS.advanceSettlement(simS1106, 70);
+  const flourS1106 = FC.foodChainFlourInRegistry(simS1106.registry);
+  assert(flourS1106 >= 2 && simS1106.foodChain.mill.state !== 'done', 'M1106: one placed windmill grinds flour in the sim (flour=' + flourS1106 + ', founder mill=' + simS1106.foodChain.mill.state + ')');
+  assert(simS1106.ledger.flourMilled >= 2, 'M1106: the ledger records the windmill flour (flourMilled=' + simS1106.ledger.flourMilled + ')');
+  worldS1106.placements.length = 0;
+  simS1106.registry = RR.setStoreQty(simS1106.registry, RR.GRANARY_STORE_ID, 'grain', 20, { type: 'loaded' }, { capacity: 200 });
+  SS.advanceSettlement(simS1106, 140);
+  assert(FC.foodChainFlourInRegistry(simS1106.registry) === flourS1106, 'M1106: removing the windmill stops the grinding (flour stayed ' + flourS1106 + ' over two more hours)');
+  // --- The 24h run: M1069 IDENTICAL to the current baseline (no windmill placed; re-pinned to BUILD 1112 river v2 by the 0x2F tail — same numbers as M1108's plain 24h run). ---
+  const world24_1106: any = W.defaultWorld();
+  const sim24_1106: any = SS.createSettlementSim(world24_1106);
+  SS.advanceSettlement(sim24_1106, 1600);
+  const L24_1106 = sim24_1106.ledger;
+  assert(L24_1106.ticks === 1600, 'M1106: the 24h run counts 1600 ticks');
+  assert(L24_1106.woodChopped === 54 && L24_1106.woodDelivered === 50 && L24_1106.woodSpent === 24, 'M1106: 24h wood 54/50/24 (the BUILD 1112 baseline, unmoved by the windmill — no windmill is placed here)');
+  assert(L24_1106.grainHarvested === 56 && L24_1106.grainDelivered === 56, 'M1106: 24h grain 56/56 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1106.mealsBaked === 26 && L24_1106.mealsEaten === 13, 'M1106: 24h meals 26/13 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1106.flourMilled === 56 && L24_1106.flourBaked === 52, 'M1106: 24h flour 56/52 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1106.jobsCompleted.chop === 27 && L24_1106.jobsCompleted.build === 4 && L24_1106.jobsCompleted.deliver === 53 && L24_1106.jobsCompleted.harvest === 28, 'M1106: 24h jobs chop/build/deliver/harvest 27/4/53/28 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1106.hutsCompleted === 2 && L24_1106.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1106: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1106.starvedTicks === 0 && Math.round(L24_1106.minHealth) === 100, 'M1106: nobody starves in 24h');
+  assert(sim24_1106.founders.length === 7, 'M1106: the population is 7 after 24h');
+  const finalWood1106 = F.campWoodInRegistry(sim24_1106.registry);
+  const finalFood1106 = F.campFoodInRegistry(sim24_1106.registry);
+  const finalGrain1106 = SS.settlementGrain(sim24_1106);
+  const finalFlour1106 = FC.foodChainFlourInRegistry(sim24_1106.registry);
+  assert(finalWood1106 === 14 && finalFood1106 === 13 && finalGrain1106 === 0 && finalFlour1106 === 4, 'M1106: final wood/food/grain/flour 14/13/0/4 (M1069 re-pinned to BUILD 1112 — river v2)');
+  console.log('M1106 24h: ticks=' + L24_1106.ticks + ' wood chopped/delivered/spent=' + L24_1106.woodChopped + '/' + L24_1106.woodDelivered + '/' + L24_1106.woodSpent + ' grain harvested/delivered=' + L24_1106.grainHarvested + '/' + L24_1106.grainDelivered + ' meals baked/eaten=' + L24_1106.mealsBaked + '/' + L24_1106.mealsEaten + ' flour milled/baked=' + L24_1106.flourMilled + '/' + L24_1106.flourBaked + ' jobs chop/build/deliver/harvest=' + L24_1106.jobsCompleted.chop + '/' + L24_1106.jobsCompleted.build + '/' + L24_1106.jobsCompleted.deliver + '/' + L24_1106.jobsCompleted.harvest + ' huts=' + L24_1106.hutsCompleted + ' arrivals=' + (L24_1106.arrivals.join(',') || 'none') + ' starvedTicks=' + L24_1106.starvedTicks + ' minHealth=' + Math.round(L24_1106.minHealth) + ' final wood/food/grain/flour=' + finalWood1106 + '/' + finalFood1106 + '/' + finalGrain1106 + '/' + finalFlour1106 + ' population=' + sim24_1106.founders.length);
+  // NOTE: no week pin in this section — the week pins live in the M1090 / M1095 / M1096 / M1098 / M1100 / M1102 / M1103 sections and the 0x27 tail owns their re-pin to the 1104 numbers; the chunked mod-vs-pristine comparison is the week-regression proof for 1106 (sim worlds place no windmill).
+  console.log('M1106: placed windmills verified (gates, sim grind + removal, 24h identical to the BUILD 1112 baseline)');
+}
+
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
