@@ -67,6 +67,19 @@ No test or deployment result is inferred from a source inspection.
 - `tests/world-core.test.ts`: covers deterministic RNG, clock boundaries, events, save/load and schema-v1 migration.
 - All three tests are registered in `package.json` and the Pages workflow. The workflow now also declares a pull-request validation trigger and guards deployment so PR validation cannot publish a Pages site.
 
+## Creator-facing editor slice (added on this branch)
+
+- `src/game/engine/EngineStudio.tsx` provides an interactive editor panel reachable from both 2.5D and 3D modes through the new **Engine Studio** control.
+- Scene list and active-scene switching.
+- Entity hierarchy list, parent-child creation, selection, rename, and delete (deleting a parent also deletes descendants through the engine core).
+- Top-down X/Z scene viewport with a grid and selectable entity markers.
+- Position, rotation and scale inspector fields, plus one-unit X/Z transform nudges.
+- Versioned component display and adding a starter component.
+- Bounded undo/redo history, local project persistence, and validated JSON project import/export.
+- The editor uses the new engine project model and does not modify the live Adventure world/save. This is intentional until the renderer adapter and play-in-editor isolation are ready.
+
+This is an initial scene-authoring workbench, not yet a complete 3D viewport: no orbit/fly camera, drag gizmos, snapping, asset preview, prefab workflow, multi-select, runtime play/pause, or live renderer binding is claimed.
+
 ## Remaining integration gates
 
 1. Run a reproducible typecheck, production build and all new tests in GitHub Actions. No run has been observed yet for this branch; do not treat these tests as passed.
