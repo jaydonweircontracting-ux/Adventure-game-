@@ -40,8 +40,8 @@ assert.equal(instances[0].asset.indices.length, 3);
 const meshData = buildEngineMeshVertexData(instances);
 assert.equal(meshData.length, 18, 'one indexed triangle expands to three interleaved XYZ/RGB vertices');
 assert.deepEqual(Array.from(meshData.slice(0, 6)), [0, 0, 0, 1, 0, 0]);
-assert.deepEqual(Array.from(meshData.slice(6, 12)), [1, 0, 0, 0, 1, 0]);
-assert.deepEqual(Array.from(meshData.slice(12, 18)), [0, 1, 0, 0, 0, 1]);
+assert.deepEqual(Array.from(meshData.slice(6, 12)), [1, 0, 0, 1, 0, 0]);
+assert.deepEqual(Array.from(meshData.slice(12, 18)), [0, 1, 0, 1, 0, 0]);
 
 const missingAsset = buildEngineMeshInstances(project, sceneId, []);
 assert.equal(missingAsset.length, 0, 'missing library references are skipped safely');
