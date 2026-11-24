@@ -13539,6 +13539,7 @@ console.log('Testing stone gathering + the quarry loop (BUILD 1086)...');
   const C = await import('../src/game/engine3d/construction.js');
   const L = await import('../src/game/engine3d/livingWorld.js');
   const T3 = await import('../src/game/engine3d/townsfolk3d.js');
+  const RV1088 = await import('../src/game/engine3d/rivers.js');
   const camp1086 = { x: F.FOUNDER_CAMP.x, y: F.FOUNDER_CAMP.y };
   function setup1086() {
     const w = W.defaultWorld();
@@ -14170,7 +14171,8 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
 
   // --- The bridge: a path tile beside a river opens a site; the
   // site is built through the construction path, 2 steps x 2 wood.
-  const wBridge1088 = SS.createSettlementSim(W.defaultWorld()).world;
+  const wBridge1088 = W.defaultWorld();
+  RV1088.stampRivers(wBridge1088); // mirror worldSync3d.syncWorldOnLoad before bridge detection
   let riverTile1088: { x: number; y: number } | null = null;
   let bankTile1088: { x: number; y: number } | null = null;
   for (const r of wBridge1088.rivers ?? []) {
@@ -14191,6 +14193,7 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(PT.pathTiles(wBridge1088).some((t: { x: number; y: number }) => t.x === bankTile1088!.x && t.y === bankTile1088!.y), 'M1088: 8 passes lay a dirt path on the bank tile');
   const site1088 = PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 3);
   assert(site1088 !== null && site1088.x === riverTile1088!.x && site1088.y === riverTile1088!.y && site1088.state === 'none' && site1088.progress === 0 && site1088.spentWood === 0, 'M1088: a path tile beside a river opens a bridge site on the river tile');
+  if (!site1088) throw new Error('M1088: bridge site was not detected after the river terrain fixture was stamped');
   assert(PT.scanForBridgeSites(wBridge1088, psBridge1088, 3).filter((s: { id: string }) => s.id === site1088!.id).length === 0, 'M1088: the scan does not duplicate a detected site');
   assert(PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 2) === null, 'M1088: no bridge site opens before day 3');
   assert(PT.canStartBridge(site1088!, 3, true, true, 2) === true, 'M1088: a bridge starts on day 3 with housing + storage done and a step of wood');
