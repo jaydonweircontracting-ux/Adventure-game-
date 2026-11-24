@@ -48,15 +48,17 @@ export function resolveEngineMeshInstance(
   entity: EngineEntity,
   assets: readonly CustomAsset[],
 ): EngineMeshInstance | null {
-  const project: EngineProject = {
-    schemaVersion: 1,
-    runtimeVersion: '0.1.0',
-    id: 'asset-bridge',
-    name: 'Asset Bridge',
-    activeSceneId: 'asset-bridge-scene',
-    nextId: 1,
-    scenes: [{ id: 'asset-bridge-scene', name: 'Asset Bridge', active: true, entities: [entity] }],
-    prefabs: [],
-  };
-  return buildEngineMeshInstances(project, 'asset-bridge-scene', assets)[0] ?? null;
+  if (!entity.active) return null;
+  const component = entity.components.find((item) =>
+    item.type === 'adventure.mesh-asset' && item.version === 1 && item.enabled
+    && item.data.visible !== false && typeof item.data.assetId === 'string');
+  if (!component || typeof component.data.assetId !== 'string') return null;
+  const asset = assets.find((item) => item.id === component.data.assetId);
+  return asset ? {
+    entityId: entity.id,
+    parentId: entity.parentId,
+    name: entity.name,
+    transform: entity.transform,
+    asset,
+  } : null;
 }
