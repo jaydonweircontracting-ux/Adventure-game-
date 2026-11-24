@@ -54,4 +54,4 @@ assert.equal(resolveTextureSource('https://cdn.test/a.png', 'https://game.test/m
 assert.throws(() => resolveTextureSource('javascript:alert(1)', 'https://game.test/model.gltf'), /unsafe/);
 assert.throws(() => resolveTextureSource('', 'https://game.test/model.gltf'), /empty/);
 
-console.log('BUILD 1114 material runtime: 17 assertions passed');
+console.log('BUILD 1114 material runtime: 20 assertions passed');
