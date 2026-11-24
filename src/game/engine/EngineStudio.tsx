@@ -3,6 +3,10 @@ import {
   addEngineComponent,
   createEngineEntity,
   createEngineProject,
+  createEnginePrefab,
+  instantiateEnginePrefab,
+  renameEnginePrefab,
+  removeEnginePrefab,
   createEngineScene,
   deserializeEngineProject,
   removeEngineEntity,
@@ -202,6 +206,34 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
               {entity.parentId ? '↳ ' : '◇ '}{entity.name}{entity.active ? '' : ' (off)'}
             </button>
           ))}
+          <div style={{ ...muted, fontWeight: 800, letterSpacing: '.08em', margin: '16px 0 7px' }}>PREFABS · {project.prefabs?.length ?? 0}</div>
+          <button type="button" style={{ ...button, display: 'block', width: '100%', marginBottom: 8 }} disabled={!selected}
+            onClick={() => {
+              if (!selected) return;
+              const result = createEnginePrefab(project, scene.id, selected.id, selected.name);
+              if (result.ok) commit(result.value);
+              else setError(result.error);
+            }}>Save selected hierarchy as prefab</button>
+          {(project.prefabs ?? []).map((prefab) => (
+            <div key={prefab.id} style={{ padding: 7, marginBottom: 6, border: '1px solid #42574b', borderRadius: 7, background: '#202f29' }}>
+              <input aria-label="Prefab name" defaultValue={prefab.name} style={{ ...input, marginBottom: 6 }}
+                onBlur={(event) => {
+                  if (event.currentTarget.value !== prefab.name) run(renameEnginePrefab(project, prefab.id, event.currentTarget.value));
+                }} />
+              <div style={{ display: 'flex', gap: 5 }}>
+                <button type="button" style={{ ...button, flex: 1, padding: '5px 6px' }} onClick={() => {
+                  const result = instantiateEnginePrefab(project, scene.id, prefab.id, [0, 0, 0]);
+                  if (result.ok) {
+                    commit(result.value.project);
+                    setSelectedEntityId(result.value.rootEntityId);
+                  } else setError(result.error);
+                }}>Place</button>
+                <button type="button" style={{ ...button, padding: '5px 7px', background: '#58312c' }} onClick={() => run(removeEnginePrefab(project, prefab.id))}>Delete</button>
+              </div>
+              <div style={muted}>{prefab.entities.length} object{prefab.entities.length === 1 ? '' : 's'} · reusable template</div>
+            </div>
+          ))}
+          {(project.prefabs ?? []).length === 0 && <p style={muted}>Save an entity and its children here to reuse the whole object hierarchy in any scene.</p>}
         </aside>
         <main style={{ minWidth: 0, overflowY: 'auto', background: '#1b2924', padding: 12 }}>
           <section style={{ marginBottom: 14, border: '1px solid #43584c', borderRadius: 9, overflow: 'hidden', background: '#15211d' }}>
@@ -360,7 +392,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
       </div>
       {error && <div role="alert" style={{ padding: 9, color: '#ffd0c8', background: '#522b27', fontSize: 12 }}>{error}</div>}
       <footer style={{ ...muted, padding: '7px 12px', borderTop: '1px solid #354a40' }}>
-        {project.name} · {project.scenes.length} scenes · {scene.entities.length} entities · Local project storage
+        {project.name} · {project.scenes.length} scenes · {scene.entities.length} entities · {project.prefabs?.length ?? 0} prefabs · Local project storage
       </footer>
     </section>
   );
