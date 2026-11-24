@@ -798,19 +798,13 @@ export function placeBridgeSpan(
     const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
     if (!result.ok) return { ok: false, reason: result.reason };
     items.push(result.item);
-  }  const approachTiles = [
+  }
+  const approachTiles = [
     ...planBankApproachTiles(world, nearBank),
     ...planBankApproachTiles(world, farBank),
   ].filter((tile, index, all) =>
     all.findIndex((other) => other.x === tile.x && other.y === tile.y) === index);
-  // Validate the whole span BEFORE stamping any approach tile:
-  // a blocked span must leave zero placements (atomic placement).
-  const items: PlacedItem[] = [];
-  for (const tile of span) {
-    const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
-    if (!result.ok) return { ok: false, reason: result.reason };
-    items.push(result.item);
-  }
+  // The complete span was validated above before any approach tile is stamped.
   const pathItems: PlacedItem[] = [];
   for (const tile of approachTiles) {
     if (isPathTile(world, tile.x, tile.y)) continue;
