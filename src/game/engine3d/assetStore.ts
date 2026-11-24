@@ -340,7 +340,7 @@ export function createAssetStore(backend: AssetStoreBackend): AssetStore {
 export interface AssetManifestEntry {
   id: string;
   name: string;
-  format: 'glb' | 'gltf' | 'obj';
+  format: 'glb' | 'gltf' | 'obj' | 'fbx';
   triangles: number;
   /** Decoded in-memory bytes (see decodedAssetBytes). */
   bytes: number;
@@ -390,7 +390,7 @@ export function readAssetManifest(): AssetManifest | null {
       const r = e as Record<string, unknown>;
       if (typeof r.id !== 'string' || typeof r.name !== 'string') return null;
       if (typeof r.triangles !== 'number' || typeof r.bytes !== 'number') return null;
-      const fmt = r.format === 'gltf' || r.format === 'obj' ? r.format : 'glb';
+      const fmt = r.format === 'gltf' || r.format === 'obj' || r.format === 'fbx' ? r.format : 'glb';
       entries.push({ id: r.id, name: r.name, format: fmt, triangles: r.triangles, bytes: r.bytes });
     }
     return { version: 1, assets: entries };
