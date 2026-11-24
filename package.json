@@ -39,7 +39,8 @@
     "test:engine-asset-bridge": "npx tsx tests/engine-asset-bridge.test.ts",
     "test:adventure-engine-adapter": "npx tsx tests/adventure-engine-adapter.test.ts",
     "benchmark:world": "npx tsx scripts/benchmark-world.ts",
-    "test:animation-runtime": "npx tsx tests/animation-runtime.test.ts"
+    "test:animation-runtime": "npx tsx tests/animation-runtime.test.ts",
+    "test:material-runtime": "npx tsx tests/material-runtime.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
