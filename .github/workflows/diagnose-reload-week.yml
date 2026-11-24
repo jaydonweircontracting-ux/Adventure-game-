@@ -39,6 +39,7 @@ jobs:
           // The ranked detector correctly rejects arbitrary river-edge contacts without a dry far bank.
           source = source.replace("import * as RV1088 from '../src/game/engine3d/rivers.js';\n", '');
           source = source.replace("  const RV1088 = await import('../src/game/engine3d/rivers.js');\n", '');
+          source = source.replace(/^\\s*RV1088\\.stampRivers\\(simWeek1088\\.world\\).*$/m, '');
           const startAt = source.indexOf('const wBridge1088 = ');
           const startLine = startAt < 0 ? -1 : source.lastIndexOf('\n', startAt) + 1;
           const stateAt = startAt < 0 ? -1 : source.indexOf('psBridge1088 = PT.freshPathState();', startAt);
