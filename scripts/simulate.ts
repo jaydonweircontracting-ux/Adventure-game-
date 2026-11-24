@@ -14345,6 +14345,7 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   // acceptance test, run for real: a visible dirt path connects camp
   // to the work sites.
   const simWeek1088 = SS.createSettlementSim(W.defaultWorld());
+  RV1088.stampRivers(simWeek1088.world); // the live world sync stamps the persistent river map before simulation
   SS.advanceSettlement(simWeek1088, 11200);
   const LWeek1088 = simWeek1088.ledger;
   const weekClock1088 = SS.settlementClock(simWeek1088);
