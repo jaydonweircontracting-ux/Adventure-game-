@@ -6,6 +6,8 @@ import {
   createEngineScene,
   deserializeEngineProject,
   removeEngineEntity,
+  renameEngineEntity,
+  renameEngineScene,
   serializeEngineProject,
   setActiveScene,
   updateEntityTransform,
@@ -69,6 +71,18 @@ assert.equal(withComponent.ok, true);
 if (!withComponent.ok) throw new Error(withComponent.error);
 project = withComponent.value;
 assert.equal(project.scenes[0].entities[0].components[0].type, 'adventure.player-controller');
+
+// Scene/entity rename operations preserve stable IDs and immutable history.
+const renamedScene = renameEngineScene(project, firstSceneId, 'Starting Village');
+assert.equal(renamedScene.ok, true);
+if (!renamedScene.ok) throw new Error(renamedScene.error);
+assert.equal(renamedScene.value.scenes[0].id, firstSceneId);
+assert.equal(renamedScene.value.scenes[0].name, 'Starting Village');
+const renamedEntity = renameEngineEntity(renamedScene.value, firstSceneId, parentId, 'Hero');
+assert.equal(renamedEntity.ok, true);
+if (!renamedEntity.ok) throw new Error(renamedEntity.error);
+assert.equal(renamedEntity.value.scenes[0].entities[0].name, 'Hero');
+assert.equal(project.scenes[0].entities[0].name, 'Player', 'rename must not mutate prior project snapshots');
 
 // Project files round-trip through JSON without losing hierarchy or data.
 const serialized = serializeEngineProject(project);
