@@ -484,6 +484,10 @@ export function planBankApproachTiles(
     cursor = previous.get(cursor) ?? null;
   }
   route.reverse();
+  // The backtrack deliberately stops before startKey; include the bank
+  // entrance itself so the generated approach reaches the bridge deck.
+  // Without it, a nearby existing road leaves a one-tile gap at the bank.
+  route.unshift({ ...start });
   return route.filter((tile) => !isPathTile(world, tile.x, tile.y));
 }
 

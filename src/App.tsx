@@ -197,13 +197,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1125';
+const BUILD_NUMBER = '1126';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '1126': 'Bank-following paths now reach both bridge entrances and join the nearest existing riverside roads without crossing water. Everything else works exactly as before.',
   '985': '3D mode has natural stylized grass now: tufts of grass grow on grass tiles across the world, and the Build panel has a free Grass item you can place anywhere, even on paths, that never blocks movement and saves with your other placements. The grass has no wind sway yet, since that needs renderer animation. Grass art by StayAtHomeDev (2023, MIT).',
   '986': 'The brown cubes in 3D mode are trees now: crates, market props and generated stalls all grow as proper trees instead of brown blocks. Gathering wood still works the same — interact beside one and you collect 1 wood. Stalls you placed yourself with the Build panel stay as market counters.',
   '987': 'The Build panel now has a minimize button that keeps your selected tool while you work, and Remove mode can now take down roads and houses that were already in the world, not just things you placed. Removed roads and houses stay gone after reload. Placed stalls stay as market counters.',
