@@ -75,7 +75,12 @@ export const MAX_LIBRARY_TRIANGLES = 100_000;
  *  arrays (8 bytes per number) plus the renderer's Float32/Uint32
  *  copy (4 bytes per number). */
 export function decodedAssetBytes(a: CustomAsset): number {
-  return (a.positions.length + a.colors.length + a.indices.length) * 12;
+  const geometryNumbers = a.positions.length + a.colors.length + a.indices.length
+    + (a.uvs?.length || 0) + (a.materialIndices?.length || 0);
+  // Material names, factors and texture-slot descriptors are structured-cloned
+  // alongside geometry; account for their serialized footprint in the library cap.
+  const materialBytes = a.materials ? JSON.stringify(a.materials).length * 2 : 0;
+  return geometryNumbers * 12 + materialBytes;
 }
 
 /** Triangle count of one asset. */
