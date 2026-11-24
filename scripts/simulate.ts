@@ -16760,7 +16760,7 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
     }));
     const jobs = Object.values(state.board.jobs)
       .filter((j: any) => ['harvest', 'mill', 'bake', 'deliver'].includes(j.kind))
-      .map((j: any) => j.kind + ':' + j.state + ':' + (j.claimedBy ?? '-') + ':' + j.tile.x + ',' + j.tile.y)
+      .map((j: any) => j.kind + ':' + j.state + ':' + (j.claimedBy ?? '-') + ':' + (j.tile ? j.tile.x + ',' + j.tile.y : '-'))
       .join(';');
     console.log('M1105 RELOAD SNAP ' + label +
       ' goods=' + F.campFoodInRegistry(state.registry) + '/' + SS.settlementGrain(state) + '/' + FC.foodChainFlourInRegistry(state.registry) +
