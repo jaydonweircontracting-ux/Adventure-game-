@@ -36,6 +36,7 @@
     "test:world-simulation": "npx tsx tests/world-simulation.test.ts",
     "test:world-core": "npx tsx tests/world-core.test.ts",
     "test:engine-core": "npx tsx tests/engine-core.test.ts",
+    "test:adventure-engine-adapter": "npx tsx tests/adventure-engine-adapter.test.ts",
     "benchmark:world": "npx tsx scripts/benchmark-world.ts"
   },
   "dependencies": {
