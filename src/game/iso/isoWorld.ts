@@ -197,6 +197,9 @@ export interface IsoWorld {
    *  read them as water through the existing water path. Old saves
    *  load with none (the stamp generates them on the same load). */
   rivers?: Array<{ id: string; tiles: Array<{ x: number; y: number; dx: number; dy: number }>; mouth: { x: number; y: number } }>;
+  /** River drainage algorithm stamp. Older persisted channels are regenerated once
+   *  when the flat-basin routing algorithm changes; absent means legacy. */
+  riverGeneration?: number;
   /** BUILD 1083 — landforms (landforms.ts): the deterministic
    *  mountain/hill/valley/cliff map, stamped once by
    *  stampLandforms on load and saved wholesale with the world.
