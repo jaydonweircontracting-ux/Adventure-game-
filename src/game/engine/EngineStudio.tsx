@@ -207,7 +207,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 const offset = 60 + index * 24;
                 return <g key={index} stroke={index === 10 ? '#829d86' : '#395448'} strokeWidth={index === 10 ? 1.5 : 0.7} opacity={index === 10 ? 0.9 : 0.7}>
                   <line x1={offset} y1="60" x2={offset} y2="300" />
-                  <line x1="60" y1={offset + 60} x2="540" y2={offset + 60} />
+                  <line x1="60" y1={60 + index * 12} x2="540" y2={60 + index * 12} />
                 </g>;
               })}
               <text x="548" y="180" fill="#b9cbbb" fontSize="12">X</text>
