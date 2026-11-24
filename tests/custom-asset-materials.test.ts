@@ -38,7 +38,7 @@ const embeddedImages = extractGltfTextureImages({
 } as any, new Uint8Array(), '');
 assert.deepEqual(embeddedImages, ['data:image/png;base64,AQID']);
 const companionImages = extractGltfTextureImages({
-  images: [{ uri: 'textures/armor.png' }],
+  images: [{ uri: '../textures/armor.png' }],
   textures: [{ source: 0 }],
 } as any, new Uint8Array(), 'models', new Map([['textures/armor.png', new Uint8Array([1, 2, 3]).buffer]]));
 assert.deepEqual(companionImages, ['data:image/png;base64,AQID']);
