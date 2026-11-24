@@ -8,6 +8,7 @@ export type EngineMeshInstance = {
   name: string;
   transform: Transform3D;
   asset: CustomAsset;
+  parentTransforms?: Transform3D[];
 };
 
 /**
@@ -23,6 +24,7 @@ export function buildEngineMeshInstances(
   const scene = project.scenes.find((item) => item.id === sceneId);
   if (!scene) return [];
   const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+  const entitiesById = new Map(scene.entities.map((entity) => [entity.id, entity]));
   const instances: EngineMeshInstance[] = [];
   for (const entity of scene.entities) {
     if (!entity.active) continue;
@@ -31,12 +33,23 @@ export function buildEngineMeshInstances(
       if (component.data.visible === false || typeof component.data.assetId !== 'string') continue;
       const asset = assetsById.get(component.data.assetId);
       if (!asset) continue;
+      const parentTransforms: Transform3D[] = [];
+      let parentId = entity.parentId;
+      const seenParents = new Set<string>([entity.id]);
+      while (parentId && !seenParents.has(parentId)) {
+        seenParents.add(parentId);
+        const parent = entitiesById.get(parentId);
+        if (!parent) break;
+        parentTransforms.push(parent.transform);
+        parentId = parent.parentId;
+      }
       instances.push({
         entityId: entity.id,
         parentId: entity.parentId,
         name: entity.name,
         transform: entity.transform,
         asset,
+        parentTransforms,
       });
     }
   }
@@ -68,7 +81,6 @@ export function resolveEngineMeshInstance(
  * triangle stream. Entity transforms are applied in local-to-parent order.
  */
 export function buildEngineMeshVertexData(instances: readonly EngineMeshInstance[]): Float32Array {
-  const byId = new Map(instances.map((instance) => [instance.entityId, instance]));
   const output: number[] = [];
   const transformPoint = (point: [number, number, number], transform: Transform3D): [number, number, number] => {
     let [x, y, z] = point;
@@ -85,17 +97,10 @@ export function buildEngineMeshVertexData(instances: readonly EngineMeshInstance
   for (const instance of instances) {
     const { asset } = instance;
     if (!asset.positions.length || !asset.indices.length) continue;
-    const chain: Transform3D[] = [];
-    let parentId: string | null = instance.entityId;
-    const seen = new Set<string>();
-    while (parentId) {
-      if (seen.has(parentId)) break;
-      seen.add(parentId);
-      const parent = byId.get(parentId);
-      if (!parent) break;
-      chain.push(parent.transform);
-      parentId = parent.parentId;
-    }
+    const chain: Transform3D[] = [
+      instance.transform,
+      ...(instance.parentTransforms ?? []),
+    ];
     const colorAt = (vertex: number, channel: number): number => {
       const value = asset.colors[vertex * 3 + channel];
       return Number.isFinite(value) ? value : asset.avgColor[channel] ?? 0.7;
