@@ -237,6 +237,47 @@ export function addEngineComponent(
   };
 }
 
+/** Replace a component by type, or append it when it is not present. */
+export function upsertEngineComponent(
+  project: EngineProject,
+  sceneId: string,
+  entityId: string,
+  component: EngineComponent,
+): EngineResult<EngineProject> {
+  if (!component.type.trim() || !Number.isInteger(component.version) || component.version < 1) {
+    return { ok: false, error: 'Component type and positive integer version are required' };
+  }
+  if (!component.data || typeof component.data !== 'object' || Array.isArray(component.data)
+    || !isJsonValue(component.data)) {
+    return { ok: false, error: 'Component data must be a JSON object with finite values' };
+  }
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  if (!scene.entities.some((entity) => entity.id === entityId)) {
+    return { ok: false, error: 'Entity not found: ' + entityId };
+  }
+  const copied = cloneJson(component);
+  return {
+    ok: true,
+    value: {
+      ...project,
+      scenes: project.scenes.map((item) => item.id === sceneId
+        ? {
+          ...item,
+          entities: item.entities.map((entity) => entity.id === entityId
+            ? {
+              ...entity,
+              components: entity.components.some((entry) => entry.type === component.type)
+                ? entity.components.map((entry) => entry.type === component.type ? copied : entry)
+                : [...entity.components, copied],
+            }
+            : entity),
+        }
+        : item),
+    },
+  };
+}
+
 export function removeEngineEntity(
   project: EngineProject,
   sceneId: string,
