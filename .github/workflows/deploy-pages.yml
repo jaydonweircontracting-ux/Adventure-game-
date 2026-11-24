@@ -43,6 +43,8 @@ jobs:
         run: npm run test:world-simulation
       - name: WorldCore determinism and save-migration regression test
         run: npm run test:world-core
+      - name: Engine project scene and entity core regression test
+        run: npm run test:engine-core
       - name: Little World Generator regression test
         run: npm run test:little-world-generator
       - name: Expanded world map coherence regression test
