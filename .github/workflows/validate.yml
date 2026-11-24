@@ -14,9 +14,14 @@ concurrency:
   group: validate-${{ github.ref }}
   cancel-in-progress: true
 
+# The suites are independent and read-only. Run the three bounded lanes in
+# parallel so a slow simulation cannot hold up the typecheck or browser probe.
+# The game itself is still changed by one code worker per isolated worktree.
 jobs:
-  validate:
+  foundation:
+    name: Foundation and static regressions
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,12 +44,6 @@ jobs:
         run: npm run test:iso-directions
       - name: Isometric tile asset integrity regression test
         run: npm run test:iso-tile-assets
-      - name: Production build
-        # The CI smoke server hosts dist/public at /, not /Adventure-game-/.
-        # Use root-relative assets here; the Pages deployment workflow keeps its repository base path.
-        run: BASE_PATH=/ npm run build
-      - name: Live update version regression test
-        run: npm run test:update-version
       - name: Fantasy encounter regression test
         run: npm run test:fantasy-encounters
       - name: NPC retaliation and guard pursuit regression test
@@ -57,6 +56,25 @@ jobs:
         run: npm run test:procedural-world-art
       - name: Building art regression test
         run: npm run test:building-art
+      - name: Selective body-loot regression test
+        run: npm run test:body-loot
+      - name: Character-creator equipment restriction regression test
+        run: npm run test:character-creator
+
+  simulation:
+    name: Economy and world simulation regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Town production regression test
         run: npm run test:town-production
       - name: Village food-needs regression test
@@ -69,10 +87,33 @@ jobs:
         run: npm run test:river-bridge-ranking
       - name: Unified living-world simulation regression test
         run: npm run test:world-simulation
+      - name: Little World Generator regression test
+        run: npm run test:little-world-generator
       - name: Caravan trade regression test
         run: npm run test:caravan-trade
       - name: Quest playthrough regression test
         run: npx tsx tests/quest-playthrough.mts
+
+  browser:
+    name: Production build and real-game browser probes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Production build
+        # The CI smoke server hosts dist/public at /, not /Adventure-game-/.
+        # Use root-relative assets here; the Pages deployment workflow keeps its repository base path.
+        run: BASE_PATH=/ npm run build
+      - name: Live update version regression test
+        run: npm run test:update-version
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Start built game server
