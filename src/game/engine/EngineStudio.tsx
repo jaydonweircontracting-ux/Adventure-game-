@@ -54,6 +54,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [componentDrafts, setComponentDrafts] = useState<Record<string, string>>({});
   const [dragPreview, setDragPreview] = useState<{ id: string; position: [number, number, number] } | null>(null);
   const dragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; startPosition: [number, number, number] } | null>(null);
@@ -206,7 +207,10 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
           <section style={{ marginBottom: 14, border: '1px solid #43584c', borderRadius: 9, overflow: 'hidden', background: '#15211d' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #354a40' }}>
               <strong style={{ fontSize: 12 }}>Scene Viewport · Top-down X/Z</strong>
-              <span style={muted}>Drag markers to move · select to inspect</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={muted}>Drag markers · select to inspect</span>
+                <button type="button" style={{ ...button, padding: '4px 7px', fontSize: 10 }} aria-pressed={snapToGrid} onClick={() => setSnapToGrid((value) => !value)}>{snapToGrid ? 'Grid snap: ON' : 'Grid snap: OFF'}</button>
+              </div>
             </div>
             <svg viewBox="0 0 600 360" role="img" aria-label="Top-down scene viewport. Drag entity markers to move them on the X and Z axes." style={{ display: 'block', width: '100%', maxHeight: 260, background: '#1b3028', touchAction: 'none', cursor: dragPreview ? 'grabbing' : 'default' }}
               onPointerMove={(event) => {
@@ -215,7 +219,9 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 const rect = event.currentTarget.getBoundingClientRect();
                 const dx = (event.clientX - drag.startX) * 600 / rect.width / 12;
                 const dz = (event.clientY - drag.startY) * 360 / rect.height / 12;
-                setDragPreview({ id: drag.id, position: [drag.startPosition[0] + dx, drag.startPosition[1], drag.startPosition[2] + dz] });
+                const x = drag.startPosition[0] + dx;
+                const z = drag.startPosition[2] + dz;
+                setDragPreview({ id: drag.id, position: [snapToGrid ? Math.round(x) : x, drag.startPosition[1], snapToGrid ? Math.round(z) : z] });
               }}
               onPointerUp={(event) => {
                 const drag = dragRef.current;
@@ -225,7 +231,9 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 const dz = (event.clientY - drag.startY) * 360 / rect.height / 12;
                 const entity = scene.entities.find((item) => item.id === drag.id);
                 if (entity) {
-                  const position: [number, number, number] = [drag.startPosition[0] + dx, drag.startPosition[1], drag.startPosition[2] + dz];
+                  const x = drag.startPosition[0] + dx;
+                const z = drag.startPosition[2] + dz;
+                const position: [number, number, number] = [snapToGrid ? Math.round(x) : x, drag.startPosition[1], snapToGrid ? Math.round(z) : z];
                   const result = updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position });
                   if (result.ok) commit(result.value);
                   else setError(result.error);
