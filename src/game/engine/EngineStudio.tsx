@@ -226,9 +226,9 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 const entity = scene.entities.find((item) => item.id === drag.id);
                 if (entity) {
                   const position: [number, number, number] = [drag.startPosition[0] + dx, drag.startPosition[1], drag.startPosition[2] + dz];
-                  commit(updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position }).ok
-                    ? (updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position }) as { ok: true; value: EngineProject }).value
-                    : project);
+                  const result = updateEntityTransform(project, scene.id, drag.id, { ...entity.transform, position });
+                  if (result.ok) commit(result.value);
+                  else setError(result.error);
                 }
                 dragRef.current = null;
                 setDragPreview(null);
