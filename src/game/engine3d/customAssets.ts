@@ -366,7 +366,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
-  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices'> = {},
+  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked'> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
@@ -408,6 +408,11 @@ function finishAsset(
       avgColor: avg,
       format,
       ...extras,
+      ...(extras.animationFrames?.length ? { animationFrames: extras.animationFrames.map(frame => {
+        const normalized: number[] = [];
+        for (let i = 0; i < frame.length; i += 3) normalized.push(frame[i] - cx, frame[i + 1] - minY, frame[i + 2] - cz);
+        return normalized;
+      }), animationFps: extras.animationFps ?? 8 } : {}),
       // BUILD 1045: the file this model came from, so the library
       // row can say where it came from. Category/tags start as the
       // player's defaults (Unsorted / none) — never guessed.
@@ -787,7 +792,17 @@ export function parseObjUpload(text: string, fileName: string): GlbUploadResult 
  * vertex-colour renderer; diffuse material colours and vertex colours
  * are preserved.
  */
-export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promise<GlbUploadResult> {
+/**
+ * Binary + ASCII FBX importer. Preserves UV/material assignments, resolves
+ * companion diffuse maps, and bakes their sampled colour into the existing
+ * vertex-colour stream. Skinned meshes retain a short, baked walk cycle so
+ * imported actors animate in the lightweight Adventure renderer.
+ */
+export async function parseFbxUpload(
+  buf: ArrayBuffer,
+  fileName: string,
+  files?: Map<string, ArrayBuffer>,
+): Promise<GlbUploadResult> {
   if (buf.byteLength < 32) return { ok: false, reason: 'FBX file is too small or truncated' };
   const header = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(23, buf.byteLength)));
   const isBinary = header.startsWith('Kaydara FBX Binary');
@@ -795,75 +810,221 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
   if (!isBinary && !textStart.startsWith(';') && !textStart.startsWith('FBXHeaderExtension') && !textStart.startsWith('; FBX')) {
     return { ok: false, reason: 'file signature is not a recognized FBX file (binary FBX is supported)' };
   }
+  const objectUrls: string[] = [];
   try {
-    const [{ FBXLoader }, THREE] = await Promise.all([import('three/examples/jsm/loaders/FBXLoader.js'), import('three')]);
-    const root = new FBXLoader().parse(buf, '');
+    const [{ FBXLoader }, THREE] = await Promise.all([
+      import('three/examples/jsm/loaders/FBXLoader.js'),
+      import('three'),
+    ]);
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url: string) => {
+      if (!files?.size) return url;
+      const clean = url.split(/[?#]/)[0].replace(/\\/g, '/');
+      const base = clean.split('/').pop()?.toLowerCase() || '';
+      const match = [...files.entries()].find(([name]) => {
+        const normalized = name.replace(/\\/g, '/').toLowerCase();
+        return normalized === clean.toLowerCase() || normalized.endsWith('/' + base) || normalized === base;
+      });
+      if (!match) return url;
+      const ext = match[0].split('.').pop()?.toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'bmp' ? 'image/bmp' : 'image/png';
+      const objectUrl = URL.createObjectURL(new Blob([match[1]], { type: mime }));
+      objectUrls.push(objectUrl);
+      return objectUrl;
+    });
+    let finishLoads: (() => void) | undefined;
+    const loaded = new Promise<void>(resolve => { finishLoads = resolve; });
+    manager.onLoad = () => finishLoads?.();
+    const root: any = new FBXLoader(manager).parse(buf, '');
+    if (manager.itemsTotal > 0) await loaded;
     root.updateMatrixWorld(true);
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
-    const uvs: number[] = [];
-    const materialIndices: number[] = [];
+
+    type TriangleRef = { mesh: any; vertices: number[]; material: any; materialIndex: number };
+    const triangles: TriangleRef[] = [];
+    const meshes: any[] = [];
     const materials: RuntimePbrMaterial[] = [];
     const materialLookup = new Map<string, number>();
     root.traverse((node: any) => {
-      if (!node || !node.isMesh || !node.geometry?.attributes?.position) return;
-      const mesh = node;
-      const geometry = mesh.geometry;
-      if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
+      if (!node?.isMesh || !node.geometry?.attributes?.position) return;
+      meshes.push(node);
+      const geometry = node.geometry;
       const pos = geometry.attributes.position;
-      const col = geometry.attributes.color;
-      const uv = geometry.attributes.uv;
       const index = geometry.index;
-      const materialList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const vertexCount = pos.count;
-      const triCount = index ? Math.floor(index.count / 3) : Math.floor(vertexCount / 3);
+      const materialList = Array.isArray(node.material) ? node.material : [node.material];
       const groups = geometry.groups || [];
-      const groupMaterial = (faceStart: number) => {
+      const materialForFace = (faceStart: number) => {
         const group = groups.find((g: any) => faceStart >= g.start && faceStart < g.start + g.count);
         return materialList[group?.materialIndex || 0] || materialList[0];
       };
+      const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
       for (let tri = 0; tri < triCount; tri++) {
-        const base = positions.length / 3;
         const faceStart = tri * 3;
-        const mat = groupMaterial(faceStart);
-        const mc = mat?.color;
-        const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
-        const materialKey = mat?.uuid || mat?.name || 'default';
+        const vertices = [0, 1, 2].map(corner => index ? index.getX(faceStart + corner) : faceStart + corner);
+        if (vertices.some(vi => vi < 0 || vi >= pos.count)) continue;
+        const material = materialForFace(faceStart);
+        const materialKey = material?.uuid || material?.name || 'default';
         let materialIndex = materialLookup.get(materialKey);
         if (materialIndex === undefined) {
           materialIndex = materials.length;
           materialLookup.set(materialKey, materialIndex);
           materials.push(normalizePbrMaterial({
-            name: mat?.name || 'FBX material ' + (materialIndex + 1),
-            baseColorFactor: mat?.color ? [mat.color.r, mat.color.g, mat.color.b, mat?.opacity ?? 1] : [...DEFAULT_COLOR, 1],
-            metallicFactor: Number.isFinite(mat?.metalness) ? mat.metalness : 0,
-            roughnessFactor: Number.isFinite(mat?.roughness) ? mat.roughness : 1,
-            alphaMode: mat?.transparent || (mat?.opacity ?? 1) < 1 ? 'BLEND' : 'OPAQUE',
-            doubleSided: mat?.side === THREE.DoubleSide,
+            name: material?.name || 'FBX material ' + (materialIndex + 1),
+            baseColorFactor: material?.color ? [material.color.r, material.color.g, material.color.b, material?.opacity ?? 1] : [...DEFAULT_COLOR, 1],
+            metallicFactor: Number.isFinite(material?.metalness) ? material.metalness : 0,
+            roughnessFactor: Number.isFinite(material?.roughness) ? material.roughness : 1,
+            alphaMode: material?.transparent || (material?.opacity ?? 1) < 1 ? 'BLEND' : 'OPAQUE',
+            doubleSided: material?.side === THREE.DoubleSide,
           }));
         }
-        for (let corner = 0; corner < 3; corner++) {
-          const vi = index ? index.getX(faceStart + corner) : faceStart + corner;
-          if (vi < 0 || vi >= vertexCount) continue;
-          const v = new THREE.Vector3();
-          v.fromBufferAttribute(pos, vi);
-          if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
-          v.applyMatrix4(mesh.matrixWorld);
-          positions.push(v.x, v.y, v.z);
-          uvs.push(uv ? uv.getX(vi) : 0, uv ? uv.getY(vi) : 0);
-          materialIndices.push(materialIndex);
-          if (col) colors.push(col.getX(vi), col.getY(vi), col.getZ(vi));
-          else colors.push(materialColor[0], materialColor[1], materialColor[2]);
-          indices.push(base + corner);
-        }
+        triangles.push({ mesh: node, vertices, material, materialIndex });
       }
     });
-    if (indices.length === 0) return { ok: false, reason: 'no triangle meshes found in this FBX' };
-    const result = finishAsset(positions, colors, indices, fileName, 'fbx', { uvs, materials, materialIndices });
-    return result;
+    if (!triangles.length) return { ok: false, reason: 'no triangle meshes found in this FBX' };
+
+    const pixelMaps = new Map<any, { data: Uint8ClampedArray; width: number; height: number }>();
+    const pixelsFor = (texture: any) => {
+      if (!texture?.image || typeof document === 'undefined') return null;
+      if (pixelMaps.has(texture)) return pixelMaps.get(texture)!;
+      try {
+        const image = texture.image;
+        const width = image.width || image.videoWidth;
+        const height = image.height || image.videoHeight;
+        if (!width || !height) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.drawImage(image, 0, 0, width, height);
+        const pixels = { data: ctx.getImageData(0, 0, width, height).data, width, height };
+        pixelMaps.set(texture, pixels);
+        return pixels;
+      } catch {
+        return null;
+      }
+    };
+    const sampleTexture = (texture: any, uv: Array<{ x: number; y: number }>) => {
+      const pixels = pixelsFor(texture);
+      if (!pixels || !uv.length) return null;
+      let u = uv.reduce((sum, p) => sum + p.x, 0) / uv.length;
+      let v = uv.reduce((sum, p) => sum + p.y, 0) / uv.length;
+      if (texture.wrapS === THREE.RepeatWrapping) u = ((u % 1) + 1) % 1;
+      else u = Math.max(0, Math.min(0.999999, u));
+      if (texture.wrapT === THREE.RepeatWrapping) v = ((v % 1) + 1) % 1;
+      else v = Math.max(0, Math.min(0.999999, v));
+      const x = Math.max(0, Math.min(pixels.width - 1, Math.floor(u * pixels.width)));
+      const y = Math.max(0, Math.min(pixels.height - 1, Math.floor((1 - v) * pixels.height)));
+      const offset = (y * pixels.width + x) * 4;
+      return [pixels.data[offset] / 255, pixels.data[offset + 1] / 255, pixels.data[offset + 2] / 255] as [number, number, number];
+    };
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const uvs: number[] = [];
+    const materialIndices: number[] = [];
+    let textureBaked = false;
+    const collectPositions = () => {
+      const out: number[] = [];
+      for (const mesh of meshes) if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
+      for (const tri of triangles) {
+        const mesh = tri.mesh;
+        const pos = mesh.geometry.attributes.position;
+        for (const vi of tri.vertices) {
+          const v = new THREE.Vector3().fromBufferAttribute(pos, vi);
+          if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
+          v.applyMatrix4(mesh.matrixWorld);
+          out.push(v.x, v.y, v.z);
+        }
+      }
+      return out;
+    };
+    const basePositions = collectPositions();
+    positions.push(...basePositions);
+    let vertexIndex = 0;
+    for (const tri of triangles) {
+      const geometry = tri.mesh.geometry;
+      const col = geometry.attributes.color;
+      const uv = geometry.attributes.uv;
+      const mc = tri.material?.color;
+      const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
+      const uvPoints = uv ? tri.vertices.map((vi: number) => ({ x: uv.getX(vi), y: uv.getY(vi) })) : [];
+      const texColor = tri.material?.map ? sampleTexture(tri.material.map, uvPoints) : null;
+      if (texColor) textureBaked = true;
+      for (const vi of tri.vertices) {
+        let r = col ? col.getX(vi) : materialColor[0];
+        let g = col ? col.getY(vi) : materialColor[1];
+        let b = col ? col.getZ(vi) : materialColor[2];
+        if (texColor) { r *= texColor[0]; g *= texColor[1]; b *= texColor[2]; }
+        colors.push(r, g, b);
+        uvs.push(uv ? uv.getX(vi) : 0, uv ? uv.getY(vi) : 0);
+        materialIndices.push(tri.materialIndex);
+        indices.push(vertexIndex++);
+      }
+    }
+
+    // Use source walk/run clips where present. The supplied low-poly pack
+    // has skin clusters and named bones but no AnimationStack clips, so
+    // synthesize a walk cycle from its thigh/calf/upper-arm bones.
+    let clip = (root.animations || []).find((candidate: any) => /walk|run|move/i.test(candidate.name))
+      || (root.animations || [])[0];
+    if (!clip) {
+      const tracks: any[] = [];
+      const bones: any[] = [];
+      root.traverse((node: any) => { if (node?.isBone) bones.push(node); });
+      const times = [0, 0.25, 0.5, 0.75, 1];
+      const makeTrack = (bone: any, amplitude: number, offset: number) => {
+        const values: number[] = [];
+        for (const time of times) {
+          const angle = Math.sin(time * Math.PI * 2 + offset) * amplitude;
+          const delta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+          const q = bone.quaternion.clone().multiply(delta);
+          values.push(q.x, q.y, q.z, q.w);
+        }
+        tracks.push(new THREE.QuaternionKeyframeTrack(bone.name + '.quaternion', times, values));
+      };
+      for (const bone of bones) {
+        const name = String(bone.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (/thigh.*l$|leftthigh|leftupleg/.test(name)) makeTrack(bone, 0.48, 0);
+        else if (/thigh.*r$|rightthigh|rightupleg/.test(name)) makeTrack(bone, 0.48, Math.PI);
+        else if (/upperarm.*l$|leftupperarm/.test(name)) makeTrack(bone, 0.3, Math.PI);
+        else if (/upperarm.*r$|rightupperarm/.test(name)) makeTrack(bone, 0.3, 0);
+        else if (/calf.*l$|leftcalf|leftleg/.test(name)) makeTrack(bone, 0.22, 0.65);
+        else if (/calf.*r$|rightcalf|rightleg/.test(name)) makeTrack(bone, 0.22, Math.PI + 0.65);
+      }
+      if (tracks.length) clip = new THREE.AnimationClip('Adventure Walk', 1, tracks);
+    }
+
+    let animationFrames: number[][] | undefined;
+    const animationFps = 8;
+    const frameCount = Math.min(8, Math.floor(100000 / Math.max(1, basePositions.length)));
+    if (clip && frameCount >= 2 && meshes.some(mesh => mesh.isSkinnedMesh)) {
+      try {
+        const mixer = new THREE.AnimationMixer(root);
+        const action = mixer.clipAction(clip);
+        action.play();
+        animationFrames = [];
+        const duration = Math.max(clip.duration || 1, 1 / animationFps);
+        for (let frame = 0; frame < frameCount; frame++) {
+          mixer.setTime((frame / animationFps) % duration);
+          root.updateMatrixWorld(true);
+          animationFrames.push(collectPositions());
+        }
+        if (animationFrames.some(frame => frame.length !== basePositions.length)) animationFrames = undefined;
+        mixer.stopAllAction();
+        mixer.uncacheRoot(root);
+      } catch {
+        animationFrames = undefined;
+      }
+    }
+
+    return finishAsset(positions, colors, indices, fileName, 'fbx', {
+      uvs, materials, materialIndices, animationFrames, animationFps, textureBaked,
+    });
   } catch (e) {
     return { ok: false, reason: 'FBX decode failed (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
+  } finally {
+    for (const url of objectUrls) URL.revokeObjectURL(url);
   }
 }
 
@@ -1034,6 +1195,16 @@ export function validAsset(raw: unknown): CustomAsset | null {
     ...(Array.isArray(r.uvs) ? { uvs: r.uvs as number[] } : {}),
     ...(Array.isArray(r.materials) ? { materials: r.materials as RuntimePbrMaterial[] } : {}),
     ...(Array.isArray(r.materialIndices) ? { materialIndices: r.materialIndices as number[] } : {}),
+    ...(Array.isArray(r.animationFrames)
+      && r.animationFrames.length >= 2
+      && r.animationFrames.length <= 8
+      && r.animationFrames.every((frame: unknown) => Array.isArray(frame)
+        && frame.length === (r.positions as number[]).length
+        && frame.every(isFiniteNum))
+      && r.animationFrames.reduce((total: number, frame: number[]) => total + frame.length, 0) <= 100000
+      ? { animationFrames: r.animationFrames as number[][], animationFps: isFiniteNum(r.animationFps) ? Math.max(1, Math.min(30, r.animationFps)) : 8 }
+      : {}),
+    ...(r.textureBaked === true ? { textureBaked: true } : {}),
     ...(Array.isArray(r.textureImages) ? { textureImages: r.textureImages as Array<string | null> } : {}),
   };
 }
