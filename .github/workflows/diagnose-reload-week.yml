@@ -29,8 +29,8 @@ jobs:
       - name: Run the full settlement simulation harness
         shell: bash
         run: |
-          # Keep the M1088 fixture on its original passing setup. createSettlementSim
-          # already stamps the rivers, seeds the farm/well, and mirrors the live world.
+          # Use a deterministic crossing because the ranked bridge detector rejects
+          # arbitrary river-edge contacts that have no dry far bank.
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const path = 'scripts/simulate.ts';
