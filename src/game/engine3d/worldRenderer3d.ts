@@ -1282,6 +1282,8 @@ export class WorldRenderer {
         });
       }
       this.customTexturePass.draw(instances, mat, nightFactor, skyGrad.warm);
+      // Restore the world shader before the car/corpse/FX passes below.
+      gl.useProgram(this.program);
     }
     this.motionStats={emitted,reused,drawn};
     // BUILD 1033: the red sports car — a small per-frame buffer (the
