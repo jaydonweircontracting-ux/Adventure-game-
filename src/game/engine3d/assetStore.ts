@@ -81,7 +81,8 @@ export function decodedAssetBytes(a: CustomAsset): number {
   // Material descriptors and baked animation frames are structured-cloned
   // alongside geometry; count them against the same decoded-library budget.
   const materialBytes = a.materials ? JSON.stringify(a.materials).length * 2 : 0;
-  return geometryNumbers * 12 + materialBytes;
+  const textureBytes = a.textureImages ? a.textureImages.reduce((sum, image) => sum + (image?.length || 0) * 2, 0) : 0;
+  return geometryNumbers * 12 + materialBytes + textureBytes;
 }
 
 /** Triangle count of one asset. */
