@@ -47,6 +47,8 @@ jobs:
         run: npm run test:world-core
       - name: Engine project scene and entity core regression test
         run: npm run test:engine-core
+      - name: Engine shared 3D asset bridge regression test
+        run: npm run test:engine-asset-bridge
       - name: Adventure WorldCore engine adapter regression test
         run: npm run test:adventure-engine-adapter
       - name: Little World Generator regression test
