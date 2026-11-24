@@ -844,10 +844,12 @@ export async function parseFbxUpload(
       return objectUrl;
     });
     let finishLoads: (() => void) | undefined;
+    let loadsStarted = false;
     const loaded = new Promise<void>(resolve => { finishLoads = resolve; });
+    manager.onStart = () => { loadsStarted = true; };
     manager.onLoad = () => finishLoads?.();
     const root: any = new FBXLoader(manager).parse(buf, '');
-    if (manager.itemsTotal > 0) await loaded;
+    if (loadsStarted) await loaded;
     root.updateMatrixWorld(true);
 
     type TriangleRef = { mesh: any; vertices: number[]; material: any; materialIndex: number };
