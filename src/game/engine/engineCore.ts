@@ -336,12 +336,23 @@ export function validateEngineProject(value: unknown): EngineResult<EngineProjec
   if (!sceneIds.has(project.activeSceneId ?? '')) {
     return { ok: false, error: 'Active scene does not exist' };
   }
+  if (project.scenes.filter((scene) => scene.active).length !== 1
+    || !project.scenes.some((scene) => scene.id === project.activeSceneId && scene.active)) {
+    return { ok: false, error: 'Exactly the active scene must be marked active' };
+  }
   for (const scene of project.scenes) {
+    const entitiesById = new Map(scene.entities.map((entity) => [entity.id, entity]));
     for (const entity of scene.entities) {
-      if (entity.parentId !== null && !scene.entities.some((candidate) => candidate.id === entity.parentId)) {
+      if (entity.parentId !== null && !entitiesById.has(entity.parentId)) {
         return { ok: false, error: 'Entity parent must exist in the same scene' };
       }
-      if (entity.parentId === entity.id) return { ok: false, error: 'Entity cannot parent itself' };
+      const ancestors = new Set<string>([entity.id]);
+      let parentId = entity.parentId;
+      while (parentId !== null) {
+        if (ancestors.has(parentId)) return { ok: false, error: 'Entity hierarchy contains a cycle' };
+        ancestors.add(parentId);
+        parentId = entitiesById.get(parentId)?.parentId ?? null;
+      }
     }
   }
   return { ok: true, value: project as EngineProject };
