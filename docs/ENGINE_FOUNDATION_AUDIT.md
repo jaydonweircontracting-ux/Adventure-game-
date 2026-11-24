@@ -80,6 +80,18 @@ No test or deployment result is inferred from a source inspection.
 
 This is an initial scene-authoring workbench, not yet a complete 3D viewport: no orbit/fly camera, drag gizmos, snapping, asset preview, prefab workflow, multi-select, runtime play/pause, or live renderer binding is claimed.
 
+## Reusable prefab slice (added on this branch)
+
+- `EngineProject.prefabs` stores reusable templates as part of the versioned project JSON; older project files without a prefab list remain readable.
+- `createEnginePrefab` captures the selected entity and its complete descendant hierarchy, retaining transforms, active flags and component payloads.
+- `instantiateEnginePrefab` creates a fresh entity ID for every copied object, remaps parent links, and applies a placement offset to the root transform.
+- Prefab rename and delete operations are immutable and validated.
+- Project validation checks prefab IDs, root membership, hierarchy references/cycles, transforms and component payloads.
+- Engine Studio exposes a prefab library: save selected hierarchy, rename, place into the active scene and delete. Prefab data is included in local persistence and JSON import/export.
+- Regression coverage exercises hierarchy capture, fresh-ID placement, component retention, validation, deletion and JSON round-trip.
+
+Prefab placement currently starts at the scene origin; creators can reposition the instance using the scene viewport and inspector. A future placement tool should support cursor/raycast placement, preview ghosts, snapping and asset-backed prefab previews.
+
 ## Remaining integration gates
 
 1. Run a reproducible typecheck, production build and all new tests in GitHub Actions. No run has been observed yet for this branch; do not treat these tests as passed.
