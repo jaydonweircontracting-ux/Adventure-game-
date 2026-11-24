@@ -76,9 +76,10 @@ export const MAX_LIBRARY_TRIANGLES = 100_000;
  *  copy (4 bytes per number). */
 export function decodedAssetBytes(a: CustomAsset): number {
   const geometryNumbers = a.positions.length + a.colors.length + a.indices.length
-    + (a.uvs?.length || 0) + (a.materialIndices?.length || 0);
-  // Material names, factors and texture-slot descriptors are structured-cloned
-  // alongside geometry; account for their serialized footprint in the library cap.
+    + (a.uvs?.length || 0) + (a.materialIndices?.length || 0)
+    + (a.animationFrames ?? []).reduce((sum, frame) => sum + frame.length, 0);
+  // Material descriptors and baked animation frames are structured-cloned
+  // alongside geometry; count them against the same decoded-library budget.
   const materialBytes = a.materials ? JSON.stringify(a.materials).length * 2 : 0;
   return geometryNumbers * 12 + materialBytes;
 }
