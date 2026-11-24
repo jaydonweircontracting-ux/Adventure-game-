@@ -32,6 +32,8 @@ import { placedLanternTiles, placedFarmTiles, seedRectForHut, type PaletteKind }
 import { effTerrainFor, surfaceElevation, rayHitSurface } from './wildTerrain';
 import { type AreaSelection } from './areaSelect';
 import { type CustomAsset } from './customAssets';
+import { deserializeEngineProject } from '../engine/engineCore';
+import { buildEngineMeshInstances, buildEngineMeshVertexData } from '../engine/engineAssetBridge';
 import { interiorCeilingFor, interiorWallBandFor, interiorHearthFor } from './interiors';
 import { productionKindForRect, productionFireFor } from './productionInteriors';
 import { ROSTER_3D, rosterArchetype, type DayClock } from './townsfolk3d';
@@ -220,6 +222,11 @@ export class WorldRenderer {
   private carBuffer!: WebGLBuffer;
   private rainBuffer!: WebGLBuffer;
   private skyBuffer!: WebGLBuffer;
+  private engineMeshBuffer!: WebGLBuffer;
+  private engineProjectRaw = '';
+  private engineMeshData = new Float32Array(0);
+  private engineAssetSnapshot: CustomAsset[] | null = null;
+  private engineProjectPoll = 0;
   private pLoc!: number;
   private cLoc!: number;
   private mLoc!: WebGLUniformLocation | null;
@@ -333,6 +340,9 @@ export class WorldRenderer {
     const rainBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,rainBuffer);
     gl.bufferData(gl.ARRAY_BUFFER,RAIN_MAX_VERTS*24,gl.DYNAMIC_DRAW);
+    const engineMeshBuffer=gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER,engineMeshBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,0,gl.DYNAMIC_DRAW);
     const skyBuffer=gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);
     // BUILD 1052: the gradient is DYNAMIC now, not static — the sky
@@ -357,6 +367,7 @@ export class WorldRenderer {
     this.carBuffer = carBuffer;
     this.rainBuffer = rainBuffer;
     this.skyBuffer = skyBuffer;
+    this.engineMeshBuffer = engineMeshBuffer;
     this.pLoc = pLoc;
     this.cLoc = cLoc;
     this.mLoc = mLoc;
@@ -902,6 +913,35 @@ export class WorldRenderer {
     // compile + program link checks above, and the diagnostic still
     // reports the vertex count every rebuild.
     gl.drawArrays(gl.TRIANGLES,0,this.worldVertCount);
+    // Engine Studio scene objects: resolve its saved project against the
+    // same shared IndexedDB model library used by the Import Hub. Geometry
+    // is uploaded only when the project or asset-library snapshot changes.
+    if (++this.engineProjectPoll >= 30) {
+      this.engineProjectPoll = 0;
+      try {
+        const raw = window.localStorage.getItem('adventure-engine-project-v1') ?? '';
+        if (raw !== this.engineProjectRaw || this.engineAssetSnapshot !== customAssetsRef.current) {
+          this.engineProjectRaw = raw;
+          this.engineAssetSnapshot = customAssetsRef.current;
+          const parsed = raw ? deserializeEngineProject(raw) : null;
+          const project = parsed?.ok ? parsed.value : null;
+          const instances = project
+            ? buildEngineMeshInstances(project, project.activeSceneId, customAssetsRef.current)
+            : [];
+          this.engineMeshData = buildEngineMeshVertexData(instances);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.engineMeshBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, this.engineMeshData, gl.DYNAMIC_DRAW);
+        }
+      } catch {
+        this.engineMeshData = new Float32Array(0);
+      }
+    }
+    if (this.engineMeshData.length > 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.engineMeshBuffer);
+      gl.vertexAttribPointer(pLoc, 3, gl.FLOAT, false, 24, 0);
+      gl.vertexAttribPointer(cLoc, 3, gl.FLOAT, false, 24, 12);
+      gl.drawArrays(gl.TRIANGLES, 0, this.engineMeshData.length / 6);
+    }
     // BUILD 1011: sun, moon, drifting clouds — a small per-frame buffer
     // (a few hundred verts; the world buffer rebuilds only on >8-tile
     // moves and cannot carry moving sky objects). Camera-centred on the
@@ -1259,6 +1299,7 @@ export class WorldRenderer {
     gl.deleteBuffer(this.actorBuffer);
     gl.deleteBuffer(this.corpseBuffer);
     gl.deleteBuffer(this.skyBuffer);
+    gl.deleteBuffer(this.engineMeshBuffer);
     gl.deleteBuffer(this.skyObjBuffer);
     gl.deleteBuffer(this.fxBuffer);
     gl.deleteBuffer(this.carBuffer);
