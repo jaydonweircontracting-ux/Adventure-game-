@@ -1289,7 +1289,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       parsed.push(res.asset);
       if(res.dependencies)pendingDepsRef.current.set(res.asset.id,res.dependencies);
       noteDeps(res.asset,res.dependencies);
-      if(res.asset.format==='fbx'&&res.asset.textureBaked)notes.push('\''+res.asset.name+'\': diffuse texture map was loaded and baked into model colours');
+      if(res.asset.format==='fbx'&&res.asset.textureImages?.some(Boolean))notes.push('\''+res.asset.name+'\': diffuse texture map was loaded for the textured character renderer');
       if(res.asset.format==='fbx'&&res.asset.animationFrames?.length)notes.push('\''+res.asset.name+'\': skeletal walk cycle baked ('+res.asset.animationFrames.length+' frames at '+(res.asset.animationFps??8)+' fps)');
     };
     for(const file of modelFiles){
@@ -1339,10 +1339,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // are not rendered.
     const referenced=new Set<string>();
     pendingDepsRef.current.forEach((deps)=>{for(const d of deps)if(d.found&&d.resolvedPath)referenced.add(d.resolvedPath);});
-    const hasBakedFbxTexture=parsed.some(a=>a.format==='fbx'&&a.textureBaked);
+    const hasFbxTexture=parsed.some(a=>a.format==='fbx'&&a.textureImages?.some(Boolean));
     for(const f of files.filter(f=>/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))){
       const rel=relPathOf(f);
-      if(!hasBakedFbxTexture&&!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file — images are only used as glTF texture references, and textures are not rendered, so it was ignored');
+      if(!hasFbxTexture&&!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file — images are only used as glTF texture references, and no imported model used it, so it was ignored');
     }
     setProgress(null);
     if(parsed.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){
