@@ -224,7 +224,7 @@ export class WorldRenderer {
   private skyBuffer!: WebGLBuffer;
   private engineMeshBuffer!: WebGLBuffer;
   private engineProjectRaw = '';
-  private engineMeshData = new Float32Array(0);
+  private engineMeshData: ReturnType<typeof buildEngineMeshVertexData> = new Float32Array(0);
   private engineAssetSnapshot: CustomAsset[] | null = null;
   private engineProjectPoll = 0;
   private pLoc!: number;
