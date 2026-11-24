@@ -266,7 +266,7 @@ type GltfJson = {
     };
     normalTexture?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
     occlusionTexture?: { index: number; texCoord?: number; strength?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
-    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number[]; scale?: number[]; texCoord?: number } } };
+    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
     alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND'; alphaCutoff?: number; doubleSided?: boolean;
   }>;
   accessors?: Array<{ bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean; sparse?: unknown }>;
@@ -373,7 +373,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
-  extras: Pick<CustomAsset, 'uvs' | 'uvSets' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'> = {},
+  extras: Partial<Pick<CustomAsset, 'uvs' | 'uvSets' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'>> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
@@ -510,7 +510,7 @@ function buildAssetFromGltf(
       const t = v.extensions?.KHR_texture_transform;
       return { textureIndex: v.index, texCoord: t?.texCoord ?? v.texCoord ?? 0,
         ...(v.scale !== undefined ? { scale: v.scale } : {}),
-        ...(t ? { transform: { offset: [t.offset?.[0] ?? 0, t.offset?.[1] ?? 0], rotation: t.rotation ?? 0, scale: [t.scale?.[0] ?? 1, t.scale?.[1] ?? 1], ...(t.texCoord !== undefined ? { texCoord: t.texCoord } : {}) } } : {}) };
+        ...(t ? { transform: { offset: [t.offset?.[0] ?? 0, t.offset?.[1] ?? 0] as [number, number], rotation: t.rotation ?? 0, scale: [t.scale?.[0] ?? 1, t.scale?.[1] ?? 1] as [number, number], ...(t.texCoord !== undefined ? { texCoord: t.texCoord } : {}) } } : {}) };
     };
     const input: PbrMaterialInput = {
       name: mat.name || 'Material ' + (i + 1), baseColorFactor: p.baseColorFactor,
