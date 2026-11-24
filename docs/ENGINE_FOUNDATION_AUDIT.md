@@ -101,6 +101,15 @@ Prefab placement currently starts at the scene origin; creators can reposition t
 - The asset bridge regression test covers stable-ID resolution, geometry identity, missing assets, disabled components and hidden meshes.
 - The bridge is not yet consumed by `worldRenderer3d`; attached models are currently project data and renderer-ready descriptors, not yet visible mesh instances in the 3D game scene. The next renderer task is to feed these descriptors into a dedicated mesh buffer/program with transforms and GPU cleanup.
 
+## Live 3D renderer binding (added on this branch)
+
+- The WebGL `WorldRenderer` now polls the Engine Studio project save and resolves the active scene's enabled `adventure.mesh-asset` references against the existing shared custom-asset library.
+- Indexed model triangles are expanded into the renderer's existing interleaved XYZ/RGB vertex format; entity transforms and available parent transforms are applied before upload.
+- A dedicated dynamic GPU buffer is allocated for Engine Studio meshes, drawn with the existing camera/view-projection matrix and depth testing, and released during renderer disposal.
+- Project JSON and asset-library snapshots are cached; the GPU buffer is refreshed only when the project save or asset-library reference changes, not rebuilt every frame.
+- The asset bridge test now checks triangle expansion and interleaved position/color output.
+- This is the first live rendering connection, not a full creator viewport: no texture maps, skeletal animation, lighting/material pipeline, gizmo preview, or live 3D manipulation are included yet. The renderer draws the active saved Engine Studio scene when the 3D mode is running.
+
 ## Remaining integration gates
 
 1. Run a reproducible typecheck, production build and all new tests in GitHub Actions. No run has been observed yet for this branch; do not treat these tests as passed.
