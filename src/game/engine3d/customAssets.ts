@@ -366,7 +366,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
-  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked'> = {},
+  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
