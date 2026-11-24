@@ -37,11 +37,11 @@ jobs:
           let source = fs.readFileSync(path, 'utf8');
           const replacements = [
             [
-              "const wBridge1088 = W.defaultWorld();\\n  RV1088.stampRivers(wBridge1088); // mirror worldSync3d.syncWorldOnLoad before bridge detection",
+              "const wBridge1088 = W.defaultWorld();\n  RV1088.stampRivers(wBridge1088); // mirror worldSync3d.syncWorldOnLoad before bridge detection",
               "const wBridge1088 = SS.createSettlementSim(W.defaultWorld()).world;"
             ],
             [
-              "  RV1088.stampRivers(simWeek1088.world); // the live world sync stamps the persistent river map before simulation\\n",
+              "  RV1088.stampRivers(simWeek1088.world); // the live world sync stamps the persistent river map before simulation\n",
               ""
             ]
           ];
