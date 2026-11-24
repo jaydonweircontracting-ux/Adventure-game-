@@ -793,7 +793,12 @@ export function placeBridgeSpan(
   const first = span[0], last = span[span.length - 1];
   const dx = first.x - nearBank.x, dy = first.y - nearBank.y;
   const farBank = { x: last.x + dx, y: last.y + dy };
-  const approachTiles = [
+  const items: PlacedItem[] = [];
+  for (const tile of span) {
+    const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
+    if (!result.ok) return { ok: false, reason: result.reason };
+    items.push(result.item);
+  }  const approachTiles = [
     ...planBankApproachTiles(world, nearBank),
     ...planBankApproachTiles(world, farBank),
   ].filter((tile, index, all) =>
