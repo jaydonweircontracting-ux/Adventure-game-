@@ -1308,26 +1308,21 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.obj')||lower.endsWith('.fbx')){
         if(file.size>MAX_FILE_BYTES){failed.push(file.name+': file is over 5 MB');filesDone++;await yieldToLoop();continue;}
         try{
+          setP('parsing',file.name);await yieldToLoop();
           if(lower.endsWith('.glb')){
             const buf=await file.arrayBuffer();bytesDone+=file.size;
-            setP('parsing',file.name);await yieldToLoop();
             accept(parseGlbUpload(buf,file.name,companionFiles,dirOf(relPathOf(file))),file.name);
           }else if(lower.endsWith('.gltf')){
             const text=await file.text();bytesDone+=file.size;
-            setP('parsing',file.name);await yieldToLoop();
             accept(parseGltfUpload(text,file.name,companionFiles,dirOf(relPathOf(file))),file.name);
-          }else{
+          }else if(lower.endsWith('.obj')){
             const text=await file.text();bytesDone+=file.size;
-            setP('parsing',file.name);await yieldToLoop();
             accept(parseObjUpload(text,file.name),file.name);
-          }
-          if(lower.endsWith('.fbx')){
+          }else{
             const buf=await file.arrayBuffer();bytesDone+=file.size;
-            setP('parsing',file.name);await yieldToLoop();
             accept(await parseFbxUpload(buf,file.name),file.name);
           }
-          }
-        }catch{failed.push(file.name+': could not read the file');}
+        }catch{failed.push(file.name+': could not read or parse the file');}
         filesDone++;await yieldToLoop();
         continue;
       }
