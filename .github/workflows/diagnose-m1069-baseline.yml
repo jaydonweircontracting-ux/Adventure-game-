@@ -1,0 +1,39 @@
+name: Measure M1069 baseline at 1104
+
+on:
+  push:
+    branches:
+      - "diagnose/m1069-baseline-1104"
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Stop the historical harness after M1069
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const file = 'scripts/simulate.ts';
+          let source = fs.readFileSync(file, 'utf8');
+          const marker = "console.log('M1069 24h:";
+          const at = source.indexOf(marker);
+          if (at < 0) throw new Error('M1069 output marker not found');
+          const close = source.indexOf(');', at);
+          if (close < 0) throw new Error('M1069 output statement did not close');
+          source = source.slice(0, close + 2) + '\nprocess.exit(0);\n' + source.slice(close + 2);
+          fs.writeFileSync(file, source);
+          NODE
+          npx tsx scripts/simulate.ts
