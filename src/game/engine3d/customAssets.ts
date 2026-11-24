@@ -987,15 +987,17 @@ export async function parseFbxUpload(
     }
 
     let animationFrames: number[][] | undefined;
-    const animationFps = 8;
-    const frameCount = Math.min(8, Math.floor(100000 / Math.max(1, basePositions.length)));
-    if (clip && frameCount >= 2 && meshes.some(mesh => mesh.isSkinnedMesh)) {
+    let animationFps = 8;
+    const maxFrames = Math.min(8, Math.floor(100000 / Math.max(1, basePositions.length)));
+    if (clip && maxFrames >= 2 && meshes.some(mesh => mesh.isSkinnedMesh)) {
       try {
         const mixer = new THREE.AnimationMixer(root);
         const action = mixer.clipAction(clip);
         action.play();
         animationFrames = [];
-        const duration = Math.max(clip.duration || 1, 1 / animationFps);
+        const duration = Math.max(clip.duration || 1, 0.25);
+        const frameCount = Math.max(2, Math.min(maxFrames, Math.ceil(duration * 8)));
+        animationFps = frameCount / duration;
         for (let frame = 0; frame < frameCount; frame++) {
           mixer.setTime((frame / animationFps) % duration);
           root.updateMatrixWorld(true);
@@ -1152,7 +1154,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
   const vertexCount = r.positions.length / 3;
   if (r.uvs !== undefined && (!Array.isArray(r.uvs) || r.uvs.length !== vertexCount * 2 || !r.uvs.every(isFiniteNum))) return null;
   if (r.materialIndices !== undefined && (!Array.isArray(r.materialIndices) || r.materialIndices.length !== vertexCount || !r.materialIndices.every(v => Number.isInteger(v) && (v as number) >= -1 && (v as number) < ((Array.isArray(r.materials) ? r.materials.length : 0))))) return null;
-  if (r.textureImages !== undefined && (!Array.isArray(r.textureImages) || r.textureImages.length > 512 || !r.textureImages.every(v => v === null || (typeof v === 'string' && /^data:image\/(png|jpeg|webp|gif|bmp|avif);base64,/i.test(v) && v.length <= 12_000_000)))) return null;
+  if (r.textureImages !== undefined && (!Array.isArray(r.textureImages) || r.textureImages.length > 512 || r.textureImages.reduce((total, v) => total + (typeof v === 'string' ? v.length : 0), 0) > 16_000_000 || !r.textureImages.every(v => v === null || (typeof v === 'string' && /^data:image\/(png|jpeg|webp|gif|bmp|avif);base64,/i.test(v) && v.length <= 12_000_000)))) return null;
   if (r.indices.some((v) => (v as number) < 0 || (v as number) * 3 >= (r.positions as number[]).length)) return null;
   if (!isFiniteNum(r.width) || !isFiniteNum(r.height)) return null;
   const w = r.width as number, h = r.height as number;
