@@ -14,6 +14,7 @@ import {
   updateEntityTransform,
   updateEngineComponent,
   type EngineProject,
+  type EngineResult,
   type Transform3D,
 } from './engineCore';
 
