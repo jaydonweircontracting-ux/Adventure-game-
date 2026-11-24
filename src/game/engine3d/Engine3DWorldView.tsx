@@ -2936,6 +2936,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // tiles on the world, the camp well, the bridge sites, and how
       // many tiles have any traffic (the session-only counts).
       getPaths:()=>({tiles:pathTiles(stateRef.current.world),well:wellTile(stateRef.current.world,FOUNDER_CAMP.x,FOUNDER_CAMP.y),bridges:pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),trafficTiles:Object.keys(pathsRef.current.traffic).length}),
+      // BUILD 1127 test hook (read-only): the live bridge sites (probes only — no gameplay effect).
+      getBridges:()=>pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),
       // BUILD 1089 (2.4): the mine / quarry / lumber sites (probes
       // only) — the designations, their state, and the one-line
       // summary (the HUD / E report text). Read-only.

@@ -13,7 +13,7 @@ import { saveWorld, type IsoWorld } from '../iso/isoWorld';
 import { saveClock, npcWalkable, type DayClock } from './townsfolk3d';
 import {
   FOUNDERS_ENABLED, FOUNDER_CAMP, FOUNDER_CAMP_CENTRE, FOUNDER_EAT_TILE,
-  FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, FOUNDER_HARVEST_TICKS, FOUNDER_MINE_TICKS,
+  FOUNDER_WORK_RADIUS, FOUNDER_CHOP_TICKS, CHOP_GIVE_UP_TICKS, bridgeWorkTileReachableFromCamp, FOUNDER_HARVEST_TICKS, FOUNDER_MINE_TICKS,
   decayFounderNeeds, founderAbsMinutes, founderDestination, treeWorkTile,
   stepFounderMove, emptyFounderPath, applyFounderWaitStep, saveFoundersSave,
   foundersSaveOf, eatFounderMealFromRegistry, fellTreeToCarrier, carryAnimalYieldToCarrier,
@@ -68,7 +68,7 @@ import {
 } from './storehouse';
 import { addPlacement, placedFenceTiles, validatePlacement } from './placements';
 import {
-  BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
+  BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, BRIDGE_WORK_STEPS, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
   finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
   spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
@@ -687,7 +687,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
         // flip them to sleep and the arrival block would teleport
         // them to bed).
         if(f.workState!=='arriving'){
-          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day,sitePlanRef.current?.site.approach??null),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')).length>=BAKE_SLOTS,readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),campMeat:granaryMeatInRegistry(registryRef.current),campFish:granaryFishInRegistry(registryRef.current),readyHuntJobs:openJobs(jobBoardRef.current,'hunt').length,readyFishJobs:openJobs(jobBoardRef.current,'fish').length,readyShepherdFeedJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_FEED_JOB_ID).length,readyShepherdShearJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_SHEAR_JOB_ID).length,huntTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPrey'||o.workState==='hunting')),fishTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBank'||o.workState==='fishing')),shepherdTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPen'||o.workState==='shepherding')),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
+          const decision=chooseScoredActivity({needs:f.needs,minutes:clock.minutes,foodStock:campFoodInRegistry(registryRef.current),stockpileWood:pileForWood(),construction:constructionRef.current,nearestTreeDist:scorerTreeDist(jobBoardRef.current,f.id,FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS),distToSite:distToActiveBuildSite({x:Math.round(f.x),y:Math.round(f.y)},constructionRef.current,storehouseRef.current,clock.day,sitePlanRef.current?.site.approach??null),builderTaken,currentJob,closestAffinity:tClosest?tClosest.affinity:50,companionAtCamp:tCompanionAtCamp,readyFarmTiles:readyFarmCount,stoneStock:campStoneInRegistry(registryRef.current),readyQuarryJobs:readyQuarryCount,storehouseStoneNeed:quarryRadius>QUARRY_CLAIM_RADIUS,quarryTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toQuarry'||o.workState==='mining'||o.carryingStone>0)).length>=quarryCrewCap,storehouse:storehouseRef.current,storehouseWood:storehouseWoodInRegistry(registryRef.current),readyWaterJobs:readyWaterCount,well,bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(f.x),y:Math.round(f.y)},clock.day,foundingDone,storehouseRef.current.state==='done',(campWoodInRegistry(registryRef.current) + storehouseWoodInRegistry(registryRef.current))),day:clock.day,readyMineJobs:readyMineCount,mineTaken:ironTaken,coalTaken,storehouseIron:storehouseOreInRegistry(registryRef.current,'iron'),storehouseCoal:metalChainCoalInRegistry(registryRef.current),readyLumberJobs:readyLumberCount,readyPlantJobs:readyPlantCount,readyMillJobs:readyMillCount,millTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toMill'||o.workState==='milling')),readyBakeJobs:readyBakeCount,bakeTaken:foundersRef.current.filter((o)=>o!==f&&(o.workState==='toBakery'||o.workState==='baking')).length>=BAKE_SLOTS,readySmeltJobs:readySmeltCount,smeltTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmelter'||o.workState==='smelting')),readySmithJobs:readySmithCount,smithTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSmith'||o.workState==='smithing')),readySawJobs:readySawCount,sawTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toSawmill'||o.workState==='sawing')),readyCarpenterJobs:readyCarpenterCount,carpenterTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toCarpenter'||o.workState==='carpentering')),storehouseIngots:metalChainIngotsInRegistry(registryRef.current),storehouseTools:metalChainToolsInRegistry(registryRef.current),storehouseTimber:metalChainTimberInRegistry(registryRef.current),storehouseFurniture:metalChainFurnitureInRegistry(registryRef.current),campGrain:campGrainInRegistry(registryRef.current),campFlour:foodChainFlourInRegistry(registryRef.current),campMeat:granaryMeatInRegistry(registryRef.current),campFish:granaryFishInRegistry(registryRef.current),readyHuntJobs:openJobs(jobBoardRef.current,'hunt').length,readyFishJobs:openJobs(jobBoardRef.current,'fish').length,readyShepherdFeedJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_FEED_JOB_ID).length,readyShepherdShearJobs:openJobs(jobBoardRef.current,'shepherd').filter((j)=>j.targetId===PEN_SHEAR_JOB_ID).length,huntTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPrey'||o.workState==='hunting')),fishTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toBank'||o.workState==='fishing')),shepherdTaken:foundersRef.current.some((o)=>o!==f&&(o.workState==='toPen'||o.workState==='shepherding')),profession:f.profession,builderExists:foundersRef.current.some((o)=>o.profession==='builder')});
           f.activity=decision.activity;
           f.lastDecision=decision;
         }
@@ -745,7 +745,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           // BUILD 1088: a bridge builder keeps the site while the
           // bridge step is startable — the same rule, third in line.
           const bridgeSite=myJob&&myJob.kind==='build'&&myJob.targetId.startsWith('bridge-')?bridgeSiteById(pathsRef.current.bridges,myJob.targetId):undefined;
-          const keepBridge=!!bridgeSite&&canStartBridge(bridgeSite,clock.day,foundingDone,storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current));
+          const keepBridge=!!bridgeSite&&bridgeSite.state!=='done'&&bridgeSite.progress<BRIDGE_WORK_STEPS; // BUILD 1127 fix 4 (port of 1113): kept while unfinished (pen precedent, 1102) - the pile gate released the job mid-build while the chain ate the step wood.
           const keepMill=!!(myJob&&myJob.kind==='build'&&myJob.targetId===MILL_SITE_ID)&&canStartMill(foodChainRef.current,campGrainInRegistry(registryRef.current),campWoodInRegistry(registryRef.current));
           const keepBakery=!!(myJob&&myJob.kind==='build'&&myJob.targetId===BAKERY_SITE_ID)&&canStartBakery(foodChainRef.current,campWoodInRegistry(registryRef.current));
           // BUILD 1095: a chain builder keeps the site while the step
@@ -852,7 +852,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             const planBuilding=sitePlanRef.current.building;let planJobId:string|null=null;
             if(planBuilding==='hut'){const planHut=HUT_SITES.find((s)=>s.rect.x0===sitePlanRef.current!.site.rect.x0&&s.rect.y0===sitePlanRef.current!.site.rect.y0);if(!hutDone&&planHut&&(canBuild(constructionRef.current,campWoodInRegistry(registryRef.current))||(storehouseRef.current.state==='done'&&storehouseWoodInRegistry(registryRef.current)>=HUT_WOOD_PER_STEP)))planJobId=buildJobIdFor(planHut.id);}
             else if(planBuilding==='storehouse'){if(foundingDone&&canStartStorehouse(storehouseRef.current,clock.day,foundingDone,campWoodInRegistry(registryRef.current),campStoneInRegistry(registryRef.current)))planJobId=buildJobIdFor(STOREHOUSE_SITE_ID);}
-            else if(planBuilding==='bridge'){const planBridge=pathsRef.current.bridges.find((s)=>s.x===sitePlanRef.current!.site.rect.x0&&s.y===sitePlanRef.current!.site.rect.y0);if(foundingDone&&storehouseRef.current.state==='done'&&planBridge&&canStartBridge(planBridge,clock.day,foundingDone,true,campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(planBridge.id);}
+            else if(planBuilding==='bridge'){const planBridge=pathsRef.current.bridges.find((s)=>s.x===sitePlanRef.current!.site.rect.x0&&s.y===sitePlanRef.current!.site.rect.y0);if(foundingDone&&storehouseRef.current.state==='done'&&planBridge&&bridgeWorkTileReachableFromCamp(world,planBridge)&&canStartBridge(planBridge,clock.day,foundingDone,true,(campWoodInRegistry(registryRef.current) + storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(planBridge.id);}
             else if(planBuilding==='mill'){if(constructionRef.current.sites[0]&&constructionRef.current.sites[0].state==='done'&&canStartMill(foodChainRef.current,campGrainInRegistry(registryRef.current),campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(MILL_SITE_ID);}
             else if(planBuilding==='bakery'){if(canStartBakery(foodChainRef.current,campWoodInRegistry(registryRef.current)))planJobId=buildJobIdFor(BAKERY_SITE_ID);}
             else if(planBuilding==='smelter'){if(canStartSmelter(metalChainRef.current,storehouseOreInRegistry(registryRef.current,'iron'),(campWoodInRegistry(registryRef.current)+storehouseWoodInRegistry(registryRef.current))))planJobId=buildJobIdFor(SMELTER_SITE_ID);}
@@ -910,7 +910,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           // a step's wood. The nearest startable site wins.
           if(f.workState==='toTree'&&!f.treeTarget&&foundingDone&&storehouseRef.current.state==='done'&&!builderTaken&&!canStartPen(penRef.current,clock.day,foundingHutsDone(constructionRef.current),storehouseRef.current.state==='done',campFoodInRegistry(registryRef.current),campWoodInRegistry(registryRef.current))){ // BUILD 1102: the bridge yields while the pen is startable.
             let bestSite:BridgeSite|null=null;let bestDist=Infinity;
-            for(const s of pathsRef.current.bridges){if(!canStartBridge(s,clock.day,foundingDone,true,campWoodInRegistry(registryRef.current)))continue;const d=Math.abs(s.workTile.x-Math.round(f.x))+Math.abs(s.workTile.y-Math.round(f.y));if(d<bestDist){bestDist=d;bestSite=s;}}
+            for(const s of pathsRef.current.bridges){if(!bridgeWorkTileReachableFromCamp(world,s)||!canStartBridge(s,clock.day,foundingDone,true,(campWoodInRegistry(registryRef.current) + storehouseWoodInRegistry(registryRef.current))))continue;const d=Math.abs(s.workTile.x-Math.round(f.x))+Math.abs(s.workTile.y-Math.round(f.y));if(d<bestDist){bestDist=d;bestSite=s;}}
             if(bestSite){const brc=claimJob(jobBoardRef.current,f.id,buildJobIdFor(bestSite.id));jobBoardRef.current=brc.board;if(brc.job){f.workState='toSite';myJob=brc.job;}}
           }
           // BUILD 1094: the mill build — claimed the same way as a hut
@@ -1246,6 +1246,15 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           }
         }
 
+        // BUILD 1127: chop give-up (port of the 1113 fix; the hunt give-up's twin).
+        if(f.workState==='toTree'&&f.treeTarget){
+          f.treeTicks=(f.treeTicks??0)+1;
+          if(f.treeTicks>=CHOP_GIVE_UP_TICKS){
+            if(myJob&&(myJob.kind==='chop'||myJob.kind==='lumber')){jobBoardRef.current=failJob(jobBoardRef.current,myJob.id,'give-up');myJob=undefined;}
+            f.workState='toTree';f.treeTarget=null;f.workTile=null;f.treeTicks=0;
+          }
+        }else{f.treeTicks=0;}
+
         // Destination: building founders work at the approach tile;
         // sleeping founders head for the approach tile too (the door)
         // and the arrival block steps them through it. Everyone else
@@ -1461,7 +1470,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
                   // until the placement actually lands (finishBridge,
                   // below) — the hut and storehouse's ready/done split.
                   const site=bridgeSiteById(pathsRef.current.bridges,myJob!.targetId);
-                  if(site&&canBuildBridge(site,campWoodInRegistry(registryRef.current))){
+                  if(site&&canBuildBridge(site,(campWoodInRegistry(registryRef.current) + storehouseWoodInRegistry(registryRef.current)))){
                     const brRes=spendBridgeStepFromRegistry(registryRef.current,pathsRef.current.bridges,myJob!.targetId);
                     pathsRef.current={...pathsRef.current,bridges:brRes.bridges};
                     if(brRes.spent||brRes.completed)step={registry:brRes.registry,construction:constructionRef.current,storehouse:storehouseRef.current,foodChain:foodChainRef.current,metalChain:metalChainRef.current,completed:brRes.completed,spent:brRes.spent};
@@ -2328,7 +2337,7 @@ export function simulateWorldSimWaitStep(ctx: WaitSimContext, step: number): voi
             readyFarmTiles:wReadyFarm,
             readyWaterJobs:wReadyWater,
             well:wWell,
-            bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(wf.x),y:Math.round(wf.y)},clockRef.current.day,!hasUnfinishedSite(constructionRef.current),storehouseRef.current.state==='done',campWoodInRegistry(registryRef.current)),
+            bridge:bridgeBuildContext(pathsRef.current.bridges,{x:Math.round(wf.x),y:Math.round(wf.y)},clockRef.current.day,!hasUnfinishedSite(constructionRef.current),storehouseRef.current.state==='done',(campWoodInRegistry(registryRef.current) + storehouseWoodInRegistry(registryRef.current))),
             stoneStock:campStoneInRegistry(registryRef.current),
             readyQuarryJobs:wReadyQuarry,
             storehouse:storehouseRef.current,

@@ -353,7 +353,7 @@ export function planBuildingStartable(building: PlanBuildingId, input: Settlemen
     case 'carpenter': return canStartCarpenter(input.metalChain, input.campWood + input.storehouseWood);
     case 'workshop': return canStartWorkshop(input.metalChain, input.foodChain.bakery.state === 'done', input.campWood + input.storehouseWood, input.storehouseTools);
     case 'inn': return canStartInn(input.housing, input.construction, input.campWood, input.storehouseWood, input.day);
-    case 'bridge': return input.bridges.some((s) => canStartBridge(s, input.day, input.foundingDone, input.storehouse.state === 'done', input.campWood));
+    case 'bridge': return input.bridges.some((s) => canStartBridge(s, input.day, input.foundingDone, input.storehouse.state === 'done', input.campWood + input.storehouseWood));
   }
 }
 
@@ -583,7 +583,7 @@ export function planSiteFor(
   if (building === 'bridge') {
     let best: { site: PlannedSite; score: number; reasons: string[] } | null = null;
     for (const s of input.bridges) {
-      if (!canStartBridge(s, input.day, input.foundingDone, input.storehouse.state === 'done', input.campWood)) continue;
+      if (!canStartBridge(s, input.day, input.foundingDone, input.storehouse.state === 'done', input.campWood + input.storehouseWood)) continue;
       const site: PlannedSite = { rect: { x0: s.x, y0: s.y, x1: s.x, y1: s.y }, door: { x: s.x, y: s.y }, approach: { ...s.workTile } };
       const scored = scoreSiteFor('bridge', site, world, input.camp, existingRects);
       if (scored.rejected) continue;

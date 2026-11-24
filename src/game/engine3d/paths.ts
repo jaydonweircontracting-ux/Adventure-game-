@@ -64,6 +64,7 @@ import { terrainAt, inBounds, type IsoWorld, type PlacedItem } from '../iso/isoW
 import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement } from './placements';
 import { riverAt, riverNear, riverWidthAt } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
+import { STOREHOUSE_STORE_ID } from './storehouse';
 import {
   stagePlanFor,
   stageStepSplit,
@@ -75,6 +76,7 @@ import {
   type StageSteps,
   type StagePlan,
 } from './construction';
+import { tileReachableFromCamp } from './founders';
 
 /** Founder passes over a tile before it wears into a dirt path. */
 export const PATH_TRAFFIC_THRESHOLD = 8;
@@ -730,11 +732,19 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
     // This prevents a single scan from opening every road/riverside
     // contact at once, while preserving deterministic tie-breaking.
     // Strip the transient score before it enters the saved BridgeSite list.
-    const best = found[0] as BridgeSite & { _candidateScore?: number };
-    const { _candidateScore: _score, ...site } = best;
-    state.bridges = [...state.bridges, site];
-    state.lastBridgeScanDay = day;
-    return [site];
+    // BUILD 1127 fix 5 (port of 1113): the best-scored crossing may sit
+    // on a land spur no builder can walk to (the v2 rivers braid around
+    // spurs — in 1113 the scan opened the sealed southern chain two days
+    // running while reachable crossings waited). Walk the scored list
+    // until a crossing whose work tile is reachable from camp is found;
+    // the one-site-per-day contract is unchanged.
+    const reachable = found.find((site) => tileReachableFromCamp(world, site.workTile.x, site.workTile.y));
+    if (reachable) {
+      const { _candidateScore: _score, ...site } = reachable as BridgeSite & { _candidateScore?: number };
+      state.bridges = [...state.bridges, site];
+      state.lastBridgeScanDay = day;
+      return [site];
+    }
   }
   state.lastBridgeScanDay = day;
   return [];
@@ -877,12 +887,27 @@ export function spendBridgeStepFromRegistry(
   if (site.state === 'done' || site.progress >= BRIDGE_WORK_STEPS) {
     return { registry, bridges: [...bridges], site, completed: site.progress >= BRIDGE_WORK_STEPS, spent: false };
   }
-  if (storeQty(registry, CAMP_STORE_ID, 'wood') < BRIDGE_WOOD_PER_STEP) {
+  // BUILD 1127 fix 3 (port of 1113): the step draws from the camp
+  // pile AND the storehouse, camp first (the metalChain.ts
+  // withdrawChainWood pattern). Once the storehouse is done the
+  // founders deliver all wood to the storehouse store, so the camp
+  // pile sits at 0 and a camp-only spend could never fire.
+  const totalWood = storeQty(registry, CAMP_STORE_ID, 'wood') + storeQty(registry, STOREHOUSE_STORE_ID, 'wood');
+  if (totalWood < BRIDGE_WOOD_PER_STEP) {
     return { registry, bridges: [...bridges], site, completed: false, spent: false };
   }
-  const w = withdrawFrom(registry, CAMP_STORE_ID, 'wood', BRIDGE_WOOD_PER_STEP);
-  if (w.taken < BRIDGE_WOOD_PER_STEP) {
-    // Cannot happen (the guard above read the same store), but a
+  let remaining = BRIDGE_WOOD_PER_STEP;
+  let spentRegistry = registry;
+  const campDraw = withdrawFrom(spentRegistry, CAMP_STORE_ID, 'wood', remaining);
+  remaining -= campDraw.taken;
+  spentRegistry = campDraw.registry;
+  if (remaining > 0) {
+    const storeDraw = withdrawFrom(spentRegistry, STOREHOUSE_STORE_ID, 'wood', remaining);
+    remaining -= storeDraw.taken;
+    spentRegistry = storeDraw.registry;
+  }
+  if (remaining > 0) {
+    // Cannot happen (the guard above read both stores), but a
     // partial withdrawal must never become a partial step.
     return { registry, bridges: [...bridges], site, completed: false, spent: false };
   }
@@ -903,7 +928,7 @@ export function spendBridgeStepFromRegistry(
     stages: nextStages,
   };
   return {
-    registry: w.registry,
+    registry: spentRegistry,
     bridges: bridges.map((s) => (s.id === siteId ? next : s)),
     site: next,
     completed,

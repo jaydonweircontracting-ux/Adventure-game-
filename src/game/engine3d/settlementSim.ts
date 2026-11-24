@@ -35,6 +35,8 @@ import {
   FOUNDER_NAMES,
   FOUNDER_WORK_RADIUS,
   FOUNDER_CHOP_TICKS,
+  CHOP_GIVE_UP_TICKS,
+  bridgeWorkTileReachableFromCamp,
   FOUNDER_HARVEST_TICKS,
   FOUNDER_MINE_TICKS,
   decayFounderNeeds,
@@ -185,7 +187,7 @@ import {
   openMineSite, openMineSites, founderMiningMineral, isQuarrySiteRock, quarrySiteRocks, freshMineState, validateMineState, type MineState,
 } from './mines';
 import {
-  BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, WELL_START_DAY,
+  BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, BRIDGE_WORK_STEPS, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
   finishBridge, freshPathState, reconcileBridges, recordTraffic, scanForBridgeSites, seedWell,
   spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
@@ -1095,7 +1097,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         readyFarmTiles: readyFarmCount,
         readyWaterJobs: readyWaterCount,
         well,
-        bridge: bridgeBuildContext(sim.pathState.bridges, { x: Math.round(f.x), y: Math.round(f.y) }, day, foundingDone, sim.storehouse.state === 'done', campWoodInRegistry(sim.registry)),
+        bridge: bridgeBuildContext(sim.pathState.bridges, { x: Math.round(f.x), y: Math.round(f.y) }, day, foundingDone, sim.storehouse.state === 'done', (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry))),
         stoneStock: campStoneInRegistry(sim.registry),
         readyQuarryJobs: readyQuarryCount, storehouseStoneNeed: quarryRadius > QUARRY_CLAIM_RADIUS,
         // BUILD 1086: the quarry slot is live — a founder scored
@@ -1190,7 +1192,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       const bridgeSite = myJob && myJob.kind === 'build' && myJob.targetId.startsWith('bridge-')
         ? bridgeSiteById(sim.pathState.bridges, myJob.targetId)
         : undefined;
-      const keepBridge = !!bridgeSite && canStartBridge(bridgeSite, day, foundingDone, sim.storehouse.state === 'done', campWoodInRegistry(sim.registry));
+      const keepBridge = !!bridgeSite && bridgeSite.state !== 'done' && bridgeSite.progress < BRIDGE_WORK_STEPS; // BUILD 1127 fix 4 (port of 1113): the bridge is kept while unfinished — the pile gate released the job mid-build (the chain eats the step wood while the builder walks), so the builder waits at the site; the pen already keeps this way (1102).
       // BUILD 1094: a mill/bakery builder keeps the site while the
       // step is startable — the same rule as a hut/storehouse/
       // bridge builder (the view already had this; the sim did not,
@@ -1337,7 +1339,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
           if (foundingDone && canStartStorehouse(sim.storehouse, day, foundingDone, campWoodInRegistry(sim.registry), campStoneInRegistry(sim.registry))) planJobId = buildJobIdFor(STOREHOUSE_SITE_ID);
         } else if (planBuilding === 'bridge') {
           const planBridge = sim.pathState.bridges.find((s) => s.x === sim.sitePlan!.site.rect.x0 && s.y === sim.sitePlan!.site.rect.y0);
-          if (foundingDone && sim.storehouse.state === 'done' && planBridge && canStartBridge(planBridge, day, foundingDone, true, campWoodInRegistry(sim.registry))) planJobId = buildJobIdFor(planBridge.id);
+          if (foundingDone && sim.storehouse.state === 'done' && planBridge && bridgeWorkTileReachableFromCamp(world, planBridge) && canStartBridge(planBridge, day, foundingDone, true, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) planJobId = buildJobIdFor(planBridge.id);
         } else if (planBuilding === 'mill') {
           if (construction.sites[0] && construction.sites[0].state === 'done' && canStartMill(sim.foodChain, campGrainInRegistry(sim.registry), campWoodInRegistry(sim.registry))) planJobId = buildJobIdFor(MILL_SITE_ID);
         } else if (planBuilding === 'bakery') {
@@ -1427,7 +1429,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         let bestSite: BridgeSite | null = null;
         let bestDist = Infinity;
         for (const s of sim.pathState.bridges) {
-          if (!canStartBridge(s, day, foundingDone, true, campWoodInRegistry(sim.registry))) continue;
+          if (!bridgeWorkTileReachableFromCamp(world, s) || !canStartBridge(s, day, foundingDone, true, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) continue;
           const d = Math.abs(s.workTile.x - Math.round(f.x)) + Math.abs(s.workTile.y - Math.round(f.y));
           if (d < bestDist) { bestDist = d; bestSite = s; }
         }
@@ -1892,6 +1894,27 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       }
     }
 
+    // BUILD 1127: chop give-up (port of the 1113 fix; the hunt give-up's
+    // twin). A founder whose tree is unreachable never reaches the
+    // chop — without a give-up it holds the job forever and no build
+    // claim can ever fire (every claim needs toTree + no treeTarget).
+    if (f.workState === 'toTree' && f.treeTarget) {
+      f.treeTicks = (f.treeTicks ?? 0) + 1;
+      if (f.treeTicks >= CHOP_GIVE_UP_TICKS) {
+        if (myJob && (myJob.kind === 'chop' || myJob.kind === 'lumber')) {
+          ledger.jobsFailed['give-up'] = (ledger.jobsFailed['give-up'] ?? 0) + 1;
+          sim.board = failJob(sim.board, myJob.id, 'give-up');
+          myJob = undefined;
+        }
+        f.workState = 'toTree';
+        f.treeTarget = null;
+        f.workTile = null;
+        f.treeTicks = 0;
+      }
+    } else {
+      f.treeTicks = 0;
+    }
+
 
     // Destination: build/harvest job tiles, the sleep approach, the
     // site approach, else the 1057 destination (carrying → camp,
@@ -2191,7 +2214,7 @@ export function advanceSettlementTick(sim: SettlementSim): void {
               // actually lands (finishBridge, below) — the hut and
               // storehouse's ready/done split.
               const site = bridgeSiteById(sim.pathState.bridges, myJob!.targetId);
-              if (site && canBuildBridge(site, campWoodInRegistry(sim.registry))) {
+              if (site && canBuildBridge(site, (campWoodInRegistry(sim.registry) + storehouseWoodInRegistry(sim.registry)))) {
                 const brRes = spendBridgeStepFromRegistry(sim.registry, sim.pathState.bridges, myJob!.targetId);
                 sim.pathState = { ...sim.pathState, bridges: brRes.bridges };
                 if (brRes.spent || brRes.completed) {

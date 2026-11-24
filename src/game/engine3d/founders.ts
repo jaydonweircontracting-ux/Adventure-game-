@@ -260,6 +260,36 @@ export const FOUNDER_START_FOOD = 0;
 export const FOUNDER_WORK_RADIUS = 60;
 /** Ticks spent chopping at a tree before it falls. */
 export const FOUNDER_CHOP_TICKS = 3;
+/** Ticks a founder may spend walking to a chop target before giving
+ *  up (BUILD 1127 — port of the 1113 fix; the hunt give-up's twin,
+ *  HUNT_GIVE_UP_TICKS 1102). A walk to the farthest tree in work
+ *  radius is ~60 ticks; 360 is 6x that, so a legitimate walk never
+ *  trips it. Without it a founder whose tree is unreachable (across
+ *  a river with no bridge yet, or a permanently blocked corridor)
+ *  holds the chop job forever — in 1113 all three founders sat
+ *  toTree/chop for 11 game-hours, wood frozen at 8, the storehouse
+ *  never started, health → 8. */
+export const CHOP_GIVE_UP_TICKS = 360;
+// BUILD 1127 fix 4 (port of 1113): a bridge site whose work tile no
+// builder can walk to must never be claimed. The v2 rivers braid
+// around land spurs, and a work tile can be walkable yet sealed by
+// the river's meanders — in 1113 the claim loop pinned forever on
+// such a spur while reachable sites waited. The seal is terrain, so
+// the answer is cached per site.
+const bridgeReachableCache = new WeakMap<object, boolean>();
+// BUILD 1127 fix 5 (port of 1113): the tile-level reachability
+// test, so the crossing scan (paths.ts) can test a crossing's
+// work tile before opening its site.
+export function tileReachableFromCamp(world: IsoWorld, x: number, y: number): boolean {
+  return planPathNpc(world, { x: FOUNDER_CAMP.x, y: FOUNDER_CAMP.y }, { x, y }) !== null;
+}
+export function bridgeWorkTileReachableFromCamp(world: IsoWorld, site: BridgeSite): boolean {
+  const hit = bridgeReachableCache.get(site);
+  if (hit !== undefined) return hit;
+  const ok = tileReachableFromCamp(world, site.workTile.x, site.workTile.y);
+  bridgeReachableCache.set(site, ok);
+  return ok;
+}
 /** Ticks spent harvesting at a farm tile before the wheat is in
  *  the carrier (BUILD 1067 — wheat is quicker than a tree). */
 export const FOUNDER_HARVEST_TICKS = 2;
@@ -815,6 +845,10 @@ export type FounderState = {
    *  animal jobs; also the hunt's travel counter for the
    *  give-up). Session-only, reset to 0 on load like millTicks. */
   animalTicks: number;
+  /** Ticks spent walking to the current chop target (BUILD 1127 —
+   *  the chop give-up counter, the animalTicks pattern for trees).
+   *  Optional — absent reads as 0; session-only, reset on load. */
+  treeTicks?: number;
   /** Prey being hunted, if any (session-only — the job's target
    *  id + the prey's kind + its CURRENT tile, refreshed each
    *  tick from the live list, so the hunter follows a moving

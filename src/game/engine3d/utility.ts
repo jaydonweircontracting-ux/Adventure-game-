@@ -755,8 +755,18 @@ function workTermsFor(ctx: UtilityContext): {
   // so stone must not fire while the crew is lumbering. In the
   // 24h window the lumber term is 0, so the gate is exactly
   // chopWork === 0 and the M1069 guard is unchanged.
+  // BUILD 1127 (port of the 1113 fix): the stone term was gated on
+  // chopWork === 0 && lumberTerm === 0, so it fired only while the
+  // crew was idle — but the wood pile sits below full (UTILITY_PILE_FULL
+  // 24) all week, so chopWork never hit 0 and stoneTermRaw was always
+  // 0: no stone was ever quarried, the storehouse never started, and
+  // the bridge gate never opened. The term now fires on the
+  // storehouse's own need flag (day >= 3), which is the real signal —
+  // the stone term is still 0 in the 24h window because the flag is
+  // off there, so the M1069 guard is unchanged.
+  const stoneNeed = ctx.storehouseStoneNeed ?? false;
   const stoneTermRaw =
-    readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && chopWork === 0 && lumberTerm === 0
+    readyQuarry > 0 && !quarryTaken && stoneStock < QUARRY_STONE_TARGET && (stoneNeed || (chopWork === 0 && lumberTerm === 0))
       ? UTILITY_STONE_TERM_MAX * Math.max(0, 1 - stoneStock / QUARRY_STONE_TARGET)
       : 0;
   // BUILD 1087: while the settlement needs stone for (or in) the
@@ -769,7 +779,7 @@ function workTermsFor(ctx: UtilityContext): {
   // job, so a mid-build builder is never pulled off the site.
   // Gated on the tick's storehouse-need flag, so the 24h window
   // (storehouse 'none', day < 3) never sees it.
-  const stoneTerm = (ctx.storehouseStoneNeed ?? false) && stoneTermRaw > 0 ? Math.max(stoneTermRaw, UTILITY_BUILD_BASE) : stoneTermRaw;
+  const stoneTerm = stoneNeed && stoneTermRaw > 0 ? Math.max(stoneTermRaw, UTILITY_BUILD_BASE) : stoneTermRaw;
   // BUILD 1088: the water term — when the camp is short of food
   // (below FARM_FOOD_THRESHOLD) and a water job is open and the
   // well stands and the settlement is old enough (day >= 3 — the
