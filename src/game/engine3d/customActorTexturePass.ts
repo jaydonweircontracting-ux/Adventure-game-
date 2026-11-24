@@ -127,6 +127,7 @@ export class CustomActorTexturePass {
         const materialIndex = asset.materialIndices?.[vi] ?? -1;
         const material = materialIndex >= 0 ? asset.materials?.[materialIndex] : undefined;
         const slot = material?.textures.baseColor;
+        const uvData = slot && slot.texCoord > 0 ? asset.uvSets?.[slot.texCoord - 1] || asset.uvs : asset.uvs;
         const uri = slot ? asset.textureImages?.[slot.textureIndex] || null : null;
         const key = asset.id + ':' + materialIndex + ':' + (uri || 'flat');
         let batch = batches.get(key);
@@ -140,7 +141,7 @@ export class CustomActorTexturePass {
           const p = index * 3, uv = index * 2, q = index * 3;
           const x = posePositions[p], y = posePositions[p + 1], z = posePositions[p + 2];
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
-          const sourceUv: [number, number] = [asset.uvs?.[uv] ?? 0, asset.uvs?.[uv + 1] ?? 0];
+          const sourceUv: [number, number] = [uvData?.[uv] ?? 0, uvData?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;
           batch.vertices.push(wx, actor.baseY + y, wz,
             asset.colors[q] ?? asset.avgColor[0], asset.colors[q + 1] ?? asset.avgColor[1], asset.colors[q + 2] ?? asset.avgColor[2],
