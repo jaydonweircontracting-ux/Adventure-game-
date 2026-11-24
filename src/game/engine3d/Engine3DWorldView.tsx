@@ -2366,6 +2366,47 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       positionAreaSelectRect(newRect,areaSelectionLabel(newSel));
       setMessage('Moved area ('+res.moved+' item'+(res.moved===1?'':'s')+(res.skipped.length?', '+res.skipped.length+' skipped: '+res.skipped[0].reason:'')+')');
     };
+    // BUILD 1131: tap-to-auto-gather. Approach a reachable bank tile,
+    // then repeat the existing E action until this exact resource is gone.
+    let autoGatherTimer:number|null=null;
+    let autoGatherTarget:{kind:'tree'|'rock'|'deposit';x:number;y:number}|null=null;
+    const stopAutoGather=()=>{if(autoGatherTimer!==null){window.clearInterval(autoGatherTimer);autoGatherTimer=null;}autoGatherTarget=null;};
+    const startAutoGather=(kind:'tree'|'rock'|'deposit',x:number,y:number)=>{
+      stopAutoGather();
+      const around:Array<{x:number;y:number;d:number}>=[];
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(dx===0&&dy===0)continue;
+        const tx=x+dx,ty=y+dy;
+        if(controls.walkableAt(tx,ty))around.push({x:tx,y:ty,d:Math.hypot(tx-stateRef.current.position.x,ty-stateRef.current.position.y)});
+      }
+      around.sort((a,b)=>a.d-b.d);
+      const occupied=controls.figureOccupiedTiles();
+      const approach=around.find(t=>!occupied.has(t.x+','+t.y));
+      if(!approach){setMessage('No clear space beside that resource');return;}
+      const dest={x:approach.x,y:approach.y};
+      const path=planPlayerPath(stateRef.current.world,stateRef.current.position,dest,occupied);
+      if(!path){setMessage('Cannot reach that resource');return;}
+      autoGatherTarget={kind,x,y};
+      playerPathRef.current=path;playerPathReplanRef.current=performance.now();playerPathWaitRef.current=null;playerPathStuckRef.current=null;
+      renderer.moveTarget=dest;
+      setMessage(kind==='tree'?'Walking to tree…':kind==='rock'?'Walking to rock…':'Walking to ore…');
+      autoGatherTimer=window.setInterval(()=>{
+        const target=autoGatherTarget;if(!target)return;
+        const w=stateRef.current.world;
+        const exists=target.kind==='tree'?w.trees.some(t=>t.tx===target.x&&t.ty===target.y)
+          :target.kind==='rock'?w.rocks.some(t=>t.tx===target.x&&t.ty===target.y)
+          :(w.mineralDeposits??[]).some(d=>d.x===target.x&&d.y===target.y&&d.remaining>0);
+        if(!exists){stopAutoGather();setMessage('Resource depleted');return;}
+        const p=stateRef.current.position;
+        if(Math.abs(p.x-target.x)>1.05||Math.abs(p.y-target.y)>1.05)return;
+        controls.action(new KeyboardEvent('keydown',{key:'e'}));
+        const after=stateRef.current.world;
+        const remains=target.kind==='tree'?after.trees.some(t=>t.tx===target.x&&t.ty===target.y)
+          :target.kind==='rock'?after.rocks.some(t=>t.tx===target.x&&t.ty===target.y)
+          :(after.mineralDeposits??[]).some(d=>d.x===target.x&&d.y===target.y&&d.remaining>0);
+        if(!remains)stopAutoGather();
+      },900);
+    };
     const paintRemoveAt=(clientX:number,clientY:number)=>{
       const destination=renderer.pickGround(clientX,clientY);if(!destination)return;
       const world=stateRef.current.world;
@@ -2625,20 +2666,26 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           // ground taps never create a hidden auto-walk journey.
           const destination=renderer.pickGround(e.clientX,e.clientY);
           if(!destination){/* no ground picked — nothing to do */}
-          else if(!controls.walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
-          else if(insideHutRef.current){
-            // Inside a hut: short interior walk, direct push + sliding
-            // (the A* walkable set is the outdoor one). The draw loop
-            // clears any outdoor path on entry.
-            renderer.moveTarget=destination;playerPathRef.current=null;setMessage('Walking to destination');
-          } else {
-            // BUILD 1030: tap-to-walk plans an A* route around trees,
-            // houses, rocks, water, walls, and figures — no more
-            // re-tapping around every obstacle. A walkable destination
-            // with no route at all reports 'Path blocked'.
-            const path=planPlayerPath(stateRef.current.world,stateRef.current.position,destination,controls.figureOccupiedTiles());
-            if(!path){setMessage('Path blocked');}
-            else{playerPathRef.current=path;playerPathReplanRef.current=performance.now();playerPathWaitRef.current=null;playerPathStuckRef.current=null;renderer.moveTarget=destination;setMessage('Walking to destination');}
+          else {
+            // A new tap cancels the previous gather order. Resource taps
+            // take precedence over blocked-tile walking and target the
+            // nearest walkable tile beside the selected object.
+            stopAutoGather();
+            const tx=Math.round(destination.x),ty=Math.round(destination.y),w=stateRef.current.world;
+            const tree=w.trees.find(t=>t.tx===tx&&t.ty===ty);
+            const rock=w.rocks.find(t=>t.tx===tx&&t.ty===ty);
+            const ore=(w.mineralDeposits??[]).find(d=>d.x===tx&&d.y===ty&&d.remaining>0);
+            if(tree)startAutoGather('tree',tx,ty);
+            else if(rock)startAutoGather('rock',tx,ty);
+            else if(ore)startAutoGather('deposit',tx,ty);
+            else if(!controls.walkableAt(destination.x,destination.y)){setMessage('That destination is blocked');}
+            else if(insideHutRef.current){
+              renderer.moveTarget=destination;playerPathRef.current=null;setMessage('Walking to destination');
+            } else {
+              const path=planPlayerPath(w,stateRef.current.position,destination,controls.figureOccupiedTiles());
+              if(!path){setMessage('Path blocked');}
+              else{playerPathRef.current=path;playerPathReplanRef.current=performance.now();playerPathWaitRef.current=null;playerPathStuckRef.current=null;renderer.moveTarget=destination;setMessage('Walking to destination');}
+            }
           }
         }
       }
@@ -3228,7 +3275,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // written once per interval, after all sub-steps (not per sub-step).
     const founderTimer=window.setInterval(()=>{runFounderSimInterval(simCtx);},900);
 
-    return()=>{if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;renderer.stop();stopNpcSim();window.clearInterval(founderTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',controls.keydown);window.removeEventListener('keyup',controls.keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',controls.action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',controls.wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;renderer.dispose();};
+    return()=>{stopAutoGather();if(waitTimerRef.current!==null){window.clearInterval(waitTimerRef.current);waitTimerRef.current=null;}waitingRef.current=false;renderer.stop();stopNpcSim();window.clearInterval(founderTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',controls.keydown);window.removeEventListener('keyup',controls.keyup);window.removeEventListener('pointerup',sprintWinUp);window.removeEventListener('pointercancel',sprintWinCancel);window.removeEventListener('touchend',sprintWinTouchEnd);window.removeEventListener('blur',sprintWinBlur);window.removeEventListener('keydown',controls.action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointermove',hover);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',controls.wheel);canvas.removeEventListener('contextmenu',cancelOnContextMenu);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;renderer.dispose();};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);markWorldDirty(worldSyncCtx) }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}
