@@ -11,6 +11,7 @@ const base = {
   avgColor: [1, 1, 1] as [number, number, number],
   format: 'fbx' as const,
   uvs: [0, 0, 1, 0, 0, 1],
+  uvSets: [[0.1, 0.2, 0.8, 0.2, 0.1, 0.9]],
   materials: [normalizePbrMaterial({
     name: 'Leather',
     baseColorFactor: [0.4, 0.2, 0.1, 1],
@@ -25,6 +26,8 @@ const base = {
 const parsed = validAsset(base);
 assert.ok(parsed);
 assert.deepEqual(parsed?.uvs, base.uvs);
+assert.deepEqual(parsed?.uvSets, base.uvSets);
+assert.equal(validAsset({ ...base, uvSets: [[0, 0]] }), null);
 assert.deepEqual(parsed?.materialIndices, base.materialIndices);
 assert.equal(parsed?.materials?.[0].name, 'Leather');
 assert.equal(parsed?.materials?.[0].textures.baseColor?.textureIndex, 2);
@@ -66,12 +69,14 @@ assert.equal(validAsset({ ...base, materialIndices: [1, 1, 1] }), null);
 // Older library records remain valid without the new optional attributes.
 const legacy = { ...base };
 delete (legacy as Partial<typeof base>).uvs;
+delete (legacy as Partial<typeof base>).uvSets;
 delete (legacy as Partial<typeof base>).materials;
 delete (legacy as Partial<typeof base>).materialIndices;
 delete (legacy as Partial<typeof base>).textureImages;
 const oldRecord = validAsset(legacy);
 assert.ok(oldRecord);
 assert.equal(oldRecord?.uvs, undefined);
+assert.equal(oldRecord?.uvSets, undefined);
 assert.equal(oldRecord?.materials, undefined);
 assert.equal(oldRecord?.textureImages, undefined);
 
@@ -80,4 +85,4 @@ const withMetadata = decodedAssetBytes(parsed!);
 assert.ok(withMetadata > withoutMetadata);
 assert.ok(decodedAssetBytes(animatedTextured!) > decodedAssetBytes(parsed!));
 
-console.log('BUILD 1120 custom asset texture/animation preservation: 18 assertions passed');
+console.log('BUILD 1118 custom asset texture/animation/UV preservation: 21 assertions passed');
