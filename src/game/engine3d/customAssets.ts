@@ -145,6 +145,8 @@ export interface CustomAsset {
   tags?: string[];
   /** BUILD 1115: importer-preserved per-vertex UV0 coordinates. */
   uvs?: number[];
+  /** Additional glTF UV channels: index 0 stores TEXCOORD_1, index 1 TEXCOORD_2, etc. */
+  uvSets?: number[][];
   /** BUILD 1115: PBR material table and per-vertex material slot. */
   materials?: RuntimePbrMaterial[];
   materialIndices?: number[];
@@ -371,7 +373,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
-  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'> = {},
+  extras: Pick<CustomAsset, 'uvs' | 'uvSets' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
@@ -498,6 +500,8 @@ function buildAssetFromGltf(
   const colors: number[] = [];
   const indices: number[] = [];
   const uvs: number[] = [];
+  const uvSets: number[][] = [[], [], []];
+  let hasExtraUvSets = false;
   const materialIndices: number[] = [];
   const materials = (json.materials || []).map((mat, i) => {
     const p = mat.pbrMetallicRoughness || {};
@@ -558,12 +562,24 @@ function buildAssetFromGltf(
         if (uv.compCount !== 2 || uv.count !== pos.count) return { ok: false, reason: 'TEXCOORD_0 must be VEC2 and match POSITION count' };
         uvVals = uv.values;
       }
+      const extraUvValues: Array<number[] | null> = [1, 2, 3].map(set => {
+        const accessorIndex = prim.attributes['TEXCOORD_' + set];
+        if (accessorIndex === undefined) return null;
+        const accessor = readAccessor(json, bin, accessorIndex);
+        if (typeof accessor === 'string' || accessor.compCount !== 2 || accessor.count !== pos.count) return null;
+        hasExtraUvSets = true;
+        return accessor.values;
+      });
       const materialIndex = prim.material !== undefined && materials[prim.material] ? prim.material : -1;
       const base = positions.length / 3;
       for (let i = 0; i < pos.count; i++) {
         const [x, y, z] = xform(m, pos.values[i * 3], pos.values[i * 3 + 1], pos.values[i * 3 + 2]);
         positions.push(x, y, z);
         uvs.push(uvVals ? uvVals[i * 2] : 0, uvVals ? uvVals[i * 2 + 1] : 0);
+        for (let set = 0; set < uvSets.length; set++) {
+          const values = extraUvValues[set];
+          uvSets[set].push(values ? values[i * 2] : 0, values ? values[i * 2 + 1] : 0);
+        }
         materialIndices.push(materialIndex);
         let r: number, g: number, b: number;
         if (colVals) {
@@ -590,7 +606,7 @@ function buildAssetFromGltf(
       }
     }
   }
-  return finishAsset(positions, colors, indices, fileName, format, { uvs, materials, materialIndices, textureImages });
+  return finishAsset(positions, colors, indices, fileName, format, { uvs, ...(hasExtraUvSets ? { uvSets } : {}), materials, materialIndices, textureImages });
 }
 
 function decodeBase64DataUri(uri: string): Uint8Array | string {
@@ -1160,6 +1176,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
   if (r.positions.length % 3 !== 0 || r.colors.length !== r.positions.length || r.indices.length % 3 !== 0) return null;
   const vertexCount = r.positions.length / 3;
   if (r.uvs !== undefined && (!Array.isArray(r.uvs) || r.uvs.length !== vertexCount * 2 || !r.uvs.every(isFiniteNum))) return null;
+  if (r.uvSets !== undefined && (!Array.isArray(r.uvSets) || r.uvSets.length > 3 || !r.uvSets.every(set => Array.isArray(set) && set.length === vertexCount * 2 && set.every(isFiniteNum)))) return null;
   if (r.materialIndices !== undefined && (!Array.isArray(r.materialIndices) || r.materialIndices.length !== vertexCount || !r.materialIndices.every(v => Number.isInteger(v) && (v as number) >= -1 && (v as number) < ((Array.isArray(r.materials) ? r.materials.length : 0))))) return null;
   if (r.textureImages !== undefined && (!Array.isArray(r.textureImages) || r.textureImages.length > 512 || r.textureImages.reduce((total, v) => total + (typeof v === 'string' ? v.length : 0), 0) > 16_000_000 || !r.textureImages.every(v => v === null || (typeof v === 'string' && /^data:image\/(png|jpeg|webp|gif|bmp|avif);base64,/i.test(v) && v.length <= 12_000_000)))) return null;
   if (r.indices.some((v) => (v as number) < 0 || (v as number) * 3 >= (r.positions as number[]).length)) return null;
@@ -1193,6 +1210,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
     category,
     tags,
     ...(Array.isArray(r.uvs) ? { uvs: r.uvs as number[] } : {}),
+    ...(Array.isArray(r.uvSets) ? { uvSets: r.uvSets as number[][] } : {}),
     ...(Array.isArray(r.materials) ? { materials: r.materials as RuntimePbrMaterial[] } : {}),
     ...(Array.isArray(r.materialIndices) ? { materialIndices: r.materialIndices as number[] } : {}),
     ...(Array.isArray(r.animationFrames)
