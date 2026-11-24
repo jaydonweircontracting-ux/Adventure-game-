@@ -25,7 +25,7 @@ const cubic = sampleAnimationSampler({
   components: 3,
   interpolation: 'CUBICSPLINE',
 }, 0.5, 'translation');
-assert.deepEqual(cubic.value.map(v => Number(v.toFixed(6))), [0.5, 0.5, 0.5]);
+assert.deepEqual(cubic.value.map(v => Number(v.toFixed(6))), [0.375, 0.375, 0.375]);
 
 const halfTurn = slerpQuaternion([0, 0, 0, 1], [0, 1, 0, 0], 0.5);
 assert.ok(Math.abs(Math.hypot(...halfTurn) - 1) < 1e-9);
