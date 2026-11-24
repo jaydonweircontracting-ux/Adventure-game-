@@ -17263,6 +17263,139 @@ console.log('Testing player-placed windmills — a placed windmill grinds grain 
 
 
 
+console.log('Testing navigation — water as obstacle, bridge crossings for NPCs/animals/player (BUILD 1131, 0x32)...');
+{
+  const W1131 = await import('../src/game/iso/isoWorld.js');
+  const T31131 = await import('../src/game/engine3d/townsfolk3d.js');
+  const F1131 = await import('../src/game/engine3d/founders.js');
+  const P1131 = await import('../src/game/engine3d/placements.js');
+  const PP1131 = await import('../src/game/engine3d/playerPath.js');
+  const AN1131 = await import('../src/game/engine3d/animals.js');
+  const SS1131 = await import('../src/game/engine3d/settlementSim.js');
+  const FC1131 = await import('../src/game/engine3d/foodChain.js');
+  // A synthetic river: a full-height water band at x=130 on a fresh
+  // defaultWorld — shape-agnostic (reads terrain 'water' + placements,
+  // never river geometry), so it holds on the straight lines and on the
+  // restored winding rivers alike.
+  const bandWorld1131 = (): any => {
+    const w: any = W1131.defaultWorld();
+    w.trees = (w.trees ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+    w.rocks = (w.rocks ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+    w.mineralDeposits = (w.mineralDeposits ?? []).filter((d: { x: number; y: number }) => d.x !== 130);
+    if (!w.terrain) w.terrain = {};
+    for (let y = 0; y < w.h; y++) w.terrain[W1131.terrainKey(130, y)] = 'water';
+    return w;
+  };
+  const bridgeAt1131 = (w: any, x: number, y: number): void => {
+    w.placements = [...(w.placements ?? []), { kind: 'bridge', x0: x, y0: y, x1: x, y1: y }];
+  };
+  const segmentPassesThrough1131 = (a: { x: number; y: number }, b: { x: number; y: number }, tx: number, ty: number): boolean => {
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(dist / 0.25));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      if (Math.round(a.x + (b.x - a.x) * t) === tx && Math.round(a.y + (b.y - a.y) * t) === ty) return true;
+    }
+    return false;
+  };
+  // --- A* routes via a bridge/ford, null with no crossing. ---
+  const wA1131 = bandWorld1131();
+  assert(W1131.terrainAt(wA1131, 130, 120) === 'water', 'M1131: the band tile reads as water');
+  assert(T31131.planPathNpc(wA1131, { x: 126, y: 120 }, { x: 134, y: 120 }) === null, 'M1131: no NPC route across the river with no crossing');
+  bridgeAt1131(wA1131, 130, 120);
+  const via1131 = T31131.planPathNpc(wA1131, { x: 126, y: 120 }, { x: 134, y: 120 });
+  assert(via1131 !== null && via1131.some((t: { x: number; y: number }) => t.x === 130 && t.y === 120), 'M1131: the NPC route steps on the bridge tile');
+  assert(via1131 !== null && via1131.every((t: { x: number; y: number }) => W1131.terrainAt(wA1131, t.x, t.y) !== 'water' || (t.x === 130 && t.y === 120)), 'M1131: the NPC route never steps on water except the bridge tile');
+  const wF1131 = bandWorld1131();
+  wF1131.placements = [...(wF1131.placements ?? []), { kind: 'ford', x0: 130, y0: 120, x1: 130, y1: 120 }];
+  const viaFord1131 = T31131.planPathNpc(wF1131, { x: 126, y: 120 }, { x: 134, y: 120 });
+  assert(viaFord1131 !== null && viaFord1131.some((t: { x: number; y: number }) => t.x === 130 && t.y === 120), 'M1131: a route exists via the ford and steps on it');
+  // --- A founder waits at the bank, then crosses when the bridge lands. ---
+  const wB1131 = bandWorld1131();
+  let pos1131 = { x: 126, y: 120 };
+  let path1131 = F1131.emptyFounderPath();
+  const visited1131: Array<{ x: number; y: number }> = [{ ...pos1131 }];
+  for (let i = 0; i < 30; i++) {
+    const r = F1131.stepFounderMove(wB1131, pos1131, { x: 134, y: 120 }, path1131, () => false);
+    pos1131 = r.pos; path1131 = r.path;
+    visited1131.push({ ...pos1131 });
+  }
+  assert(pos1131.x === 126 && pos1131.y === 120, 'M1131: with no crossing the founder waits at the bank');
+  assert(visited1131.every((t) => W1131.terrainAt(wB1131, t.x, t.y) !== 'water'), 'M1131: the waiting founder never steps on water');
+  bridgeAt1131(wB1131, 130, 120);
+  let crossed1131 = false;
+  for (let i = 0; i < 40; i++) {
+    const r = F1131.stepFounderMove(wB1131, pos1131, { x: 134, y: 120 }, path1131, () => false);
+    pos1131 = r.pos; path1131 = r.path;
+    visited1131.push({ ...pos1131 });
+    if (pos1131.x === 130 && pos1131.y === 120) crossed1131 = true;
+    if (r.arrived) break;
+  }
+  assert(crossed1131 === true && pos1131.x === 134 && pos1131.y === 120, 'M1131: once the bridge lands the founder crosses it and arrives');
+  assert(visited1131.every((t) => W1131.terrainAt(wB1131, t.x, t.y) !== 'water' || (t.x === 130 && t.y === 120)), 'M1131: the crossing founder never steps on water except the bridge tile');
+  // --- The player: deep water blocks, a bridge is walkable. ---
+  const wC1131 = bandWorld1131();
+  assert(PP1131.playerWalkable(wC1131, 130, 120) === false, 'M1131: deep water is not player-walkable');
+  const detour1131 = PP1131.planPlayerPath(wC1131, { x: 126, y: 120 }, { x: 134, y: 120 });
+  assert(detour1131 !== null && detour1131.waypoints.every((t: { x: number; y: number }) => W1131.terrainAt(wC1131, Math.round(t.x), Math.round(t.y)) !== 'water'), 'M1131: the no-bridge player route detours through the wild, never on water');
+  bridgeAt1131(wC1131, 130, 120);
+  assert(PP1131.playerWalkable(wC1131, 130, 120) === true, 'M1131: the bridge is player-walkable');
+  const route1131 = PP1131.planPlayerPath(wC1131, { x: 126, y: 120 }, { x: 134, y: 120 });
+  assert(route1131 !== null && route1131.waypoints.length >= 2 && segmentPassesThrough1131(route1131.waypoints[0], route1131.waypoints[route1131.waypoints.length - 1], 130, 120), 'M1131: the player route crosses the bridge tile');
+  // --- Animals: the wild-cost A* routes via a bridge; habitat never picks water. ---
+  const wD1131 = bandWorld1131();
+  const cost1131 = AN1131.wildCostFn(AN1131.PLAZA_3D);
+  assert(T31131.planPathNpc(wD1131, { x: 126, y: 120 }, { x: 134, y: 120 }, 8000, undefined, cost1131) === null, 'M1131: an animal has no route across the river with no crossing');
+  bridgeAt1131(wD1131, 130, 120);
+  const viaAnimal1131 = T31131.planPathNpc(wD1131, { x: 126, y: 120 }, { x: 134, y: 120 }, 8000, undefined, cost1131);
+  assert(viaAnimal1131 !== null && viaAnimal1131.some((t: { x: number; y: number }) => t.x === 130 && t.y === 120), 'M1131: an animal routes via the bridge');
+  assert(AN1131.habitatTile(wD1131, 'goat', 130, 180, AN1131.PLAZA_3D) === false, 'M1131: water is never animal habitat');
+  assert(AN1131.habitatTile(wD1131, 'fish', 130, 120, AN1131.PLAZA_3D) === true, 'M1131: fish live in the water (sanity)');
+  // --- The chop claim skips a tree across an unbridged river. ---
+  const wE1131: any = W1131.defaultWorld();
+  wE1131.trees = (wE1131.trees ?? []).filter((t: { tx: number; ty: number }) =>
+    !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+  wE1131.rocks = (wE1131.rocks ?? []).filter((t: { tx: number; ty: number }) =>
+    !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+  if (!wE1131.terrain) wE1131.terrain = {};
+  for (let y = 0; y < wE1131.h; y++) wE1131.terrain[W1131.terrainKey(130, y)] = 'water';
+  const camp1131 = F1131.FOUNDER_CAMP;
+  wE1131.trees = (wE1131.trees ?? []).filter((t: { tx: number; ty: number }) =>
+    Math.abs(t.tx - camp1131.x) + Math.abs(t.ty - camp1131.y) > F1131.FOUNDER_WORK_RADIUS);
+  wE1131.trees.push({ tx: 134, ty: 120 });
+  const simE1131: any = SS1131.createSettlementSim(wE1131);
+  SS1131.advanceSettlement(simE1131, 20);
+  assert(!simE1131.founders.some((f: any) => f.treeTarget && f.treeTarget.x === 134 && f.treeTarget.y === 120), 'M1131: no founder claims the tree across the unbridged river');
+  assert((simE1131.ledger.jobsFailed['no-path'] ?? 0) >= 1, 'M1131: the unreachable chop job fails no-path');
+  assert(wE1131.trees.some((t: { tx: number; ty: number }) => t.tx === 134 && t.ty === 120), 'M1131: the tree still stands (the fix skips it, never removes it)');
+  bridgeAt1131(wE1131, 130, 120);
+  SS1131.advanceSettlement(simE1131, 60);
+  assert(!wE1131.trees.some((t: { tx: number; ty: number }) => t.tx === 134 && t.ty === 120), 'M1131: once the bridge lands the tree is claimed and felled');
+  assert(simE1131.ledger.woodChopped >= 2, 'M1131: the felled tree yields wood');
+  // --- 24h M1069 IDENTICAL to the BUILD 1112 baseline (the chop
+  // claim-time check never fires in the 24h window — jobsFailed is
+  // empty there — so the numbers cannot move). ---
+  const world24_1131: any = W1131.defaultWorld();
+  const sim24_1131: any = SS1131.createSettlementSim(world24_1131);
+  SS1131.advanceSettlement(sim24_1131, 1600);
+  const L24_1131 = sim24_1131.ledger;
+  assert(L24_1131.ticks === 1600, 'M1131: 24h ticks 1600');
+  assert(L24_1131.woodChopped === 54 && L24_1131.woodDelivered === 50 && L24_1131.woodSpent === 24, 'M1131: 24h wood 54/50/24 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.grainHarvested === 56 && L24_1131.grainDelivered === 56, 'M1131: 24h grain 56/56 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.mealsBaked === 26 && L24_1131.mealsEaten === 13, 'M1131: 24h meals 26/13 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.flourMilled === 56 && L24_1131.flourBaked === 52, 'M1131: 24h flour 56/52 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.jobsCompleted.chop === 27 && L24_1131.jobsCompleted.build === 4 && L24_1131.jobsCompleted.deliver === 53 && L24_1131.jobsCompleted.harvest === 28, 'M1131: 24h jobs chop/build/deliver/harvest 27/4/53/28 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.hutsCompleted === 2 && L24_1131.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1131: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1131.starvedTicks === 0 && Math.round(L24_1131.minHealth) === 100, 'M1131: nobody starves in 24h');
+  assert(sim24_1131.founders.length === 7, 'M1131: the population is 7 after 24h');
+  assert(F1131.campWoodInRegistry(sim24_1131.registry) === 14 && F1131.campFoodInRegistry(sim24_1131.registry) === 13 && SS1131.settlementGrain(sim24_1131) === 0 && FC1131.foodChainFlourInRegistry(sim24_1131.registry) === 4, 'M1131: final wood/food/grain/flour 14/13/0/4 (M1069 re-pinned to BUILD 1112 — river v2)');
+  console.log('M1131: navigation verified (bridge/ford routing, founder wait + cross, player deep-water block, animal crossings, chop claim reachability, 24h identical)');
+}
+
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

@@ -1618,18 +1618,30 @@ export function advanceSettlementTick(sim: SettlementSim): void {
       // 'chopping' / fellTreeToCarrier — which plants the sapling),
       // so the site thins and regrows through the 1.6 path.
       if (f.workState === 'toTree' && !f.treeTarget && f.activity === 'work' && f.lastDecision?.workKind === 'lumber') {
-        const lc = claimFirstJob(sim.board, f.id, 'lumber');
-        sim.board = lc.board;
-        if (lc.job) {
+        // BUILD 1131 (0x32): the lumber claim checks the path like the
+        // chop claim above (same execution path, same failure mode — a
+        // rect tree across an unbridged river). Unreachable first-in-
+        // order jobs fail 'no-path' and the next in board order is
+        // tried, so the section-by-section order survives for the
+        // reachable trees and a bridged tree becomes claimable again.
+        for (;;) {
+          const lc = claimFirstJob(sim.board, f.id, 'lumber');
+          sim.board = lc.board;
+          if (!lc.job) break;
           const wt = treeWorkTile(world, lc.job.tile.x, lc.job.tile.y);
-          if (wt) {
+          if (!wt) {
+            sim.board = failJob(sim.board, lc.job.id, 'no-work-tile');
+            ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
+            continue;
+          }
+          if (planPathNpc(world, { x: Math.round(f.x), y: Math.round(f.y) }, wt)) {
             f.treeTarget = { x: lc.job.tile.x, y: lc.job.tile.y };
             f.workTile = wt;
             myJob = lc.job;
-          } else {
-            sim.board = failJob(sim.board, lc.job.id, 'no-work-tile');
-            ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
+            break;
           }
+          sim.board = failJob(sim.board, lc.job.id, 'no-path');
+          ledger.jobsFailed['no-path'] = (ledger.jobsFailed['no-path'] ?? 0) + 1;
         }
       }
       // BUILD 1094: milling — the mirror of the real-time tick
@@ -1858,18 +1870,37 @@ export function advanceSettlementTick(sim: SettlementSim): void {
         return sum + o.carrying + (oj && (oj.kind === 'chop' || oj.kind === 'lumber') && o.carrying === 0 ? 2 : 0);
       }, 0);
       if (f.workState === 'toTree' && !f.treeTarget && pileForWood() + woodInFlight1086 < UTILITY_PILE_FULL) {
-        const cc = claimNearestJob(sim.board, f.id, 'chop', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS);
-        sim.board = cc.board;
-        if (cc.job) {
+        // BUILD 1131 (0x32): only a REACHABLE tree is claimed. A tree
+        // across a river has a walkable work tile yet no path from the
+        // founder (the rivers block), and a founder who claims it walks
+        // to the bank and burns up to CHOP_GIVE_UP_TICKS before the
+        // give-up frees them — the plant/quarry/mine claims all check
+        // the path first (the 1089/1090 precedent); the chop claim was
+        // the only far-target claim without one. An unreachable job
+        // fails 'no-path' and the next-nearest is tried; discovery
+        // re-adds the failed job next tick, so the tree becomes
+        // claimable again once a bridge lands. The check runs from the
+        // founder's own position (they walk from where they stand);
+        // the return needs no separate check — the grid is symmetric,
+        // so a path that plans out plans back at the same budget.
+        for (;;) {
+          const cc = claimNearestJob(sim.board, f.id, 'chop', FOUNDER_CAMP.x, FOUNDER_CAMP.y, FOUNDER_WORK_RADIUS);
+          sim.board = cc.board;
+          if (!cc.job) break;
           const wt = treeWorkTile(world, cc.job.tile.x, cc.job.tile.y);
-          if (wt) {
+          if (!wt) {
+            sim.board = failJob(sim.board, cc.job.id, 'no-work-tile');
+            ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
+            continue;
+          }
+          if (planPathNpc(world, { x: Math.round(f.x), y: Math.round(f.y) }, wt)) {
             f.treeTarget = { x: cc.job.tile.x, y: cc.job.tile.y };
             f.workTile = wt;
             myJob = cc.job;
-          } else {
-            sim.board = failJob(sim.board, cc.job.id, 'no-work-tile');
-            ledger.jobsFailed['no-work-tile'] = (ledger.jobsFailed['no-work-tile'] ?? 0) + 1;
+            break;
           }
+          sim.board = failJob(sim.board, cc.job.id, 'no-path');
+          ledger.jobsFailed['no-path'] = (ledger.jobsFailed['no-path'] ?? 0) + 1;
         }
         if (!f.treeTarget) f.workState = 'idle';
       }

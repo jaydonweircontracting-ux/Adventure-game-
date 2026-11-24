@@ -1076,12 +1076,16 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           // fellTreeToCarrier — which plants the sapling), so the
           // site thins and regrows through the 1.6 path.
           if(f.workState==='toTree'&&!f.treeTarget&&f.activity==='work'&&f.lastDecision?.workKind==='lumber'){
-            const lc=claimFirstJob(jobBoardRef.current,f.id,'lumber');
-            jobBoardRef.current=lc.board;
-            if(lc.job){
+            // BUILD 1131 (0x32): the lumber claim checks the path like the
+            // chop claim below (same execution path, same failure mode).
+            for(;;){
+              const lc=claimFirstJob(jobBoardRef.current,f.id,'lumber');
+              jobBoardRef.current=lc.board;
+              if(!lc.job)break;
               const wt=treeWorkTile(world,lc.job.tile.x,lc.job.tile.y);
-              if(wt){f.treeTarget={x:lc.job.tile.x,y:lc.job.tile.y};f.workTile=wt;myJob=lc.job;}
-              else jobBoardRef.current=failJob(jobBoardRef.current,lc.job.id,'no-work-tile');
+              if(!wt){jobBoardRef.current=failJob(jobBoardRef.current,lc.job.id,'no-work-tile');continue;}
+              if(planPathNpc(world,{x:Math.round(f.x),y:Math.round(f.y)},wt)){f.treeTarget={x:lc.job.tile.x,y:lc.job.tile.y};f.workTile=wt;myJob=lc.job;break;}
+              jobBoardRef.current=failJob(jobBoardRef.current,lc.job.id,'no-path');
             }
           }
           // BUILD 1094: milling — the mirror of the sim tick (same gate:
@@ -1224,12 +1228,18 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
           // while wood is in flight and overshoot the pile to 26.
           const woodInFlight1086=foundersRef.current.reduce((sum,o)=>{const oj=jobForFounder(jobBoardRef.current,o.id);return sum+o.carrying+(oj&&oj.kind==='chop'&&o.carrying===0?2:0);},0);
           if(f.workState==='toTree'&&!f.treeTarget&&pileForWood()+woodInFlight1086<UTILITY_PILE_FULL){
-            const cc=claimNearestJob(jobBoardRef.current,f.id,'chop',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
-            jobBoardRef.current=cc.board;
-            if(cc.job){
+            // BUILD 1131 (0x32): only a REACHABLE tree is claimed — the
+            // sim-tick mirror (settlementSim.ts): an unreachable job
+            // fails 'no-path' and the next-nearest is tried; discovery
+            // re-adds it next tick, so a bridged tree is claimable again.
+            for(;;){
+              const cc=claimNearestJob(jobBoardRef.current,f.id,'chop',FOUNDER_CAMP.x,FOUNDER_CAMP.y,FOUNDER_WORK_RADIUS);
+              jobBoardRef.current=cc.board;
+              if(!cc.job)break;
               const wt=treeWorkTile(world,cc.job.tile.x,cc.job.tile.y);
-              if(wt){f.treeTarget={x:cc.job.tile.x,y:cc.job.tile.y};f.workTile=wt;myJob=cc.job;}
-              else jobBoardRef.current=failJob(jobBoardRef.current,cc.job.id,'no-work-tile');
+              if(!wt){jobBoardRef.current=failJob(jobBoardRef.current,cc.job.id,'no-work-tile');continue;}
+              if(planPathNpc(world,{x:Math.round(f.x),y:Math.round(f.y)},wt)){f.treeTarget={x:cc.job.tile.x,y:cc.job.tile.y};f.workTile=wt;myJob=cc.job;break;}
+              jobBoardRef.current=failJob(jobBoardRef.current,cc.job.id,'no-path');
             }
             if(!f.treeTarget)f.workState='idle';
           }
