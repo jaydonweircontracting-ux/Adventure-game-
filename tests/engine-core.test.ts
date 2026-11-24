@@ -143,6 +143,11 @@ const placedDoor = placedScene.entities.find((entity) => entity.parentId === pla
 assert.ok(placedDoor, 'instantiated child keeps its remapped parent link');
 assert.equal(placedDoor?.components[0].type, 'adventure.door');
 assert.equal(validateEngineProject(placedPrefab.value.project).ok, true);
+const prefabRoundTrip = deserializeEngineProject(serializeEngineProject(placedPrefab.value.project));
+assert.equal(prefabRoundTrip.ok, true);
+if (!prefabRoundTrip.ok) throw new Error(prefabRoundTrip.error);
+assert.equal(prefabRoundTrip.value.prefabs?.[0].name, 'Village House');
+assert.equal(prefabRoundTrip.value.prefabs?.[0].entities.length, 2);
 const removedPrefab = removeEnginePrefab(renamedPrefab.value, renamedPrefab.value.prefabs![0].id);
 assert.equal(removedPrefab.ok, true);
 if (!removedPrefab.ok) throw new Error(removedPrefab.error);
@@ -190,4 +195,4 @@ assert.equal(addEngineComponent(project, firstSceneId, parentId, {
   type: 'bad.component', version: 1, enabled: true, data: { invalid: Infinity },
 }).ok, false);
 
-console.log('Engine Core tests passed (projects, scenes, entities, hierarchy, transforms, components, validation, JSON round-trip).');
+console.log('Engine Core tests passed (projects, scenes, entities, hierarchy, transforms, components, prefabs, validation, JSON round-trip).');
