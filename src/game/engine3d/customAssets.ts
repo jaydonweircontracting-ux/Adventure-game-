@@ -132,7 +132,7 @@ export interface CustomAsset {
   /** Which importer produced this asset ('glb' for 997-era uploads,
    *  which predate the field and load as 'glb'). Shown in the Import
    *  Hub so the player can tell what came from where. */
-  format?: 'glb' | 'gltf' | 'obj';
+  format?: 'glb' | 'gltf' | 'obj' | 'fbx';
   /** BUILD 1045: library metadata. sourceFile is the file the model
    *  came from (the name as picked, or the ZIP entry path); category
    *  is one of ASSET_CATEGORIES in assetLibrary.ts (the player's own
@@ -226,8 +226,8 @@ export function collectGltfDependencies(
  *  is no audio playback system to attach audio to, and the renderer
  *  draws vertex-colour triangles only, so a texture has nowhere to
  *  go — importing either would be a fake feature. */
-export const SUPPORTED_MODEL_EXTENSIONS = ['.glb', '.gltf', '.obj'] as const;
-export type ImportModelFormat = 'glb' | 'gltf' | 'obj';
+export const SUPPORTED_MODEL_EXTENSIONS = ['.glb', '.gltf', '.obj', '.fbx'] as const;
+export type ImportModelFormat = 'glb' | 'gltf' | 'obj' | 'fbx';
 
 // ---- GLB parsing (direct, no three.js — same approach as the 985
 // bake script, adapted to run in the browser on an ArrayBuffer). ----
@@ -683,6 +683,77 @@ export function parseObjUpload(text: string, fileName: string): GlbUploadResult 
   }
 }
 
+
+/**
+ * Binary + ASCII FBX importer. Three's FBXLoader handles the FBX
+ * node hierarchy, pivots, transforms, material slots and skin
+ * clusters. The game's renderer is intentionally static, so a
+ * SkinnedMesh is evaluated at its bind pose and baked into ordinary
+ * triangle positions before it enters the existing asset pipeline.
+ * Textures/UVs and animation clips are not retained by the current
+ * vertex-colour renderer; diffuse material colours and vertex colours
+ * are preserved.
+ */
+export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promise<GlbUploadResult> {
+  if (buf.byteLength < 32) return { ok: false, reason: 'FBX file is too small or truncated' };
+  const header = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(23, buf.byteLength)));
+  const isBinary = header.startsWith('Kaydara FBX Binary');
+  const textStart = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(64, buf.byteLength))).trimStart();
+  if (!isBinary && !textStart.startsWith(';') && !textStart.startsWith('FBXHeaderExtension') && !textStart.startsWith('; FBX')) {
+    return { ok: false, reason: 'file signature is not a recognized FBX file (binary FBX is supported)' };
+  }
+  try {
+    const [{ FBXLoader }, THREE] = await Promise.all([import('three/examples/jsm/loaders/FBXLoader.js'), import('three')]);
+    const root = new FBXLoader().parse(buf, '');
+    root.updateMatrixWorld(true);
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    root.traverse((node: any) => {
+      if (!node || !node.isMesh || !node.geometry?.attributes?.position) return;
+      const mesh = node;
+      const geometry = mesh.geometry;
+      if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
+      const pos = geometry.attributes.position;
+      const col = geometry.attributes.color;
+      const uv = geometry.attributes.uv;
+      const index = geometry.index;
+      const materialList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const vertexCount = pos.count;
+      const triCount = index ? Math.floor(index.count / 3) : Math.floor(vertexCount / 3);
+      const groups = geometry.groups || [];
+      const groupMaterial = (faceStart: number) => {
+        const group = groups.find((g: any) => faceStart >= g.start && faceStart < g.start + g.count);
+        return materialList[group?.materialIndex || 0] || materialList[0];
+      };
+      for (let tri = 0; tri < triCount; tri++) {
+        const base = positions.length / 3;
+        const faceStart = tri * 3;
+        const mat = groupMaterial(faceStart);
+        const mc = mat?.color;
+        const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
+        for (let corner = 0; corner < 3; corner++) {
+          const vi = index ? index.getX(faceStart + corner) : faceStart + corner;
+          if (vi < 0 || vi >= vertexCount) continue;
+          const v = new THREE.Vector3();
+          v.fromBufferAttribute(pos, vi);
+          if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
+          v.applyMatrix4(mesh.matrixWorld);
+          positions.push(v.x, v.y, v.z);
+          if (col) colors.push(col.getX(vi), col.getY(vi), col.getZ(vi));
+          else colors.push(materialColor[0], materialColor[1], materialColor[2]);
+          indices.push(base + corner);
+        }
+      }
+    });
+    if (indices.length === 0) return { ok: false, reason: 'no triangle meshes found in this FBX' };
+    const result = finishAsset(positions, colors, indices, fileName, 'fbx');
+    return result;
+  } catch (e) {
+    return { ok: false, reason: 'FBX decode failed (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
+  }
+}
+
 // ---- Encoders (BUILD 1046: export/backup). The inverse of the
 // parsers above: an asset's own positions + colours + indices,
 // written back out in its ORIGINAL format so a pack re-imports
@@ -821,7 +892,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
   if (!Array.isArray(r.avgColor) || r.avgColor.length !== 3 || !r.avgColor.every(isFiniteNum)) return null;
   // BUILD 1043: format is optional — 997-era uploads predate it and
   // load as 'glb'; an unknown value is dropped, never fatal.
-  const fmt = r.format === 'glb' || r.format === 'gltf' || r.format === 'obj' ? r.format : 'glb';
+  const fmt = r.format === 'glb' || r.format === 'gltf' || r.format === 'obj' || r.format === 'fbx' ? r.format : 'glb';
   // BUILD 1045: library metadata is optional — pre-1045 uploads
   // predate it. A bad value is dropped to the honest default, never
   // fatal: unknown source file, 'Unsorted', no tags.

@@ -95,7 +95,7 @@ export interface AssetRow {
   height: number;
   triangles: number;
   sourceFile: string;
-  format: 'glb' | 'gltf' | 'obj';
+  format: 'glb' | 'gltf' | 'obj' | 'fbx';
   avgColor: [number, number, number];
 }
 
