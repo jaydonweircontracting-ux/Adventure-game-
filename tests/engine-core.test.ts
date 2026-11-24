@@ -10,6 +10,8 @@ import {
   renameEngineScene,
   serializeEngineProject,
   setActiveScene,
+  updateEngineComponent,
+  removeEngineComponent,
   updateEntityTransform,
   validateEngineProject,
 } from '../src/game/engine/engineCore';
@@ -83,6 +85,24 @@ assert.equal(renamedEntity.ok, true);
 if (!renamedEntity.ok) throw new Error(renamedEntity.error);
 assert.equal(renamedEntity.value.scenes[0].entities[0].name, 'Hero');
 assert.equal(project.scenes[0].entities[0].name, 'Player', 'rename must not mutate prior project snapshots');
+
+// Component inspector operations update, disable and remove by stable slot.
+const editedComponent = updateEngineComponent(project, firstSceneId, parentId, 0, {
+  type: 'adventure.player-controller',
+  version: 2,
+  enabled: false,
+  data: { walkSpeed: 6, canSprint: false },
+});
+assert.equal(editedComponent.ok, true);
+if (!editedComponent.ok) throw new Error(editedComponent.error);
+assert.equal(editedComponent.value.scenes[0].entities[0].components[0].version, 2);
+assert.equal(editedComponent.value.scenes[0].entities[0].components[0].enabled, false);
+assert.deepEqual(editedComponent.value.scenes[0].entities[0].components[0].data, { walkSpeed: 6, canSprint: false });
+const componentRemoved = removeEngineComponent(editedComponent.value, firstSceneId, parentId, 0);
+assert.equal(componentRemoved.ok, true);
+if (!componentRemoved.ok) throw new Error(componentRemoved.error);
+assert.equal(componentRemoved.value.scenes[0].entities[0].components.length, 0);
+assert.equal(removeEngineComponent(project, firstSceneId, parentId, 9).ok, false);
 
 // Project files round-trip through JSON without losing hierarchy or data.
 const serialized = serializeEngineProject(project);
