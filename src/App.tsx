@@ -197,13 +197,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1124';
+const BUILD_NUMBER = '1126';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '1126': 'Bank-following paths now reach both bridge entrances and join the nearest existing riverside roads without crossing water. Everything else works exactly as before.',
   '985': '3D mode has natural stylized grass now: tufts of grass grow on grass tiles across the world, and the Build panel has a free Grass item you can place anywhere, even on paths, that never blocks movement and saves with your other placements. The grass has no wind sway yet, since that needs renderer animation. Grass art by StayAtHomeDev (2023, MIT).',
   '986': 'The brown cubes in 3D mode are trees now: crates, market props and generated stalls all grow as proper trees instead of brown blocks. Gathering wood still works the same — interact beside one and you collect 1 wood. Stalls you placed yourself with the Build panel stay as market counters.',
   '987': 'The Build panel now has a minimize button that keeps your selected tool while you work, and Remove mode can now take down roads and houses that were already in the world, not just things you placed. Removed roads and houses stay gone after reload. Placed stalls stay as market counters.',
@@ -314,6 +315,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1112': 'Rivers now follow the land: they drain downhill from high ground, gather into streams and tributaries, and widen as they grow, with sandy banks along their edges. Rivers stay clear of the camp, the huts, the farms and the mine road, and where they cross the dirt roads the crossings are marked for bridges to come. Everything else works exactly as before.',
   '1123': 'Wild terrain now uses half-block elevation steps beyond the authored town, while the town, roads, river drainage and saved world stay intact. Bridge discovery now selects the strongest road-to-road crossing and opens no more than one new site per day. Everything else works exactly as before.',
   '1124': 'Bridges now span the full width of a river crossing instead of stopping on a single water tile. Narrow streams, footbridges, timber bridges, stone crossings, large road bridges and wide-river spans use distinct shapes and align with the crossing direction. Everything else works exactly as before.',
+  '1125': 'Completed bridges now receive dry paths on both banks. The approaches follow the riverbank and join nearby existing paths instead of leaving disconnected path tiles at the water edge.',
   '1098': 'The founders have professions now — a farmer, a lumberjack, a miner, a stonecutter, a builder, a carpenter, and a blacksmith, each with their own work. The settlement assigns them by need: finish the smelter and a founder takes up blacksmithing; finish a building and the builder moves on to the next job. Press E beside a founder to see their profession and what they are doing, and the Control Center lists it too. The founders still eat, sleep, and build exactly as before. Everything else works exactly as before.',
   '1081': 'The world now holds real mineral deposits — iron, copper, coal, gold, silver, and stone — scattered through the wilds beyond the camp. Each one is a distinct tinted rock outcrop you can find on the map, and pressing E beside one tells you the mineral and how much is left. The deposits persist after reload, and a mined-out one stays mined out. Mining them comes next. Everything else works exactly as before.',
   '1077': 'Under the hood, the HUD and interface — the status strip, the minimap and world map, the wait sheet, the control buttons, and the Build cluster — were moved into their own tidy section of the code so future updates are easier to build. The game looks and plays exactly the same: the same HUD, the same buttons, the same everything. Everything else works exactly as before.',

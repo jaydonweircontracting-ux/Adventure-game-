@@ -51,14 +51,18 @@ try {
   check('Generated a complete two-tile bridge fixture', !!crossing,
     crossing ? `style=${crossing.style}, axis=${crossing.axis}, span=${crossing.span.length}` : 'no safe unused wilderness crossing found');
   if (crossing) {
-    const bridgeTiles = await page.evaluate(() => window.__ag3dTest.getPlacements()
-      .filter(item => item.kind === 'bridge')
-      .map(item => ({ x: item.x0, y: item.y0, style: item.bridgeStyle, axis: item.bridgeAxis })));
+    const placements = await page.evaluate(() => window.__ag3dTest.getPlacements());
+    const bridgeTiles = placements.filter(item => item.kind === 'bridge')
+      .map(item => ({ x: item.x0, y: item.y0, style: item.bridgeStyle, axis: item.bridgeAxis }));
     const allTilesPlaced = crossing.span.every(tile =>
       bridgeTiles.some(placed => placed.x === tile.x && placed.y === tile.y &&
         placed.style === crossing.style && placed.axis === crossing.axis));
     check('Every river tile has the correct saved bridge profile', allTilesPlaced,
       `expected ${crossing.span.map(t => t.x + ',' + t.y).join(' | ')}`);
+    const nearPath = placements.some(item => item.kind === 'path' && item.x0 === crossing.near.x && item.y0 === crossing.near.y);
+    const farPath = placements.some(item => item.kind === 'path' && item.x0 === crossing.far.x && item.y0 === crossing.far.y);
+    check('Automatic bank approaches reach both bridge entrances', nearPath && farPath,
+      `near=${nearPath}, far=${farPath}`);
 
     await page.evaluate(({ near }) => {
       window.__ag3dTest.setPlayer(near.x, near.y);

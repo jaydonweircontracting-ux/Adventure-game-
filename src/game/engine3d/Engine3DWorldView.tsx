@@ -2741,9 +2741,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             if(line.some(t=>blocked.has(t.x+','+t.y)||terrainAt(w,t.x,t.y)==='water'||!walkableWithPlacements(w,w.crates,t.x,t.y)))continue;
             const near={x,y},far={x:x+3,y};
             if(!walkableWithPlacements(w,w.crates,near.x,near.y)||!walkableWithPlacements(w,w.crates,far.x,far.y))continue;
-            const nearPath=validatePlacement(w,'path',near.x,near.y,playerTile,npcTiles,0);
-            const farPath=validatePlacement(w,'path',far.x,far.y,playerTile,npcTiles,0);
-            if(!nearPath.ok||!farPath.ok)continue;
             const span=[{x:x+1,y},{x:x+2,y}];
             const river={id:'bridge-probe-'+x+'-'+y,tiles:span.map(tile=>({...tile,dx:1,dy:0,width:2})),mouth:{...far}} as any;
             const oldRivers=w.rivers??[];
@@ -2760,7 +2757,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             if(!placed.ok){
               w.rivers=oldRivers;for(const item of oldTerrain){if(item.value===undefined)delete w.terrain[item.key];else w.terrain[item.key]=item.value;}continue;
             }
-            addPlacement(w,nearPath.item);addPlacement(w,farPath.item);
             pathsRef.current={...pathsRef.current,bridges:finishBridge([...pathsRef.current.bridges,site],site.id)};
             commitWorld(worldSyncCtx,w);saveWorld(w);
             return {near,far,span:spanTiles,style,axis:'x'};

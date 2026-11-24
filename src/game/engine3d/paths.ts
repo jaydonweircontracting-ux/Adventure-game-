@@ -62,7 +62,7 @@
  */
 import { terrainAt, inBounds, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement } from './placements';
-import { riverAt, riverWidthAt } from './rivers';
+import { riverAt, riverNear, riverWidthAt } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import {
   stagePlanFor,
@@ -119,6 +119,8 @@ export type BridgeSite = {
   y: number;
   /** The walkable bank tile the builder stands on. */
   workTile: { x: number; y: number };
+  /** The near-bank road tile from which the crossing was detected. Optional on legacy saves. */
+  nearBank?: { x: number; y: number };
   /** Every consecutive river-water tile crossed by this bridge. Optional on legacy saves. */
   spanTiles?: Array<{ x: number; y: number }>;
   /** Visual profile selected from the span and both-bank road geometry. Optional on legacy saves. */
@@ -166,11 +168,12 @@ export function freshBridgeSite(
   spanTiles: Array<{ x: number; y: number }> = [{ x, y }],
   style: BridgeStyle = 'wooden',
   axis: 'x' | 'y' = 'x',
+  nearBank: { x: number; y: number } = workTile,
 ): BridgeSite {
   const uniqueSpan = [...new Map(spanTiles.map((tile) => [tile.x + ',' + tile.y, { ...tile }])).values()].slice(0, 6);
   if (!uniqueSpan.some((tile) => tile.x === x && tile.y === y)) uniqueSpan.unshift({ x, y });
   return {
-    id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile },
+    id: bridgeSiteIdFor(x, y), x, y, workTile: { ...workTile }, nearBank: { ...nearBank },
     spanTiles: uniqueSpan, style, axis, state: 'none', progress: 0, spentWood: 0,
     stages: { ...ZERO_STAGE_STEPS },
   };
@@ -216,7 +219,10 @@ export function validateBridgeSite(value: unknown): BridgeSite | null {
   const styles: BridgeStyle[] = ['wooden', 'stone', 'footbridge', 'large-road', 'narrow-stream', 'wide-river'];
   const style = styles.includes(v.style as BridgeStyle) ? v.style as BridgeStyle : 'wooden';
   const axis = v.axis === 'y' ? 'y' : 'x';
-  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, spanTiles, style, axis, state, progress, spentWood, stages };
+  const rawBank = v.nearBank as Record<string, unknown> | undefined;
+  const bx = Number(rawBank?.x), by = Number(rawBank?.y);
+  const nearBank = Number.isInteger(bx) && Number.isInteger(by) ? { x: bx, y: by } : { x: wx, y: wy };
+  return { id: bridgeSiteIdFor(x, y), x, y, workTile: { x: wx, y: wy }, nearBank, spanTiles, style, axis, state, progress, spentWood, stages };
 }
 
 /** Validate a saved bridge list (v10 migration): corrupt entries
@@ -309,6 +315,12 @@ export function recordTraffic(state: PathState, world: IsoWorld, x: number, y: n
  */
 export function pathConnects(world: IsoWorld, from: { x: number; y: number }, targets: Array<{ x: number; y: number }>): boolean {
   const paths = new Set(pathTiles(world).map((t) => trafficKey(t.x, t.y)));
+  // A completed bridge is part of the same connected road graph as
+  // dirt paths; water remains blocked everywhere else.
+  for (const p of placementsOf(world)) {
+    if (p.kind !== 'bridge') continue;
+    for (let x = p.x0; x <= p.x1; x++) for (let y = p.y0; y <= p.y1; y++) paths.add(trafficKey(x, y));
+  }
   const targetKeys = new Set(targets.map((t) => trafficKey(t.x, t.y)));
   if (targetKeys.has(trafficKey(from.x, from.y))) return true;
   const seen = new Set<string>([trafficKey(from.x, from.y)]);
@@ -425,6 +437,60 @@ export function bridgeSpanAlreadyClaimed(
   );
 }
 
+/**
+ * Plan a short, dry approach along a riverbank. It follows only
+ * walkable tiles that remain adjacent to river water, stops at the
+ * nearest existing path (4-way BFS), and never cuts across water.
+ * If no road is within reach, the single bank entrance still joins
+ * the bridge and is therefore not an orphan path tile.
+ */
+export function planBankApproachTiles(
+  world: IsoWorld,
+  start: { x: number; y: number },
+  maxSteps = 12,
+): Array<{ x: number; y: number }> {
+  if (isPathTile(world, start.x, start.y) || !pathPlaceable(world, start.x, start.y)) return [];
+  if (!riverNear(world, start.x, start.y, 1)) return [];
+  const startKey = trafficKey(start.x, start.y);
+  const previous = new Map<string, string | null>([[startKey, null]]);
+  const queue: Array<{ x: number; y: number; distance: number }> = [{ ...start, distance: 0 }];
+  let foundPath: string | null = null;
+  while (queue.length > 0 && foundPath === null) {
+    const current = queue.shift()!;
+    if (current.distance >= maxSteps) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = current.x + dx, ny = current.y + dy;
+      const key = trafficKey(nx, ny);
+      if (previous.has(key) || !inBounds(world, nx, ny) || terrainAt(world, nx, ny) === 'water') continue;
+      if (!riverNear(world, nx, ny, 1)) continue;
+      previous.set(key, trafficKey(current.x, current.y));
+      if (isPathTile(world, nx, ny)) {
+        foundPath = key;
+        break;
+      }
+      if (!pathPlaceable(world, nx, ny)) {
+        previous.delete(key);
+        continue;
+      }
+      queue.push({ x: nx, y: ny, distance: current.distance + 1 });
+    }
+  }
+  if (foundPath === null) return [{ ...start }];
+  const route: Array<{ x: number; y: number }> = [];
+  let cursor: string | null = foundPath;
+  while (cursor && cursor !== startKey) {
+    const [x, y] = cursor.split(',').map(Number);
+    route.push({ x, y });
+    cursor = previous.get(cursor) ?? null;
+  }
+  route.reverse();
+  // The backtrack deliberately stops before startKey; include the bank
+  // entrance itself so the generated approach reaches the bridge deck.
+  // Without it, a nearby existing road leaves a one-tile gap at the bank.
+  route.unshift({ ...start });
+  return route.filter((tile) => !isPathTile(world, tile.x, tile.y));
+}
+
 /** Validate the entire bridge span before mutating the world, then stamp
  * every tile with the same persisted visual profile. A blocked tile means
  * the whole bridge waits; no half-bridge or partial collision is possible. */
@@ -433,15 +499,32 @@ export function placeBridgeSpan(
   site: BridgeSite,
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
-): { ok: true; placed: PlacedItem[] } | { ok: false; reason: string } {
+): { ok: true; placed: PlacedItem[]; approachTiles: Array<{ x: number; y: number }> } | { ok: false; reason: string } {
+  const span = bridgeSiteSpan(site);
+  const nearBank = site.nearBank ?? site.workTile;
+  const first = span[0], last = span[span.length - 1];
+  const dx = first.x - nearBank.x, dy = first.y - nearBank.y;
+  const farBank = { x: last.x + dx, y: last.y + dy };
+  const approachTiles = [
+    ...planBankApproachTiles(world, nearBank),
+    ...planBankApproachTiles(world, farBank),
+  ].filter((tile, index, all) =>
+    all.findIndex((other) => other.x === tile.x && other.y === tile.y) === index);
+  const pathItems: PlacedItem[] = [];
+  for (const tile of approachTiles) {
+    if (isPathTile(world, tile.x, tile.y)) continue;
+    const result = validatePlacement(world, 'path', tile.x, tile.y, playerTile, npcTiles, 0);
+    if (result.ok) pathItems.push(result.item);
+  }
   const items: PlacedItem[] = [];
-  for (const tile of bridgeSiteSpan(site)) {
+  for (const tile of span) {
     const result = validatePlacement(world, 'bridge', tile.x, tile.y, playerTile, npcTiles, 0);
     if (!result.ok) return { ok: false, reason: result.reason };
     items.push(result.item);
   }
   for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
-  return { ok: true, placed: items };
+  for (const item of pathItems) addPlacement(world, item);
+  return { ok: true, placed: items, approachTiles: pathItems.map((item) => ({ x: item.x0, y: item.y0 })) };
 }
 
 /**
@@ -593,7 +676,7 @@ export function detectBridgeSite(
   if (!workTile) return null;
   const spanTiles = bridgeSpanForCrossing(world, tile, { x: candidate.x, y: candidate.y });
   const style = bridgeStyleForCrossing(world, tile, { x: candidate.x, y: candidate.y });
-  const site = freshBridgeSite(candidate.x, candidate.y, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: candidate.x, y: candidate.y }));
+  const site = freshBridgeSite(candidate.x, candidate.y, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: candidate.x, y: candidate.y }), tile);
   state.bridges = [...state.bridges, site];
   return site;
 }
@@ -638,7 +721,7 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       const score = scoreBridgeCrossing(world, tile, { x: nx, y: ny });
       if (!Number.isFinite(score)) continue;
       const style = bridgeStyleForCrossing(world, tile, { x: nx, y: ny });
-      found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny })), { _candidateScore: score } as object));
+      found.push(Object.assign(freshBridgeSite(nx, ny, workTile, spanTiles, style, bridgeAxisForCrossing(tile, { x: nx, y: ny }), tile), { _candidateScore: score } as object));
     }
   }
   if (found.length > 0) {
