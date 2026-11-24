@@ -59,7 +59,9 @@ assert.ok(animatedTextured);
 assert.equal(animatedTextured?.textureImages?.[0], 'data:image/png;base64,AA==');
 assert.equal(animatedTextured?.animationFrames?.length, 2);
 assert.equal(animatedTextured?.animationFps, 8);
-assert.equal(validAsset({ ...base, animationFrames: [base.positions, [0, 1, 2]] }), null);
+const malformedAnimation = validAsset({ ...base, animationFrames: [base.positions, [0, 1, 2]] });
+assert.ok(malformedAnimation);
+assert.equal(malformedAnimation?.animationFrames, undefined);
 assert.equal(validAsset({ ...base, textureImages: ['javascript:alert(1)'] }), null);
 
 assert.equal(validAsset({ ...base, uvs: [0, 0] }), null);
@@ -85,4 +87,4 @@ const withMetadata = decodedAssetBytes(parsed!);
 assert.ok(withMetadata > withoutMetadata);
 assert.ok(decodedAssetBytes(animatedTextured!) > decodedAssetBytes(parsed!));
 
-console.log('BUILD 1118 custom asset texture/animation/UV preservation: 21 assertions passed');
+console.log('BUILD 1118 custom asset texture/animation/UV preservation: 22 assertions passed');
