@@ -71,6 +71,7 @@
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { validateBlockingRect } from './placements';
 import type { Rotation } from './placements';
+import { normalizePbrMaterial, type PbrMaterialInput, type RuntimePbrMaterial } from './materialRuntime';
 
 /** BUILD 1048: rotate one local mesh point (x, z) `rot` quarter-turns
  *  clockwise, viewed from above (the 1036 convention — the same
@@ -142,6 +143,11 @@ export interface CustomAsset {
   sourceFile?: string;
   category?: string;
   tags?: string[];
+  /** BUILD 1115: importer-preserved per-vertex UV0 coordinates. */
+  uvs?: number[];
+  /** BUILD 1115: PBR material table and per-vertex material slot. */
+  materials?: RuntimePbrMaterial[];
+  materialIndices?: number[];
 }
 
 export type GlbUploadResult =
@@ -242,7 +248,18 @@ type GltfJson = {
   scenes?: Array<{ nodes?: number[] }>;
   nodes?: Array<{ mesh?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; children?: number[] }>;
   meshes?: Array<{ primitives: Array<{ attributes: Record<string, number>; indices?: number; material?: number; mode?: number }> }>;
-  materials?: Array<{ pbrMetallicRoughness?: { baseColorFactor?: number[] } }>;
+  materials?: Array<{
+    name?: string;
+    pbrMetallicRoughness?: {
+      baseColorFactor?: number[]; metallicFactor?: number; roughnessFactor?: number;
+      baseColorTexture?: { index: number; texCoord?: number };
+      metallicRoughnessTexture?: { index: number; texCoord?: number };
+    };
+    normalTexture?: { index: number; texCoord?: number; scale?: number };
+    occlusionTexture?: { index: number; texCoord?: number; strength?: number };
+    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number };
+    alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND'; alphaCutoff?: number; doubleSided?: boolean;
+  }>;
   accessors?: Array<{ bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean; sparse?: unknown }>;
   bufferViews?: Array<{ buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }>;
   buffers?: Array<{ byteLength: number; uri?: string }>;
@@ -346,6 +363,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
+  extras: Pick<CustomAsset, 'uvs' | 'materials' | 'materialIndices'> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
@@ -386,6 +404,7 @@ function finishAsset(
       height,
       avgColor: avg,
       format,
+      ...extras,
       // BUILD 1045: the file this model came from, so the library
       // row can say where it came from. Category/tags start as the
       // player's defaults (Unsorted / none) — never guessed.
@@ -422,6 +441,21 @@ function buildAssetFromGltf(
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
+  const uvs: number[] = [];
+  const materialIndices: number[] = [];
+  const materials = (json.materials || []).map((mat, i) => {
+    const p = mat.pbrMetallicRoughness || {};
+    const slot = (v?: { index: number; texCoord?: number; scale?: number }) => v ? { textureIndex: v.index, texCoord: v.texCoord ?? 0, ...(v.scale !== undefined ? { scale: v.scale } : {}) } : undefined;
+    const input: PbrMaterialInput = {
+      name: mat.name || 'Material ' + (i + 1), baseColorFactor: p.baseColorFactor,
+      metallicFactor: p.metallicFactor, roughnessFactor: p.roughnessFactor,
+      emissiveFactor: mat.emissiveFactor, alphaMode: mat.alphaMode,
+      alphaCutoff: mat.alphaCutoff, doubleSided: mat.doubleSided,
+      baseColorTexture: slot(p.baseColorTexture), metallicRoughnessTexture: slot(p.metallicRoughnessTexture),
+      normalTexture: slot(mat.normalTexture), occlusionTexture: slot(mat.occlusionTexture), emissiveTexture: slot(mat.emissiveTexture),
+    };
+    return normalizePbrMaterial(input);
+  });
   for (let ni = 0; ni < nodes.length; ni++) {
     const node = nodes[ni];
     if (node.mesh === undefined) continue;
@@ -454,10 +488,21 @@ function buildAssetFromGltf(
         const f = mat?.pbrMetallicRoughness?.baseColorFactor;
         if (f && f.length >= 3) matColor = [f[0], f[1], f[2]];
       }
+      const uvIdx = prim.attributes.TEXCOORD_0;
+      let uvVals: number[] | null = null;
+      if (uvIdx !== undefined) {
+        const uv = readAccessor(json, bin, uvIdx);
+        if (typeof uv === 'string') return { ok: false, reason: uv };
+        if (uv.compCount !== 2 || uv.count !== pos.count) return { ok: false, reason: 'TEXCOORD_0 must be VEC2 and match POSITION count' };
+        uvVals = uv.values;
+      }
+      const materialIndex = prim.material !== undefined && materials[prim.material] ? prim.material : -1;
       const base = positions.length / 3;
       for (let i = 0; i < pos.count; i++) {
         const [x, y, z] = xform(m, pos.values[i * 3], pos.values[i * 3 + 1], pos.values[i * 3 + 2]);
         positions.push(x, y, z);
+        uvs.push(uvVals ? uvVals[i * 2] : 0, uvVals ? uvVals[i * 2 + 1] : 0);
+        materialIndices.push(materialIndex);
         let r: number, g: number, b: number;
         if (colVals) {
           r = colVals[i * colCount];
@@ -483,7 +528,7 @@ function buildAssetFromGltf(
       }
     }
   }
-  return finishAsset(positions, colors, indices, fileName, format);
+  return finishAsset(positions, colors, indices, fileName, format, { uvs, materials, materialIndices });
 }
 
 function decodeBase64DataUri(uri: string): Uint8Array | string {
@@ -709,6 +754,10 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
+    const uvs: number[] = [];
+    const materialIndices: number[] = [];
+    const materials: RuntimePbrMaterial[] = [];
+    const materialLookup = new Map<string, number>();
     root.traverse((node: any) => {
       if (!node || !node.isMesh || !node.geometry?.attributes?.position) return;
       const mesh = node;
@@ -732,6 +781,20 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
         const mat = groupMaterial(faceStart);
         const mc = mat?.color;
         const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
+        const materialKey = mat?.uuid || mat?.name || 'default';
+        let materialIndex = materialLookup.get(materialKey);
+        if (materialIndex === undefined) {
+          materialIndex = materials.length;
+          materialLookup.set(materialKey, materialIndex);
+          materials.push(normalizePbrMaterial({
+            name: mat?.name || 'FBX material ' + (materialIndex + 1),
+            baseColorFactor: mat?.color ? [mat.color.r, mat.color.g, mat.color.b, mat?.opacity ?? 1] : [...DEFAULT_COLOR, 1],
+            metallicFactor: Number.isFinite(mat?.metalness) ? mat.metalness : 0,
+            roughnessFactor: Number.isFinite(mat?.roughness) ? mat.roughness : 1,
+            alphaMode: mat?.transparent || (mat?.opacity ?? 1) < 1 ? 'BLEND' : 'OPAQUE',
+            doubleSided: mat?.side === THREE.DoubleSide,
+          }));
+        }
         for (let corner = 0; corner < 3; corner++) {
           const vi = index ? index.getX(faceStart + corner) : faceStart + corner;
           if (vi < 0 || vi >= vertexCount) continue;
@@ -740,6 +803,8 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
           if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
           v.applyMatrix4(mesh.matrixWorld);
           positions.push(v.x, v.y, v.z);
+          uvs.push(uv ? uv.getX(vi) : 0, uv ? uv.getY(vi) : 0);
+          materialIndices.push(materialIndex);
           if (col) colors.push(col.getX(vi), col.getY(vi), col.getZ(vi));
           else colors.push(materialColor[0], materialColor[1], materialColor[2]);
           indices.push(base + corner);
@@ -747,7 +812,7 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
       }
     });
     if (indices.length === 0) return { ok: false, reason: 'no triangle meshes found in this FBX' };
-    const result = finishAsset(positions, colors, indices, fileName, 'fbx');
+    const result = finishAsset(positions, colors, indices, fileName, 'fbx', { uvs, materials, materialIndices });
     return result;
   } catch (e) {
     return { ok: false, reason: 'FBX decode failed (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
@@ -884,6 +949,9 @@ export function validAsset(raw: unknown): CustomAsset | null {
   if (!Array.isArray(r.positions) || !Array.isArray(r.colors) || !Array.isArray(r.indices)) return null;
   if (!r.positions.every(isFiniteNum) || !r.colors.every(isFiniteNum) || !r.indices.every(isFiniteNum)) return null;
   if (r.positions.length % 3 !== 0 || r.colors.length !== r.positions.length || r.indices.length % 3 !== 0) return null;
+  const vertexCount = r.positions.length / 3;
+  if (r.uvs !== undefined && (!Array.isArray(r.uvs) || r.uvs.length !== vertexCount * 2 || !r.uvs.every(isFiniteNum))) return null;
+  if (r.materialIndices !== undefined && (!Array.isArray(r.materialIndices) || r.materialIndices.length !== vertexCount || !r.materialIndices.every(v => Number.isInteger(v) && (v as number) >= -1 && (v as number) < ((Array.isArray(r.materials) ? r.materials.length : 0))))) return null;
   if (r.indices.some((v) => (v as number) < 0 || (v as number) * 3 >= (r.positions as number[]).length)) return null;
   if (!isFiniteNum(r.width) || !isFiniteNum(r.height)) return null;
   const w = r.width as number, h = r.height as number;
@@ -914,6 +982,9 @@ export function validAsset(raw: unknown): CustomAsset | null {
     sourceFile,
     category,
     tags,
+    ...(Array.isArray(r.uvs) ? { uvs: r.uvs as number[] } : {}),
+    ...(Array.isArray(r.materials) ? { materials: r.materials as RuntimePbrMaterial[] } : {}),
+    ...(Array.isArray(r.materialIndices) ? { materialIndices: r.materialIndices as number[] } : {}),
   };
 }
 
