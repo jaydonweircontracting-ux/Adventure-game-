@@ -141,6 +141,47 @@ export function setActiveScene(project: EngineProject, sceneId: string): EngineR
   };
 }
 
+export function renameEngineScene(
+  project: EngineProject,
+  sceneId: string,
+  name: string,
+): EngineResult<EngineProject> {
+  const clean = cleanName(name, 'Untitled Scene');
+  if (!project.scenes.some((scene) => scene.id === sceneId)) {
+    return { ok: false, error: 'Scene not found: ' + sceneId };
+  }
+  return {
+    ok: true,
+    value: {
+      ...project,
+      scenes: project.scenes.map((scene) => scene.id === sceneId ? { ...scene, name: clean } : scene),
+    },
+  };
+}
+
+export function renameEngineEntity(
+  project: EngineProject,
+  sceneId: string,
+  entityId: string,
+  name: string,
+): EngineResult<EngineProject> {
+  const scene = project.scenes.find((item) => item.id === sceneId);
+  if (!scene) return { ok: false, error: 'Scene not found: ' + sceneId };
+  if (!scene.entities.some((entity) => entity.id === entityId)) {
+    return { ok: false, error: 'Entity not found: ' + entityId };
+  }
+  const clean = cleanName(name, 'Entity');
+  return {
+    ok: true,
+    value: {
+      ...project,
+      scenes: project.scenes.map((item) => item.id === sceneId
+        ? { ...item, entities: item.entities.map((entity) => entity.id === entityId ? { ...entity, name: clean } : entity) }
+        : item),
+    },
+  };
+}
+
 export function createEngineEntity(
   project: EngineProject,
   sceneId: string,
