@@ -3,6 +3,7 @@ import App from '../../App';
 import Engine3DWorldView from './Engine3DWorldView';
 import type { Diagnostics3D } from './worldRenderer3d';
 import type { GraphicsMode } from './engine3d';
+import EngineStudio from '../engine/EngineStudio';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
 // BUILD 992: first-person-auto setting (3D mode only). Default ON:
@@ -44,6 +45,7 @@ function initialMode(): GraphicsMode {
 export default function GraphicsModeHost() {
   const [mode, setMode] = useState<GraphicsMode>(initialMode);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
   const [fpAuto, setFpAuto] = useState<boolean>(() => {
     try { return localStorage.getItem(FP_AUTO_KEY) !== '0'; } catch { return true; }
   });
@@ -76,6 +78,8 @@ export default function GraphicsModeHost() {
   if (mode === '3d') {
     return <>
       <Engine3DWorldView onExit={() => choose('2.5d')} fpAuto={fpAuto} hideUi={hideUi} onDiagnostics={setDiag} />
+      <button type="button" onClick={() => setStudioOpen(true)} aria-label="Open Adventure Engine Studio" style={{position:'fixed',left:12,top:'max(12px, env(safe-area-inset-top))',zIndex:30002,padding:'11px 14px',border:'1px solid #8c9b8d',borderRadius:10,background:'#263b30ee',color:'#fff',fontWeight:700}}>Engine Studio</button>
+      {studioOpen && <EngineStudio onClose={() => setStudioOpen(false)} />}
       <button
         type="button"
         onClick={() => setOptionsOpen(v => !v)}
@@ -122,7 +126,9 @@ export default function GraphicsModeHost() {
 
   return <>
     <App />
+    {studioOpen && <EngineStudio onClose={() => setStudioOpen(false)} />}
     <div style={{position:'fixed',right:10,top:'max(10px, env(safe-area-inset-top))',zIndex:30000,fontFamily:'system-ui,sans-serif',color:'#fff'}}>
+      <button type="button" onClick={() => setStudioOpen(true)} aria-label="Open Adventure Engine Studio" style={{border:'1px solid #8c9b8d',borderRadius:9,padding:'10px 13px',background:'#263b30ee',color:'#fff',fontWeight:700,boxShadow:'0 3px 12px #0005',marginRight:6}}>Engine Studio</button>
       <button type="button" onClick={() => setOptionsOpen(v => !v)} aria-expanded={optionsOpen} aria-label="Open graphics options" style={{border:'1px solid #8c9b8d',borderRadius:9,padding:'10px 13px',background:'#172c23ee',color:'#fff',fontWeight:700,boxShadow:'0 3px 12px #0005'}}>Options ⚙</button>
       {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{marginTop:6,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007'}}>
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
