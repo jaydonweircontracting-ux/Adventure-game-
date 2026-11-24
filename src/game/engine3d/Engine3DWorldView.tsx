@@ -1316,10 +1316,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
             const text=await file.text();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
             accept(parseGltfUpload(text,file.name,companionFiles,dirOf(relPathOf(file))),file.name);
-          }else{
+          }else if(lower.endsWith('.obj')){
             const text=await file.text();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
             accept(parseObjUpload(text,file.name),file.name);
+          }else{
+            const buf=await file.arrayBuffer();bytesDone+=file.size;
+            setP('parsing',file.name);await yieldToLoop();
+            accept(await parseFbxUpload(buf,file.name),file.name);
           }
         }catch{failed.push(file.name+': could not read the file');}
         filesDone++;await yieldToLoop();
