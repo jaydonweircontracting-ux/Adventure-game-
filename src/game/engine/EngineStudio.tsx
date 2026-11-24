@@ -288,7 +288,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                     <div style={muted}>Version {component.version} · {component.enabled ? 'Enabled' : 'Disabled'}</div>
                     <textarea aria-label={component.type + ' component JSON'} value={draft}
                       onChange={(event) => setComponentDrafts((items) => ({ ...items, [draftKey]: event.target.value }))}
-                      rows={Math.min(10, Math.max(3, draft.split('\\n').length))}
+                      rows={Math.min(10, Math.max(3, draft.split('\n').length))}
                       style={{ ...input, marginTop: 7, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }} />
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       <button type="button" style={button} onClick={() => {
