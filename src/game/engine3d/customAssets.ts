@@ -1,3 +1,6 @@
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { Color, Vector3 } from 'three';
+
 // BUILD 997 — custom GLB uploads for the 3D mode Build tool. Pure
 // module: no React, no WebGL. The 3D view owns the UI; this file owns
 // the upload rules so they can be asserted standalone.
@@ -226,8 +229,8 @@ export function collectGltfDependencies(
  *  is no audio playback system to attach audio to, and the renderer
  *  draws vertex-colour triangles only, so a texture has nowhere to
  *  go — importing either would be a fake feature. */
-export const SUPPORTED_MODEL_EXTENSIONS = ['.glb', '.gltf', '.obj'] as const;
-export type ImportModelFormat = 'glb' | 'gltf' | 'obj';
+export const SUPPORTED_MODEL_EXTENSIONS = ['.glb', '.gltf', '.obj', '.fbx'] as const;
+export type ImportModelFormat = 'glb' | 'gltf' | 'obj' | 'fbx';
 
 // ---- GLB parsing (direct, no three.js — same approach as the 985
 // bake script, adapted to run in the browser on an ArrayBuffer). ----
@@ -340,7 +343,7 @@ function xform(m: Mat4, x: number, y: number, z: number): [number, number, numbe
 // so GLB, glTF and OBJ agree on centring, footprint, caps and the
 // asset record. Raw positions are Y-up, uncentred; the asset is
 // centred XZ on the origin with its base at y=0, 1 unit = 1 tile. ----
-function finishAsset(
+export function finishAsset(
   positions: number[],
   colors: number[],
   indices: number[],
@@ -932,4 +935,48 @@ export function removeCustomAssetPlacements(w: IsoWorld, assetId: string): Array
     }
   }
   return removed;
+}
+
+
+/** Import a binary or ASCII FBX as static geometry. Three.js resolves the
+ * FBX node transforms and material colours; the current world renderer is
+ * vertex-colour only, so skeletal animation and bitmap textures are not
+ * carried into the game. The original FBX remains available for re-import. */
+export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promise<GlbUploadResult> {
+  try {
+    if (buf.byteLength > MAX_FILE_BYTES) return { ok: false, reason: 'file is over 5 MB' };
+    const root = new FBXLoader().parse(buf, '');
+    root.updateMatrixWorld(true);
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const v = new Vector3();
+    root.traverse((object) => {
+      const mesh = object as typeof object & { isMesh?: boolean; geometry?: import('three').BufferGeometry; material?: import('three').Material | import('three').Material[]; matrixWorld: import('three').Matrix4 };
+      if (!mesh.isMesh || !mesh.geometry) return;
+      const geometry = mesh.geometry;
+      const position = geometry.getAttribute('position');
+      if (!position) return;
+      const index = geometry.index;
+      const count = index ? index.count : position.count;
+      const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      const matColor = material && 'color' in material ? (material as import('three').MeshStandardMaterial).color : new Color(0.65, 0.63, 0.58);
+      const vertexColor = geometry.getAttribute('color');
+      for (let i = 0; i + 2 < count; i += 3) {
+        if (indices.length / 3 >= MAX_TRIANGLES) break;
+        for (let j = 0; j < 3; j++) {
+          const sourceIndex = index ? index.getX(i + j) : i + j;
+          v.fromBufferAttribute(position, sourceIndex).applyMatrix4(mesh.matrixWorld);
+          positions.push(v.x, v.y, v.z);
+          if (vertexColor) colors.push(vertexColor.getX(sourceIndex), vertexColor.getY(sourceIndex), vertexColor.getZ(sourceIndex));
+          else colors.push(matColor.r, matColor.g, matColor.b);
+          indices.push(indices.length);
+        }
+      }
+    });
+    if (indices.length === 0) return { ok: false, reason: 'FBX contains no static triangle meshes' };
+    return finishAsset(positions, colors, indices, fileName, 'fbx');
+  } catch (error) {
+    return { ok: false, reason: 'FBX could not be parsed (' + (error instanceof Error ? error.message : 'unknown error') + ')' };
+  }
 }
