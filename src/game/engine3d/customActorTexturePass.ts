@@ -7,6 +7,7 @@ export interface TexturedActorInstance {
   z: number;
   yaw: number;
   baseY: number;
+  phase: number;
 }
 
 type Batch = { vertices: number[]; textureUri: string | null; cutoff: number };
@@ -111,7 +112,11 @@ export class CustomActorTexturePass {
     for (const actor of instances) {
       const asset = actor.asset;
       const c = Math.cos(actor.yaw), sn = Math.sin(actor.yaw);
-      const vertexCount = asset.positions.length / 3;
+      const frames = asset.animationFrames;
+      const cycle = ((actor.phase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      const frame = frames?.length ? frames[Math.min(frames.length - 1, Math.floor(cycle / (Math.PI * 2) * frames.length))] : undefined;
+      const posePositions = frame ?? asset.positions;
+      const vertexCount = posePositions.length / 3;
       const limit = Math.min(asset.indices.length, 90000);
       for (let i = 0; i + 2 < limit; i += 3) {
         const vi = asset.indices[i];
@@ -129,7 +134,7 @@ export class CustomActorTexturePass {
           const index = asset.indices[i + corner];
           if (index < 0 || index >= vertexCount) continue;
           const p = index * 3, uv = index * 2, q = index * 3;
-          const x = asset.positions[p], y = asset.positions[p + 1], z = asset.positions[p + 2];
+          const x = posePositions[p], y = posePositions[p + 1], z = posePositions[p + 2];
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
           const sourceUv: [number, number] = [asset.uvs?.[uv] ?? 0, asset.uvs?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;
