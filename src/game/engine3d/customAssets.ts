@@ -850,6 +850,31 @@ export async function parseFbxUpload(
     const meshes: any[] = [];
     const materials: RuntimePbrMaterial[] = [];
     const materialLookup = new Map<string, number>();
+    const textureImages: Array<string | null> = [];
+    const textureLookup = new Map<any, number>();
+    const textureIndexFor = (texture: any): number | undefined => {
+      if (!texture?.image || typeof document === 'undefined') return undefined;
+      const existing = textureLookup.get(texture);
+      if (existing !== undefined) return existing;
+      try {
+        const image = texture.image;
+        const width = image.width || image.videoWidth;
+        const height = image.height || image.videoHeight;
+        if (!width || !height) return undefined;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+        ctx.drawImage(image, 0, 0, width, height);
+        const index = textureImages.length;
+        textureImages.push(canvas.toDataURL('image/png'));
+        textureLookup.set(texture, index);
+        return index;
+      } catch {
+        return undefined;
+      }
+    };
     root.traverse((node: any) => {
       if (!node?.isMesh || !node.geometry?.attributes?.position) return;
       meshes.push(node);
@@ -873,6 +898,7 @@ export async function parseFbxUpload(
         if (materialIndex === undefined) {
           materialIndex = materials.length;
           materialLookup.set(materialKey, materialIndex);
+          const textureIndex = textureIndexFor(material?.map);
           materials.push(normalizePbrMaterial({
             name: material?.name || 'FBX material ' + (materialIndex + 1),
             baseColorFactor: material?.color ? [material.color.r, material.color.g, material.color.b, material?.opacity ?? 1] : [...DEFAULT_COLOR, 1],
@@ -880,6 +906,7 @@ export async function parseFbxUpload(
             roughnessFactor: Number.isFinite(material?.roughness) ? material.roughness : 1,
             alphaMode: material?.transparent || (material?.opacity ?? 1) < 1 ? 'BLEND' : 'OPAQUE',
             doubleSided: material?.side === THREE.DoubleSide,
+            ...(textureIndex !== undefined ? { baseColorTexture: { textureIndex, texCoord: 0 } } : {}),
           }));
         }
         triangles.push({ mesh: node, vertices, material, materialIndex });
@@ -887,49 +914,11 @@ export async function parseFbxUpload(
     });
     if (!triangles.length) return { ok: false, reason: 'no triangle meshes found in this FBX' };
 
-    const pixelMaps = new Map<any, { data: Uint8ClampedArray; width: number; height: number }>();
-    const pixelsFor = (texture: any) => {
-      if (!texture?.image || typeof document === 'undefined') return null;
-      if (pixelMaps.has(texture)) return pixelMaps.get(texture)!;
-      try {
-        const image = texture.image;
-        const width = image.width || image.videoWidth;
-        const height = image.height || image.videoHeight;
-        if (!width || !height) return null;
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return null;
-        ctx.drawImage(image, 0, 0, width, height);
-        const pixels = { data: ctx.getImageData(0, 0, width, height).data, width, height };
-        pixelMaps.set(texture, pixels);
-        return pixels;
-      } catch {
-        return null;
-      }
-    };
-    const sampleTexture = (texture: any, uv: Array<{ x: number; y: number }>) => {
-      const pixels = pixelsFor(texture);
-      if (!pixels || !uv.length) return null;
-      let u = uv.reduce((sum, p) => sum + p.x, 0) / uv.length;
-      let v = uv.reduce((sum, p) => sum + p.y, 0) / uv.length;
-      if (texture.wrapS === THREE.RepeatWrapping) u = ((u % 1) + 1) % 1;
-      else u = Math.max(0, Math.min(0.999999, u));
-      if (texture.wrapT === THREE.RepeatWrapping) v = ((v % 1) + 1) % 1;
-      else v = Math.max(0, Math.min(0.999999, v));
-      const x = Math.max(0, Math.min(pixels.width - 1, Math.floor(u * pixels.width)));
-      const y = Math.max(0, Math.min(pixels.height - 1, Math.floor((1 - v) * pixels.height)));
-      const offset = (y * pixels.width + x) * 4;
-      return [pixels.data[offset] / 255, pixels.data[offset + 1] / 255, pixels.data[offset + 2] / 255] as [number, number, number];
-    };
-
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
     const uvs: number[] = [];
     const materialIndices: number[] = [];
-    let textureBaked = false;
     const collectPositions = () => {
       const out: number[] = [];
       for (const mesh of meshes) if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
@@ -954,14 +943,10 @@ export async function parseFbxUpload(
       const uv = geometry.attributes.uv;
       const mc = tri.material?.color;
       const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
-      const uvPoints = uv ? tri.vertices.map((vi: number) => ({ x: uv.getX(vi), y: uv.getY(vi) })) : [];
-      const texColor = tri.material?.map ? sampleTexture(tri.material.map, uvPoints) : null;
-      if (texColor) textureBaked = true;
       for (const vi of tri.vertices) {
-        let r = col ? col.getX(vi) : materialColor[0];
-        let g = col ? col.getY(vi) : materialColor[1];
-        let b = col ? col.getZ(vi) : materialColor[2];
-        if (texColor) { r *= texColor[0]; g *= texColor[1]; b *= texColor[2]; }
+        const r = col ? col.getX(vi) : materialColor[0];
+        const g = col ? col.getY(vi) : materialColor[1];
+        const b = col ? col.getZ(vi) : materialColor[2];
         colors.push(r, g, b);
         uvs.push(uv ? uv.getX(vi) : 0, uv ? uv.getY(vi) : 0);
         materialIndices.push(tri.materialIndex);
@@ -1025,7 +1010,7 @@ export async function parseFbxUpload(
     }
 
     return finishAsset(positions, colors, indices, fileName, 'fbx', {
-      uvs, materials, materialIndices, animationFrames, animationFps, textureBaked,
+      uvs, materials, materialIndices, textureImages, animationFrames, animationFps,
     });
   } catch (e) {
     return { ok: false, reason: 'FBX decode failed (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
