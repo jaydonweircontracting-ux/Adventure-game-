@@ -75,7 +75,8 @@ export const MAX_LIBRARY_TRIANGLES = 100_000;
  *  arrays (8 bytes per number) plus the renderer's Float32/Uint32
  *  copy (4 bytes per number). */
 export function decodedAssetBytes(a: CustomAsset): number {
-  return (a.positions.length + a.colors.length + a.indices.length) * 12;
+  const animationNumbers = (a.animationFrames ?? []).reduce((sum, frame) => sum + frame.length, 0);
+  return (a.positions.length + a.colors.length + a.indices.length + animationNumbers) * 12;
 }
 
 /** Triangle count of one asset. */
