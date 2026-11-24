@@ -1,0 +1,44 @@
+name: World performance baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/game/engine3d/**"
+      - "src/game/iso/**"
+      - "scripts/benchmark-world.ts"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: world-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Measure world generation, terrain, pathfinding and simulation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run production-system benchmarks
+        run: npm run benchmark:world
+      - name: Upload benchmark measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-performance-${{ github.sha }}
+          path: work/experiments/benchmark-world.json
+          if-no-files-found: warn
