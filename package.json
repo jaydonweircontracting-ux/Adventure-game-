@@ -35,6 +35,7 @@
     "test:character-creator": "npx tsx tests/character-creator-restrictions.test.ts",
     "test:world-simulation": "npx tsx tests/world-simulation.test.ts",
     "test:world-core": "npx tsx tests/world-core.test.ts",
+    "test:engine-core": "npx tsx tests/engine-core.test.ts",
     "benchmark:world": "npx tsx scripts/benchmark-world.ts"
   },
   "dependencies": {
