@@ -287,7 +287,9 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
     } else if (lower.endsWith('.gltf')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseGltfUpload(text, base, allFiles, dir) });
-    } else if (lower.endsWith('.fbx')) {\n      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), base) });\n    } else if (lower.endsWith('.obj')) {
+    } else if (lower.endsWith('.fbx')) {
+      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), base) });
+    } else if (lower.endsWith('.obj')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseObjUpload(text, base) });
     } else if (base === PACK_MANIFEST_NAME) {
