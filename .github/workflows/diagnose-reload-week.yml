@@ -37,12 +37,12 @@ jobs:
           let source = fs.readFileSync(path, 'utf8');
           // Replace the generated-river probe with a deterministic, valid one-tile crossing.
           // The ranked detector correctly rejects arbitrary river-edge contacts without a dry far bank.
-          source = source.replace("import * as RV1088 from '../src/game/engine3d/rivers.js';\\n", '');
-          source = source.replace("  const RV1088 = await import('../src/game/engine3d/rivers.js');\\n", '');
+          source = source.replace("import * as RV1088 from '../src/game/engine3d/rivers.js';\n", '');
+          source = source.replace("  const RV1088 = await import('../src/game/engine3d/rivers.js');\n", '');
           const startAt = source.indexOf('const wBridge1088 = ');
-          const startLine = startAt < 0 ? -1 : source.lastIndexOf('\\n', startAt) + 1;
+          const startLine = startAt < 0 ? -1 : source.lastIndexOf('\n', startAt) + 1;
           const stateAt = startAt < 0 ? -1 : source.indexOf('psBridge1088 = PT.freshPathState();', startAt);
-          const lineEnd = stateAt < 0 ? -1 : source.indexOf('\\n', stateAt);
+          const lineEnd = stateAt < 0 ? -1 : source.indexOf('\n', stateAt);
           if (startLine < 0 || stateAt < 0 || lineEnd < 0) throw new Error('could not locate M1088 bridge fixture');
           const fixture = `  const wBridge1088 = W.defaultWorld();
           wBridge1088.huts = []; wBridge1088.stalls = []; wBridge1088.trees = []; wBridge1088.rocks = [];
