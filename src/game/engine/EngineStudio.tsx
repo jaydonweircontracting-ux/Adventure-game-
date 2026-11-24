@@ -6,11 +6,13 @@ import {
   createEngineScene,
   deserializeEngineProject,
   removeEngineEntity,
+  removeEngineComponent,
   renameEngineEntity,
   renameEngineScene,
   serializeEngineProject,
   setActiveScene,
   updateEntityTransform,
+  updateEngineComponent,
   type EngineProject,
   type Transform3D,
 } from './engineCore';
@@ -51,6 +53,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
+  const [componentDrafts, setComponentDrafts] = useState<Record<string, string>>({});
   const importRef = useRef<HTMLInputElement>(null);
 
   const scene = useMemo(
@@ -271,13 +274,41 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 }))}>+ Component</button>
               </div>
               {selected.components.length === 0 && <p style={muted}>No components attached.</p>}
-              {selected.components.map((component, index) => (
-                <div key={component.type + index} style={{ marginTop: 7, padding: 9, border: '1px solid #43584c', borderRadius: 7 }}>
-                  <strong style={{ fontSize: 12 }}>{component.type}</strong>
-                  <div style={muted}>Version {component.version} · {component.enabled ? 'Enabled' : 'Disabled'}</div>
-                  <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 10, color: '#b8c9bd' }}>{JSON.stringify(component.data, null, 2)}</pre>
-                </div>
-              ))}
+              {selected.components.map((component, index) => {
+                const draftKey = selected.id + ':' + component.type + ':' + index;
+                const draft = componentDrafts[draftKey] ?? JSON.stringify(component.data, null, 2);
+                return (
+                  <div key={draftKey} style={{ marginTop: 7, padding: 9, border: '1px solid #43584c', borderRadius: 7 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                      <strong style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{component.type}</strong>
+                      <button type="button" style={{ ...button, padding: '4px 7px' }} onClick={() => run(updateEngineComponent(project, scene.id, selected.id, index, { ...component, enabled: !component.enabled }))}>
+                        {component.enabled ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                    <div style={muted}>Version {component.version} · {component.enabled ? 'Enabled' : 'Disabled'}</div>
+                    <textarea aria-label={component.type + ' component JSON'} value={draft}
+                      onChange={(event) => setComponentDrafts((items) => ({ ...items, [draftKey]: event.target.value }))}
+                      rows={Math.min(10, Math.max(3, draft.split('\\n').length))}
+                      style={{ ...input, marginTop: 7, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <button type="button" style={button} onClick={() => {
+                        try {
+                          const data = JSON.parse(draft);
+                          if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Component data must be a JSON object.');
+                          run(updateEngineComponent(project, scene.id, selected.id, index, { ...component, data }));
+                          setComponentDrafts((items) => { const next = { ...items }; delete next[draftKey]; return next; });
+                        } catch (cause) {
+                          setError(cause instanceof Error ? cause.message : 'Invalid component JSON.');
+                        }
+                      }}>Apply JSON</button>
+                      <button type="button" style={{ ...button, background: '#58312c' }} onClick={() => {
+                        run(removeEngineComponent(project, scene.id, selected.id, index));
+                        setComponentDrafts((items) => { const next = { ...items }; delete next[draftKey]; return next; });
+                      }}>Remove</button>
+                    </div>
+                  </div>
+                );
+              })}
             </>
           )}
         </main>
