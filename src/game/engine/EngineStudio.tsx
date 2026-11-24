@@ -19,6 +19,7 @@ import {
   setActiveScene,
   updateEntityTransform,
   updateEngineComponent,
+  upsertEngineComponent,
   type EngineProject,
   type EngineResult,
   type Transform3D,
@@ -390,7 +391,7 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                     onChange={(event) => {
                       const asset = assetLibrary.find((item) => item.id === event.target.value);
                       if (!asset) return;
-                      run(addEngineComponent(project, scene.id, selected.id, {
+                      run(upsertEngineComponent(project, scene.id, selected.id, {
                         type: 'adventure.mesh-asset', version: 1, enabled: true,
                         data: {
                           assetId: asset.id,
