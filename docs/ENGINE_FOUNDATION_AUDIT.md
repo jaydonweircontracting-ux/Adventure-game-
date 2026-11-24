@@ -92,6 +92,15 @@ This is an initial scene-authoring workbench, not yet a complete 3D viewport: no
 
 Prefab placement currently starts at the scene origin; creators can reposition the instance using the scene viewport and inspector. A future placement tool should support cursor/raycast placement, preview ghosts, snapping and asset-backed prefab previews.
 
+## Shared model asset binding (added on this branch)
+
+- Engine Studio reads the existing 3D model library from the same IndexedDB asset store used by the game's Import Hub; legacy localStorage assets are used only as a session fallback when IndexedDB is unavailable.
+- A selected entity can attach a stable `adventure.mesh-asset` component reference containing asset ID/name/format and visibility. Re-selecting a model replaces the existing mesh reference rather than adding duplicates.
+- Model vertex/index/color arrays remain in the shared asset database and are not copied into the engine project JSON.
+- `engineAssetBridge.ts` resolves enabled mesh-asset components against the shared library into renderer-ready instance descriptors with entity hierarchy, transform and original geometry references.
+- The asset bridge regression test covers stable-ID resolution, geometry identity, missing assets, disabled components and hidden meshes.
+- The bridge is not yet consumed by `worldRenderer3d`; attached models are currently project data and renderer-ready descriptors, not yet visible mesh instances in the 3D game scene. The next renderer task is to feed these descriptors into a dedicated mesh buffer/program with transforms and GPU cleanup.
+
 ## Remaining integration gates
 
 1. Run a reproducible typecheck, production build and all new tests in GitHub Actions. No run has been observed yet for this branch; do not treat these tests as passed.
