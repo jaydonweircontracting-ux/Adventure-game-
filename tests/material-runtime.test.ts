@@ -27,6 +27,16 @@ assert.equal(material.alphaMode, 'BLEND');
 assert.equal(material.doubleSided, true);
 assert.equal(material.textures.baseColor?.textureIndex, 3);
 assert.equal(material.textures.baseColor?.texCoord, 1);
+const transformed = normalizePbrMaterial({
+  baseColorTexture: {
+    textureIndex: 4,
+    texCoord: 0,
+    transform: { offset: [0.2, 0.3], rotation: Math.PI / 2, scale: [2, 3], texCoord: 1 },
+  },
+});
+assert.deepEqual(transformed.textures.baseColor?.transform, {
+  offset: [0.2, 0.3], rotation: Math.PI / 2, scale: [2, 3], texCoord: 1,
+});
 
 const defaults = normalizePbrMaterial();
 assert.deepEqual(defaults.baseColor, [1, 1, 1, 1]);
@@ -54,4 +64,4 @@ assert.equal(resolveTextureSource('https://cdn.test/a.png', 'https://game.test/m
 assert.throws(() => resolveTextureSource('javascript:alert(1)', 'https://game.test/model.gltf'), /unsafe/);
 assert.throws(() => resolveTextureSource('', 'https://game.test/model.gltf'), /empty/);
 
-console.log('BUILD 1114 material runtime: 20 assertions passed');
+console.log('BUILD 1117 material runtime: 21 assertions passed');
