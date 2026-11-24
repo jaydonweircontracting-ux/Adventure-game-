@@ -41,6 +41,8 @@ jobs:
         run: npm run test:river-bridge-ranking
       - name: Unified living-world simulation regression test
         run: npm run test:world-simulation
+      - name: WorldCore determinism and save-migration regression test
+        run: npm run test:world-core
       - name: Little World Generator regression test
         run: npm run test:little-world-generator
       - name: Expanded world map coherence regression test
