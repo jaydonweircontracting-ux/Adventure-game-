@@ -148,6 +148,8 @@ export interface CustomAsset {
   /** BUILD 1115: PBR material table and per-vertex material slot. */
   materials?: RuntimePbrMaterial[];
   materialIndices?: number[];
+  /** BUILD 1116: texture image data URLs, indexed by glTF texture index. */
+  textureImages?: Array<string | null>;
 }
 
 export type GlbUploadResult =
@@ -266,7 +268,8 @@ type GltfJson = {
   /** BUILD 1046: image references. The renderer cannot show
    *  textures, so these are only ever reported (found / missing),
    *  never applied — see collectGltfDependencies. */
-  images?: Array<{ uri?: string }>;
+  images?: Array<{ uri?: string; bufferView?: number; mimeType?: string }>;
+  textures?: Array<{ source?: number }>;
 };
 
 function ascii4(view: DataView, off: number): string {
@@ -419,11 +422,54 @@ function finishAsset(
 // walk and per-primitive colour rules from 997, factored out so the
 // GLB parser and the new .gltf parser share one implementation and
 // can never drift apart. `bin` is buffer 0's bytes. ----
+
+function bytesToImageDataUrl(bytes: Uint8Array, mimeType: string): string | null {
+  if (!/^image\/(png|jpeg|webp|gif|bmp|avif)$/i.test(mimeType) || bytes.length === 0 || bytes.length > 8 * 1024 * 1024) return null;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+  return 'data:' + mimeType.toLowerCase() + ';base64,' + btoa(binary);
+}
+
+/** Persist image bytes with the model; texture indices map through glTF textures[].source. */
+function extractGltfTextureImages(json: GltfJson, bin: Uint8Array, basePath: string, files?: Map<string, ArrayBuffer>): Array<string | null> {
+  const images = (json.images || []).map(img => {
+    if (img.uri?.startsWith('data:')) {
+      const match = /^data:(image\/(?:png|jpeg|webp|gif|bmp|avif));base64,([\s\S]*)$/i.exec(img.uri);
+      if (!match) return null;
+      try {
+        const decoded = atob(match[2].replace(/\s/g, ''));
+        const bytes = new Uint8Array(decoded.length);
+        for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
+        return bytesToImageDataUrl(bytes, match[1]);
+      } catch { return null; }
+    }
+    if (img.uri && files) {
+      const resolved = resolveGltfUri(img.uri, basePath, files);
+      const source = resolved.resolvedPath ? files.get(resolved.resolvedPath) : undefined;
+      if (source) {
+        const ext = (img.uri.split('?')[0].split('.').pop() || '').toLowerCase();
+        const mime = ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp'} as Record<string,string>)[ext];
+        if (mime) return bytesToImageDataUrl(new Uint8Array(source), mime);
+      }
+    }
+    if (img.bufferView !== undefined) {
+      const view = (json.bufferViews || [])[img.bufferView];
+      if (!view || view.buffer !== 0 || !img.mimeType) return null;
+      const start = view.byteOffset || 0, end = start + view.byteLength;
+      if (start < 0 || end > bin.length || end <= start) return null;
+      return bytesToImageDataUrl(bin.subarray(start, end), img.mimeType);
+    }
+    return null;
+  });
+  return (json.textures || []).map(texture => texture.source === undefined ? null : images[texture.source] || null);
+}
+
 function buildAssetFromGltf(
   json: GltfJson,
   bin: Uint8Array,
   fileName: string,
   format: ImportModelFormat,
+  textureImages: Array<string | null> = [],
 ): GlbUploadResult {
   const nodes = json.nodes || [];
   const parent = new Map<number, number>();
@@ -528,7 +574,7 @@ function buildAssetFromGltf(
       }
     }
   }
-  return finishAsset(positions, colors, indices, fileName, format, { uvs, materials, materialIndices });
+  return finishAsset(positions, colors, indices, fileName, format, { uvs, materials, materialIndices, textureImages });
 }
 
 function decodeBase64DataUri(uri: string): Uint8Array | string {
@@ -582,7 +628,8 @@ export function parseGlbUpload(buf: ArrayBuffer, fileName: string, files?: Map<s
     }
     // BUILD 1043: mesh extraction is shared with the .gltf importer
     // (buildAssetFromGltf above) so the two formats can never drift.
-    const res = buildAssetFromGltf(json, bin, fileName, 'glb');
+    const textureImages = extractGltfTextureImages(json, bin, basePath, files);
+    const res = buildAssetFromGltf(json, bin, fileName, 'glb', textureImages);
     if (!res.ok) return res;
     return { ...res, dependencies: collectGltfDependencies(json, basePath, files) };
   } catch (e) {
@@ -645,7 +692,8 @@ export function parseGltfUpload(
       }
       bin = new Uint8Array(found);
     }
-    const res = buildAssetFromGltf(json, bin, fileName, 'gltf');
+    const textureImages = extractGltfTextureImages(json, bin, basePath, binFiles);
+    const res = buildAssetFromGltf(json, bin, fileName, 'gltf', textureImages);
     if (!res.ok) return res;
     return { ...res, dependencies: collectGltfDependencies(json, basePath, binFiles) };
   } catch (e) {
@@ -952,6 +1000,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
   const vertexCount = r.positions.length / 3;
   if (r.uvs !== undefined && (!Array.isArray(r.uvs) || r.uvs.length !== vertexCount * 2 || !r.uvs.every(isFiniteNum))) return null;
   if (r.materialIndices !== undefined && (!Array.isArray(r.materialIndices) || r.materialIndices.length !== vertexCount || !r.materialIndices.every(v => Number.isInteger(v) && (v as number) >= -1 && (v as number) < ((Array.isArray(r.materials) ? r.materials.length : 0))))) return null;
+  if (r.textureImages !== undefined && (!Array.isArray(r.textureImages) || r.textureImages.length > 512 || !r.textureImages.every(v => v === null || (typeof v === 'string' && /^data:image\/(png|jpeg|webp|gif|bmp|avif);base64,/i.test(v) && v.length <= 12_000_000)))) return null;
   if (r.indices.some((v) => (v as number) < 0 || (v as number) * 3 >= (r.positions as number[]).length)) return null;
   if (!isFiniteNum(r.width) || !isFiniteNum(r.height)) return null;
   const w = r.width as number, h = r.height as number;
@@ -985,6 +1034,7 @@ export function validAsset(raw: unknown): CustomAsset | null {
     ...(Array.isArray(r.uvs) ? { uvs: r.uvs as number[] } : {}),
     ...(Array.isArray(r.materials) ? { materials: r.materials as RuntimePbrMaterial[] } : {}),
     ...(Array.isArray(r.materialIndices) ? { materialIndices: r.materialIndices as number[] } : {}),
+    ...(Array.isArray(r.textureImages) ? { textureImages: r.textureImages as Array<string | null> } : {}),
   };
 }
 
