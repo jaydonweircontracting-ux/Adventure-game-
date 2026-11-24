@@ -551,14 +551,36 @@ export function validateEngineProject(value: unknown): EngineResult<EngineProjec
       return { ok: false, error: 'Prefab metadata is invalid or duplicated' };
     }
     prefabIds.add(prefab.id);
-    const ids = new Set(prefab.entities.map((entity) => entity?.id));
-    if (!ids.has(prefab.rootEntityId)) return { ok: false, error: 'Prefab root entity does not exist' };
+    const ids = new Set<string>();
     for (const entity of prefab.entities) {
-      if (!entity || typeof entity.id !== 'string' || !entity.id.trim() || typeof entity.name !== 'string' || !entity.name.trim()
+      if (!entity || typeof entity.id !== 'string' || !entity.id.trim() || ids.has(entity.id)
+        || typeof entity.name !== 'string' || !entity.name.trim()
         || typeof entity.active !== 'boolean' || !isFiniteTuple(entity.transform?.position)
         || !isFiniteTuple(entity.transform?.rotation) || !isFiniteTuple(entity.transform?.scale)
-        || !Array.isArray(entity.components) || (entity.parentId !== null && !ids.has(entity.parentId))) {
-        return { ok: false, error: 'Prefab entity data is invalid' };
+        || !Array.isArray(entity.components)) {
+        return { ok: false, error: 'Prefab entity data is invalid or duplicated' };
+      }
+      ids.add(entity.id);
+      for (const component of entity.components) {
+        if (!component || typeof component.type !== 'string' || !component.type.trim()
+          || !Number.isInteger(component.version) || component.version < 1
+          || typeof component.enabled !== 'boolean' || !component.data || typeof component.data !== 'object'
+          || Array.isArray(component.data) || !isJsonValue(component.data)) {
+          return { ok: false, error: 'Prefab component is invalid' };
+        }
+      }
+    }
+    if (!ids.has(prefab.rootEntityId)) return { ok: false, error: 'Prefab root entity does not exist' };
+    const prefabById = new Map(prefab.entities.map((entity) => [entity.id, entity]));
+    if (prefabById.get(prefab.rootEntityId)?.parentId !== null) return { ok: false, error: 'Prefab root cannot have a parent' };
+    for (const entity of prefab.entities) {
+      if (entity.parentId !== null && !ids.has(entity.parentId)) return { ok: false, error: 'Prefab parent must exist in the same prefab' };
+      const ancestors = new Set<string>([entity.id]);
+      let parentId = entity.parentId;
+      while (parentId !== null) {
+        if (ancestors.has(parentId)) return { ok: false, error: 'Prefab hierarchy contains a cycle' };
+        ancestors.add(parentId);
+        parentId = prefabById.get(parentId)?.parentId ?? null;
       }
     }
   }
