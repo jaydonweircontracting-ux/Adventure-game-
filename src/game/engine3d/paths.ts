@@ -62,7 +62,7 @@
  */
 import { terrainAt, inBounds, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement } from './placements';
-import { riverAt, riverNear, riverWidthAt } from './rivers';
+import { riverAt, riverNear, riverWidthAt, allRoadCrossings, type River } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import { STOREHOUSE_STORE_ID } from './storehouse';
 import {
@@ -76,7 +76,7 @@ import {
   type StageSteps,
   type StagePlan,
 } from './construction';
-import { tileReachableFromCamp } from './founders';
+import { FOUNDER_CAMP, tileReachableFromCamp } from './founders';
 
 /** Founder passes over a tile before it wears into a dirt path. */
 export const PATH_TRAFFIC_THRESHOLD = 8;
@@ -683,6 +683,160 @@ export function detectBridgeSite(
   return site;
 }
 
+/** The run of river tiles a road must span starting at (x, y):
+ *  walk the river's own tiles perpendicular to its flow until
+ *  land — the bridge's span. Ported from the 1113 crossing loop
+ *  (BUILD 1127 fix 6, parent takeover): the 1126 scan reads only
+ *  dirt-path tiles, and live paths cap at 250 near-camp tiles
+ *  before any river-contact tile wears into a path — so the scan
+ *  must also read the river geometry itself. Runs are capped at
+ *  six tiles (the 1126 span cap in bridgeSpanForCrossing). Null
+ *  when the tile is not river, the run is too long (a river
+ *  flowing ALONG the road, not across it), or either end bank is
+ *  not land. Pure. */
+export type CrossingRun = {
+  /** The river's tiles in crossing order. */
+  tiles: Array<{ x: number; y: number }>;
+  axis: 'x' | 'y';
+  bankA: { x: number; y: number };
+  bankB: { x: number; y: number };
+  river: River;
+};
+
+export function crossingRunFor(world: IsoWorld, x: number, y: number): CrossingRun | null {
+  const found = riverAt(world, x, y);
+  if (!found) return null;
+  const river = found.river;
+  const isWater = (tx: number, ty: number): boolean => !!riverAt(world, tx, ty);
+  const isLand = (tx: number, ty: number): boolean =>
+    inBounds(world, tx, ty) && !isWater(tx, ty) && terrainAt(world, tx, ty) !== 'water';
+  const runAlong = (axis: 'x' | 'y'): CrossingRun | null => {
+    const d = axis === 'x' ? { dx: 1, dy: 0 } : { dx: 0, dy: 1 };
+    const tiles: Array<{ x: number; y: number }> = [{ x, y }];
+    for (const dir of [1, -1] as const) {
+      let cx = x, cy = y;
+      for (let step = 0; step < 6; step++) {
+        cx += d.dx * dir;
+        cy += d.dy * dir;
+        if (!isWater(cx, cy)) break;
+        if (dir === 1) tiles.push({ x: cx, y: cy });
+        else tiles.unshift({ x: cx, y: cy });
+        if (tiles.length > 6) return null;
+      }
+    }
+    const first = tiles[0];
+    const last = tiles[tiles.length - 1];
+    const bankA = { x: first.x - d.dx, y: first.y - d.dy };
+    const bankB = { x: last.x + d.dx, y: last.y + d.dy };
+    if (!isLand(bankA.x, bankA.y) || !isLand(bankB.x, bankB.y)) return null;
+    return { tiles, axis, bankA, bankB, river };
+  };
+  const fx = found.tile.dx ?? 0;
+  const fy = found.tile.dy ?? 0;
+  const axes: Array<'x' | 'y'> = [];
+  if (fx !== 0) axes.push('y');
+  if (fy !== 0) axes.push('x');
+  if (axes.length === 0) axes.push('x', 'y');
+  let best: CrossingRun | null = null;
+  for (const axis of axes) {
+    const run = runAlong(axis);
+    if (run && (!best || run.tiles.length < best.tiles.length)) best = run;
+  }
+  return best;
+}
+
+/** True when a bank tile continues a road: generated dirt, or a
+ *  placed dirt path. Pure. */
+export function bankContinuesRoad(world: IsoWorld, x: number, y: number): boolean {
+  if (!inBounds(world, x, y)) return false;
+  if (terrainAt(world, x, y) === 'dirt') return true;
+  return isPathTile(world, x, y);
+}
+
+/**
+ * Score a crossing for building (higher = better): narrow beats
+ * wide (20 per extra span tile), low-order streams beat mains
+ * (10 per extra order), a road continuing on either bank is worth
+ * 25 (the bridge joins an existing route), and the nearer bank
+ * costs a quarter point per tile of Manhattan distance from camp
+ * (the founders build near home first). Null when either bank
+ * is not walkable — a bridge to a walled-in bank is never scored.
+ * Pure.
+ */
+export function scoreCrossing(world: IsoWorld, run: CrossingRun): number | null {
+  const walkA = walkableWithPlacements(world, world.crates, run.bankA.x, run.bankA.y);
+  const walkB = walkableWithPlacements(world, world.crates, run.bankB.x, run.bankB.y);
+  if (!walkA || !walkB) return null;
+  const span = run.tiles.length;
+  const order = run.river.order ?? 1;
+  const aligned =
+    bankContinuesRoad(world, run.bankA.x, run.bankA.y) || bankContinuesRoad(world, run.bankB.x, run.bankB.y) ? 25 : 0;
+  const distA = Math.abs(run.bankA.x - FOUNDER_CAMP.x) + Math.abs(run.bankA.y - FOUNDER_CAMP.y);
+  const distB = Math.abs(run.bankB.x - FOUNDER_CAMP.x) + Math.abs(run.bankB.y - FOUNDER_CAMP.y);
+  const dist = Math.round(0.25 * Math.min(distA, distB));
+  return 100 - 20 * (span - 1) - 10 * (order - 1) + aligned - dist;
+}
+
+/**
+ * Every scored road/river crossing in the world, best-first:
+ * each v2 river's recorded road crossings (allRoadCrossings),
+ * expanded to their runs and scored. Crossings that cannot be
+ * scored (a walled-in bank) or cannot be spanned (a run longer
+ * than the cap) are skipped. Pure (reads only).
+ */
+export function listCrossings(world: IsoWorld): Array<{ run: CrossingRun; score: number }> {
+  const out: Array<{ run: CrossingRun; score: number }> = [];
+  const seen = new Set<string>();
+  for (const c of allRoadCrossings(world)) {
+    const run = crossingRunFor(world, c.x, c.y);
+    if (!run) continue;
+    const key = run.tiles.map((t) => t.x + ',' + t.y).join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const score = scoreCrossing(world, run);
+    if (score === null) continue;
+    out.push({ run, score });
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out;
+}
+
+/**
+ * The intersection-driven fallback: score every road/river
+ * crossing the world records (allRoadCrossings — the v2 rivers'
+ * road intersections, best-first) and open the best-scoring one
+ * that is not already bridged or sited and whose camp-side bank
+ * a founder can walk to. One site per call (the day's bridge —
+ * the scan runs once a day). Unlike the 1113 chain builder, the
+ * 1126 BridgeSite carries the whole span in one site (spanTiles),
+ * so one site per crossing is enough — no dependsOn chain.
+ * MUTATES state.bridges. Returns the new site, or [] when no
+ * crossing qualifies.
+ */
+export function detectCrossingSites(world: IsoWorld, state: PathState, day: number): BridgeSite[] {
+  if (day < BRIDGE_START_DAY) return [];
+  const scored = listCrossings(world);
+  for (const { run, score } of scored) {
+    if (score <= 0) continue;
+    if (run.tiles.some((t) => bridgePlacementExists(world, t.x, t.y) || bridgeSiteAt(state.bridges, t.x, t.y))) continue;
+    const distA = Math.abs(run.bankA.x - FOUNDER_CAMP.x) + Math.abs(run.bankA.y - FOUNDER_CAMP.y);
+    const distB = Math.abs(run.bankB.x - FOUNDER_CAMP.x) + Math.abs(run.bankB.y - FOUNDER_CAMP.y);
+    const campBank = distA <= distB ? run.bankA : run.bankB;
+    // BUILD 1127 fix 5 (port of 1113): a crossing whose camp-side
+    // bank no founder can walk to is unbuildable — skip it and let
+    // the next scored crossing win the day.
+    if (!tileReachableFromCamp(world, campBank.x, campBank.y)) continue;
+    const ordered = distA <= distB ? run.tiles : [...run.tiles].reverse();
+    const first = ordered[0];
+    if (bridgeSpanAlreadyClaimed(world, state.bridges, ordered)) continue;
+    const style = bridgeStyleForCrossing(world, campBank, first);
+    const site = freshBridgeSite(first.x, first.y, campBank, ordered, style, bridgeAxisForCrossing(campBank, first), campBank);
+    state.bridges = [...state.bridges, site];
+    return [site];
+  }
+  return [];
+}
+
 /**
  * The once-a-day bridge scan: every dirt path tile is checked for
  * a river neighbour (the paths laid before the day gate opened
@@ -745,6 +899,16 @@ export function scanForBridgeSites(world: IsoWorld, state: PathState, day: numbe
       state.lastBridgeScanDay = day;
       return [site];
     }
+  }
+  // BUILD 1127 fix 6 (parent takeover): the path loop finds nothing in
+  // live play — PATH_MAX_TILES fills with near-camp tiles before any
+  // river-contact tile wears into a path. Fall back to the
+  // intersection-driven crossing loop (road/river geometry, not
+  // traffic): one site per day, same contract as the path loop.
+  const crossed = detectCrossingSites(world, state, day);
+  if (crossed.length > 0) {
+    state.lastBridgeScanDay = day;
+    return crossed;
   }
   state.lastBridgeScanDay = day;
   return [];
