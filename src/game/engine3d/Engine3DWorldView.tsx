@@ -1947,7 +1947,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // but the world has no bridge placement, reconcile: the
       // founders rebuild from the pile. The traffic resets — the
       // dirt path tiles persist via the world save.
-      pathsRef.current=saved&&saved.bridges?{...freshPathState(),bridges:reconcileBridges(saved.bridges,world)}:freshPathState();
+      // BUILD 0x36: the bridge scan's last-scan day loads from the
+      // save too (v13 saves have none and migrate to 1) — without
+      // it a reload re-ran that day's scan and opened a duplicate
+      // bridge site.
+      pathsRef.current=saved&&saved.bridges?{...freshPathState(),lastBridgeScanDay:saved.lastBridgeScanDay??1,bridges:reconcileBridges(saved.bridges,world)}:freshPathState();
       // BUILD 1089: the mine / quarry / lumber sites load from the
       // v11 founders save (v10 saves migrate to no sites — the world
       // keeps working, the same as before). The validation is the

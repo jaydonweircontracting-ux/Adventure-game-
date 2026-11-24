@@ -561,7 +561,7 @@ export function createSettlementSim(world: IsoWorld): SettlementSim {
 /** Serialize the founders save (the reload contract — the world is not in it). */
 export function serializeSettlement(sim: SettlementSim): string {
   return serializeFoundersSave(
-    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry), sim.sitePlan, sim.pen, granaryMeatInRegistry(sim.registry), granaryFishInRegistry(sim.registry), storehouseWoolInRegistry(sim.registry), storehouseLeatherInRegistry(sim.registry)),
+    foundersSaveOf(sim.founders, campWoodInRegistry(sim.registry), campFoodInRegistry(sim.registry), campGrainInRegistry(sim.registry), campStoneInRegistry(sim.registry), sim.construction, storehouseWoodInRegistry(sim.registry), storehouseStoneInRegistry(sim.registry), sim.storehouse, sim.pathState.bridges, storehouseOreInRegistry(sim.registry, 'iron'), sim.mines, granaryFlourInRegistry(sim.registry), sim.foodChain, metalChainCoalInRegistry(sim.registry), metalChainIngotsInRegistry(sim.registry), metalChainToolsInRegistry(sim.registry), metalChainTimberInRegistry(sim.registry), metalChainFurnitureInRegistry(sim.registry), sim.metalChain, sim.housing, innFoodInRegistry(sim.registry), sim.sitePlan, sim.pen, granaryMeatInRegistry(sim.registry), granaryFishInRegistry(sim.registry), storehouseWoolInRegistry(sim.registry), storehouseLeatherInRegistry(sim.registry), sim.pathState.lastBridgeScanDay),
   );
 }
 
@@ -596,7 +596,7 @@ export function restoreSettlement(world: IsoWorld, saveJson: string, abs: number
     abs,
     ledger,
     paths: new Map(),
-    pathState: { ...freshPathState(), bridges: save.bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })) },
+    pathState: { ...freshPathState(), lastBridgeScanDay: save.lastBridgeScanDay ?? 1, bridges: save.bridges.map((b) => ({ ...b, workTile: { ...b.workTile } })) },
     mines: validateMineState(save.mines),
   };
 }

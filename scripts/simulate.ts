@@ -16705,15 +16705,15 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
   SS.advanceSettlement(sim24_1105, 1600);
   const L24_1105 = sim24_1105.ledger;
   assert(L24_1105.ticks === 1600, 'M1105: the 24h run counts 1600 ticks');
-  assert(L24_1105.woodChopped === 54 && L24_1105.woodDelivered === 50 && L24_1105.woodSpent === 24, 'M1105: 24h wood 54/50/24 (M1069 re-pinned to BUILD 1112 — river v2; diag-24h-v2, no-reload)');
-  assert(L24_1105.grainHarvested === 56 && L24_1105.grainDelivered === 56, 'M1105: 24h grain 56/56 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1105.woodChopped === 52 && L24_1105.woodDelivered === 46 && L24_1105.woodSpent === 24, 'M1105: 24h wood 52/46/24 (M1069 re-pinned to BUILD 1127 — 1126 base; measured on pristine 1126 AND the 1127 port, identical)');
+  assert(L24_1105.grainHarvested === 54 && L24_1105.grainDelivered === 54, 'M1105: 24h grain 54/54 (M1069 re-pinned to BUILD 1127 — 1126 base)');
   assert(L24_1105.mealsBaked === 26 && L24_1105.mealsEaten === 13, 'M1105: 24h meals 26/13 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1105.flourMilled === 56 && L24_1105.flourBaked === 52, 'M1105: 24h flour 56/52 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1105.jobsCompleted.chop === 27 && L24_1105.jobsCompleted.build === 4 && L24_1105.jobsCompleted.deliver === 53 && L24_1105.jobsCompleted.harvest === 28, 'M1105: 24h jobs chop/build/deliver/harvest 27/4/53/28 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1105.flourMilled === 54 && L24_1105.flourBaked === 52, 'M1105: 24h flour 54/52 (M1069 re-pinned to BUILD 1127 — 1126 base)');
+  assert(L24_1105.jobsCompleted.chop === 26 && L24_1105.jobsCompleted.build === 4 && L24_1105.jobsCompleted.deliver === 50 && L24_1105.jobsCompleted.harvest === 27, 'M1105: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 re-pinned to BUILD 1127 — 1126 base)');
   assert(L24_1105.hutsCompleted === 2 && L24_1105.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1105: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
   assert(L24_1105.starvedTicks === 0 && Math.round(L24_1105.minHealth) === 100, 'M1105: nobody starves in 24h');
   assert(sim24_1105.founders.length === 7, 'M1105: the population is 7 after 24h');
-  assert(F.campWoodInRegistry(sim24_1105.registry) === 14 && F.campFoodInRegistry(sim24_1105.registry) === 13 && SS.settlementGrain(sim24_1105) === 0 && FC.foodChainFlourInRegistry(sim24_1105.registry) === 4, 'M1105: final wood/food/grain/flour 14/13/0/4 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(F.campWoodInRegistry(sim24_1105.registry) === 10 && F.campFoodInRegistry(sim24_1105.registry) === 13 && SS.settlementGrain(sim24_1105) === 0 && FC.foodChainFlourInRegistry(sim24_1105.registry) === 2, 'M1105: final wood/food/grain/flour 10/13/0/2 (M1069 re-pinned to BUILD 1127 — 1126 base)');
   const world24r_1105 = W.defaultWorld();
   const sim24r_1105 = SS.createSettlementSim(world24r_1105);
   SS.advanceSettlement(sim24r_1105, 800);
@@ -16721,30 +16721,24 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
   SS.advanceSettlement(restored24r_1105, 800);
   const L24r_1105 = restored24r_1105.ledger;
   assert(L24r_1105.ticks === 1600, 'M1105: the with-reload 24h run counts 1600 ticks');
-  assert(L24r_1105.woodChopped === 52 && L24r_1105.woodDelivered === 50 && L24r_1105.woodSpent === 24, 'M1105: with-reload@800 wood 52/50/24 (diag-24h-v2 — river v2 moves the reload trajectory too)');
-  assert(L24r_1105.grainHarvested === 60 && L24r_1105.grainDelivered === 60, 'M1105: with-reload@800 grain 60/60');
-  assert(L24r_1105.mealsBaked === 28 && L24r_1105.mealsEaten === 13, 'M1105: with-reload@800 meals 28/13');
-  assert(L24r_1105.flourMilled === 60 && L24r_1105.flourBaked === 56, 'M1105: with-reload@800 flour 60/56');
-  assert(L24r_1105.jobsCompleted.chop === 26 && L24r_1105.jobsCompleted.build === 4 && L24r_1105.jobsCompleted.deliver === 55 && L24r_1105.jobsCompleted.harvest === 30, 'M1105: with-reload@800 jobs chop/build/deliver/harvest 26/4/55/30');
+  assert(L24r_1105.woodChopped === 52 && L24r_1105.woodDelivered === 48 && L24r_1105.woodSpent === 24, 'M1105: with-reload@800 wood 52/48/24 (re-pinned to BUILD 1127 — measured on the 1127 tree with the 0x36 fix)');
+  assert(L24r_1105.grainHarvested === 58 && L24r_1105.grainDelivered === 56, 'M1105: with-reload@800 grain 58/56 (re-pinned to BUILD 1127)');
+  assert(L24r_1105.mealsBaked === 27 && L24r_1105.mealsEaten === 13, 'M1105: with-reload@800 meals 27/13 (re-pinned to BUILD 1127)');
+  assert(L24r_1105.flourMilled === 54 && L24r_1105.flourBaked === 54, 'M1105: with-reload@800 flour 54/54 (re-pinned to BUILD 1127)');
+  assert(L24r_1105.jobsCompleted.chop === 26 && L24r_1105.jobsCompleted.build === 4 && L24r_1105.jobsCompleted.deliver === 52 && L24r_1105.jobsCompleted.harvest === 29, 'M1105: with-reload@800 jobs chop/build/deliver/harvest 26/4/52/29 (re-pinned to BUILD 1127)');
   assert(L24r_1105.hutsCompleted === 2 && L24r_1105.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1105: with-reload@800 huts 2, arrivals Bram, Fern, Silas, Tamsin');
   assert(L24r_1105.starvedTicks === 0 && Math.round(L24r_1105.minHealth) === 100, 'M1105: nobody starves in the with-reload 24h');
   assert(restored24r_1105.founders.length === 7, 'M1105: the population is 7 after the with-reload 24h');
-  assert(F.campWoodInRegistry(restored24r_1105.registry) === 14 && F.campFoodInRegistry(restored24r_1105.registry) === 15 && SS.settlementGrain(restored24r_1105) === 0 && FC.foodChainFlourInRegistry(restored24r_1105.registry) === 4, 'M1105: with-reload@800 final wood/food/grain/flour 14/15/0/4');
+  assert(F.campWoodInRegistry(restored24r_1105.registry) === 12 && F.campFoodInRegistry(restored24r_1105.registry) === 14 && SS.settlementGrain(restored24r_1105) === 2 && FC.foodChainFlourInRegistry(restored24r_1105.registry) === 0, 'M1105: with-reload@800 final wood/food/grain/flour 12/14/2/0 (re-pinned to BUILD 1127 — measured by asserts-0x36 Part B)');
   // --- The week after a reload: fresh sim -> 4800 ticks -> serialize/restore -> 11200. ---
-  // Week pins from the post-fix diag-reload-week FINAL (diag-reload-week.log)
-  // against the 0x27 no-reload oracle FINAL (diag-week-1104.log: starved 0,
-  // minHealth 100, pop 7). ACCEPTANCE IS NOT MET: the fix halves the
-  // divergence (pre-fix 1222/88 -> post-fix 568/90) but the reload week is
-  // still far from the no-reload week (within 10% of 0 starved, minHealth
-  // within 2 of 100). Starved progression post-fix: 0 x6, 112 flat to 8801,
-  // 209 at 9601, 568 at 11201 — a delayed, smaller late cascade (food 0-3,
-  // flour 0 from 8801 on; output ~10% below the oracle: grain 294 vs 324,
-  // flour 286 vs 318). The remaining gap is OPEN for a follow-up task; the
-  // pins below record the measured post-fix numbers, they do not claim the
-  // acceptance. The strict M1088 week-health assert stays strict and is
-  // never re-baselined. (Section runs to 11200 ticks; the diag runs to
-  // 11201 via its POST1 +1 tick — if the section's own run differs by that
-  // tick, the chunk log adjudicates the pins.)
+  // ACCEPTANCE MET by the 0x36 fix (BUILD 1127 line): the bridge scan's
+  // last-scan day now survives a reload, so no duplicate bridge site opens
+  // after a restore and the builder + wood stay on the food chain. Week
+  // pins from the 0x36 diff-json-week reload FINAL (verify0x36/
+  // diff-json-reload.log): starved 0, minHealth 100, pop 7 — the same
+  // shape as this section (restore at 4800, 11200 ticks total). The
+  // no-reload oracle is 0/100 too (diag-week-1104.log). The strict M1088
+  // week-health assert stays strict and is never re-baselined.
   const worldWeek1105 = W.defaultWorld();
   const simWeek1105 = SS.createSettlementSim(worldWeek1105);
   SS.advanceSettlement(simWeek1105, 4800);
@@ -16754,16 +16748,16 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
   assert(LWeek1105.ticks === 11200, 'M1105: the week-after-reload run counts 11200 ticks');
   assert(restoredWeek1105.founders.length === 7, 'M1105: the population is 7 after the week-after-reload');
   assert(restoredWeek1105.founders.some((f: { name: string }) => f.name === 'Tamsin'), 'M1105: Tamsin is in the week-after-reload settlement');
-  assert(LWeek1105.starvedTicks === 568 && Math.round(LWeek1105.minHealth) === 90, 'M1105: the week-after-reload starves 568 ticks at minHealth 90 (post-fix FINAL — pre-fix 1222/88, oracle 0/100: the fix halves the divergence but the acceptance is NOT met; the remaining gap is open, see the pin comment above)');
-  assert(LWeek1105.woodChopped === 148 && LWeek1105.woodDelivered === 148 && LWeek1105.woodSpent === 36, 'M1105: the week-after-reload chops/delivers/spends 148/148/36 wood (post-fix FINAL)');
-  assert(LWeek1105.grainHarvested === 294 && LWeek1105.grainDelivered === 292, 'M1105: the week-after-reload harvests/delivers 294/292 grain (post-fix FINAL; oracle 324/324)');
-  assert(LWeek1105.mealsBaked === 143 && LWeek1105.mealsEaten === 153, 'M1105: the week-after-reload bakes/eats 143/153 meals (post-fix FINAL; oracle 158/156)');
-  assert(LWeek1105.flourMilled === 286 && LWeek1105.flourBaked === 286, 'M1105: the week-after-reload mills/bakes 286/286 flour (post-fix FINAL; oracle 318/316)');
-  assert(LWeek1105.jobsCompleted.chop === 70 && LWeek1105.jobsCompleted.build === 9 && LWeek1105.jobsCompleted.deliver === 261 && LWeek1105.jobsCompleted.harvest === 147, 'M1105: the week-after-reload jobs chop/build/deliver/harvest 70/9/261/147 (post-fix FINAL)');
+  assert(LWeek1105.starvedTicks === 0 && Math.round(LWeek1105.minHealth) === 100, 'M1105: the week-after-reload meets the strict M1088 acceptance — starved 0, minHealth 100 (0x36 fix: the bridge scan day survives a reload; measured by diff-json-week reload FINAL)');
+  assert(LWeek1105.woodChopped === 162 && LWeek1105.woodDelivered === 162 && LWeek1105.woodSpent === 36, 'M1105: the week-after-reload chops/delivers/spends 162/162/36 wood (0x36 FINAL)');
+  assert(LWeek1105.grainHarvested === 314 && LWeek1105.grainDelivered === 314, 'M1105: the week-after-reload harvests/delivers 314/314 grain (0x36 FINAL; oracle 324/324)');
+  assert(LWeek1105.mealsBaked === 153 && LWeek1105.mealsEaten === 149, 'M1105: the week-after-reload bakes/eats 153/149 meals (0x36 FINAL; oracle 158/156)');
+  assert(LWeek1105.flourMilled === 308 && LWeek1105.flourBaked === 306, 'M1105: the week-after-reload mills/bakes 308/306 flour (0x36 FINAL; oracle 318/316)');
+  assert(LWeek1105.jobsCompleted.chop === 77 && LWeek1105.jobsCompleted.build === 16 && LWeek1105.jobsCompleted.deliver === 334 && LWeek1105.jobsCompleted.harvest === 157, 'M1105: the week-after-reload jobs chop/build/deliver/harvest 77/16/334/157 (0x36 FINAL)');
   assert(LWeek1105.hutsCompleted === 3 && LWeek1105.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1105: the week-after-reload huts 3, arrivals Bram, Fern, Silas, Tamsin');
-  assert(F.campWoodInRegistry(restoredWeek1105.registry) === 0 && F.campFoodInRegistry(restoredWeek1105.registry) === 1 && SS.settlementGrain(restoredWeek1105) === 2 && FC.foodChainFlourInRegistry(restoredWeek1105.registry) === 0, 'M1105: the week-after-reload ends with final wood/food/grain/flour 0/1/2/0 (post-fix FINAL)');
+  assert(F.campWoodInRegistry(restoredWeek1105.registry) === 0 && F.campFoodInRegistry(restoredWeek1105.registry) === 3 && SS.settlementGrain(restoredWeek1105) === 1 && FC.foodChainFlourInRegistry(restoredWeek1105.registry) === 2, 'M1105: the week-after-reload ends with final wood/food/grain/flour 0/3/1/2 (0x36 FINAL)');
   console.log('M1105 week-after-reload: ticks=' + LWeek1105.ticks + ' starvedTicks=' + LWeek1105.starvedTicks + ' minHealth=' + Math.round(LWeek1105.minHealth) + ' population=' + restoredWeek1105.founders.length + ' wood=' + LWeek1105.woodChopped + '/' + LWeek1105.woodDelivered + '/' + LWeek1105.woodSpent + ' grain=' + LWeek1105.grainHarvested + '/' + LWeek1105.grainDelivered + ' meals=' + LWeek1105.mealsBaked + '/' + LWeek1105.mealsEaten + ' flour=' + LWeek1105.flourMilled + '/' + LWeek1105.flourBaked + ' jobs=' + LWeek1105.jobsCompleted.chop + '/' + LWeek1105.jobsCompleted.build + '/' + LWeek1105.jobsCompleted.deliver + '/' + LWeek1105.jobsCompleted.harvest + ' final=' + F.campWoodInRegistry(restoredWeek1105.registry) + '/' + F.campFoodInRegistry(restoredWeek1105.registry) + '/' + SS.settlementGrain(restoredWeek1105) + '/' + FC.foodChainFlourInRegistry(restoredWeek1105.registry));
-  console.log('M1105: reload-resume verified (animal-goods carriers re-claim, chain states reset, 24h M1069 identical + with-reload@800 healthy, week-after-reload 568/90 — fix halves the 1222 divergence, acceptance NOT met, remaining gap open)');
+  console.log('M1105: reload-resume verified (animal-goods carriers re-claim, chain states reset, 24h M1069 identical + with-reload@800 healthy, week-after-reload 0/100 — 0x36 fix closes the gap, acceptance MET)');
 }
 
 
