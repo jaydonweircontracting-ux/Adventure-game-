@@ -741,7 +741,7 @@ export async function parseFbxUpload(
     let finishLoads: (() => void) | undefined;
     const loaded = new Promise<void>(resolve => { finishLoads = resolve; });
     manager.onLoad = () => finishLoads?.();
-    const root = new FBXLoader(manager).parse(buf, '');
+    const root: any = new FBXLoader(manager).parse(buf, '');
     if (manager.itemsTotal > 0) await loaded;
     root.updateMatrixWorld(true);
 
