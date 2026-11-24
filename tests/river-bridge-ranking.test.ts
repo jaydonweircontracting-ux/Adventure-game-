@@ -185,7 +185,7 @@ const emptyFounderPath: any = { destKey: '', path: [], index: 0, noPathTicks: 0,
 const founderDetour = stepFounderMove(navigationWorld, navStart, navGoal, emptyFounderPath, () => false);
 assert.notEqual(navigationWorld.terrain[founderDetour.pos.x + ',' + founderDetour.pos.y], 'water', 'a founder step never enters unbridged water');
 const goatWithoutBridge: any = { id: 'goat-no-bridge', kind: 'goat', state: 'wandering', x: navStart.x, y: navStart.y, seed: 17, pauseTicks: 0, fleeTicks: 0, relocateTicks: 0, flightTo: null };
-const animalTargetPath: any = { dest: navGoal.x + ',' + navGoal.y, path: [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+const animalTargetPath: any = { dest: navGoal.x + ',' + navGoal.y, path: [navDeck, navGoal], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
 stepAnimal(navigationWorld, goatWithoutBridge, animalTargetPath, () => false, { x: 10, y: 10 }, { x: 10, y: 10 });
 assert.notEqual(navigationWorld.terrain[Math.round(goatWithoutBridge.x) + ',' + Math.round(goatWithoutBridge.y)], 'water', 'a roaming animal never enters unbridged water');
 
@@ -198,7 +198,7 @@ assert.ok(bridgeRoute?.some((tile) => tile.x === navDeck.x && tile.y === navDeck
 const founderBridgeStep = stepFounderMove(navigationWorld, navStart, navGoal, emptyFounderPath, () => false);
 assert.deepEqual(founderBridgeStep.pos, navDeck, 'a founder takes the bridge as the first crossing step');
 const goatWithBridge: any = { id: 'goat-with-bridge', kind: 'goat', state: 'wandering', x: navStart.x, y: navStart.y, seed: 19, pauseTicks: 0, fleeTicks: 0, relocateTicks: 0, flightTo: null };
-const animalTargetPathWithBridge: any = { dest: navGoal.x + ',' + navGoal.y, path: [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+const animalTargetPathWithBridge: any = { dest: navGoal.x + ',' + navGoal.y, path: [navDeck, navGoal], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
 let goatBridgePath = animalTargetPathWithBridge;
 for (let tick = 0; tick < 4 && Math.round(goatWithBridge.x) !== navDeck.x; tick++) {
   goatBridgePath = stepAnimal(navigationWorld, goatWithBridge, goatBridgePath, () => false, { x: 10, y: 10 }, { x: 10, y: 10 }).path as any;
