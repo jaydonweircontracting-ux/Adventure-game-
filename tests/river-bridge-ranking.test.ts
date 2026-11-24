@@ -198,7 +198,8 @@ assert.ok(bridgeRoute?.some((tile) => tile.x === navDeck.x && tile.y === navDeck
 const founderBridgeStep = stepFounderMove(navigationWorld, navStart, navGoal, emptyFounderPath, () => false);
 assert.deepEqual(founderBridgeStep.pos, navDeck, 'a founder takes the bridge as the first crossing step');
 const goatWithBridge: any = { id: 'goat-with-bridge', kind: 'goat', state: 'wandering', x: navStart.x, y: navStart.y, seed: 19, pauseTicks: 0, fleeTicks: 0, relocateTicks: 0, flightTo: null };
-stepAnimal(navigationWorld, goatWithBridge, animalTargetPath, () => false, { x: 10, y: 10 }, { x: 10, y: 10 });
+const animalTargetPathWithBridge: any = { dest: navGoal.x + ',' + navGoal.y, path: [], index: 0, noPathTicks: 0, blockedTicks: 0, detour: false };
+stepAnimal(navigationWorld, goatWithBridge, animalTargetPathWithBridge, () => false, { x: 10, y: 10 }, { x: 10, y: 10 });
 assert.deepEqual({ x: Math.round(goatWithBridge.x), y: Math.round(goatWithBridge.y) }, navDeck, 'a roaming animal uses the bridge instead of the longer dry detour');
 
 console.log('River bridge tests passed (ranking, full spans, six styles, axis, save migration, atomic placement, bank roads, NPC/player/animal navigation).');
