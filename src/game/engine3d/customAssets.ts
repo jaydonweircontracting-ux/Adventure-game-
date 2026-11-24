@@ -148,7 +148,12 @@ export interface CustomAsset {
   /** BUILD 1115: PBR material table and per-vertex material slot. */
   materials?: RuntimePbrMaterial[];
   materialIndices?: number[];
-  /** BUILD 1116: texture image data URLs, indexed by glTF texture index. */
+  /** BUILD 1120: CPU-baked skeletal walk frames in the same XYZ layout as positions. */
+  animationFrames?: number[][];
+  animationFps?: number;
+  /** True when a source diffuse map was baked into vertex colours (legacy importer path). */
+  textureBaked?: boolean;
+  /** BUILD 1116: texture image data URLs, indexed by material texture index. */
   textureImages?: Array<string | null>;
 }
 
