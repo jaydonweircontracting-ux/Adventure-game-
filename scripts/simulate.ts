@@ -16749,7 +16749,30 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
   const simWeek1105 = SS.createSettlementSim(worldWeek1105);
   SS.advanceSettlement(simWeek1105, 4800);
   const restoredWeek1105: any = SS.restoreSettlement(worldWeek1105, SS.serializeSettlement(simWeek1105), simWeek1105.abs, simWeek1105.ledger);
-  SS.advanceSettlement(restoredWeek1105, 6400);
+  const logReloadWeek1105 = (label: string, state: any) => {
+    const founders = state.founders.map((f: any) => ({
+      n: f.name, p: f.profession, a: f.activity, w: f.workState,
+      k: f.lastDecision?.workKind ?? null, h: Math.round(f.needs.hunger),
+      g: f.carryingGrain, ht: f.harvestTicks, mt: f.millTicks, bt: f.bakeTicks,
+      ft: f.farmTarget ? f.farmTarget.x + ',' + f.farmTarget.y : null,
+      wt: f.workTile ? f.workTile.x + ',' + f.workTile.y : null,
+      x: Math.round(f.x), y: Math.round(f.y),
+    }));
+    const jobs = Object.values(state.board.jobs)
+      .filter((j: any) => ['harvest', 'mill', 'bake', 'deliver'].includes(j.kind))
+      .map((j: any) => j.kind + ':' + j.state + ':' + (j.claimedBy ?? '-') + ':' + j.tile.x + ',' + j.tile.y)
+      .join(';');
+    console.log('M1105 RELOAD SNAP ' + label +
+      ' goods=' + F.campFoodInRegistry(state.registry) + '/' + SS.settlementGrain(state) + '/' + FC.foodChainFlourInRegistry(state.registry) +
+      ' flow=' + state.ledger.grainHarvested + '/' + state.ledger.flourMilled + '/' + state.ledger.mealsBaked + '/' + state.ledger.mealsEaten + '/' + state.ledger.starvedTicks +
+      ' founders=' + JSON.stringify(founders) + ' jobs=' + jobs);
+  };
+  logReloadWeek1105('before@4800', simWeek1105);
+  logReloadWeek1105('after-restore@4800', restoredWeek1105);
+  for (let tick = 1; tick <= 6400; tick++) {
+    SS.advanceSettlement(restoredWeek1105, 1);
+    if (tick % 400 === 0) logReloadWeek1105('tick@' + (4800 + tick), restoredWeek1105);
+  }
   const LWeek1105 = restoredWeek1105.ledger;
   assert(LWeek1105.ticks === 11200, 'M1105: the week-after-reload run counts 11200 ticks');
   assert(restoredWeek1105.founders.length === 7, 'M1105: the population is 7 after the week-after-reload');
