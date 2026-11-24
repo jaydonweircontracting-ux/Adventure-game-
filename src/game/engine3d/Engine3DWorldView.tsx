@@ -106,7 +106,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // Build menu lists it (entries with a palette kind arm that tool;
 // the rest are listed, locked, with the reason why).
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
-import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState } from './paths';
+import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, fordTiles, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState } from './paths';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
 // BUILD 1064 (R-1): the unified resource registry — the one
 // authoritative record of what exists, where it is, and where it
@@ -1685,6 +1685,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     bush:{label:'Bush',swatch:'linear-gradient(135deg,#2e5c2b 0 50%,#4a7a3a 50% 100%)'},
     ore:{label:'Ore Deposit',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#d9a833 50% 100%)'},
     bridge:{label:'Wooden Bridge',swatch:'linear-gradient(135deg,#8f6a38 0 50%,#6b4a2b 50% 100%)'},
+    // BUILD 1128 (0x31): a ford is a wadeable shallow crossing — sand
+    // shallows, so the swatch is sand over water blue. It is stamped
+    // by the path system (extendPathToCrossing), not offered in the
+    // catalog sections above.
+    ford:{label:'Ford',swatch:'linear-gradient(135deg,#c2a878 0 50%,#2a5aaa 50% 100%)'},
     // BUILD 1041 swatch: farm land tilled brown / ready wheat gold.
     farm:{label:'Farm Land',swatch:'linear-gradient(135deg,#593d24 0 50%,#d9a833 50% 100%)'},
     // BUILD 1042 swatch: fence timber browns (posts + rails).
@@ -2939,7 +2944,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1088 (2.3): the path layer (probes only) — the dirt path
       // tiles on the world, the camp well, the bridge sites, and how
       // many tiles have any traffic (the session-only counts).
-      getPaths:()=>({tiles:pathTiles(stateRef.current.world),well:wellTile(stateRef.current.world,FOUNDER_CAMP.x,FOUNDER_CAMP.y),bridges:pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),trafficTiles:Object.keys(pathsRef.current.traffic).length}),
+      getPaths:()=>({tiles:pathTiles(stateRef.current.world),fords:fordTiles(stateRef.current.world),well:wellTile(stateRef.current.world,FOUNDER_CAMP.x,FOUNDER_CAMP.y),bridges:pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),trafficTiles:Object.keys(pathsRef.current.traffic).length}),
       // BUILD 1127 test hook (read-only): the live bridge sites (probes only — no gameplay effect).
       getBridges:()=>pathsRef.current.bridges.map(b=>({...b,workTile:{...b.workTile}})),
       // BUILD 1089 (2.4): the mine / quarry / lumber sites (probes

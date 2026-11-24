@@ -189,8 +189,8 @@ import {
 import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, BRIDGE_WORK_STEPS, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
-  finishBridge, freshPathState, reconcileBridges, recordTraffic, scanForBridgeSites, seedWell,
-  spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
+  extendPathToCrossing, finishBridge, freshPathState, reconcileBridges, recordTraffic, scanForBridgeSites, seedWell,
+  spendBridgeStepFromRegistry, placeBridgeSpan, trafficPathKind, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
 import { closestFounder, recordSharedEvent, restTileFor, addSocialKey } from './memory';
@@ -2007,9 +2007,13 @@ export function advanceSettlementTick(sim: SettlementSim): void {
             // tile beside a river opens a bridge site.
             const placePath = validatePlacement(world, 'path', placedPath.x, placedPath.y, { x: 0, y: 0 }, [], 0);
             if (placePath.ok) {
-              addPlacement(world, placePath.item);
+              addPlacement(world, { ...placePath.item, pathKind: trafficPathKind(placedPath.x, placedPath.y, FOUNDER_CAMP) });
               ledger.pathTilesPlaced++;
               detectBridgeSite(world, sim.pathState, placedPath, day);
+              // BUILD 1128 (0x31): a fresh path tile beside water
+              // grows a bank road to the nearest bridge or ford.
+              const stamped = extendPathToCrossing(world, sim.pathState, placedPath);
+              ledger.pathTilesPlaced += stamped.length;
             }
           }
         }

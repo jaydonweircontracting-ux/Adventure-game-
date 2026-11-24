@@ -48,7 +48,7 @@
 // ordered: landscape, no town, no NPCs, no quests.
 import { hash2 as scatterHash, oceanAt, oceanCoastX, terrainAt, terrainKey, inBounds, scatterTreeAt, type Terrain } from '../iso/isoWorld';
 import { groundNoise, worldGroundElevation } from './townLook';
-import { placedPathKeyInts, placedWaterKeyInts, tileKeyInt } from './placements';
+import { placedFordKeyInts, placedPathKeyInts, placedPathKinds, placedWaterKeyInts, tileKeyInt } from './placements';
 import type { IsoWorld } from '../iso/isoWorld';
 
 /** Salt of the stored wilderness scatter (defaultWorld). */
@@ -246,12 +246,15 @@ function riverValleyField(world: IsoWorld): Map<number, number> {
 export function effTerrainFor(world: IsoWorld): EffectiveTerrainSampler {
   const placedWater = placedWaterKeyInts(world);
   const placedPaths = placedPathKeyInts(world);
+  const placedFords = placedFordKeyInts(world);
+  const pathKinds = placedPathKinds(world);
   const cache = new Map<number, Terrain>();
   const valley = riverValleyField(world);
   const sample = ((x: number, y: number): Terrain => {
     const k = tileKeyInt(x, y);
     if (placedWater.has(k)) return 'water';
-    if (placedPaths.has(k)) return 'dirt';
+    if (placedFords.has(k)) return 'sand';
+    if (placedPaths.has(k)) return pathKinds.get(k) === 'stone' ? 'stone' : 'dirt';
     if (inBounds(world, x, y)) {
       let t = cache.get(k);
       if (t === undefined) { t = terrainAt(world, x, y); cache.set(k, t); }

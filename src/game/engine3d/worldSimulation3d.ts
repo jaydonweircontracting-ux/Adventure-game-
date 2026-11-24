@@ -70,8 +70,8 @@ import { addPlacement, placedFenceTiles, validatePlacement } from './placements'
 import {
   BRIDGE_START_DAY, BRIDGE_WOOD_PER_STEP, BRIDGE_WORK_STEPS, WELL_START_DAY,
   bridgeBuildContext, bridgeSiteById, canBuildBridge, canStartBridge, detectBridgeSite,
-  finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
-  spendBridgeStepFromRegistry, placeBridgeSpan, wellApproachFor, wellTile,
+  extendPathToCrossing, finishBridge, reconcileBridges, recordTraffic, scanForBridgeSites,
+  spendBridgeStepFromRegistry, placeBridgeSpan, trafficPathKind, wellApproachFor, wellTile,
   type BridgeSite, type PathState,
 } from './paths';
 import { CAMP_STORE_ID, GRANARY_STORE_ID, INN_STORE_ID, transfer, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
@@ -1326,7 +1326,7 @@ export function runFounderSimTick(ctx: FounderSimContext): void {
             // path (the founders lay the path by walking it), and a
             // new path tile beside a river opens a bridge site. A
             // placed path dirties the world (the save + the rebuild).
-            if(res.pos.x!==cx||res.pos.y!==cy){const placedPath=recordTraffic(pathsRef.current,world,res.pos.x,res.pos.y);if(placedPath){const placePath=validatePlacement(world,'path',placedPath.x,placedPath.y,{x:0,y:0},[],0);if(placePath.ok){addPlacement(world,placePath.item);worldDirty=true;detectBridgeSite(world,pathsRef.current,placedPath,clock.day);}}}
+            if(res.pos.x!==cx||res.pos.y!==cy){const placedPath=recordTraffic(pathsRef.current,world,res.pos.x,res.pos.y);if(placedPath){const placePath=validatePlacement(world,'path',placedPath.x,placedPath.y,{x:0,y:0},[],0);if(placePath.ok){addPlacement(world,{...placePath.item,pathKind:trafficPathKind(placedPath.x,placedPath.y,FOUNDER_CAMP)});worldDirty=true;detectBridgeSite(world,pathsRef.current,placedPath,clock.day);const stamped=extendPathToCrossing(world,pathsRef.current,placedPath);if(stamped.length>0)worldDirty=true;}}}
           }
         }
         if(atDest||(Math.round(f.x)===dest.x&&Math.round(f.y)===dest.y)){

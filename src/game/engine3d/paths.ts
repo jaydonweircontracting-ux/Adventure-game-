@@ -60,9 +60,9 @@
  * No React, no WebGL, no localStorage — the sim and the standalone
  * asserts import it directly.
  */
-import { terrainAt, inBounds, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
-import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement } from './placements';
-import { riverAt, riverNear, riverWidthAt, allRoadCrossings, type River } from './rivers';
+import { terrainAt, inBounds, type IsoWorld, type PathKind, type PlacedItem } from '../iso/isoWorld';
+import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement, isPlacedFord, removeExactPlacement } from './placements';
+import { riverAt, riverNear, riverWidthAt, allRoadCrossings, isShallowTile, type River } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import { STOREHOUSE_STORE_ID } from './storehouse';
 import {
@@ -275,6 +275,25 @@ export function pathTiles(world: IsoWorld): Array<{ x: number; y: number }> {
   return out;
 }
 
+/** Every ford tile in the world, flat (BUILD 1128 probe hook). */
+export function fordTiles(world: IsoWorld): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  for (const p of placementsOf(world)) {
+    if (p.kind !== 'ford') continue;
+    for (let x = p.x0; x <= p.x1; x++) for (let y = p.y0; y <= p.y1; y++) out.push({ x, y });
+  }
+  return out;
+}
+
+/** BUILD 1128 (0x31): the grade of a traffic-worn path tile —
+ * 'dirt' inside the camp disc (the settlement's worn ground),
+ * 'trail' outside it (a wild footpath). Bridge entrances are
+ * 'stone' and stamped connectors are 'road' (see placeBridgeSpan /
+ * extendPathToCrossing); this helper covers only traffic paths. */
+export function trafficPathKind(x: number, y: number, camp: { x: number; y: number }): PathKind {
+  return Math.abs(x - camp.x) + Math.abs(y - camp.y) <= 25 ? 'dirt' : 'trail';
+}
+
 /** True when a tile may wear into a path: walkable ground (grass
  *  or dirt — never water, stone, or a hut), holding no placement,
  *  and under the cap. A bridge tile is walkable but holds a bridge;
@@ -317,10 +336,10 @@ export function recordTraffic(state: PathState, world: IsoWorld, x: number, y: n
  */
 export function pathConnects(world: IsoWorld, from: { x: number; y: number }, targets: Array<{ x: number; y: number }>): boolean {
   const paths = new Set(pathTiles(world).map((t) => trafficKey(t.x, t.y)));
-  // A completed bridge is part of the same connected road graph as
-  // dirt paths; water remains blocked everywhere else.
+  // A completed bridge — and a ford — are part of the same connected
+  // road graph as dirt paths; water remains blocked everywhere else.
   for (const p of placementsOf(world)) {
-    if (p.kind !== 'bridge') continue;
+    if (p.kind !== 'bridge' && p.kind !== 'ford') continue;
     for (let x = p.x0; x <= p.x1; x++) for (let y = p.y0; y <= p.y1; y++) paths.add(trafficKey(x, y));
   }
   const targetKeys = new Set(targets.map((t) => trafficKey(t.x, t.y)));
@@ -410,6 +429,167 @@ export function wellApproachFor(w: IsoWorld, well: { x: number; y: number }, cam
   return { ...cands[0] };
 }
 
+/**
+ * BUILD 1128 (0x31): find the fordable shallow span touching a land
+ * tile — a water run of span <= 2 whose every tile is shallow
+ * (isShallowTile), whose both banks are walkable (scoreCrossing
+ * returns a score), and which no bridge site, bridge placement or
+ * ford already covers. Returns the span tiles plus the near bank
+ * (closer to the reference tile) and the far bank, or null when no
+ * such span touches the tile. Pure (reads only).
+ */
+export function fordableSpanFor(
+  world: IsoWorld,
+  bridges: readonly BridgeSite[],
+  x: number,
+  y: number,
+): { tiles: Array<{ x: number; y: number }>; nearBank: { x: number; y: number }; farBank: { x: number; y: number } } | null {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const wx = x + dx, wy = y + dy;
+    if (!inBounds(world, wx, wy) || terrainAt(world, wx, wy) !== 'water') continue;
+    const run = crossingRunFor(world, wx, wy);
+    if (!run || run.tiles.length > 2) continue;
+    if (!run.tiles.every((t) => isShallowTile(world, t.x, t.y))) continue;
+    if (scoreCrossing(world, run) === null) continue;
+    if (bridgeSpanAlreadyClaimed(world, bridges as BridgeSite[], run.tiles)) continue;
+    if (run.tiles.some((t) => isPlacedFord(world, t.x, t.y))) continue;
+    const nearBank = Math.abs(run.bankA.x - x) + Math.abs(run.bankA.y - y) <= Math.abs(run.bankB.x - x) + Math.abs(run.bankB.y - y) ? run.bankA : run.bankB;
+    const farBank = nearBank === run.bankA ? run.bankB : run.bankA;
+    return { tiles: run.tiles, nearBank, farBank };
+  }
+  return null;
+}
+
+/**
+ * BUILD 1128 (0x31): stamp a ford across a shallow span, plus a
+ * road tile on the far-bank landing so pathConnects holds across
+ * the crossing (a ford alone leaves the far bank as plain land,
+ * which the road graph cannot see). MUTATES the world (placements
+ * only). Returns the stamped tiles (ford tiles + landing, if any).
+ */
+export function stampFord(
+  world: IsoWorld,
+  ford: { tiles: Array<{ x: number; y: number }>; nearBank: { x: number; y: number }; farBank: { x: number; y: number } },
+): Array<{ x: number; y: number }> {
+  const stamped: Array<{ x: number; y: number }> = [];
+  for (const tile of ford.tiles) {
+    if (isPlacedFord(world, tile.x, tile.y)) continue;
+    const result = validatePlacement(world, 'ford', tile.x, tile.y, { x: 0, y: 0 }, [], 0);
+    if (result.ok) {
+      addPlacement(world, result.item);
+      stamped.push({ ...tile });
+    }
+  }
+  if (stamped.length > 0 && !isPathTile(world, ford.farBank.x, ford.farBank.y) && pathPlaceable(world, ford.farBank.x, ford.farBank.y)) {
+    if (stampPathTile(world, ford.farBank.x, ford.farBank.y, 'road', { x: 0, y: 0 }, [])) stamped.push({ ...ford.farBank });
+  }
+  return stamped;
+}
+
+/**
+ * BUILD 1128 (0x31): when a fresh traffic path tile meets water,
+ * grow a bank road from it toward the nearest crossing — a bridge
+ * site/placement, a scored crossing's camp bank, or a fordable
+ * shallow span — so no path dead-ends at water without a crossing
+ * within a short walk (the 32-tile bank road IS the short walk).
+ * The search walks the existing path network where it exists
+ * (path tiles are traversable, never re-stamped) and stamps 'road'
+ * tiles only where the network is missing; bank-adjacent tiles are
+ * explored first so the road hugs the bank. It stamps a ford across
+ * a shallow span (span <= 2, all shallow, both banks walkable, no
+ * bridge or ford nearby) when no bridge is in reach, and stamps
+ * nothing when nothing is in reach. MUTATES the world (placements
+ * only). Returns the stamped tiles (roads + fords). Called from the
+ * founder tick (live + sim) right after a new path tile is placed —
+ * and only then, so the BFS never runs per step.
+ */
+export function extendPathToCrossing(
+  world: IsoWorld,
+  state: PathState,
+  from: { x: number; y: number },
+): Array<{ x: number; y: number }> {
+  if (!riverNear(world, from.x, from.y, 1)) return [];
+  // Targets: bridge sites (work tile / near bank / span), placed
+  // bridge tiles, and scored crossing banks — all as land-tile keys.
+  const bridgeTargets = new Set<string>();
+  for (const site of state.bridges) {
+    bridgeTargets.add(trafficKey(site.workTile.x, site.workTile.y));
+    if (site.nearBank) bridgeTargets.add(trafficKey(site.nearBank.x, site.nearBank.y));
+    for (const t of bridgeSiteSpan(site)) bridgeTargets.add(trafficKey(t.x, t.y));
+  }
+  for (const p of placementsOf(world)) {
+    if (p.kind === 'bridge' || p.kind === 'ford') {
+      for (let x = p.x0; x <= p.x1; x++) for (let y = p.y0; y <= p.y1; y++) bridgeTargets.add(trafficKey(x, y));
+    }
+  }
+  const crossingBanks = new Set<string>();
+  for (const { run } of listCrossings(world)) {
+    crossingBanks.add(trafficKey(run.bankA.x, run.bankA.y));
+    crossingBanks.add(trafficKey(run.bankB.x, run.bankB.y));
+  }
+  // A fordable shallow span touching the path tile itself fords at
+  // once — the path met the water here, so the crossing is here.
+  const fordHere = fordableSpanFor(world, state.bridges, from.x, from.y);
+  if (fordHere) return stampFord(world, fordHere);
+  // BFS along the bank (then open ground, then through the existing
+  // path network) to the nearest bridge / crossing bank / fordable
+  // span. Path tiles are traversable — the road follows the network
+  // where it exists and only stamps new road where it does not.
+  const startKey = trafficKey(from.x, from.y);
+  const previous = new Map<string, string | null>([[startKey, null]]);
+  const queue: Array<{ x: number; y: number; distance: number }> = [{ ...from, distance: 0 }];
+  const maxSteps = 32;
+  let found: { x: number; y: number; ford?: { tiles: Array<{ x: number; y: number }>; nearBank: { x: number; y: number }; farBank: { x: number; y: number } } } | null = null;
+  while (queue.length > 0 && !found) {
+    const current = queue.shift()!;
+    if (current.distance >= maxSteps) continue;
+    const neighbours: Array<{ x: number; y: number }> = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      neighbours.push({ x: current.x + dx, y: current.y + dy });
+    }
+    neighbours.sort((a, b) => (riverNear(world, b.x, b.y, 1) ? 1 : 0) - (riverNear(world, a.x, a.y, 1) ? 1 : 0));
+    for (const n of neighbours) {
+      const key = trafficKey(n.x, n.y);
+      if (previous.has(key) || !inBounds(world, n.x, n.y) || terrainAt(world, n.x, n.y) === 'water') continue;
+      previous.set(key, trafficKey(current.x, current.y));
+      if (bridgeTargets.has(key) || crossingBanks.has(key)) {
+        found = { ...n };
+        break;
+      }
+      const ford = fordableSpanFor(world, state.bridges, n.x, n.y);
+      if (ford) {
+        found = { ...n, ford };
+        break;
+      }
+      if (isPathTile(world, n.x, n.y)) {
+        queue.push({ x: n.x, y: n.y, distance: current.distance + 1 });
+        continue;
+      }
+      if (!pathPlaceable(world, n.x, n.y)) {
+        previous.delete(key);
+        continue;
+      }
+      queue.push({ x: n.x, y: n.y, distance: current.distance + 1 });
+    }
+  }
+  if (!found) return [];
+  const route: Array<{ x: number; y: number }> = [];
+  let cursor: string | null = trafficKey(found.x, found.y);
+  while (cursor && cursor !== startKey) {
+    const [x, y] = cursor.split(',').map(Number);
+    route.push({ x, y });
+    cursor = previous.get(cursor) ?? null;
+  }
+  route.reverse();
+  const stamped: Array<{ x: number; y: number }> = [];
+  for (const tile of route) {
+    if (isPathTile(world, tile.x, tile.y)) continue;
+    if (stampPathTile(world, tile.x, tile.y, 'road', { x: 0, y: 0 }, [])) stamped.push({ ...tile });
+  }
+  if (found.ford) stamped.push(...stampFord(world, found.ford));
+  return stamped;
+}
+
 // --- Bridges ---
 
 /** The water tiles covered by a bridge site (legacy saves are one tile). */
@@ -440,11 +620,72 @@ export function bridgeSpanAlreadyClaimed(
 }
 
 /**
+ * BUILD 1128 (0x31): the open-ground leg of a bridge approach. BFS
+ * from `start` over path-placeable land tiles to the nearest existing
+ * path tile, exploring bank-adjacent tiles first so the road hugs the
+ * bank when a bank route exists and cuts across open ground when it
+ * does not. Returns the route INCLUDING the start tile (the bank
+ * entrance) and EXCLUDING the found path tile (already a path), or
+ * null when no path is within maxSteps. Pure (reads only).
+ */
+export function planOpenGroundApproach(
+  world: IsoWorld,
+  start: { x: number; y: number },
+  maxSteps = 48,
+): Array<{ x: number; y: number }> | null {
+  if (isPathTile(world, start.x, start.y) || !pathPlaceable(world, start.x, start.y)) return null;
+  const startKey = trafficKey(start.x, start.y);
+  const previous = new Map<string, string | null>([[startKey, null]]);
+  const queue: Array<{ x: number; y: number; distance: number }> = [{ ...start, distance: 0 }];
+  let foundPath: string | null = null;
+  while (queue.length > 0 && foundPath === null) {
+    const current = queue.shift()!;
+    if (current.distance >= maxSteps) continue;
+    const neighbours: Array<{ x: number; y: number }> = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      neighbours.push({ x: current.x + dx, y: current.y + dy });
+    }
+    // Bank-adjacent tiles first: the road follows the riverbank
+    // when a bank route exists.
+    neighbours.sort((a, b) => (riverNear(world, b.x, b.y, 1) ? 1 : 0) - (riverNear(world, a.x, a.y, 1) ? 1 : 0));
+    for (const n of neighbours) {
+      const key = trafficKey(n.x, n.y);
+      if (previous.has(key) || !inBounds(world, n.x, n.y) || terrainAt(world, n.x, n.y) === 'water') continue;
+      previous.set(key, trafficKey(current.x, current.y));
+      if (isPathTile(world, n.x, n.y)) {
+        foundPath = key;
+        break;
+      }
+      if (!pathPlaceable(world, n.x, n.y)) {
+        previous.delete(key);
+        continue;
+      }
+      queue.push({ x: n.x, y: n.y, distance: current.distance + 1 });
+    }
+  }
+  if (foundPath === null) return null;
+  const route: Array<{ x: number; y: number }> = [];
+  let cursor: string | null = foundPath;
+  while (cursor && cursor !== startKey) {
+    const [x, y] = cursor.split(',').map(Number);
+    route.push({ x, y });
+    cursor = previous.get(cursor) ?? null;
+  }
+  route.reverse();
+  route.unshift({ ...start });
+  return route.filter((tile) => !isPathTile(world, tile.x, tile.y));
+}
+
+/**
  * Plan a short, dry approach along a riverbank. It follows only
  * walkable tiles that remain adjacent to river water, stops at the
  * nearest existing path (4-way BFS), and never cuts across water.
- * If no road is within reach, the single bank entrance still joins
- * the bridge and is therefore not an orphan path tile.
+ * If no bank road is within reach, it falls back to the open-ground
+ * search (planOpenGroundApproach, cap 48) — a bridge ~24 tiles from
+ * the worn network keeps an orphan entrance otherwise, and
+ * pathConnects(camp, farBank) stays false. If no road is within
+ * reach at all, the single bank entrance still joins the bridge and
+ * is therefore not an orphan path tile.
  */
 export function planBankApproachTiles(
   world: IsoWorld,
@@ -477,7 +718,18 @@ export function planBankApproachTiles(
       queue.push({ x: nx, y: ny, distance: current.distance + 1 });
     }
   }
-  if (foundPath === null) return [{ ...start }];
+  if (foundPath === null) {
+    // BUILD 1128 (0x31): no bank route to a path within 12 steps —
+    // the bridge sits too far from the worn network (its banks are
+    // on the generated dirt road, ~24 tiles from camp). Fall back to
+    // an open-ground search for the nearest path tile (cap 48),
+    // exploring bank-adjacent tiles first so the road still hugs the
+    // bank when a bank route exists. Without this the entrance stays
+    // an orphan tile and pathConnects(camp, farBank) stays false.
+    const open = planOpenGroundApproach(world, start, 48);
+    if (open) return open;
+    return [{ ...start }];
+  }
   const route: Array<{ x: number; y: number }> = [];
   let cursor: string | null = foundPath;
   while (cursor && cursor !== startKey) {
@@ -491,6 +743,40 @@ export function planBankApproachTiles(
   // Without it, a nearby existing road leaves a one-tile gap at the bank.
   route.unshift({ ...start });
   return route.filter((tile) => !isPathTile(world, tile.x, tile.y));
+}
+
+/**
+ * BUILD 1128 (0x31): stamp one road tile with a grade, returning the
+ * placed item or null. validatePlacement refuses kind 'path' on
+ * 'dirt' terrain ("already a path or road") — the generated dirt
+ * roads read as roads already — but a bridge entrance or a bank road
+ * on generated dirt still needs a placement (its grade, and its seat
+ * in the pathConnects graph). Route tiles are already vetted
+ * walkable land by the planners, so the fallback direct-stamps only
+ * the pure-dirt case (terrain 'dirt' + that exact refusal); every
+ * other refusal (water, blocked, standing player/NPC, waypoint)
+ * still refuses. MUTATES the world (one placement).
+ */
+export function stampPathTile(
+  world: IsoWorld,
+  x: number,
+  y: number,
+  kind: PathKind,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): PlacedItem | null {
+  const result = validatePlacement(world, 'path', x, y, playerTile, npcTiles, 0);
+  if (result.ok) {
+    const item = { ...result.item, pathKind: kind };
+    addPlacement(world, item);
+    return item;
+  }
+  if (result.reason === 'already a path or road' && terrainAt(world, x, y) === 'dirt') {
+    const item: PlacedItem = { kind: 'path', x0: x, y0: y, x1: x, y1: y, pathKind: kind };
+    addPlacement(world, item);
+    return item;
+  }
+  return null;
 }
 
 /** Validate the entire bridge span before mutating the world, then stamp
@@ -515,8 +801,13 @@ export function placeBridgeSpan(
   const pathItems: PlacedItem[] = [];
   for (const tile of approachTiles) {
     if (isPathTile(world, tile.x, tile.y)) continue;
-    const result = validatePlacement(world, 'path', tile.x, tile.y, playerTile, npcTiles, 0);
-    if (result.ok) pathItems.push(result.item);
+    // BUILD 1128 (0x31): the bank entrance itself is paved stone;
+    // the rest of the approach is a deliberately stamped road.
+    // stampPathTile also paves entrances that sit on the generated
+    // dirt road (validatePlacement refuses 'path' on dirt).
+    const isEntrance = (tile.x === nearBank.x && tile.y === nearBank.y) || (tile.x === farBank.x && tile.y === farBank.y);
+    const item = stampPathTile(world, tile.x, tile.y, isEntrance ? 'stone' : 'road', playerTile, npcTiles);
+    if (item) pathItems.push(item);
   }
   const items: PlacedItem[] = [];
   for (const tile of span) {
@@ -524,8 +815,24 @@ export function placeBridgeSpan(
     if (!result.ok) return { ok: false, reason: result.reason };
     items.push(result.item);
   }
+  // BUILD 1128 (0x31): a ford under the deck is replaced by the
+  // bridge — the deck is the upgrade, and leaving the ford would
+  // stack two crossings on one tile. The ford no longer blocks
+  // the span (placedBlock skips it); remove it here so the deck
+  // is the only crossing on the tile.
+  for (const tile of span) {
+    const ford = placementsOf(world).find((p) => p.kind === 'ford' && tile.x >= p.x0 && tile.x <= p.x1 && tile.y >= p.y0 && tile.y <= p.y1);
+    if (ford) removeExactPlacement(world, ford);
+  }
   for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
   for (const item of pathItems) addPlacement(world, item);
+  // BUILD 1128 (0x31): an entrance that is already a worn path keeps
+  // its tile but is paved stone — the bridge's front door reads as
+  // paved even when founders wore the path there first.
+  for (const entrance of [nearBank, farBank]) {
+    const existing = placementsOf(world).find((p) => p.kind === 'path' && p.x0 === entrance.x && p.y0 === entrance.y);
+    if (existing) existing.pathKind = 'stone';
+  }
   return { ok: true, placed: items, approachTiles: pathItems.map((item) => ({ x: item.x0, y: item.y0 })) };
 }
 
@@ -851,6 +1158,11 @@ export function detectCrossingSites(world: IsoWorld, state: PathState, day: numb
 export function scanForBridgeSites(world: IsoWorld, state: PathState, day: number): BridgeSite[] {
   const found: BridgeSite[] = [];
   if (day < BRIDGE_START_DAY || day <= state.lastBridgeScanDay) return found;
+  // BUILD 1128 (0x31): land the deck of any ready bridge before
+  // detecting new sites (see finishReadyBridges — a ready site
+  // strands when its builder drops the job after a failed
+  // placement). The scan is the daily planning pass in both ticks.
+  state.bridges = finishReadyBridges(world, state.bridges);
   const rivers = new Set<string>();
   // BUILD 1113: river v2 stores the centreline separately from
   // widthTiles. A bridge scan that reads only r.tiles silently
@@ -995,6 +1307,37 @@ export function spendBridgeStageStepFromRegistry(
  *  ready-site rule, same shape. Pure. */
 export function bridgeReadyForPlacement(site: BridgeSite): boolean {
   return site.state === 'building' && site.progress >= BRIDGE_WORK_STEPS;
+}
+
+/**
+ * BUILD 1128 (0x31): finish every ready bridge site whose deck can
+ * land. A site reaches full progress (2 steps, 4 wood spent) but its
+ * placement lands only when the founder's completion attempt
+ * succeeds — if a founder is standing on the span that tick (a ford
+ * makes span tiles occupiable, so this now happens) the placement
+ * fails and the builder waits; if the builder then drops the job on
+ * a needs flip, no founder comes back — the far site loses the
+ * scorer's competition to nearby work and the ready bridge strands
+ * at p2 forever (the §12 day-6 sim: bridge-128-170 stuck p2, 0
+ * done; the §13/§14 sims fail the same way). The daily scan is the
+ * settlement's planning pass and runs in both ticks, so it lands
+ * ready decks itself: the work is already paid for, the deck just
+ * needs placing. Called with no NPC tiles — a founder wading a ford
+ * under the deck ends up standing on it, which is harmless. A
+ * genuinely blocked span (placed water) stays ready and retries
+ * tomorrow. Mutates the world (placements only). Returns the same
+ * array when nothing changed. */
+export function finishReadyBridges(world: IsoWorld, bridges: readonly BridgeSite[]): BridgeSite[] {
+  let next = [...bridges];
+  let changed = false;
+  for (const site of bridges) {
+    if (!bridgeReadyForPlacement(site)) continue;
+    const placed = placeBridgeSpan(world, site, { x: 0, y: 0 }, []);
+    if (!placed.ok) continue;
+    next = finishBridge(next, site.id);
+    changed = true;
+  }
+  return changed ? next : [...bridges];
 }
 
 /** True when a bridge may be STARTED: the settlement is old

@@ -20,14 +20,15 @@
 // Cost: FREE in V1. No Wood/Stone gate — the player's counters read 0,
 // so a gate would let him place nothing (future economy decision).
 
-import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PathKind, type PlacedItem } from '../iso/isoWorld';
+import { isShallowTile } from './rivers';
 import { ensurePlacementId } from './entityIds';
 import { isStationPaletteKind, paletteKindForStation, stationOfPaletteKind, type StationId } from './craftingStations';
 import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
-  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'farm' | 'fence' | 'well'
+  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'ford' | 'farm' | 'fence' | 'well'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine'
   | 'station-workbench' | 'station-blacksmith' | 'station-furnace' | 'station-advanced-forge' | 'station-apothecary';
@@ -950,7 +951,16 @@ function placedBlock(w: IsoWorld, x: number, y: number): string | null {
     // busiest ground; a path there must never block the hut (the
     // 1088 regression: site 0 sat at 6/6 forever because nine path
     // tiles paved its rect, so no second hut, no arrivals, no mill).
-    if (p.kind === 'path') continue;
+    // BUILD 1128 (0x31): a ford is a wadeable water tile, not a
+    // structure — a bridge deck goes over it (the deck is the
+    // upgrade). Without this, a ford stamped on a bridge site's
+    // span blocks the deck forever: the founder retries every
+    // cycle (placementRetries 1→712 in the §12 sim) and the ready
+    // bridge strands at p2. Safe elsewhere: every placedBlock
+    // caller gates on terrain first, and a ford tile is water, so
+    // houses/stalls still refuse it; a ford still cannot be
+    // stamped over a bridge (the bridge is not skipped).
+    if (p.kind === 'path' || p.kind === 'ford') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return 'something you already placed';
   }
   return null;
@@ -1074,6 +1084,23 @@ export function validatePlacement(
     // placed. That tile has to come down first.
     if (placementsOf(w).some((p) => p.kind === 'water' && p.x0 === tx && p.y0 === ty)) return { ok: false, reason: 'remove the placed water first' };
     if (terrainAt(w, tx, ty) !== 'water') return { ok: false, reason: 'a bridge goes over water — place it on the ocean or the pond' };
+    if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
+    if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
+    if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
+    if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+  }
+  // BUILD 1128 (0x31): a ford is a wadeable shallow crossing — a
+  // 'ford' placement on SHALLOW generated water only (isShallowTile:
+  // a low-flow centreline tile or any width tile), walkable like a
+  // bridge (isPlacedFord in walkableWithPlacements). It validates
+  // only on generated water, never on placed water, and never where
+  // a bridge already spans the tile.
+  if (kind === 'ford') {
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return { ok: false, reason: 'outside the map' };
+    if (placementsOf(w).some((p) => p.kind === 'water' && p.x0 === tx && p.y0 === ty)) return { ok: false, reason: 'remove the placed water first' };
+    if (terrainAt(w, tx, ty) !== 'water') return { ok: false, reason: 'a ford goes over shallow water' };
+    if (!isShallowTile(w, tx, ty)) return { ok: false, reason: 'only shallow water can be forded' };
     if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
     if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
     if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
@@ -1612,6 +1639,15 @@ export function isPlacedBridge(w: IsoWorld, x: number, y: number): boolean {
   return placementsOf(w).some((p) => p.kind === 'bridge' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
 }
 
+/** BUILD 1128 (0x31): a ford tile is wadeable shallow water — the
+ *  second placed kind that makes a water tile walkable (a low-flow
+ *  centreline tile or any width tile, per isShallowTile). Like a
+ *  bridge, it wins before the terrain check in
+ *  walkableWithPlacements below. */
+export function isPlacedFord(w: IsoWorld, x: number, y: number): boolean {
+  return placementsOf(w).some((p) => p.kind === 'ford' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
 /** True when a placed house/stall/tree blocks the tile. Placed paths,
  *  grass, bushes, farm land, and bridges never block — a bush is
  *  walk-through decor (like grass), farm land is walk-through tilled
@@ -1619,7 +1655,7 @@ export function isPlacedBridge(w: IsoWorld, x: number, y: number): boolean {
  *  a path). */
 export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
   for (const p of placementsOf(w)) {
-    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'farm' || p.kind === 'bridge') continue;
+    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'farm' || p.kind === 'bridge' || p.kind === 'ford') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return true;
   }
   return false;
@@ -1634,6 +1670,7 @@ export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
  *  safe — the tile is walkable ground, period. */
 export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], x: number, y: number): boolean {
   if (isPlacedBridge(w, x, y)) return true;
+  if (isPlacedFord(w, x, y)) return true;
   // BUILD 1050: a generated garden's fence blocks like a placed
   // fence — one shared check, so the player, the NPCs, and the
   // pathfinder all walk around the same gardens.
@@ -1819,6 +1856,27 @@ export function placedPathKeyInts(w: IsoWorld): Set<number> {
     if (p.kind === 'path') keys.add(tileKeyInt(p.x0, p.y0));
   }
   return keys;
+}
+
+/** Integer keys of placed ford tiles (BUILD 1128, see tileKeyInt)
+ *  — the terrain sampler reads this set to paint sandy shallows. */
+export function placedFordKeyInts(w: IsoWorld): Set<number> {
+  const keys = new Set<number>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'ford') keys.add(tileKeyInt(p.x0, p.y0));
+  }
+  return keys;
+}
+
+/** Path grade per placed path tile (BUILD 1128, see tileKeyInt) —
+ *  the terrain sampler reads this map to paint stone-paved paths
+ *  as stone. Tiles without a grade read as 'dirt' (legacy paths). */
+export function placedPathKinds(w: IsoWorld): Map<number, PathKind> {
+  const kinds = new Map<number, PathKind>();
+  for (const p of placementsOf(w)) {
+    if (p.kind === 'path') kinds.set(tileKeyInt(p.x0, p.y0), p.pathKind ?? 'dirt');
+  }
+  return kinds;
 }
 
 /** Integer keys of placed farm-land tiles (BUILD 1041, see
