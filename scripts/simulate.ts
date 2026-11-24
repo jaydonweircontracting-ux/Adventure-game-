@@ -13539,6 +13539,7 @@ console.log('Testing stone gathering + the quarry loop (BUILD 1086)...');
   const C = await import('../src/game/engine3d/construction.js');
   const L = await import('../src/game/engine3d/livingWorld.js');
   const T3 = await import('../src/game/engine3d/townsfolk3d.js');
+  const RV1088 = await import('../src/game/engine3d/rivers.js');
   const camp1086 = { x: F.FOUNDER_CAMP.x, y: F.FOUNDER_CAMP.y };
   function setup1086() {
     const w = W.defaultWorld();
@@ -14170,7 +14171,8 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
 
   // --- The bridge: a path tile beside a river opens a site; the
   // site is built through the construction path, 2 steps x 2 wood.
-  const wBridge1088 = SS.createSettlementSim(W.defaultWorld()).world;
+  const wBridge1088 = W.defaultWorld();
+  RV1088.stampRivers(wBridge1088); // mirror worldSync3d.syncWorldOnLoad before bridge detection
   let riverTile1088: { x: number; y: number } | null = null;
   let bankTile1088: { x: number; y: number } | null = null;
   for (const r of wBridge1088.rivers ?? []) {
@@ -14191,6 +14193,7 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(PT.pathTiles(wBridge1088).some((t: { x: number; y: number }) => t.x === bankTile1088!.x && t.y === bankTile1088!.y), 'M1088: 8 passes lay a dirt path on the bank tile');
   const site1088 = PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 3);
   assert(site1088 !== null && site1088.x === riverTile1088!.x && site1088.y === riverTile1088!.y && site1088.state === 'none' && site1088.progress === 0 && site1088.spentWood === 0, 'M1088: a path tile beside a river opens a bridge site on the river tile');
+  if (!site1088) throw new Error('M1088: bridge site was not detected after the river terrain fixture was stamped');
   assert(PT.scanForBridgeSites(wBridge1088, psBridge1088, 3).filter((s: { id: string }) => s.id === site1088!.id).length === 0, 'M1088: the scan does not duplicate a detected site');
   assert(PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 2) === null, 'M1088: no bridge site opens before day 3');
   assert(PT.canStartBridge(site1088!, 3, true, true, 2) === true, 'M1088: a bridge starts on day 3 with housing + storage done and a step of wood');
@@ -14342,6 +14345,7 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   // acceptance test, run for real: a visible dirt path connects camp
   // to the work sites.
   const simWeek1088 = SS.createSettlementSim(W.defaultWorld());
+  RV1088.stampRivers(simWeek1088.world); // the live world sync stamps the persistent river map before simulation
   SS.advanceSettlement(simWeek1088, 11200);
   const LWeek1088 = simWeek1088.ledger;
   const weekClock1088 = SS.settlementClock(simWeek1088);
@@ -16743,7 +16747,30 @@ console.log('Testing the week-after-reload fix — founders restored mid-chain-j
   const simWeek1105 = SS.createSettlementSim(worldWeek1105);
   SS.advanceSettlement(simWeek1105, 4800);
   const restoredWeek1105: any = SS.restoreSettlement(worldWeek1105, SS.serializeSettlement(simWeek1105), simWeek1105.abs, simWeek1105.ledger);
-  SS.advanceSettlement(restoredWeek1105, 6400);
+  const logReloadWeek1105 = (label: string, state: any) => {
+    const founders = state.founders.map((f: any) => ({
+      n: f.name, p: f.profession, a: f.activity, w: f.workState,
+      k: f.lastDecision?.workKind ?? null, h: Math.round(f.needs.hunger),
+      g: f.carryingGrain, ht: f.harvestTicks, mt: f.millTicks, bt: f.bakeTicks,
+      ft: f.farmTarget ? f.farmTarget.x + ',' + f.farmTarget.y : null,
+      wt: f.workTile ? f.workTile.x + ',' + f.workTile.y : null,
+      x: Math.round(f.x), y: Math.round(f.y),
+    }));
+    const jobs = Object.values(state.board.jobs)
+      .filter((j: any) => ['harvest', 'mill', 'bake', 'deliver'].includes(j.kind))
+      .map((j: any) => j.kind + ':' + j.state + ':' + (j.claimedBy ?? '-') + ':' + (j.tile ? j.tile.x + ',' + j.tile.y : '-'))
+      .join(';');
+    console.log('M1105 RELOAD SNAP ' + label +
+      ' goods=' + F.campFoodInRegistry(state.registry) + '/' + SS.settlementGrain(state) + '/' + FC.foodChainFlourInRegistry(state.registry) +
+      ' flow=' + state.ledger.grainHarvested + '/' + state.ledger.flourMilled + '/' + state.ledger.mealsBaked + '/' + state.ledger.mealsEaten + '/' + state.ledger.starvedTicks +
+      ' founders=' + JSON.stringify(founders) + ' jobs=' + jobs);
+  };
+  logReloadWeek1105('before@4800', simWeek1105);
+  logReloadWeek1105('after-restore@4800', restoredWeek1105);
+  for (let tick = 1; tick <= 6400; tick++) {
+    SS.advanceSettlement(restoredWeek1105, 1);
+    if (tick % 400 === 0) logReloadWeek1105('tick@' + (4800 + tick), restoredWeek1105);
+  }
   const LWeek1105 = restoredWeek1105.ledger;
   assert(LWeek1105.ticks === 11200, 'M1105: the week-after-reload run counts 11200 ticks');
   assert(restoredWeek1105.founders.length === 7, 'M1105: the population is 7 after the week-after-reload');

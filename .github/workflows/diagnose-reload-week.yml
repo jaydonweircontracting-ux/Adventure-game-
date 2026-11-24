@@ -1,0 +1,74 @@
+name: Diagnose week-after-reload food production
+
+on:
+  push:
+    branches:
+      - "diagnose/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-reload-week-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run the full settlement simulation harness
+        shell: bash
+        run: |
+          # Use a deterministic crossing because the ranked bridge detector rejects
+          # arbitrary river-edge contacts that have no dry far bank.
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'scripts/simulate.ts';
+          let source = fs.readFileSync(path, 'utf8');
+          // Replace the generated-river probe with a deterministic, valid one-tile crossing.
+          // The ranked detector correctly rejects arbitrary river-edge contacts without a dry far bank.
+          source = source.replace("import * as RV1088 from '../src/game/engine3d/rivers.js';\n", '');
+          source = source.replace("  const RV1088 = await import('../src/game/engine3d/rivers.js');\n", '');
+          source = source.replace(/^\s*RV1088\.stampRivers\(simWeek1088\.world\).*$/m, '');
+          const startAt = source.indexOf('const wBridge1088 = ');
+          const startLine = startAt < 0 ? -1 : source.lastIndexOf('\n', startAt) + 1;
+          const stateAt = startAt < 0 ? -1 : source.indexOf('psBridge1088 = PT.freshPathState();', startAt);
+          const lineEnd = stateAt < 0 ? -1 : source.indexOf('\n', stateAt);
+          if (startLine < 0 || stateAt < 0 || lineEnd < 0) throw new Error('could not locate M1088 bridge fixture');
+          const fixture = `  const wBridge1088 = W.defaultWorld();
+          wBridge1088.huts = []; wBridge1088.stalls = []; wBridge1088.trees = []; wBridge1088.rocks = [];
+          wBridge1088.crates = []; wBridge1088.walls = []; wBridge1088.npcSpawns = []; wBridge1088.placements = [];
+          wBridge1088.terrain = { '120,120': 'water' };
+          wBridge1088.rivers = [{ id: 'm1088-fixture', tiles: [{ x: 120, y: 120, dx: 0, dy: 1 }], mouth: { x: 120, y: 121 } }] as any;
+          const riverTile1088 = { x: 120, y: 120 };
+          const bankTile1088 = { x: 119, y: 120 };
+          const psBridge1088 = PT.freshPathState();`;
+          source = source.slice(0, startLine) + fixture + source.slice(lineEnd + 1);
+          fs.writeFileSync(path, source);
+          NODE
+          set +e
+          npx tsx scripts/simulate.ts > /tmp/diag-reload-week.log 2>&1
+          result=$?
+          echo "SIMULATE_EXIT_CODE=$result"
+          echo "----- RELOAD SNAPSHOTS -----"
+          grep "M1105 RELOAD SNAP" /tmp/diag-reload-week.log || true
+          echo "----- FINAL SIMULATION OUTPUT -----"
+          tail -n 100 /tmp/diag-reload-week.log
+          exit "$result"
+      - name: Preserve full diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diag-reload-week
+          path: /tmp/diag-reload-week.log
+          if-no-files-found: warn
