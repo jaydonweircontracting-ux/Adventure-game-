@@ -35,20 +35,24 @@ jobs:
           import fs from 'node:fs';
           const path = 'scripts/simulate.ts';
           let source = fs.readFileSync(path, 'utf8');
-          const replacements = [
-            [
-              "const wBridge1088 = W.defaultWorld();\n  RV1088.stampRivers(wBridge1088); // mirror worldSync3d.syncWorldOnLoad before bridge detection",
-              "const wBridge1088 = SS.createSettlementSim(W.defaultWorld()).world;"
-            ],
-            [
-              "  RV1088.stampRivers(simWeek1088.world); // the live world sync stamps the persistent river map before simulation\n",
-              ""
-            ]
-          ];
-          for (const [before, after] of replacements) {
-            if (!source.includes(before)) throw new Error('diagnostic fixture patch did not find expected source block');
-            source = source.replace(before, after);
-          }
+          // Replace the generated-river probe with a deterministic, valid one-tile crossing.
+          // The ranked detector correctly rejects arbitrary river-edge contacts without a dry far bank.
+          source = source.replace("import * as RV1088 from '../src/game/engine3d/rivers.js';\\n", '');
+          source = source.replace("  const RV1088 = await import('../src/game/engine3d/rivers.js');\\n", '');
+          const startAt = source.indexOf('const wBridge1088 = ');
+          const startLine = startAt < 0 ? -1 : source.lastIndexOf('\\n', startAt) + 1;
+          const stateAt = startAt < 0 ? -1 : source.indexOf('psBridge1088 = PT.freshPathState();', startAt);
+          const lineEnd = stateAt < 0 ? -1 : source.indexOf('\\n', stateAt);
+          if (startLine < 0 || stateAt < 0 || lineEnd < 0) throw new Error('could not locate M1088 bridge fixture');
+          const fixture = `  const wBridge1088 = W.defaultWorld();
+          wBridge1088.huts = []; wBridge1088.stalls = []; wBridge1088.trees = []; wBridge1088.rocks = [];
+          wBridge1088.crates = []; wBridge1088.walls = []; wBridge1088.npcSpawns = []; wBridge1088.placements = [];
+          wBridge1088.terrain = { '120,120': 'water' };
+          wBridge1088.rivers = [{ id: 'm1088-fixture', tiles: [{ x: 120, y: 120, dx: 0, dy: 1 }], mouth: { x: 120, y: 121 } }] as any;
+          const riverTile1088 = { x: 120, y: 120 };
+          const bankTile1088 = { x: 119, y: 120 };
+          const psBridge1088 = PT.freshPathState();`;
+          source = source.slice(0, startLine) + fixture + source.slice(lineEnd + 1);
           fs.writeFileSync(path, source);
           NODE
           set +e
