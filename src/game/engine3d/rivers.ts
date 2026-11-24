@@ -315,6 +315,11 @@ function computeFlowField(world: IsoWorld, ex: Exclusions): FlowField {
   // the whole field drains. Boundary cells seed the flood.
   const filled = new Float64Array(N);
   const visited = new Uint8Array(N);
+  // Pop rank is the deterministic drainage tie-break on flat filled
+  // surfaces. Without it, equal-height neighbours were selected by
+  // row-major tile index, which creates long parallel diagonal tracks.
+  const floodRank = new Int32Array(N).fill(-1);
+  let nextFloodRank = 0;
   const heap = new FloodHeap();
   const seed = (i: number): void => {
     if (blocked[i] || visited[i]) return;
@@ -326,6 +331,7 @@ function computeFlowField(world: IsoWorld, ex: Exclusions): FlowField {
   for (let y = 0; y < H; y++) { seed(idx(0, y)); seed(idx(W - 1, y)); }
   while (heap.size > 0) {
     const [fv, i] = heap.pop();
+    floodRank[i] = nextFloodRank++;
     const ix = i % W, iy = (i / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = ix + dx, ny = iy + dy;
@@ -342,23 +348,31 @@ function computeFlowField(world: IsoWorld, ex: Exclusions): FlowField {
   // barriers) keeps its raw elevation — it drains locally and
   // never becomes a channel (accumulation 0).
   for (let i = 0; i < N; i++) if (!visited[i] && !blocked[i]) filled[i] = E[i];
-  // Downstream: the neighbour minimising the drainage key
-  // (filled elevation, then index). The key strictly decreases
-  // along every link, so the field is acyclic and a single
-  // accumulation pass in key-descending order is exact.
+  // Downstream: choose the lowest filled elevation, then the
+  // earliest cell reached by the priority flood. The flood rank is
+  // the parent-before-child ordering on flat basins; using raw tile
+  // indices here made flat drainage fields flow in artificial
+  // row-major stripes. The pair (filled, floodRank) strictly
+  // decreases along every link, so the graph stays acyclic.
   const down = new Int32Array(N).fill(-1);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     if (blocked[i]) continue;
-    let best = -1, bf = Infinity;
+    let best = -1, bf = Infinity, br = Infinity;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const ni = idx(nx, ny);
       if (blocked[ni]) continue;
-      const f = filled[ni];
-      if (best === -1 || f < bf || (f === bf && ni < best)) { best = ni; bf = f; }
+      const f = filled[ni], rank = floodRank[ni];
+      if (best === -1 || f < bf || (f === bf && rank < br)) {
+        best = ni; bf = f; br = rank;
+      }
     }
+    // A cell may not drain to itself or to a later equal-height
+    // cell. The rank test above guarantees strict progress to the
+    // outlet even across broad, nearly level valleys.
+    if (best === i || (best >= 0 && filled[best] === filled[i] && floodRank[best] >= floodRank[i])) best = -1;
     down[i] = best;
   }
   // One pass in key-descending order: every cell is processed
@@ -597,11 +611,26 @@ export function filledElevationsFor(world: IsoWorld, rivers: River[]): number[][
  *  when it generated (the caller saves the world then). A world
  *  that already has rivers is left untouched — this is what
  *  keeps a river from moving or vanishing across reloads. */
+export const RIVER_GENERATION_VERSION = 3;
+
 export function stampRivers(world: IsoWorld): boolean {
-  if (world.rivers && world.rivers.length > 0) return false;
+  // Rebuild legacy river stamps exactly once. Older saves contain the
+  // row-major flat-basin drainage, which cannot be repaired by changing
+  // the generator alone because their river courses are persisted.
+  if (world.rivers && world.rivers.length > 0 && (world.riverGeneration ?? 0) >= RIVER_GENERATION_VERSION) return false;
+  if (world.rivers && world.rivers.length > 0) {
+    for (const old of world.rivers as unknown as Array<{ tiles?: Array<{x:number;y:number}>; widthTiles?: Array<{x:number;y:number}> }>) {
+      for (const t of [...(old.tiles ?? []), ...(old.widthTiles ?? [])]) {
+        const k = `${t.x},${t.y}`;
+        if (world.terrain[k] === 'water') delete world.terrain[k];
+      }
+    }
+    delete world.rivers;
+  }
   const rivers = generateRivers(world);
   if (rivers.length === 0) return false;
   world.rivers = rivers as unknown as IsoWorld['rivers'];
+  world.riverGeneration = RIVER_GENERATION_VERSION;
   for (const r of rivers) {
     for (const t of r.tiles) {
       world.terrain[`${t.x},${t.y}`] = 'water';
