@@ -22,7 +22,7 @@
 // ZIP (no central directory) throws, and the caller shows that as
 // one message.
 
-import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, type GlbUploadResult } from './customAssets';
+import { MAX_FILE_BYTES, parseGlbUpload, parseGltfUpload, parseObjUpload, parseFbxUpload, type GlbUploadResult } from './customAssets';
 
 /** One ZIP file, at most 5 MB. */
 export const MAX_ZIP_BYTES = 5_000_000;
@@ -290,6 +290,8 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
     } else if (lower.endsWith('.obj')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseObjUpload(text, base) });
+    } else if (lower.endsWith('.fbx')) {
+      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), base) });
     } else if (base === PACK_MANIFEST_NAME) {
       // BUILD 1046: an exported pack's manifest — parsed for its
       // model count so the hub can name the pack, and for its rows
@@ -314,7 +316,7 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
         }
       } catch { /* the manifest is informational only */ }
     } else if (!lower.endsWith('.bin')) {
-      result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, or .obj)' });
+      result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, .obj, or .fbx)' });
     }
   }
   if (manifestRows) {
