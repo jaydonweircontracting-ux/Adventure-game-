@@ -169,9 +169,15 @@ const planGated = [
 check(releasePlan(planGated, { ciPass: false }, 2).map((t) => t.id).join(',') === '0x02', 'gated task skipped while its gate fails; the ungated one releases');
 check(releasePlan(planGated, { ciPass: true }, 2).map((t) => t.id).join(',') === '0x01,0x02', 'gated task releases once its gate passes');
 
-// checkVerdict on the real queue: 0x0C is done, but CI still fails, so nothing is eligible -> NONE no-eligible.
+// checkVerdict on the live queue is state-independent: a stale active task may
+// produce stalled-needs-parent, while a fully gated queue produces no-eligible.
 const v = checkVerdict(tasks, { ciPass: false, approvals: {} }, 2);
-check(v.verdict === 'NONE' && v.reason === 'no-eligible', 'real queue check verdict is NONE no-eligible while CI fails');
+check(v.verdict === 'NONE' && v.taskId === null, 'real queue fails closed while CI is false');
+const onlyCiGated = [mk('0x01', { gates: [{ type: 'ci' }] })];
+const vNoEligible = checkVerdict(onlyCiGated, { ciPass: false }, 2);
+check(vNoEligible.verdict === 'NONE' && vNoEligible.reason === 'no-eligible', 'CI-gated synthetic queue reports no-eligible');
+const vStalled = checkVerdict(stallSet, {}, 2);
+check(vStalled.verdict === 'NONE' && vStalled.reason === 'stalled-needs-parent', 'stalled in-progress work requests parent intervention');
 const v2 = checkVerdict(planSet, {}, 2);
 check(v2.verdict === 'RELEASABLE' && v2.taskId === '0x01', 'synthetic queue check verdict is RELEASABLE 0x01');
 
