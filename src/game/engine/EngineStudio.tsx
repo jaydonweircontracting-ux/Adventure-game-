@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createAssetStore, createIndexedDbAssetBackend } from '../engine3d/assetStore';
+import { loadCustomAssets, type CustomAsset } from '../engine3d/customAssets';
 import {
   addEngineComponent,
   createEngineEntity,
@@ -58,6 +60,8 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
+  const [assetLibrary, setAssetLibrary] = useState<CustomAsset[]>([]);
+  const [assetLibraryStatus, setAssetLibraryStatus] = useState('Loading shared 3D asset library…');
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [componentDrafts, setComponentDrafts] = useState<Record<string, string>>({});
   const [dragPreview, setDragPreview] = useState<{ id: string; position: [number, number, number] } | null>(null);
@@ -78,6 +82,34 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
       setSaved(false);
     }
   }, [project]);
+
+  // Read the same IndexedDB model library used by the existing 3D Import Hub.
+  // Engine projects store stable asset references, never duplicate vertex arrays.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const store = createAssetStore(createIndexedDbAssetBackend());
+        const assets = await store.loadAll();
+        if (!cancelled) {
+          setAssetLibrary(assets);
+          setAssetLibraryStatus(assets.length
+            ? assets.length + ' shared model asset' + (assets.length === 1 ? '' : 's') + ' available'
+            : 'No models in the shared 3D library yet. Import a GLB, glTF or OBJ in the 3D Import Hub.');
+        }
+      } catch {
+        const legacy = loadCustomAssets();
+        if (!cancelled) {
+          setAssetLibrary(legacy);
+          setAssetLibraryStatus(legacy.length
+            ? legacy.length + ' legacy model asset' + (legacy.length === 1 ? '' : 's') + ' available (session fallback)'
+            : 'The shared asset database is unavailable and no legacy models were found.');
+        }
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, []);
 
   const commit = (next: EngineProject) => {
     setPast((items) => [...items.slice(-49), project]);
@@ -349,6 +381,33 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
                 <button type="button" style={button} onClick={() => run(addEngineComponent(project, scene.id, selected.id, {
                   type: 'adventure.empty-component', version: 1, enabled: true, data: {},
                 }))}>+ Component</button>
+              </div>
+              <div style={{ marginTop: 9, padding: 9, border: '1px solid #536b5c', borderRadius: 8, background: '#172521' }}>
+                <strong style={{ fontSize: 12 }}>3D Model Asset</strong>
+                <div style={{ ...muted, margin: '4px 0 7px' }}>{assetLibraryStatus}</div>
+                {assetLibrary.length > 0 && (
+                  <select aria-label="Choose a shared 3D model asset" style={input} defaultValue=""
+                    onChange={(event) => {
+                      const asset = assetLibrary.find((item) => item.id === event.target.value);
+                      if (!asset) return;
+                      run(addEngineComponent(project, scene.id, selected.id, {
+                        type: 'adventure.mesh-asset', version: 1, enabled: true,
+                        data: {
+                          assetId: asset.id,
+                          assetName: asset.name,
+                          format: asset.format ?? 'glb',
+                          visible: true,
+                        },
+                      }));
+                      event.currentTarget.value = '';
+                    }}>
+                    <option value="">Attach model to selected entity…</option>
+                    {assetLibrary.map((asset) => (
+                      <option key={asset.id} value={asset.id}>{asset.name} · {asset.format ?? 'glb'} · {Math.floor(asset.indices.length / 3).toLocaleString()} tris</option>
+                    ))}
+                  </select>
+                )}
+                <div style={{ ...muted, marginTop: 6 }}>Stores a stable reference to the existing 3D library asset; geometry stays in IndexedDB and is not copied into the project JSON.</div>
               </div>
               {selected.components.length === 0 && <p style={muted}>No components attached.</p>}
               {selected.components.map((component, index) => {
