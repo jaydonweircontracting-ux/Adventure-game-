@@ -214,6 +214,8 @@ export class WorldRenderer {
   private program!: WebGLProgram;
   private worldBuffer!: WebGLBuffer;
   private actorBuffer!: WebGLBuffer;
+  private customActorBuffer!: WebGLBuffer;
+  private customActorCapacity = 0;
   private corpseBuffer!: WebGLBuffer;
   private skyObjBuffer!: WebGLBuffer;
   private fxBuffer!: WebGLBuffer;
@@ -299,7 +301,7 @@ export class WorldRenderer {
     if(!gl.getShaderParameter(vs,gl.COMPILE_STATUS)){onError('3D vertex shader failed: '+(gl.getShaderInfoLog(vs)||'unknown shader error'));throw new Error('WorldRenderer setup failed');}if(!gl.getShaderParameter(fs,gl.COMPILE_STATUS)){onError('3D fragment shader failed: '+(gl.getShaderInfoLog(fs)||'unknown shader error'));throw new Error('WorldRenderer setup failed');}const program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){onError(gl.getProgramInfoLog(program)||'3D renderer setup failed');throw new Error('WorldRenderer setup failed');}
     gl.useProgram(program);
-    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!,carBuffer=gl.createBuffer()!;
+    const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!,customActorBuffer=gl.createBuffer()!,corpseBuffer=gl.createBuffer()!,skyObjBuffer=gl.createBuffer()!,fxBuffer=gl.createBuffer()!,carBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m'),uNightLoc=gl.getUniformLocation(program,'uNight'),uWarmLoc=gl.getUniformLocation(program,'uWarm');
     if(pLoc<0||cLoc<0||!mLoc||!uNightLoc||!uWarmLoc){onError('3D renderer missing required shader attributes');throw new Error('WorldRenderer setup failed');}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -351,6 +353,7 @@ export class WorldRenderer {
     this.program = program;
     this.worldBuffer = worldBuffer;
     this.actorBuffer = actorBuffer;
+    this.customActorBuffer = customActorBuffer;
     this.corpseBuffer = corpseBuffer;
     this.skyObjBuffer = skyObjBuffer;
     this.fxBuffer = fxBuffer;
@@ -1063,6 +1066,15 @@ export class WorldRenderer {
     drawn++;
     };
     const nowMs=performance.now();
+    // Uploaded medieval FBX people become real actor meshes once they are in
+    // the shared asset library. Prefer the better-export variants; keep the
+    // royalty models out of the ordinary resident pool. Until a pack is
+    // imported, the established procedural figures remain the fallback.
+    const fbxPeople=customAssetsRef.current.filter(a=>a.format==='fbx'&&/people_unity|unral_better_export/i.test(a.sourceFile||''));
+    const preferredPeople=fbxPeople.filter(a=>/unral_better_export/i.test(a.sourceFile||''));
+    const peoplePool=(preferredPeople.length?preferredPeople:fbxPeople).filter(a=>!/king|queen/i.test((a.sourceFile||'')+' '+a.name));
+    const playerPeople=peoplePool.find(a=>/peasant_1/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
+    const personForNpc=(name:string)=>peoplePool.length?peoplePool[(Array.from(name).reduce((n,c)=>((n*33+c.charCodeAt(0))>>>0),5381))%peoplePool.length]:undefined;
     for(const npc of npcActorsRef.current){
     if(npc.looted||!npc.alive)continue;
     const slot=slotByName.get(npc.name);if(slot===undefined)continue;
@@ -1076,7 +1088,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!personForNpc(npc.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     // BUILD 1000: transient figures (travelers + adventurers) ride
     // the same glide/yaw/phase/slot machinery as residents: logical
@@ -1199,12 +1211,48 @@ export class WorldRenderer {
     // player figure or it fills the frame. NPC figures still draw.
     // BUILD 1033: while driving the car IS the player — hide the
     // figure or it stands on the car's roof; the car mesh draws instead.
+    let playerModelPose:{yaw:number;phase:number}|null=null;
     if(!firstPersonRef.current&&!drivingRef.current){
     const px=player.x+.5,pz=player.y+.5;
     const prev=figureState.get('__player');
     const dist=prev?Math.hypot(px-prev.px,pz-prev.pz):0;
     const pose=this.figurePose('__player',px,pz,nowMs,dt*1000,dist>0,dist);
-    emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y,undefined,playerBaseY);
+    playerModelPose=pose;
+    if(!playerPeople)emitFigureSlot(playerSlot,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false,player.x,player.y,undefined,playerBaseY);
+    }
+    // One dynamic vertex buffer batches the imported character meshes. This
+    // avoids changing the fixed procedural figure-slot layout and keeps the
+    // imported model path isolated from the rest of the renderer.
+    if(peoplePool.length){
+      const verts:number[]=[];
+      const appendPerson=(asset:CustomAsset,cx:number,cz:number,yaw:number,baseY:number)=>{
+        const count=Math.min(asset.indices.length,30000);
+        const c=Math.cos(yaw),sn=Math.sin(yaw);
+        for(let i=0;i<count;i++){
+          const vi=asset.indices[i];
+          const p=vi*3;
+          if(p+2>=asset.positions.length)continue;
+          const x=asset.positions[p],y=asset.positions[p+1],z=asset.positions[p+2];
+          const q=vi*3;
+          const wx=cx+x*c+z*sn,wz=cz-x*sn+z*c;
+          verts.push(wx,baseY+y,wz,asset.colors[q]??asset.avgColor[0],asset.colors[q+1]??asset.avgColor[1],asset.colors[q+2]??asset.avgColor[2]);
+        }
+      };
+      for(const npc of npcActorsRef.current){
+        if(npc.looted||!npc.alive)continue;
+        const asset=personForNpc(npc.name),st=npcRender.get(npc.name);
+        if(asset&&st)appendPerson(asset,st.x+.5,st.y+.5,st.yaw,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+        if(verts.length>=600000)break;
+      }
+      if(playerPeople&&playerModelPose&&!firstPersonRef.current&&!drivingRef.current)appendPerson(playerPeople,player.x+.5,player.y+.5,playerModelPose.yaw,playerBaseY);
+      if(verts.length){
+        const data=new Float32Array(verts);
+        gl.bindBuffer(gl.ARRAY_BUFFER,this.customActorBuffer);
+        if(data.byteLength>this.customActorCapacity){this.customActorCapacity=Math.max(data.byteLength,Math.ceil(this.customActorCapacity*1.5),262144);gl.bufferData(gl.ARRAY_BUFFER,this.customActorCapacity,gl.DYNAMIC_DRAW);}
+        gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+        gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
+        gl.drawArrays(gl.TRIANGLES,0,data.length/6);
+      }
     }
     this.motionStats={emitted,reused,drawn};
     // BUILD 1033: the red sports car — a small per-frame buffer (the
