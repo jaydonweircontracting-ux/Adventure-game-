@@ -197,6 +197,45 @@ export default function EngineStudio({ onClose }: { onClose: () => void }) {
           ))}
         </aside>
         <main style={{ minWidth: 0, overflowY: 'auto', background: '#1b2924', padding: 12 }}>
+          <section style={{ marginBottom: 14, border: '1px solid #43584c', borderRadius: 9, overflow: 'hidden', background: '#15211d' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: '1px solid #354a40' }}>
+              <strong style={{ fontSize: 12 }}>Scene Viewport · Top-down X/Z</strong>
+              <span style={muted}>Select an object to inspect</span>
+            </div>
+            <svg viewBox="0 0 600 360" role="img" aria-label="Top-down scene viewport showing entity positions on an editor grid" style={{ display: 'block', width: '100%', maxHeight: 260, background: '#1b3028', touchAction: 'pan-y' }}>
+              {Array.from({ length: 21 }, (_, index) => {
+                const offset = 60 + index * 24;
+                return <g key={index} stroke={index === 10 ? '#829d86' : '#395448'} strokeWidth={index === 10 ? 1.5 : 0.7} opacity={index === 10 ? 0.9 : 0.7}>
+                  <line x1={offset} y1="60" x2={offset} y2="300" />
+                  <line x1="60" y1={offset + 60} x2="540" y2={offset + 60} />
+                </g>;
+              })}
+              <text x="548" y="180" fill="#b9cbbb" fontSize="12">X</text>
+              <text x="300" y="24" fill="#b9cbbb" fontSize="12">Z</text>
+              <circle cx="300" cy="180" r="4" fill="#a4bda8" />
+              {scene.entities.map((entity) => {
+                const x = Math.max(60, Math.min(540, 300 + entity.transform.position[0] * 12));
+                const y = Math.max(60, Math.min(300, 180 + entity.transform.position[2] * 12));
+                const active = selectedEntityId === entity.id;
+                return <g key={entity.id} onClick={() => setSelectedEntityId(entity.id)} style={{ cursor: 'pointer' }}>
+                  {active && <circle cx={x} cy={y} r="17" fill="none" stroke="#f5d78b" strokeWidth="2" />}
+                  <circle cx={x} cy={y} r="9" fill={active ? '#f5d78b' : entity.active ? '#78b88a' : '#87938b'} stroke="#102019" strokeWidth="2" />
+                  <text x={x + 12} y={y - 10} fill="#f0f5ef" fontSize="11">{entity.name.slice(0, 18)}</text>
+                </g>;
+              })}
+            </svg>
+            {selected && <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: 8, borderTop: '1px solid #354a40' }}>
+              <span style={{ ...muted, marginRight: 4 }}>Move selected:</span>
+              {([['X −', 'x', -1], ['X +', 'x', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as const).map(([label, axis, delta]) => (
+                <button key={label} type="button" style={button} onClick={() => {
+                  const position: [number, number, number] = [...selected.transform.position];
+                  position[axis === 'x' ? 0 : 2] += delta;
+                  run(updateEntityTransform(project, scene.id, selected.id, { ...selected.transform, position }));
+                }}>{label}</button>
+              ))}
+              <span style={muted}>Grid movement: 1 unit</span>
+            </div>}
+          </section>
           {!selected ? (
             <div style={{ padding: 12 }}>
               <strong>Scene settings</strong>
