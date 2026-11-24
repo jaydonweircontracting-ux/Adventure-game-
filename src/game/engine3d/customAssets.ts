@@ -71,6 +71,7 @@
 import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { validateBlockingRect } from './placements';
 import type { Rotation } from './placements';
+import { normalizePbrMaterial, type PbrMaterialInput, type RuntimePbrMaterial } from './materialRuntime';
 
 /** BUILD 1048: rotate one local mesh point (x, z) `rot` quarter-turns
  *  clockwise, viewed from above (the 1036 convention — the same
@@ -142,6 +143,20 @@ export interface CustomAsset {
   sourceFile?: string;
   category?: string;
   tags?: string[];
+  /** BUILD 1115: importer-preserved per-vertex UV0 coordinates. */
+  uvs?: number[];
+  /** Additional glTF UV channels: index 0 stores TEXCOORD_1, index 1 TEXCOORD_2, etc. */
+  uvSets?: number[][];
+  /** BUILD 1115: PBR material table and per-vertex material slot. */
+  materials?: RuntimePbrMaterial[];
+  materialIndices?: number[];
+  /** BUILD 1120: CPU-baked skeletal walk frames in the same XYZ layout as positions. */
+  animationFrames?: number[][];
+  animationFps?: number;
+  /** True when a source diffuse map was baked into vertex colours (legacy importer path). */
+  textureBaked?: boolean;
+  /** BUILD 1116: texture image data URLs, indexed by material texture index. */
+  textureImages?: Array<string | null>;
 }
 
 export type GlbUploadResult =
@@ -242,14 +257,26 @@ type GltfJson = {
   scenes?: Array<{ nodes?: number[] }>;
   nodes?: Array<{ mesh?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; children?: number[] }>;
   meshes?: Array<{ primitives: Array<{ attributes: Record<string, number>; indices?: number; material?: number; mode?: number }> }>;
-  materials?: Array<{ pbrMetallicRoughness?: { baseColorFactor?: number[] } }>;
+  materials?: Array<{
+    name?: string;
+    pbrMetallicRoughness?: {
+      baseColorFactor?: number[]; metallicFactor?: number; roughnessFactor?: number;
+      baseColorTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+      metallicRoughnessTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    };
+    normalTexture?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    occlusionTexture?: { index: number; texCoord?: number; strength?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    emissiveFactor?: number[]; emissiveTexture?: { index: number; texCoord?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } };
+    alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND'; alphaCutoff?: number; doubleSided?: boolean;
+  }>;
   accessors?: Array<{ bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string; normalized?: boolean; sparse?: unknown }>;
   bufferViews?: Array<{ buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }>;
   buffers?: Array<{ byteLength: number; uri?: string }>;
   /** BUILD 1046: image references. The renderer cannot show
    *  textures, so these are only ever reported (found / missing),
    *  never applied — see collectGltfDependencies. */
-  images?: Array<{ uri?: string }>;
+  images?: Array<{ uri?: string; bufferView?: number; mimeType?: string }>;
+  textures?: Array<{ source?: number }>;
 };
 
 function ascii4(view: DataView, off: number): string {
@@ -346,6 +373,7 @@ function finishAsset(
   indices: number[],
   fileName: string,
   format: ImportModelFormat,
+  extras: Partial<Pick<CustomAsset, 'uvs' | 'uvSets' | 'materials' | 'materialIndices' | 'animationFrames' | 'animationFps' | 'textureBaked' | 'textureImages'>> = {},
 ): GlbUploadResult {
   if (indices.length === 0 || indices.length % 3 !== 0) return { ok: false, reason: 'no triangle geometry found' };
   const triCount = indices.length / 3;
@@ -373,7 +401,7 @@ function finishAsset(
   const nv = colors.length / 3;
   for (let i = 0; i < colors.length; i += 3) { ar += colors[i]; ag += colors[i + 1]; ab += colors[i + 2]; }
   const avg: [number, number, number] = nv > 0 ? [ar / nv, ag / nv, ab / nv] : [...DEFAULT_COLOR];
-  const stem = fileName.replace(/\.[^.]*$/, '').trim().slice(0, 40) || 'Custom model';
+  const stem = fileName.replace(/\\/g, '/').split('/').pop()!.replace(/\.[^.]*$/, '').trim().slice(0, 40) || 'Custom model';
   return {
     ok: true,
     asset: {
@@ -386,6 +414,12 @@ function finishAsset(
       height,
       avgColor: avg,
       format,
+      ...extras,
+      ...(extras.animationFrames?.length ? { animationFrames: extras.animationFrames.map(frame => {
+        const normalized: number[] = [];
+        for (let i = 0; i < frame.length; i += 3) normalized.push(frame[i] - cx, frame[i + 1] - minY, frame[i + 2] - cz);
+        return normalized;
+      }), animationFps: extras.animationFps ?? 8 } : {}),
       // BUILD 1045: the file this model came from, so the library
       // row can say where it came from. Category/tags start as the
       // player's defaults (Unsorted / none) — never guessed.
@@ -400,11 +434,54 @@ function finishAsset(
 // walk and per-primitive colour rules from 997, factored out so the
 // GLB parser and the new .gltf parser share one implementation and
 // can never drift apart. `bin` is buffer 0's bytes. ----
+
+function bytesToImageDataUrl(bytes: Uint8Array, mimeType: string): string | null {
+  if (!/^image\/(png|jpeg|webp|gif|bmp|avif)$/i.test(mimeType) || bytes.length === 0 || bytes.length > 8 * 1024 * 1024) return null;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+  return 'data:' + mimeType.toLowerCase() + ';base64,' + btoa(binary);
+}
+
+/** Persist image bytes with the model; texture indices map through glTF textures[].source. */
+export function extractGltfTextureImages(json: GltfJson, bin: Uint8Array, basePath: string, files?: Map<string, ArrayBuffer>): Array<string | null> {
+  const images = (json.images || []).map(img => {
+    if (img.uri?.startsWith('data:')) {
+      const match = /^data:(image\/(?:png|jpeg|webp|gif|bmp|avif));base64,([\s\S]*)$/i.exec(img.uri);
+      if (!match) return null;
+      try {
+        const decoded = atob(match[2].replace(/\s/g, ''));
+        const bytes = new Uint8Array(decoded.length);
+        for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
+        return bytesToImageDataUrl(bytes, match[1]);
+      } catch { return null; }
+    }
+    if (img.uri && files) {
+      const resolved = resolveGltfUri(img.uri, basePath, files);
+      const source = resolved.resolvedPath ? files.get(resolved.resolvedPath) : undefined;
+      if (source) {
+        const ext = (img.uri.split('?')[0].split('.').pop() || '').toLowerCase();
+        const mime = ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp'} as Record<string,string>)[ext];
+        if (mime) return bytesToImageDataUrl(new Uint8Array(source), mime);
+      }
+    }
+    if (img.bufferView !== undefined) {
+      const view = (json.bufferViews || [])[img.bufferView];
+      if (!view || view.buffer !== 0 || !img.mimeType) return null;
+      const start = view.byteOffset || 0, end = start + view.byteLength;
+      if (start < 0 || end > bin.length || end <= start) return null;
+      return bytesToImageDataUrl(bin.subarray(start, end), img.mimeType);
+    }
+    return null;
+  });
+  return (json.textures || []).map(texture => texture.source === undefined ? null : images[texture.source] || null);
+}
+
 function buildAssetFromGltf(
   json: GltfJson,
   bin: Uint8Array,
   fileName: string,
   format: ImportModelFormat,
+  textureImages: Array<string | null> = [],
 ): GlbUploadResult {
   const nodes = json.nodes || [];
   const parent = new Map<number, number>();
@@ -422,6 +499,29 @@ function buildAssetFromGltf(
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
+  const uvs: number[] = [];
+  const uvSets: number[][] = [[], [], []];
+  let hasExtraUvSets = false;
+  const materialIndices: number[] = [];
+  const materials = (json.materials || []).map((mat, i) => {
+    const p = mat.pbrMetallicRoughness || {};
+    const slot = (v?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } }) => {
+      if (!v) return undefined;
+      const t = v.extensions?.KHR_texture_transform;
+      return { textureIndex: v.index, texCoord: t?.texCoord ?? v.texCoord ?? 0,
+        ...(v.scale !== undefined ? { scale: v.scale } : {}),
+        ...(t ? { transform: { offset: [t.offset?.[0] ?? 0, t.offset?.[1] ?? 0] as [number, number], rotation: t.rotation ?? 0, scale: [t.scale?.[0] ?? 1, t.scale?.[1] ?? 1] as [number, number], ...(t.texCoord !== undefined ? { texCoord: t.texCoord } : {}) } } : {}) };
+    };
+    const input: PbrMaterialInput = {
+      name: mat.name || 'Material ' + (i + 1), baseColorFactor: p.baseColorFactor,
+      metallicFactor: p.metallicFactor, roughnessFactor: p.roughnessFactor,
+      emissiveFactor: mat.emissiveFactor, alphaMode: mat.alphaMode,
+      alphaCutoff: mat.alphaCutoff, doubleSided: mat.doubleSided,
+      baseColorTexture: slot(p.baseColorTexture), metallicRoughnessTexture: slot(p.metallicRoughnessTexture),
+      normalTexture: slot(mat.normalTexture), occlusionTexture: slot(mat.occlusionTexture), emissiveTexture: slot(mat.emissiveTexture),
+    };
+    return normalizePbrMaterial(input);
+  });
   for (let ni = 0; ni < nodes.length; ni++) {
     const node = nodes[ni];
     if (node.mesh === undefined) continue;
@@ -454,10 +554,33 @@ function buildAssetFromGltf(
         const f = mat?.pbrMetallicRoughness?.baseColorFactor;
         if (f && f.length >= 3) matColor = [f[0], f[1], f[2]];
       }
+      const uvIdx = prim.attributes.TEXCOORD_0;
+      let uvVals: number[] | null = null;
+      if (uvIdx !== undefined) {
+        const uv = readAccessor(json, bin, uvIdx);
+        if (typeof uv === 'string') return { ok: false, reason: uv };
+        if (uv.compCount !== 2 || uv.count !== pos.count) return { ok: false, reason: 'TEXCOORD_0 must be VEC2 and match POSITION count' };
+        uvVals = uv.values;
+      }
+      const extraUvValues: Array<number[] | null> = [1, 2, 3].map(set => {
+        const accessorIndex = prim.attributes['TEXCOORD_' + set];
+        if (accessorIndex === undefined) return null;
+        const accessor = readAccessor(json, bin, accessorIndex);
+        if (typeof accessor === 'string' || accessor.compCount !== 2 || accessor.count !== pos.count) return null;
+        hasExtraUvSets = true;
+        return accessor.values;
+      });
+      const materialIndex = prim.material !== undefined && materials[prim.material] ? prim.material : -1;
       const base = positions.length / 3;
       for (let i = 0; i < pos.count; i++) {
         const [x, y, z] = xform(m, pos.values[i * 3], pos.values[i * 3 + 1], pos.values[i * 3 + 2]);
         positions.push(x, y, z);
+        uvs.push(uvVals ? uvVals[i * 2] : 0, uvVals ? uvVals[i * 2 + 1] : 0);
+        for (let set = 0; set < uvSets.length; set++) {
+          const values = extraUvValues[set];
+          uvSets[set].push(values ? values[i * 2] : 0, values ? values[i * 2 + 1] : 0);
+        }
+        materialIndices.push(materialIndex);
         let r: number, g: number, b: number;
         if (colVals) {
           r = colVals[i * colCount];
@@ -483,7 +606,7 @@ function buildAssetFromGltf(
       }
     }
   }
-  return finishAsset(positions, colors, indices, fileName, format);
+  return finishAsset(positions, colors, indices, fileName, format, { uvs, ...(hasExtraUvSets ? { uvSets } : {}), materials, materialIndices, textureImages });
 }
 
 function decodeBase64DataUri(uri: string): Uint8Array | string {
@@ -537,7 +660,8 @@ export function parseGlbUpload(buf: ArrayBuffer, fileName: string, files?: Map<s
     }
     // BUILD 1043: mesh extraction is shared with the .gltf importer
     // (buildAssetFromGltf above) so the two formats can never drift.
-    const res = buildAssetFromGltf(json, bin, fileName, 'glb');
+    const textureImages = extractGltfTextureImages(json, bin, basePath, files);
+    const res = buildAssetFromGltf(json, bin, fileName, 'glb', textureImages);
     if (!res.ok) return res;
     return { ...res, dependencies: collectGltfDependencies(json, basePath, files) };
   } catch (e) {
@@ -600,7 +724,8 @@ export function parseGltfUpload(
       }
       bin = new Uint8Array(found);
     }
-    const res = buildAssetFromGltf(json, bin, fileName, 'gltf');
+    const textureImages = extractGltfTextureImages(json, bin, basePath, binFiles);
+    const res = buildAssetFromGltf(json, bin, fileName, 'gltf', textureImages);
     if (!res.ok) return res;
     return { ...res, dependencies: collectGltfDependencies(json, basePath, binFiles) };
   } catch (e) {
@@ -694,7 +819,17 @@ export function parseObjUpload(text: string, fileName: string): GlbUploadResult 
  * vertex-colour renderer; diffuse material colours and vertex colours
  * are preserved.
  */
-export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promise<GlbUploadResult> {
+/**
+ * Binary + ASCII FBX importer. Preserves UV/material assignments, resolves
+ * companion diffuse maps, and bakes their sampled colour into the existing
+ * vertex-colour stream. Skinned meshes retain a short, baked walk cycle so
+ * imported actors animate in the lightweight Adventure renderer.
+ */
+export async function parseFbxUpload(
+  buf: ArrayBuffer,
+  fileName: string,
+  files?: Map<string, ArrayBuffer>,
+): Promise<GlbUploadResult> {
   if (buf.byteLength < 32) return { ok: false, reason: 'FBX file is too small or truncated' };
   const header = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(23, buf.byteLength)));
   const isBinary = header.startsWith('Kaydara FBX Binary');
@@ -702,55 +837,210 @@ export async function parseFbxUpload(buf: ArrayBuffer, fileName: string): Promis
   if (!isBinary && !textStart.startsWith(';') && !textStart.startsWith('FBXHeaderExtension') && !textStart.startsWith('; FBX')) {
     return { ok: false, reason: 'file signature is not a recognized FBX file (binary FBX is supported)' };
   }
+  const objectUrls: string[] = [];
   try {
-    const [{ FBXLoader }, THREE] = await Promise.all([import('three/examples/jsm/loaders/FBXLoader.js'), import('three')]);
-    const root = new FBXLoader().parse(buf, '');
+    const [{ FBXLoader }, THREE] = await Promise.all([
+      import('three/examples/jsm/loaders/FBXLoader.js'),
+      import('three'),
+    ]);
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url: string) => {
+      if (!files?.size) return url;
+      const clean = url.split(/[?#]/)[0].replace(/\\/g, '/');
+      const base = clean.split('/').pop()?.toLowerCase() || '';
+      const match = [...files.entries()].find(([name]) => {
+        const normalized = name.replace(/\\/g, '/').toLowerCase();
+        return normalized === clean.toLowerCase() || normalized.endsWith('/' + base) || normalized === base;
+      });
+      if (!match) return url;
+      const ext = match[0].split('.').pop()?.toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'bmp' ? 'image/bmp' : 'image/png';
+      const objectUrl = URL.createObjectURL(new Blob([match[1]], { type: mime }));
+      objectUrls.push(objectUrl);
+      return objectUrl;
+    });
+    let finishLoads: (() => void) | undefined;
+    let loadsStarted = false;
+    const loaded = new Promise<void>(resolve => { finishLoads = resolve; });
+    manager.onStart = () => { loadsStarted = true; };
+    manager.onLoad = () => finishLoads?.();
+    const root: any = new FBXLoader(manager).parse(buf, '');
+    if (loadsStarted) await loaded;
     root.updateMatrixWorld(true);
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
+
+    type TriangleRef = { mesh: any; vertices: number[]; material: any; materialIndex: number };
+    const triangles: TriangleRef[] = [];
+    const meshes: any[] = [];
+    const materials: RuntimePbrMaterial[] = [];
+    const materialLookup = new Map<string, number>();
+    const textureImages: Array<string | null> = [];
+    const textureLookup = new Map<any, number>();
+    const textureIndexFor = (texture: any): number | undefined => {
+      if (!texture?.image || typeof document === 'undefined') return undefined;
+      const existing = textureLookup.get(texture);
+      if (existing !== undefined) return existing;
+      try {
+        const image = texture.image;
+        const width = image.width || image.videoWidth;
+        const height = image.height || image.videoHeight;
+        if (!width || !height) return undefined;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+        ctx.drawImage(image, 0, 0, width, height);
+        const index = textureImages.length;
+        textureImages.push(canvas.toDataURL('image/png'));
+        textureLookup.set(texture, index);
+        return index;
+      } catch {
+        return undefined;
+      }
+    };
     root.traverse((node: any) => {
-      if (!node || !node.isMesh || !node.geometry?.attributes?.position) return;
-      const mesh = node;
-      const geometry = mesh.geometry;
-      if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
+      if (!node?.isMesh || !node.geometry?.attributes?.position) return;
+      meshes.push(node);
+      const geometry = node.geometry;
       const pos = geometry.attributes.position;
-      const col = geometry.attributes.color;
-      const uv = geometry.attributes.uv;
       const index = geometry.index;
-      const materialList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const vertexCount = pos.count;
-      const triCount = index ? Math.floor(index.count / 3) : Math.floor(vertexCount / 3);
+      const materialList = Array.isArray(node.material) ? node.material : [node.material];
       const groups = geometry.groups || [];
-      const groupMaterial = (faceStart: number) => {
+      const materialForFace = (faceStart: number) => {
         const group = groups.find((g: any) => faceStart >= g.start && faceStart < g.start + g.count);
         return materialList[group?.materialIndex || 0] || materialList[0];
       };
+      const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
       for (let tri = 0; tri < triCount; tri++) {
-        const base = positions.length / 3;
         const faceStart = tri * 3;
-        const mat = groupMaterial(faceStart);
-        const mc = mat?.color;
-        const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
-        for (let corner = 0; corner < 3; corner++) {
-          const vi = index ? index.getX(faceStart + corner) : faceStart + corner;
-          if (vi < 0 || vi >= vertexCount) continue;
-          const v = new THREE.Vector3();
-          v.fromBufferAttribute(pos, vi);
-          if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
-          v.applyMatrix4(mesh.matrixWorld);
-          positions.push(v.x, v.y, v.z);
-          if (col) colors.push(col.getX(vi), col.getY(vi), col.getZ(vi));
-          else colors.push(materialColor[0], materialColor[1], materialColor[2]);
-          indices.push(base + corner);
+        const vertices = [0, 1, 2].map(corner => index ? index.getX(faceStart + corner) : faceStart + corner);
+        if (vertices.some(vi => vi < 0 || vi >= pos.count)) continue;
+        const material = materialForFace(faceStart);
+        const materialKey = material?.uuid || material?.name || 'default';
+        let materialIndex = materialLookup.get(materialKey);
+        if (materialIndex === undefined) {
+          materialIndex = materials.length;
+          materialLookup.set(materialKey, materialIndex);
+          const textureIndex = textureIndexFor(material?.map);
+          materials.push(normalizePbrMaterial({
+            name: material?.name || 'FBX material ' + (materialIndex + 1),
+            baseColorFactor: material?.color ? [material.color.r, material.color.g, material.color.b, material?.opacity ?? 1] : [...DEFAULT_COLOR, 1],
+            metallicFactor: Number.isFinite(material?.metalness) ? material.metalness : 0,
+            roughnessFactor: Number.isFinite(material?.roughness) ? material.roughness : 1,
+            alphaMode: material?.transparent || (material?.opacity ?? 1) < 1 ? 'BLEND' : 'OPAQUE',
+            doubleSided: material?.side === THREE.DoubleSide,
+            ...(textureIndex !== undefined ? { baseColorTexture: { textureIndex, texCoord: 0 } } : {}),
+          }));
         }
+        triangles.push({ mesh: node, vertices, material, materialIndex });
       }
     });
-    if (indices.length === 0) return { ok: false, reason: 'no triangle meshes found in this FBX' };
-    const result = finishAsset(positions, colors, indices, fileName, 'fbx');
-    return result;
+    if (!triangles.length) return { ok: false, reason: 'no triangle meshes found in this FBX' };
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const uvs: number[] = [];
+    const materialIndices: number[] = [];
+    const collectPositions = () => {
+      const out: number[] = [];
+      for (const mesh of meshes) if (mesh.isSkinnedMesh && mesh.skeleton) mesh.skeleton.update();
+      for (const tri of triangles) {
+        const mesh = tri.mesh;
+        const pos = mesh.geometry.attributes.position;
+        for (const vi of tri.vertices) {
+          const v = new THREE.Vector3().fromBufferAttribute(pos, vi);
+          if (mesh.isSkinnedMesh && typeof mesh.applyBoneTransform === 'function') mesh.applyBoneTransform(vi, v);
+          v.applyMatrix4(mesh.matrixWorld);
+          out.push(v.x, v.y, v.z);
+        }
+      }
+      return out;
+    };
+    const basePositions = collectPositions();
+    positions.push(...basePositions);
+    let vertexIndex = 0;
+    for (const tri of triangles) {
+      const geometry = tri.mesh.geometry;
+      const col = geometry.attributes.color;
+      const uv = geometry.attributes.uv;
+      const mc = tri.material?.color;
+      const materialColor = mc ? [mc.r, mc.g, mc.b] : DEFAULT_COLOR;
+      for (const vi of tri.vertices) {
+        const r = col ? col.getX(vi) : materialColor[0];
+        const g = col ? col.getY(vi) : materialColor[1];
+        const b = col ? col.getZ(vi) : materialColor[2];
+        colors.push(r, g, b);
+        uvs.push(uv ? uv.getX(vi) : 0, uv ? uv.getY(vi) : 0);
+        materialIndices.push(tri.materialIndex);
+        indices.push(vertexIndex++);
+      }
+    }
+
+    // Use source walk/run clips where present. The supplied low-poly pack
+    // has skin clusters and named bones but no AnimationStack clips, so
+    // synthesize a walk cycle from its thigh/calf/upper-arm bones.
+    let clip = (root.animations || []).find((candidate: any) => /walk|run|move/i.test(candidate.name))
+      || (root.animations || [])[0];
+    if (!clip) {
+      const tracks: any[] = [];
+      const bones: any[] = [];
+      root.traverse((node: any) => { if (node?.isBone) bones.push(node); });
+      const times = [0, 0.25, 0.5, 0.75, 1];
+      const makeTrack = (bone: any, amplitude: number, offset: number) => {
+        const values: number[] = [];
+        for (const time of times) {
+          const angle = Math.sin(time * Math.PI * 2 + offset) * amplitude;
+          const delta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+          const q = bone.quaternion.clone().multiply(delta);
+          values.push(q.x, q.y, q.z, q.w);
+        }
+        tracks.push(new THREE.QuaternionKeyframeTrack(bone.name + '.quaternion', times, values));
+      };
+      for (const bone of bones) {
+        const name = String(bone.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (/thigh.*l$|leftthigh|leftupleg/.test(name)) makeTrack(bone, 0.48, 0);
+        else if (/thigh.*r$|rightthigh|rightupleg/.test(name)) makeTrack(bone, 0.48, Math.PI);
+        else if (/upperarm.*l$|leftupperarm/.test(name)) makeTrack(bone, 0.3, Math.PI);
+        else if (/upperarm.*r$|rightupperarm/.test(name)) makeTrack(bone, 0.3, 0);
+        else if (/calf.*l$|leftcalf|leftleg/.test(name)) makeTrack(bone, 0.22, 0.65);
+        else if (/calf.*r$|rightcalf|rightleg/.test(name)) makeTrack(bone, 0.22, Math.PI + 0.65);
+      }
+      if (tracks.length) clip = new THREE.AnimationClip('Adventure Walk', 1, tracks);
+    }
+
+    let animationFrames: number[][] | undefined;
+    let animationFps = 8;
+    const maxFrames = Math.min(8, Math.floor(100000 / Math.max(1, basePositions.length)));
+    if (clip && maxFrames >= 2 && meshes.some(mesh => mesh.isSkinnedMesh)) {
+      try {
+        const mixer = new THREE.AnimationMixer(root);
+        const action = mixer.clipAction(clip);
+        action.play();
+        animationFrames = [];
+        const duration = Math.max(clip.duration || 1, 0.25);
+        const frameCount = Math.max(2, Math.min(maxFrames, Math.ceil(duration * 8)));
+        animationFps = frameCount / duration;
+        for (let frame = 0; frame < frameCount; frame++) {
+          mixer.setTime((frame / animationFps) % duration);
+          root.updateMatrixWorld(true);
+          animationFrames.push(collectPositions());
+        }
+        if (animationFrames.some(frame => frame.length !== basePositions.length)) animationFrames = undefined;
+        mixer.stopAllAction();
+        mixer.uncacheRoot(root);
+      } catch {
+        animationFrames = undefined;
+      }
+    }
+
+    return finishAsset(positions, colors, indices, fileName, 'fbx', {
+      uvs, materials, materialIndices, textureImages, animationFrames, animationFps,
+    });
   } catch (e) {
     return { ok: false, reason: 'FBX decode failed (' + (e instanceof Error ? e.message : 'unknown error') + ')' };
+  } finally {
+    for (const url of objectUrls) URL.revokeObjectURL(url);
   }
 }
 
@@ -884,6 +1174,11 @@ export function validAsset(raw: unknown): CustomAsset | null {
   if (!Array.isArray(r.positions) || !Array.isArray(r.colors) || !Array.isArray(r.indices)) return null;
   if (!r.positions.every(isFiniteNum) || !r.colors.every(isFiniteNum) || !r.indices.every(isFiniteNum)) return null;
   if (r.positions.length % 3 !== 0 || r.colors.length !== r.positions.length || r.indices.length % 3 !== 0) return null;
+  const vertexCount = r.positions.length / 3;
+  if (r.uvs !== undefined && (!Array.isArray(r.uvs) || r.uvs.length !== vertexCount * 2 || !r.uvs.every(isFiniteNum))) return null;
+  if (r.uvSets !== undefined && (!Array.isArray(r.uvSets) || r.uvSets.length > 3 || !r.uvSets.every(set => Array.isArray(set) && set.length === vertexCount * 2 && set.every(isFiniteNum)))) return null;
+  if (r.materialIndices !== undefined && (!Array.isArray(r.materialIndices) || r.materialIndices.length !== vertexCount || !r.materialIndices.every(v => Number.isInteger(v) && (v as number) >= -1 && (v as number) < ((Array.isArray(r.materials) ? r.materials.length : 0))))) return null;
+  if (r.textureImages !== undefined && (!Array.isArray(r.textureImages) || r.textureImages.length > 512 || r.textureImages.reduce((total, v) => total + (typeof v === 'string' ? v.length : 0), 0) > 16_000_000 || !r.textureImages.every(v => v === null || (typeof v === 'string' && /^data:image\/(png|jpeg|webp|gif|bmp|avif);base64,/i.test(v) && v.length <= 12_000_000)))) return null;
   if (r.indices.some((v) => (v as number) < 0 || (v as number) * 3 >= (r.positions as number[]).length)) return null;
   if (!isFiniteNum(r.width) || !isFiniteNum(r.height)) return null;
   const w = r.width as number, h = r.height as number;
@@ -914,6 +1209,21 @@ export function validAsset(raw: unknown): CustomAsset | null {
     sourceFile,
     category,
     tags,
+    ...(Array.isArray(r.uvs) ? { uvs: r.uvs as number[] } : {}),
+    ...(Array.isArray(r.uvSets) ? { uvSets: r.uvSets as number[][] } : {}),
+    ...(Array.isArray(r.materials) ? { materials: r.materials as RuntimePbrMaterial[] } : {}),
+    ...(Array.isArray(r.materialIndices) ? { materialIndices: r.materialIndices as number[] } : {}),
+    ...(Array.isArray(r.animationFrames)
+      && r.animationFrames.length >= 2
+      && r.animationFrames.length <= 8
+      && r.animationFrames.every((frame: unknown) => Array.isArray(frame)
+        && frame.length === (r.positions as number[]).length
+        && frame.every(isFiniteNum))
+      && r.animationFrames.reduce((total: number, frame: number[]) => total + frame.length, 0) <= 100000
+      ? { animationFrames: r.animationFrames as number[][], animationFps: isFiniteNum(r.animationFps) ? Math.max(1, Math.min(30, r.animationFps)) : 8 }
+      : {}),
+    ...(r.textureBaked === true ? { textureBaked: true } : {}),
+    ...(Array.isArray(r.textureImages) ? { textureImages: r.textureImages as Array<string | null> } : {}),
   };
 }
 

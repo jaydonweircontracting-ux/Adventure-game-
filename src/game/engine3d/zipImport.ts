@@ -288,7 +288,7 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseGltfUpload(text, base, allFiles, dir) });
     } else if (lower.endsWith('.fbx')) {
-      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), base) });
+      result.models.push({ name: e.name, result: await parseFbxUpload(toArrayBuffer(raw), e.name, allFiles) });
     } else if (lower.endsWith('.obj')) {
       const text = new TextDecoder().decode(raw);
       result.models.push({ name: e.name, result: parseObjUpload(text, base) });

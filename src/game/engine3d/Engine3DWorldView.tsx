@@ -1280,7 +1280,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     const noteDeps=(asset:CustomAsset,deps?:GltfDependency[])=>{
       if(!deps)return;
       for(const d of deps){
-        if(!d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was named but not found — the model still imported; textures are not rendered, so nothing was applied');
+        if(!d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was not found — the model imported with its material colour fallback');
+        if(d.found&&d.kind==='image')notes.push('\''+asset.name+'\': texture "'+d.uri+'" was found and stored with the model');
         if(d.found&&d.kind==='buffer'&&d.resolvedPath&&d.resolvedPath.includes('/'))notes.push('\''+asset.name+'\': its data file "'+d.resolvedPath+'" was found in a subfolder');
       }
     };
@@ -1289,6 +1290,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       parsed.push(res.asset);
       if(res.dependencies)pendingDepsRef.current.set(res.asset.id,res.dependencies);
       noteDeps(res.asset,res.dependencies);
+      if(res.asset.format==='fbx'&&res.asset.textureImages?.some(Boolean))notes.push('\''+res.asset.name+'\': diffuse texture map was loaded for the textured character renderer');
+      if(res.asset.format==='fbx'&&res.asset.animationFrames?.length)notes.push('\''+res.asset.name+'\': skeletal walk cycle baked ('+res.asset.animationFrames.length+' frames at '+(res.asset.animationFps??8)+' fps)');
     };
     for(const file of modelFiles){
       const lower=file.name.toLowerCase();
@@ -1323,7 +1326,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
           }else{
             const buf=await file.arrayBuffer();bytesDone+=file.size;
             setP('parsing',file.name);await yieldToLoop();
-            accept(await parseFbxUpload(buf,file.name),file.name);
+            accept(await parseFbxUpload(buf,file.name,companionFiles),file.name);
           }
         }catch{failed.push(file.name+': could not read the file');}
         filesDone++;await yieldToLoop();
@@ -1337,9 +1340,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // are not rendered.
     const referenced=new Set<string>();
     pendingDepsRef.current.forEach((deps)=>{for(const d of deps)if(d.found&&d.resolvedPath)referenced.add(d.resolvedPath);});
+    const hasFbxTexture=parsed.some(a=>a.format==='fbx'&&a.textureImages?.some(Boolean));
     for(const f of files.filter(f=>/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))){
       const rel=relPathOf(f);
-      if(!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file — images are only used as glTF texture references, and textures are not rendered, so it was ignored');
+      if(!hasFbxTexture&&!referenced.has(f.name)&&!referenced.has(rel))notes.push('\''+f.name+'\' is an image file that no imported model referenced, so it was not added to the asset library');
     }
     setProgress(null);
     if(parsed.length===0&&failed.length===0&&files.every(f=>/\.bin$/i.test(f.name))){

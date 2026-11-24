@@ -40,6 +40,12 @@ jobs:
         run: node studio/neuron-hex/events.test.mjs
       - name: Type check
         run: npm run typecheck
+      - name: Animation runtime regression test
+        run: npm run test:animation-runtime
+      - name: PBR material runtime regression test
+        run: npm run test:material-runtime
+      - name: Custom model UV and material preservation regression test
+        run: npm run test:custom-asset-materials
       - name: Isometric direction regression test
         run: npm run test:iso-directions
       - name: Isometric tile asset integrity regression test
