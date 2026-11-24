@@ -1,6 +1,7 @@
 // Standalone asserts for the NEURON HEX scheduler. Run directly: node scheduler.test.mjs
 // Throws on the first failure; prints the pass count on success.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
@@ -76,12 +77,19 @@ check(m.total === 12 && m.counts.done === 2 && m.counts.pending === 9 && m.count
 check(m.avgCompletionMs === 342000, `avg completion is 342000ms for 0x01 (212s) + 0x0C (472s) (got ${m.avgCompletionMs})`);
 check(bottleneck(era02).id === '0x02' && bottleneck(era02).waitingOnIt === 8, 'bottleneck is 0x02 with 8 tasks waiting on it');
 
-// --- conditions read from the real monitor state file (values change per run; assert the mapping, not one run) ---
-const rawState = JSON.parse(readFileSync('/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json', 'utf8'));
-const cond = readConditions('/home/hatch/workspace/goals/adventure-game-repo-updates-and-deployment/hidden_files/pr61-monitor-state.json');
-check(cond.ciPass === (rawState.conclusion === 'success') && cond.ciHeadSha === rawState.head_sha && cond.ciRunId === rawState.last_reported_run_id && cond.ciConclusion === rawState.conclusion,
-  'readConditions maps the monitor state fields correctly');
-check(readConditions('/nonexistent/state.json').ciPass === false, 'missing state file fails closed');
+// --- conditions read from a temporary monitor-state fixture (portable in CI and worktrees) ---
+const monitorDir = mkdtempSync(path.join(tmpdir(), 'neuron-hex-monitor-'));
+const monitorStatePath = path.join(monitorDir, 'pr61-monitor-state.json');
+const rawState = { conclusion: 'success', head_sha: 'fixture-head-sha', last_reported_run_id: 123456 };
+try {
+  writeFileSync(monitorStatePath, JSON.stringify(rawState));
+  const cond = readConditions(monitorStatePath);
+  check(cond.ciPass === (rawState.conclusion === 'success') && cond.ciHeadSha === rawState.head_sha && cond.ciRunId === rawState.last_reported_run_id && cond.ciConclusion === rawState.conclusion,
+    'readConditions maps the monitor state fields correctly');
+  check(readConditions(path.join(monitorDir, 'missing.json')).ciPass === false, 'missing state file fails closed');
+} finally {
+  rmSync(monitorDir, { recursive: true, force: true });
+}
 
 // --- synthetic: validation rejects bad queues ---
 const base = (over) => [{ id: '0x01', title: 'a', status: 'pending', priority: 1, dependsOn: [], gates: [], ...(over || {}) }];
