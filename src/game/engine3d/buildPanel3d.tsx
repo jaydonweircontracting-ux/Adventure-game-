@@ -186,7 +186,7 @@ export function BuildPanel(props: BuildPanelProps) {
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
         <input type="file" multiple data-testid="import-hub-folder-input" ref={(el)=>{if(el)el.setAttribute('webkitdirectory','');}} onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
         {customAssets.length>0&&<div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
-          <button type="button" data-testid="import-hub-save" onClick={saveAssets} disabled={assetsSaving||customAssetsLoading} style={{flex:1,padding:'11px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:assetsSaving?'#526d42':'#315a3d',color:'#fff',fontWeight:700,fontSize:13,opacity:assetsSaving||customAssetsLoading?.65:1}}>{assetsSaving?'Saving models…':'💾 Save uploaded models'}</button>
+          <button type="button" data-testid="import-hub-save" onClick={saveAssets} disabled={assetsSaving||customAssetsLoading} style={{flex:1,padding:'11px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:assetsSaving?'#526d42':'#315a3d',color:'#fff',fontWeight:700,fontSize:13,opacity:(assetsSaving||customAssetsLoading)?0.65:1}}>{assetsSaving?'Saving models…':'💾 Save uploaded models'}</button>
         </div>}
         {/* BUILD 1045: real import progress — the bar's width is the
             bytes read out of the total (or files, when there are no
