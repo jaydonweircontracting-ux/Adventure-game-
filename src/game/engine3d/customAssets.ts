@@ -72,6 +72,7 @@ import type { IsoWorld, PlacedItem } from '../iso/isoWorld';
 import { validateBlockingRect } from './placements';
 import type { Rotation } from './placements';
 import { normalizePbrMaterial, type PbrMaterialInput, type RuntimePbrMaterial } from './materialRuntime';
+import { sampleAnimationSampler, type AnimationPath, type AnimationSamplerData } from './animationRuntime';
 
 /** BUILD 1048: rotate one local mesh point (x, z) `rot` quarter-turns
  *  clockwise, viewed from above (the 1036 convention — the same
@@ -251,11 +252,11 @@ const GLTF_MAGIC = 0x46546c67; // 'glTF' little-endian
 const JSON_CHUNK = 0x4e4f534a; // 'JSON'
 const BIN_CHUNK = 0x004e4942; // 'BIN\0'
 const COMP_SIZE: Record<number, number> = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
-const COMP_COUNT: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+const COMP_COUNT: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
 
 type GltfJson = {
   scenes?: Array<{ nodes?: number[] }>;
-  nodes?: Array<{ mesh?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; children?: number[] }>;
+  nodes?: Array<{ mesh?: number; skin?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; children?: number[] }>;
   meshes?: Array<{ primitives: Array<{ attributes: Record<string, number>; indices?: number; material?: number; mode?: number }> }>;
   materials?: Array<{
     name?: string;
@@ -277,6 +278,8 @@ type GltfJson = {
    *  never applied — see collectGltfDependencies. */
   images?: Array<{ uri?: string; bufferView?: number; mimeType?: string }>;
   textures?: Array<{ source?: number }>;
+  skins?: Array<{ joints: number[]; inverseBindMatrices?: number; skeleton?: number }>;
+  animations?: Array<{ name?: string; samplers: Array<{ input: number; output: number; interpolation?: 'STEP' | 'LINEAR' | 'CUBICSPLINE' }>; channels: Array<{ sampler: number; target: { node?: number; path?: string } }> }>;
 };
 
 function ascii4(view: DataView, off: number): string {
@@ -503,6 +506,7 @@ function buildAssetFromGltf(
   const uvSets: number[][] = [[], [], []];
   let hasExtraUvSets = false;
   const materialIndices: number[] = [];
+  const sourceVertices: Array<{ nodeIndex: number; position: [number, number, number]; skinIndex?: number; joints?: [number, number, number, number]; weights?: [number, number, number, number] }> = [];
   const materials = (json.materials || []).map((mat, i) => {
     const p = mat.pbrMetallicRoughness || {};
     const slot = (v?: { index: number; texCoord?: number; scale?: number; extensions?: { KHR_texture_transform?: { offset?: number[]; rotation?: number; scale?: number[]; texCoord?: number } } }) => {
@@ -571,10 +575,29 @@ function buildAssetFromGltf(
         return accessor.values;
       });
       const materialIndex = prim.material !== undefined && materials[prim.material] ? prim.material : -1;
+      const jointsAccessor = prim.attributes.JOINTS_0;
+      const weightsAccessor = prim.attributes.WEIGHTS_0;
+      let jointValues: number[] | null = null, weightValues: number[] | null = null;
+      if (jointsAccessor !== undefined && weightsAccessor !== undefined) {
+        const ja = readAccessor(json, bin, jointsAccessor), wa = readAccessor(json, bin, weightsAccessor);
+        if (typeof ja === 'string' || typeof wa === 'string' || ja.compCount !== 4 || wa.compCount !== 4 || ja.count !== pos.count || wa.count !== pos.count) {
+          return { ok: false, reason: 'JOINTS_0 and WEIGHTS_0 must be matching VEC4 skin attributes' };
+        }
+        jointValues = ja.values; weightValues = wa.values;
+      }
       const base = positions.length / 3;
       for (let i = 0; i < pos.count; i++) {
-        const [x, y, z] = xform(m, pos.values[i * 3], pos.values[i * 3 + 1], pos.values[i * 3 + 2]);
+        const rawPosition: [number, number, number] = [pos.values[i * 3], pos.values[i * 3 + 1], pos.values[i * 3 + 2]];
+        const [x, y, z] = xform(m, rawPosition[0], rawPosition[1], rawPosition[2]);
         positions.push(x, y, z);
+        sourceVertices.push({
+          nodeIndex: ni, position: rawPosition,
+          ...(node.skin !== undefined && jointValues && weightValues ? {
+            skinIndex: node.skin,
+            joints: [0, 1, 2, 3].map(k => jointValues![i * 4 + k]) as [number, number, number, number],
+            weights: [0, 1, 2, 3].map(k => weightValues![i * 4 + k]) as [number, number, number, number],
+          } : {}),
+        });
         uvs.push(uvVals ? uvVals[i * 2] : 0, uvVals ? uvVals[i * 2 + 1] : 0);
         for (let set = 0; set < uvSets.length; set++) {
           const values = extraUvValues[set];
@@ -606,7 +629,125 @@ function buildAssetFromGltf(
       }
     }
   }
-  return finishAsset(positions, colors, indices, fileName, format, { uvs, ...(hasExtraUvSets ? { uvSets } : {}), materials, materialIndices, textureImages });
+
+  // Bake glTF node/skin animation to the same compact position-frame format
+  // used by the FBX actor path. The source mesh is still retained in bind pose
+  // when no compatible skin/clip is present.
+  const identity: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const skins = json.skins || [];
+  const inverseBinds = skins.map(skin => {
+    if (skin.inverseBindMatrices === undefined) return skin.joints.map(() => identity);
+    const accessor = readAccessor(json, bin, skin.inverseBindMatrices);
+    if (typeof accessor === 'string' || accessor.compCount !== 16 || accessor.count !== skin.joints.length) return skin.joints.map(() => identity);
+    return skin.joints.map((_, i) => accessor.values.slice(i * 16, i * 16 + 16));
+  });
+  const parentNode = new Map<number, number>();
+  nodes.forEach((node, i) => { for (const child of node.children || []) parentNode.set(child, i); });
+  const preferredAnimation = (json.animations || []).find(animation => /walk|run|move/i.test(animation.name || ''))
+    || (json.animations || [])[0];
+  const channels: Array<{ node: number; path: AnimationPath; sampler: AnimationSamplerData }> = [];
+  let duration = 0, startTime = Infinity;
+  if (preferredAnimation) for (const channel of preferredAnimation.channels || []) {
+    const nodeIndex = channel.target?.node, path = channel.target?.path;
+    const sampler = preferredAnimation.samplers[channel.sampler];
+    if (nodeIndex === undefined || !nodes[nodeIndex] || !sampler || (path !== 'translation' && path !== 'rotation' && path !== 'scale')) continue;
+    const input = readAccessor(json, bin, sampler.input), output = readAccessor(json, bin, sampler.output);
+    if (typeof input === 'string' || typeof output === 'string' || input.compCount !== 1 || !input.count) continue;
+    const components = path === 'rotation' ? 4 : 3;
+    if (output.compCount !== components) continue;
+    const times = input.values;
+    if (times.some((time, i) => !Number.isFinite(time) || (i > 0 && time < times[i - 1]))) continue;
+    const data: AnimationSamplerData = { times, values: output.values, components, interpolation: sampler.interpolation || 'LINEAR' };
+    try {
+      // Validate channel shape before retaining it for per-frame sampling.
+      sampleAnimationSampler(data, times[0], path);
+      channels.push({ node: nodeIndex, path, sampler: data });
+      startTime = Math.min(startTime, times[0]);
+      duration = Math.max(duration, times[times.length - 1]);
+    } catch { /* malformed animation channel is ignored; static import remains valid */ }
+  }
+
+  if (Number.isFinite(startTime)) duration -= startTime;
+  const posePositions = (seconds: number): number[] => {
+    const animated = new Map<number, { translation?: number[]; rotation?: number[]; scale?: number[] }>();
+    for (const channel of channels) {
+      const value = sampleAnimationSampler(channel.sampler, seconds, channel.path).value;
+      const current = animated.get(channel.node) || {};
+      current[channel.path] = value;
+      animated.set(channel.node, current);
+    }
+    const world = new Map<number, Mat4>();
+    const worldOf = (index: number): Mat4 => {
+      const cached = world.get(index);
+      if (cached) return cached;
+      const node = nodes[index] || {};
+      const overrides = animated.get(index);
+      const local = overrides ? composeTRS({
+        ...node,
+        matrix: undefined,
+        translation: overrides.translation || node.translation,
+        rotation: overrides.rotation || node.rotation,
+        scale: overrides.scale || node.scale,
+      }) : composeTRS(node);
+      const parentIndex = parentNode.get(index);
+      const matrix = parentIndex === undefined ? local : mulMat(worldOf(parentIndex), local);
+      world.set(index, matrix);
+      return matrix;
+    };
+    for (let i = 0; i < nodes.length; i++) worldOf(i);
+    const out: number[] = [];
+    for (const source of sourceVertices) {
+      const skin = source.skinIndex === undefined ? undefined : skins[source.skinIndex];
+      const joints = source.joints, weights = source.weights;
+      if (skin && joints && weights && inverseBinds[source.skinIndex!]) {
+        const transformed: [number, number, number] = [0, 0, 0];
+        let total = 0;
+        for (let k = 0; k < 4; k++) {
+          const weight = weights[k], jointNode = skin.joints[joints[k]];
+          const inverseBind = inverseBinds[source.skinIndex!][joints[k]];
+          if (!(weight > 0) || jointNode === undefined || !inverseBind) continue;
+          const point = xform(mulMat(worldOf(jointNode), inverseBind), ...source.position);
+          transformed[0] += point[0] * weight;
+          transformed[1] += point[1] * weight;
+          transformed[2] += point[2] * weight;
+          total += weight;
+        }
+        if (total > 1e-8) {
+          out.push(transformed[0] / total, transformed[1] / total, transformed[2] / total);
+          continue;
+        }
+      }
+      const point = xform(worldOf(source.nodeIndex), ...source.position);
+      out.push(...point);
+    }
+    return out;
+  };
+
+  // Correct the static pose for skinning too; this is the bind-pose
+  // evaluation rather than a raw mesh transform.
+  if (sourceVertices.some(vertex => vertex.skinIndex !== undefined)) {
+    const bindPose = posePositions(Number.isFinite(startTime) ? startTime : 0);
+    for (let i = 0; i < bindPose.length; i++) positions[i] = bindPose[i];
+  }
+  let animationFrames: number[][] | undefined;
+  let animationFps = 8;
+  const skinned = sourceVertices.some(vertex => vertex.skinIndex !== undefined && vertex.joints && vertex.weights);
+  if (skinned && channels.length && duration > 0) {
+    const frameCap = Math.min(8, Math.floor(100000 / Math.max(1, positions.length)));
+    const frameCount = Math.min(frameCap, Math.max(2, Math.ceil(duration * 8)));
+    if (frameCount >= 2) {
+      animationFps = frameCount / duration;
+      animationFrames = [];
+    for (let frame = 0; frame < frameCount; frame++) {
+      const time = startTime + frame / frameCount * duration;
+      animationFrames.push(posePositions(time));
+      }
+    }
+  }
+  return finishAsset(positions, colors, indices, fileName, format, {
+    uvs, ...(hasExtraUvSets ? { uvSets } : {}), materials, materialIndices, textureImages,
+    ...(animationFrames ? { animationFrames, animationFps } : {}),
+  });
 }
 
 function decodeBase64DataUri(uri: string): Uint8Array | string {
