@@ -50,7 +50,7 @@ export class CustomActorTexturePass {
   // at draw time too, so users do not have to upload the pack again.
   private readonly uprightAxis = new Map<string, number>();
   private readonly verticalFloor = new Map<string, number>();
-  private readonly armPose = new Map<string, { height: number; shoulder: number; maxX: number }>();
+  private readonly armPose = new Map<string, { height: number; shoulder: number; spread: number; spreadAxis: number }>();
   private bounds(asset: CustomAsset) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < asset.positions.length; i += 3) {
