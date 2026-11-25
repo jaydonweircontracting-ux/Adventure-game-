@@ -1121,10 +1121,10 @@ export class WorldRenderer {
     );
     const preferredPeople=fbxPeople.filter(a=>/(unreal|unral|better[ _-]*export)/i.test(a.sourceFile||''));
     const peoplePool=(preferredPeople.length?preferredPeople:fbxPeople)
-      .filter(a=>!/\\b(king|queen)\\b/i.test((a.sourceFile||'')+' '+a.name));
+      .filter(a=>!/\b(king|queen)\b/i.test((a.sourceFile||'')+' '+a.name));
     // Use the peasant as the player's default body; deterministic name
     // selection gives residents and travelers a stable variety.
-    const playerPeople=peoplePool.find(a=>/peasant[ _-]*1\\b/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
+    const playerPeople=peoplePool.find(a=>/peasant[ _-]*1\b/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
     const personForNpc=(name:string)=>peoplePool.length?peoplePool[(Array.from(name).reduce((n,c)=>((n*33+c.charCodeAt(0))>>>0),5381))%peoplePool.length]:undefined;
     const useImportedPeople=peoplePool.length>0;
     for(const npc of npcActorsRef.current){
