@@ -428,7 +428,13 @@ export class WorldRenderer {
 
     let s=this.figureState.get(key);
     if(!s){s={px:x,pz:z,yaw:Math.PI,phase:0,lastMove:0};this.figureState.set(key,s);}
-    if(x!==s.px||z!==s.pz){s.yaw=Math.atan2(x-s.px,z-s.pz);s.lastMove=now;}
+    if(x!==s.px||z!==s.pz){
+      const targetYaw=Math.atan2(x-s.px,z-s.pz);
+      // Turn over time instead of snapping the whole body to a new
+      // heading on the first frame of a direction change.
+      s.yaw=turnYawToward(s.yaw,targetYaw,FIGURE_TURN_RATE*Math.min(0.1,Math.max(0,dtMs/1000)));
+      s.lastMove=now;
+    }
     s.px=x;s.pz=z;
     if(traveling){s.phase+=stepDist*PHASE_PER_UNIT;}
     else{s.phase=easePhaseToNeutral(s.phase,dtMs);}
