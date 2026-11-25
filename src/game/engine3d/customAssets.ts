@@ -646,7 +646,7 @@ function buildAssetFromGltf(
   const preferredAnimation = (json.animations || []).find(animation => /walk|run|move/i.test(animation.name || ''))
     || (json.animations || [])[0];
   const channels: Array<{ node: number; path: AnimationPath; sampler: AnimationSamplerData }> = [];
-  let duration = 0;
+  let duration = 0, startTime = Infinity;
   if (preferredAnimation) for (const channel of preferredAnimation.channels || []) {
     const nodeIndex = channel.target?.node, path = channel.target?.path;
     const sampler = preferredAnimation.samplers[channel.sampler];
@@ -662,10 +662,12 @@ function buildAssetFromGltf(
       // Validate channel shape before retaining it for per-frame sampling.
       sampleAnimationSampler(data, times[0], path);
       channels.push({ node: nodeIndex, path, sampler: data });
+      startTime = Math.min(startTime, times[0]);
       duration = Math.max(duration, times[times.length - 1]);
     } catch { /* malformed animation channel is ignored; static import remains valid */ }
   }
 
+  if (Number.isFinite(startTime)) duration -= startTime;
   const posePositions = (seconds: number): number[] => {
     const animated = new Map<number, { translation?: number[]; rotation?: number[]; scale?: number[] }>();
     for (const channel of channels) {
@@ -724,7 +726,7 @@ function buildAssetFromGltf(
   // Correct the static pose for skinning too; this is the bind-pose
   // evaluation rather than a raw mesh transform.
   if (sourceVertices.some(vertex => vertex.skinIndex !== undefined)) {
-    const bindPose = posePositions(0);
+    const bindPose = posePositions(Number.isFinite(startTime) ? startTime : 0);
     for (let i = 0; i < bindPose.length; i++) positions[i] = bindPose[i];
   }
   let animationFrames: number[][] | undefined;
@@ -737,7 +739,7 @@ function buildAssetFromGltf(
       animationFps = frameCount / duration;
       animationFrames = [];
     for (let frame = 0; frame < frameCount; frame++) {
-      const time = frame / frameCount * duration;
+      const time = startTime + frame / frameCount * duration;
       animationFrames.push(posePositions(time));
       }
     }
