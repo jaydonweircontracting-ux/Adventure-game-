@@ -49,6 +49,7 @@ export class CustomActorTexturePass {
   // correction. Detect their dominant vertical axis once and correct them
   // at draw time too, so users do not have to upload the pack again.
   private readonly uprightAxis = new Map<string, number>();
+  private readonly verticalFloor = new Map<string, number>();
   private readonly armPose = new Map<string, { height: number; shoulder: number; maxX: number }>();
   private bounds(asset: CustomAsset) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -66,7 +67,14 @@ export class CustomActorTexturePass {
     const extents = this.bounds(asset).extents;
     const axis = extents.indexOf(Math.max(...extents));
     this.uprightAxis.set(asset.id, axis);
+    // The source-space coordinate that becomes Y after the up-axis rotation.
+    const sourceVerticalAxis = axis === 2 ? 2 : axis === 0 ? 0 : 1;
+    this.verticalFloor.set(asset.id, this.bounds(asset).min[sourceVerticalAxis]);
     return axis;
+  }
+  private floorOffset(asset: CustomAsset): number {
+    this.verticalAxis(asset);
+    return this.verticalFloor.get(asset.id) ?? 0;
   }
   private armPoseFor(asset: CustomAsset) {
     const cached = this.armPose.get(asset.id);
@@ -166,6 +174,10 @@ export class CustomActorTexturePass {
       const frame = frames?.length ? frames[Math.min(frames.length - 1, Math.floor(cycle / (Math.PI * 2) * frames.length))] : undefined;
       const posePositions = frame ?? asset.positions;
       const vertexCount = posePositions.length / 3;
+      // Align the lowest point of this specific imported model with the
+      // terrain. This works for saved uploads whose FBX origin is not at
+      // the feet, instead of applying a guessed global lift.
+      const floorY = this.floorOffset(asset);
       const limit = Math.min(asset.indices.length, 90000);
       for (let i = 0; i + 2 < limit; i += 3) {
         const vi = asset.indices[i];
@@ -192,9 +204,16 @@ export class CustomActorTexturePass {
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
           const sourceUv: [number, number] = [uvData?.[uv] ?? 0, uvData?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;
-          batch.vertices.push(wx, actor.baseY + 0.18 + y, wz,
-            asset.colors[q] ?? asset.avgColor[0], asset.colors[q + 1] ?? asset.avgColor[1], asset.colors[q + 2] ?? asset.avgColor[2],
-            mappedUv[0], mappedUv[1]);
+          let cr = asset.colors[q] ?? asset.avgColor[0];
+          let cg = asset.colors[q + 1] ?? asset.avgColor[1];
+          let cb = asset.colors[q + 2] ?? asset.avgColor[2];
+          if (cr + cg + cb < 0.025) {
+            const base = material?.baseColor;
+            const fallback = base && base.slice(0, 3).some(value => value > 0.04) ? base : asset.avgColor;
+            cr = fallback[0]; cg = fallback[1]; cb = fallback[2];
+          }
+          batch.vertices.push(wx, actor.baseY + (y - this.floorOffset(asset)), wz,
+            cr, cg, cb, mappedUv[0], mappedUv[1]);
         }
       }
     }
