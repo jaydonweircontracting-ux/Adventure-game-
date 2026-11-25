@@ -102,7 +102,7 @@ export interface Diagnostics3D { verts: number; mapW: number; mapH: number; x: n
 // their phase to the nearest neutral (a multiple of 2π) instead
 // of freezing mid-stride. Yaw follows the movement vector:
 // forward = (sin yaw, cos yaw) in (x, z).
-type FigureState = { px: number; pz: number; yaw: number; phase: number; lastMove: number };
+type FigureState = { px: number; pz: number; yaw: number; phase: number; lastMove: number; dirX: number; dirZ: number };
 // BUILD 998: interpolated NPC render state + per-figure GPU slots
 // (see npcMotion.ts). Render positions are tile coords (floats)
 // gliding toward logical tiles; slot counts are constant per
@@ -427,12 +427,20 @@ export class WorldRenderer {
   figurePose(key: string, x: number, z: number, now: number, dtMs: number, traveling: boolean, stepDist: number): { yaw: number; phase: number } {
 
     let s=this.figureState.get(key);
-    if(!s){s={px:x,pz:z,yaw:Math.PI,phase:0,lastMove:0};this.figureState.set(key,s);}
-    if(x!==s.px||z!==s.pz){
-      const targetYaw=Math.atan2(x-s.px,z-s.pz);
-      // Turn over time instead of snapping the whole body to a new
-      // heading on the first frame of a direction change.
-      s.yaw=turnYawToward(s.yaw,targetYaw,FIGURE_TURN_RATE*Math.min(0.1,Math.max(0,dtMs/1000)));
+    if(!s){s={px:x,pz:z,yaw:Math.PI,phase:0,lastMove:0,dirX:0,dirZ:1};this.figureState.set(key,s);}
+    const dx=x-s.px, dz=z-s.pz, moved=Math.hypot(dx,dz);
+    // Ignore tiny positional corrections and smooth the travel vector before
+    // deriving facing, preventing rapid left/right yaw changes while walking.
+    if(moved>0.0015){
+      const nx=dx/moved, nz=dz/moved;
+      const blend=1-Math.exp(-Math.min(0.1,Math.max(0,dtMs/1000))*10);
+      s.dirX+=(nx-s.dirX)*blend;
+      s.dirZ+=(nz-s.dirZ)*blend;
+      const len=Math.hypot(s.dirX,s.dirZ);
+      if(len>0.0001){
+        const targetYaw=Math.atan2(s.dirX/len,s.dirZ/len);
+        s.yaw=turnYawToward(s.yaw,targetYaw,FIGURE_TURN_RATE*Math.min(0.1,Math.max(0,dtMs/1000)));
+      }
       s.lastMove=now;
     }
     s.px=x;s.pz=z;
