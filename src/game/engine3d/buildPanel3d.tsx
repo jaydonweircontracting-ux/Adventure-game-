@@ -185,9 +185,6 @@ export function BuildPanel(props: BuildPanelProps) {
         <input type="file" multiple accept=".glb,.gltf,.obj,.fbx,.zip,.bin" data-testid="import-hub-file-input" onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
         <label style={{display:'block',fontSize:12,opacity:.85,marginTop:10}}>Or choose a whole folder (desktop browsers that support it)</label>
         <input type="file" multiple data-testid="import-hub-folder-input" ref={(el)=>{if(el)el.setAttribute('webkitdirectory','');}} onChange={handleImportFiles} style={{display:'block',width:'100%',marginTop:6,padding:'10px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23',color:'#fff',fontSize:12,boxSizing:'border-box'}} />
-        {customAssets.length>0&&<div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
-          <button type="button" data-testid="import-hub-save" onClick={saveAssets} disabled={assetsSaving||customAssetsLoading} style={{flex:1,padding:'11px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:assetsSaving?'#526d42':'#315a3d',color:'#fff',fontWeight:700,fontSize:13,opacity:(assetsSaving||customAssetsLoading)?0.65:1}}>{assetsSaving?'Saving models…':'💾 Save uploaded models'}</button>
-        </div>}
         {/* BUILD 1045: real import progress — the bar's width is the
             bytes read out of the total (or files, when there are no
             bytes), advanced between awaited reads/parses. It only
@@ -373,6 +370,7 @@ export function BuildPanel(props: BuildPanelProps) {
             <button type="button" data-testid="import-handoff-export-all" onClick={()=>exportHandoff({kind:'all'})} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#526d42',color:'#fff',fontWeight:700,fontSize:13}}>⬇️ Export whole library ({customAssetsLoading?'…':customAssets.length})</button>
             <button type="button" data-testid="import-handoff-share" onClick={()=>void shareHandoff()} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:13}}>📤 Share checked…</button>
           </div>
+          <button type="button" data-testid="import-hub-save" onClick={saveAssets} disabled={assetsSaving||customAssetsLoading||customAssets.length===0} style={{display:'block',width:'100%',marginTop:8,padding:'11px 8px',borderRadius:9,border:'1px solid #c4d1bd',background:assetsSaving?'#526d42':'#315a3d',color:'#fff',fontWeight:700,fontSize:13,opacity:(assetsSaving||customAssetsLoading||customAssets.length===0)?0.65:1}}>{assetsSaving?'Saving models…':customAssetsLoading?'Loading model library…':customAssets.length===0?'💾 Save uploaded models (no models yet)':'💾 Save uploaded models ('+customAssets.length+')'}</button>
           <div style={{display:'flex',gap:6,marginTop:6}}>
             <button type="button" data-testid="import-handoff-check-all" onClick={()=>setHandoffCheckedBoth(customAssetsRef.current.map(a=>a.id))} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Check all</button>
             <button type="button" data-testid="import-handoff-clear" onClick={()=>setHandoffCheckedBoth([])} style={{padding:'7px 10px',borderRadius:8,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:12}}>Clear</button>
