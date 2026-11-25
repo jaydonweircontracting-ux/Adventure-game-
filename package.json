@@ -41,7 +41,8 @@
     "benchmark:world": "npx tsx scripts/benchmark-world.ts",
     "test:animation-runtime": "npx tsx tests/animation-runtime.test.ts",
     "test:material-runtime": "npx tsx tests/material-runtime.test.ts",
-    "test:custom-asset-materials": "npx tsx tests/custom-asset-materials.test.ts"
+    "test:custom-asset-materials": "npx tsx tests/custom-asset-materials.test.ts",
+    "test:gltf-skeletal-animation": "npx tsx tests/gltf-skeletal-animation.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
