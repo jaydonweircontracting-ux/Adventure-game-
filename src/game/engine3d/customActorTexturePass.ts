@@ -171,8 +171,16 @@ export class CustomActorTexturePass {
       const c = Math.cos(actor.yaw), sn = Math.sin(actor.yaw);
       const frames = asset.animationFrames;
       const cycle = ((actor.phase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-      const frame = frames?.length ? frames[Math.min(frames.length - 1, Math.floor(cycle / (Math.PI * 2) * frames.length))] : undefined;
-      const posePositions = frame ?? asset.positions;
+      // Blend between baked walk frames instead of snapping to one frame.
+      // Discrete frame selection made imported people visibly pop at each
+      // stride boundary, especially on a phone at variable frame rates.
+      const framePosition = frames?.length ? cycle / (Math.PI * 2) * frames.length : 0;
+      const frameIndex = frames?.length ? Math.floor(framePosition) % frames.length : 0;
+      const nextFrameIndex = frames?.length ? (frameIndex + 1) % frames.length : 0;
+      const frameA = frames?.length ? frames[frameIndex] : undefined;
+      const frameB = frames?.length ? frames[nextFrameIndex] : undefined;
+      const frameBlend = framePosition - Math.floor(framePosition);
+      const posePositions = frameA ?? asset.positions;
       const vertexCount = posePositions.length / 3;
       // Align the lowest point of this specific imported model with the
       // terrain. This works for saved uploads whose FBX origin is not at
@@ -196,7 +204,10 @@ export class CustomActorTexturePass {
           const index = asset.indices[i + corner];
           if (index < 0 || index >= vertexCount) continue;
           const p = index * 3, uv = index * 2, q = index * 3;
-          let x = posePositions[p], y = posePositions[p + 1], z = posePositions[p + 2];
+          const blendFrames = frameA && frameB && frameA.length === frameB.length;
+          let x = blendFrames ? frameA[p] + (frameB[p] - frameA[p]) * frameBlend : posePositions[p];
+          let y = blendFrames ? frameA[p + 1] + (frameB[p + 1] - frameA[p + 1]) * frameBlend : posePositions[p + 1];
+          let z = blendFrames ? frameA[p + 2] + (frameB[p + 2] - frameA[p + 2]) * frameBlend : posePositions[p + 2];
           const upAxis = this.verticalAxis(asset);
           if (upAxis === 2) { const oldY = y; y = z; z = -oldY; }
           else if (upAxis === 0) { const oldX = x; x = y; y = oldX; }
