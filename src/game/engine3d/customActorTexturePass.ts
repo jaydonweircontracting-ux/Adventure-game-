@@ -49,9 +49,8 @@ export class CustomActorTexturePass {
   // correction. Detect their dominant vertical axis once and correct them
   // at draw time too, so users do not have to upload the pack again.
   private readonly uprightAxis = new Map<string, number>();
-  private verticalAxis(asset: CustomAsset): number {
-    const cached = this.uprightAxis.get(asset.id);
-    if (cached !== undefined) return cached;
+  private readonly armPose = new Map<string, { height: number; shoulder: number; maxX: number }>();
+  private bounds(asset: CustomAsset) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < asset.positions.length; i += 3) {
       for (let axis = 0; axis < 3; axis++) {
@@ -59,10 +58,37 @@ export class CustomActorTexturePass {
         max[axis] = Math.max(max[axis], asset.positions[i + axis]);
       }
     }
-    const extents = max.map((value, axis) => value - min[axis]);
+    return { min, max, extents: max.map((value, axis) => value - min[axis]) };
+  }
+  private verticalAxis(asset: CustomAsset): number {
+    const cached = this.uprightAxis.get(asset.id);
+    if (cached !== undefined) return cached;
+    const extents = this.bounds(asset).extents;
     const axis = extents.indexOf(Math.max(...extents));
     this.uprightAxis.set(asset.id, axis);
     return axis;
+  }
+  private armPoseFor(asset: CustomAsset) {
+    const cached = this.armPose.get(asset.id);
+    if (cached) return cached;
+    const b = this.bounds(asset), axis = this.verticalAxis(asset);
+    const height = b.extents[axis];
+    // Standard humanoid T-pose arms extend along local X after conversion to Y-up.
+    const horizontalAxis = axis === 0 ? 1 : 0;
+    const maxX = b.extents[horizontalAxis];
+    const pose = { height, shoulder: maxX * 0.16, maxX };
+    this.armPose.set(asset.id, pose);
+    return pose;
+  }
+  private hangArms(asset: CustomAsset, x: number, y: number, z: number): [number, number, number] {
+    const pose = this.armPoseFor(asset);
+    if (pose.height <= 0 || pose.maxX < pose.height * 0.28) return [x, y, z];
+    if (y < pose.height * 0.48 || y > pose.height * 0.94 || Math.abs(x) <= pose.shoulder) return [x, y, z];
+    const side = x < 0 ? -1 : 1;
+    const pivotX = side * pose.shoulder, pivotY = pose.height * 0.78;
+    const angle = side > 0 ? -1.12 : 1.12;
+    const dx = x - pivotX, dy = y - pivotY, c = Math.cos(angle), sn = Math.sin(angle);
+    return [pivotX + dx * c - dy * sn, pivotY + dx * sn + dy * c, z];
   }
 
   constructor(gl: WebGLRenderingContext) {
@@ -162,10 +188,11 @@ export class CustomActorTexturePass {
           const upAxis = this.verticalAxis(asset);
           if (upAxis === 2) { const oldY = y; y = z; z = -oldY; }
           else if (upAxis === 0) { const oldX = x; x = y; y = oldX; }
+          [x, y, z] = this.hangArms(asset, x, y, z);
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
           const sourceUv: [number, number] = [uvData?.[uv] ?? 0, uvData?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;
-          batch.vertices.push(wx, actor.baseY + y, wz,
+          batch.vertices.push(wx, actor.baseY + 0.18 + y, wz,
             asset.colors[q] ?? asset.avgColor[0], asset.colors[q + 1] ?? asset.avgColor[1], asset.colors[q + 2] ?? asset.avgColor[2],
             mappedUv[0], mappedUv[1]);
         }
