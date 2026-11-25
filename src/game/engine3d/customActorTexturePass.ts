@@ -76,16 +76,6 @@ export class CustomActorTexturePass {
     this.verticalAxis(asset);
     return this.verticalFloor.get(asset.id) ?? 0;
   }
-  private floorOffset(asset: CustomAsset): number {
-    const axis = this.verticalAxis(asset);
-    let minY = Infinity;
-    for (let i = 0; i < asset.positions.length; i += 3) {
-      const x = asset.positions[i], y = asset.positions[i + 1], z = asset.positions[i + 2];
-      const uprightY = axis === 2 ? z : axis === 0 ? x : y;
-      minY = Math.min(minY, uprightY);
-    }
-    return Number.isFinite(minY) ? minY : 0;
-  }
   private armPoseFor(asset: CustomAsset) {
     const cached = this.armPose.get(asset.id);
     if (cached) return cached;
@@ -214,9 +204,16 @@ export class CustomActorTexturePass {
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
           const sourceUv: [number, number] = [uvData?.[uv] ?? 0, uvData?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;
+          let cr = asset.colors[q] ?? asset.avgColor[0];
+          let cg = asset.colors[q + 1] ?? asset.avgColor[1];
+          let cb = asset.colors[q + 2] ?? asset.avgColor[2];
+          if (cr + cg + cb < 0.025) {
+            const base = material?.baseColor;
+            const fallback = base && base.slice(0, 3).some(value => value > 0.04) ? base : asset.avgColor;
+            cr = fallback[0]; cg = fallback[1]; cb = fallback[2];
+          }
           batch.vertices.push(wx, actor.baseY + (y - this.floorOffset(asset)), wz,
-            asset.colors[q] ?? asset.avgColor[0], asset.colors[q + 1] ?? asset.avgColor[1], asset.colors[q + 2] ?? asset.avgColor[2],
-            mappedUv[0], mappedUv[1]);
+            cr, cg, cb, mappedUv[0], mappedUv[1]);
         }
       }
     }
