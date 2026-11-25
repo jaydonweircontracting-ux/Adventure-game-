@@ -50,7 +50,7 @@ export class CustomActorTexturePass {
   // at draw time too, so users do not have to upload the pack again.
   private readonly uprightAxis = new Map<string, number>();
   private readonly verticalFloor = new Map<string, number>();
-  private readonly armPose = new Map<string, { height: number; shoulder: number; maxX: number }>();
+  private readonly armPose = new Map<string, { height: number; shoulder: number; spread: number; spreadAxis: number }>();
   private bounds(asset: CustomAsset) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < asset.positions.length; i += 3) {
@@ -81,22 +81,31 @@ export class CustomActorTexturePass {
     if (cached) return cached;
     const b = this.bounds(asset), axis = this.verticalAxis(asset);
     const height = b.extents[axis];
-    // Standard humanoid T-pose arms extend along local X after conversion to Y-up.
+    // After the up-axis conversion, the arms may extend along either X
+    // or Z depending on the FBX author's forward-axis convention. Detect
+    // the wider horizontal axis instead of assuming every rig is X-wide.
     const horizontalAxis = axis === 0 ? 1 : 0;
-    const maxX = b.extents[horizontalAxis];
-    const pose = { height, shoulder: maxX * 0.16, maxX };
+    const depthAxis = axis === 2 ? 1 : 2;
+    const spreadAxis = b.extents[horizontalAxis] >= b.extents[depthAxis] ? 0 : 2;
+    const spread = Math.max(b.extents[horizontalAxis], b.extents[depthAxis]);
+    const pose = { height, shoulder: spread * 0.16, spread, spreadAxis };
     this.armPose.set(asset.id, pose);
     return pose;
   }
   private hangArms(asset: CustomAsset, x: number, y: number, z: number): [number, number, number] {
     const pose = this.armPoseFor(asset);
-    if (pose.height <= 0 || pose.maxX < pose.height * 0.28) return [x, y, z];
-    if (y < pose.height * 0.48 || y > pose.height * 0.94 || Math.abs(x) <= pose.shoulder) return [x, y, z];
-    const side = x < 0 ? -1 : 1;
-    const pivotX = side * pose.shoulder, pivotY = pose.height * 0.78;
-    const angle = side > 0 ? -1.12 : 1.12;
-    const dx = x - pivotX, dy = y - pivotY, c = Math.cos(angle), sn = Math.sin(angle);
-    return [pivotX + dx * c - dy * sn, pivotY + dx * sn + dy * c, z];
+    if (pose.height <= 0 || pose.spread < pose.height * 0.28) return [x, y, z];
+    const horizontal = pose.spreadAxis === 0 ? x : z;
+    if (y < pose.height * 0.48 || y > pose.height * 0.94 || Math.abs(horizontal) <= pose.shoulder) return [x, y, z];
+    const side = horizontal < 0 ? -1 : 1;
+    const pivot = side * pose.shoulder, pivotY = pose.height * 0.78;
+    // Bring a T-pose arm almost vertical while preserving the shoulder
+    // joint; apply the same signed rotation on either side.
+    const angle = side > 0 ? -1.48 : 1.48;
+    const dh = horizontal - pivot, dy = y - pivotY, c = Math.cos(angle), sn = Math.sin(angle);
+    const nextH = pivot + dh * c - dy * sn;
+    const nextY = pivotY + dh * sn + dy * c;
+    return pose.spreadAxis === 0 ? [nextH, nextY, z] : [x, nextY, nextH];
   }
 
   constructor(gl: WebGLRenderingContext) {
