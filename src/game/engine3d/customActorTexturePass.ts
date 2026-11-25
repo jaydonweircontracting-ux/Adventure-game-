@@ -47,9 +47,9 @@ export class CustomActorTexturePass {
   private readonly opacity: WebGLUniformLocation;
   private readonly alphaMode: WebGLUniformLocation;
   private readonly textures = new Map<string, { texture: WebGLTexture; ready: boolean }>();
-  // Older locally saved FBX uploads may predate the importer's up-axis
-  // correction. Detect their dominant vertical axis once and correct them
-  // at draw time too, so users do not have to upload the pack again.
+  // Imported assets are normalized to Y-up by finishAsset(). Keep this
+  // renderer-side contract explicit: inferring up from the longest extent
+  // fails for T-posed people because their arm span can exceed their height.
   private readonly uprightAxis = new Map<string, number>();
   private readonly verticalFloor = new Map<string, number>();
   private readonly armPose = new Map<string, { height: number; shoulder: number; spread: number; spreadAxis: number }>();
