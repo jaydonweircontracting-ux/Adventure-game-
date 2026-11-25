@@ -8,6 +8,8 @@ export interface TexturedActorInstance {
   yaw: number;
   baseY: number;
   phase: number;
+  /** Scale distance-derived phase for actors whose movement speed differs from NPC gait. */
+  phaseScale?: number;
 }
 
 type Batch = { vertices: number[]; textureUri: string | null; cutoff: number; alphaMode: 'OPAQUE' | 'MASK' | 'BLEND'; opacity: number };
@@ -45,9 +47,9 @@ export class CustomActorTexturePass {
   private readonly opacity: WebGLUniformLocation;
   private readonly alphaMode: WebGLUniformLocation;
   private readonly textures = new Map<string, { texture: WebGLTexture; ready: boolean }>();
-  // Older locally saved FBX uploads may predate the importer's up-axis
-  // correction. Detect their dominant vertical axis once and correct them
-  // at draw time too, so users do not have to upload the pack again.
+  // Imported assets are normalized to Y-up by finishAsset(). Keep this
+  // renderer-side contract explicit: inferring up from the longest extent
+  // fails for T-posed people because their arm span can exceed their height.
   private readonly uprightAxis = new Map<string, number>();
   private readonly verticalFloor = new Map<string, number>();
   private readonly armPose = new Map<string, { height: number; shoulder: number; spread: number; spreadAxis: number }>();
@@ -64,12 +66,14 @@ export class CustomActorTexturePass {
   private verticalAxis(asset: CustomAsset): number {
     const cached = this.uprightAxis.get(asset.id);
     if (cached !== undefined) return cached;
-    const extents = this.bounds(asset).extents;
-    const axis = extents.indexOf(Math.max(...extents));
+    // Every importer funnels through finishAsset(), which normalizes
+    // geometry to Y-up and places the feet at the minimum Y. Do not infer
+    // the up axis from the longest extent: a T-pose can make arm span
+    // wider than character height, causing an already-upright model to be
+    // rotated onto its side (the source of the face-down pose).
+    const axis = 1;
     this.uprightAxis.set(asset.id, axis);
-    // The source-space coordinate that becomes Y after the up-axis rotation.
-    const sourceVerticalAxis = axis === 2 ? 2 : axis === 0 ? 0 : 1;
-    this.verticalFloor.set(asset.id, this.bounds(asset).min[sourceVerticalAxis]);
+    this.verticalFloor.set(asset.id, this.bounds(asset).min[1]);
     return axis;
   }
   private floorOffset(asset: CustomAsset): number {
@@ -179,7 +183,8 @@ export class CustomActorTexturePass {
       const asset = actor.asset;
       const c = Math.cos(actor.yaw), sn = Math.sin(actor.yaw);
       const frames = asset.animationFrames;
-      const cycle = ((actor.phase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      const scaledPhase = actor.phase * (actor.phaseScale ?? 1);
+      const cycle = ((scaledPhase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
       // Blend between baked walk frames instead of snapping to one frame.
       // Discrete frame selection made imported people visibly pop at each
       // stride boundary, especially on a phone at variable frame rates.
