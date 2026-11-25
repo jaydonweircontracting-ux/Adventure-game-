@@ -1158,8 +1158,13 @@ export class WorldRenderer {
     // BUILD 1034: transients stand on the heightfield (the pre
     // array is emitted here, so the base y goes into emitVillager).
     const tBaseY=surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5);
-    emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,tBaseY);
-    emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre,tBaseY);
+    // Imported people replace the procedural transient figure too.
+    // Keep the slot empty for this actor; the textured actor pass below
+    // draws the selected FBX at the same interpolated pose.
+    if(!personForNpc(t.name)){
+      emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,tBaseY);
+      emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre,tBaseY);
+    }
     }
     // BUILD 1057: founder figures ride the same glide/yaw/phase/slot
     // machinery as residents and transients: logical tiles come from
@@ -1182,7 +1187,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!personForNpc(f.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     // BUILD 1101 (0x24, Phase 4.3): the founding party rides the same
     // glide/yaw/phase/slot machinery as the founders: logical tiles
@@ -1205,7 +1210,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(m.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!personForNpc(m.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(m.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     }
     // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
@@ -1270,6 +1275,31 @@ export class WorldRenderer {
       for (const npc of npcActorsRef.current) {
         if (npc.looted || !npc.alive) continue;
         const asset = personForNpc(npc.name), st = npcRender.get(npc.name);
+        if (asset && st) instances.push({
+          asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
+          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5), phase: st.phase,
+        });
+      }
+      // The same imported-person mapping applies to travelers,
+      // settlement founders, and the initial founding party. These
+      // actor groups used to keep drawing their procedural block meshes
+      // even while residents and the player used imported FBX models.
+      for (const actor of transientActorsRef.current) {
+        const asset = personForNpc(actor.name), st = npcRender.get(actor.id);
+        if (asset && st) instances.push({
+          asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
+          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5), phase: st.phase,
+        });
+      }
+      for (const actor of foundersRef.current) {
+        const asset = personForNpc(actor.name), st = npcRender.get('founder:' + actor.name);
+        if (asset && st) instances.push({
+          asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
+          baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5), phase: st.phase,
+        });
+      }
+      if (foundingRef.current) for (const actor of foundingRef.current.party) {
+        const asset = personForNpc(actor.name), st = npcRender.get('founding:' + actor.name);
         if (asset && st) instances.push({
           asset, x: st.x + .5, z: st.y + .5, yaw: st.yaw,
           baseY: surfaceElevation(effTerrainDraw, st.x + .5, st.y + .5), phase: st.phase,

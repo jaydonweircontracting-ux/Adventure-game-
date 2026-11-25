@@ -1175,6 +1175,31 @@ export async function parseFbxUpload(
       }
     }
 
+    // FBX/Unreal exports commonly store scene coordinates in centimetres,
+    // while Adventure's placement system uses one world unit per tile.
+    // Convert centimetre-scale exports to metres, then uniformly fit any
+    // remaining oversized scene inside the 8-tile placement envelope.
+    // Apply the exact same factor to every baked animation frame so actors
+    // keep their proportions and animation alignment.
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      minX = Math.min(minX, positions[i]); maxX = Math.max(maxX, positions[i]);
+      minZ = Math.min(minZ, positions[i + 2]); maxZ = Math.max(maxZ, positions[i + 2]);
+    }
+    const rawExtent = Math.max(maxX - minX, maxZ - minZ);
+    const unitScale = rawExtent > 20 ? 0.01 : 1;
+    const metricExtent = rawExtent * unitScale;
+    const fitScale = metricExtent > 8 ? 8 / metricExtent : 1;
+    const importScale = unitScale * fitScale;
+    if (importScale !== 1) {
+      for (let i = 0; i < positions.length; i++) positions[i] *= importScale;
+      if (animationFrames) {
+        for (const frame of animationFrames) {
+          for (let i = 0; i < frame.length; i++) frame[i] *= importScale;
+        }
+      }
+    }
+
     return finishAsset(positions, colors, indices, fileName, 'fbx', {
       uvs, materials, materialIndices, textureImages, animationFrames, animationFps,
     });
