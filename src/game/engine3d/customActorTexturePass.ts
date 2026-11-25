@@ -8,6 +8,8 @@ export interface TexturedActorInstance {
   yaw: number;
   baseY: number;
   phase: number;
+  /** Match imported player gait cadence to the slower NPC walk cycle. */
+  phaseScale?: number;
 }
 
 type Batch = { vertices: number[]; textureUri: string | null; cutoff: number; alphaMode: 'OPAQUE' | 'MASK' | 'BLEND'; opacity: number };
@@ -181,7 +183,8 @@ export class CustomActorTexturePass {
       const asset = actor.asset;
       const c = Math.cos(actor.yaw), sn = Math.sin(actor.yaw);
       const frames = asset.animationFrames;
-      const cycle = ((actor.phase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      const scaledPhase = actor.phase * (actor.phaseScale ?? 1);
+      const cycle = ((scaledPhase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
       // Blend between baked walk frames instead of snapping to one frame.
       // Discrete frame selection made imported people visibly pop at each
       // stride boundary, especially on a phone at variable frame rates.

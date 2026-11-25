@@ -18,7 +18,7 @@
 // (isAreaSelectDragging / isAreaMoveDragging).
 
 import { type IsoWorld, type HutRect } from '../iso/isoWorld';
-import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
+import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, NPC_SPEED, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import { SKY_TOP, SKY_HORIZON, FIRST_PERSON_EYE, ZOOM_MIN, VIEW_FAR_PLANE } from './townLook';
 import { applyZoomDelta } from './firstPerson';
@@ -1324,6 +1324,10 @@ export class WorldRenderer {
         instances.push({
           asset: playerPeople, x: player.x + .5, z: player.y + .5,
           yaw: playerModelPose.yaw, baseY: playerBaseY, phase: playerModelPose.phase,
+          // The player covers ground faster than NPCs. Scale only the
+          // imported animation phase so the stride cadence matches NPCs;
+          // movement speed, pathing, turning, and position stay unchanged.
+          phaseScale: NPC_SPEED / WALK_SPEED,
         });
       }
       this.customTexturePass.draw(instances, mat, nightFactor, skyGrad.warm);
