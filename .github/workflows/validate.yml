@@ -48,6 +48,8 @@ jobs:
         run: npm run test:custom-asset-materials
       - name: glTF skeletal animation baking regression test
         run: npm run test:gltf-skeletal-animation
+      - name: Flat water and foam surface regression test
+        run: npm run test:water-surface
       - name: Isometric direction regression test
         run: npm run test:iso-directions
       - name: Isometric tile asset integrity regression test
