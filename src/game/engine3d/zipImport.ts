@@ -10,7 +10,9 @@
 //   the platform DecompressionStream ('deflate-raw'); on a browser
 //   too old to have it, deflated entries fail with a clear message
 //   while stored entries still work.
-// - .glb, .gltf, and .obj entries; a .gltf with an external .bin
+// - .glb, .gltf, .obj, and .fbx entries; FBX companion images are
+//   resolved from the same ZIP and are not reported as skipped files.
+//   A .gltf with an external .bin
 //   works when the .bin is in the same ZIP (matched by file name,
 //   then basename).
 // - CRC32 is verified per entry; a mismatch fails that entry only.
@@ -315,8 +317,8 @@ export async function parseZipUpload(buf: ArrayBuffer): Promise<ZipImportResult>
             }));
         }
       } catch { /* the manifest is informational only */ }
-    } else if (!lower.endsWith('.bin')) {
-      result.skipped.push({ name: e.name, reason: 'not a model file (.glb, .gltf, .obj, or .fbx)' });
+    } else if (!lower.endsWith('.bin') && !/\\.(png|jpe?g|webp|bmp|gif|tga)$/i.test(base)) {
+      result.skipped.push({ name: e.name, reason: 'not a model file or supported texture dependency (.glb, .gltf, .obj, .fbx, PNG, JPG, WEBP, BMP, GIF, TGA)' });
     }
   }
   if (manifestRows) {
