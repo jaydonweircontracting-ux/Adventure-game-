@@ -725,18 +725,21 @@ function buildAssetFromGltf(
   // evaluation rather than a raw mesh transform.
   if (sourceVertices.some(vertex => vertex.skinIndex !== undefined)) {
     const bindPose = posePositions(0);
-    positions.splice(0, positions.length, ...bindPose);
+    for (let i = 0; i < bindPose.length; i++) positions[i] = bindPose[i];
   }
   let animationFrames: number[][] | undefined;
   let animationFps = 8;
   const skinned = sourceVertices.some(vertex => vertex.skinIndex !== undefined && vertex.joints && vertex.weights);
   if (skinned && channels.length && duration > 0) {
-    const frameCount = Math.max(2, Math.min(8, Math.ceil(duration * 8)));
-    animationFps = frameCount / duration;
-    animationFrames = [];
+    const frameCap = Math.min(8, Math.floor(100000 / Math.max(1, positions.length)));
+    const frameCount = Math.min(frameCap, Math.max(2, Math.ceil(duration * 8)));
+    if (frameCount >= 2) {
+      animationFps = frameCount / duration;
+      animationFrames = [];
     for (let frame = 0; frame < frameCount; frame++) {
       const time = frame / frameCount * duration;
       animationFrames.push(posePositions(time));
+      }
     }
   }
   return finishAsset(positions, colors, indices, fileName, format, {
