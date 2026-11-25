@@ -1175,13 +1175,44 @@ export async function parseFbxUpload(
       }
     }
 
-    // Three.js FBXLoader applies the FBX scene's declared axis conversion
-    // while building the scene graph. Preserve those transformed coordinates.
-    // Do NOT guess the character's up axis from its largest bounding-box
-    // dimension: a T-pose has a wide arm span that can exceed body height,
-    // so the old heuristic rotated otherwise upright characters onto
-    // their sides. finishAsset() below only recentres X/Z and puts feet at Y=0.
-    
+    // FBX packs do not all use the same up axis. The FBX loader applies
+    // node transforms, but some exports still arrive with their character
+    // height along X or Z. Detect the dominant model axis and rotate the
+    // geometry upright before measuring/scaling it. Apply the identical
+    // transform to every baked animation frame so the walk cycle stays
+    // attached to the standing mesh.
+    let axisMin = [Infinity, Infinity, Infinity];
+    let axisMax = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < positions.length; i += 3) {
+      for (let axis = 0; axis < 3; axis++) {
+        axisMin[axis] = Math.min(axisMin[axis], positions[i + axis]);
+        axisMax[axis] = Math.max(axisMax[axis], positions[i + axis]);
+      }
+    }
+    const axisExtent = axisMax.map((value, axis) => value - axisMin[axis]);
+    const verticalAxis = axisExtent.indexOf(Math.max(...axisExtent));
+    const orientUpright = (vertices: number[]) => {
+      if (verticalAxis === 2) {
+        // Z-up -> Y-up; keep the original X axis and rotate depth down.
+        for (let i = 0; i < vertices.length; i += 3) {
+          const y = vertices[i + 1], z = vertices[i + 2];
+          vertices[i + 1] = z;
+          vertices[i + 2] = -y;
+        }
+      } else if (verticalAxis === 0) {
+        // X-up -> Y-up.
+        for (let i = 0; i < vertices.length; i += 3) {
+          const x = vertices[i], y = vertices[i + 1];
+          vertices[i] = y;
+          vertices[i + 1] = x;
+        }
+      }
+    };
+    if (verticalAxis !== 1) {
+      orientUpright(positions);
+      if (animationFrames) for (const frame of animationFrames) orientUpright(frame);
+    }
+
     // FBX/Unreal exports commonly store scene coordinates in centimetres,
     // while Adventure's placement system uses one world unit per tile.
     // Convert centimetre-scale exports to metres, then uniformly fit any
