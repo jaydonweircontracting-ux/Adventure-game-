@@ -383,9 +383,23 @@ export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | nu
     const x0 = px[tri.i0] * scale + offX, y0 = py[tri.i0] * scale + offY;
     const x1 = px[tri.i1] * scale + offX, y1 = py[tri.i1] * scale + offY;
     const x2 = px[tri.i2] * scale + offX, y2 = py[tri.i2] * scale + offY;
-    const r = Math.round(((a.colors[tri.i0 * 3] + a.colors[tri.i1 * 3] + a.colors[tri.i2 * 3]) / 3) * 255);
-    const g = Math.round(((a.colors[tri.i0 * 3 + 1] + a.colors[tri.i1 * 3 + 1] + a.colors[tri.i2 * 3 + 1]) / 3) * 255);
-    const b = Math.round(((a.colors[tri.i0 * 3 + 2] + a.colors[tri.i1 * 3 + 2] + a.colors[tri.i2 * 3 + 2]) / 3) * 255);
+    // FBX imports retain a material table + per-vertex material slots.
+    // The world renderer can use those slots, but the original thumbnail
+    // path only sampled vertex colours. Some FBX exports carry an all-black
+    // vertex-colour attribute even when their assigned material is coloured;
+    // use that triangle's material colour as a safe fallback in that case.
+    const vertexR = (a.colors[tri.i0 * 3] + a.colors[tri.i1 * 3] + a.colors[tri.i2 * 3]) / 3;
+    const vertexG = (a.colors[tri.i0 * 3 + 1] + a.colors[tri.i1 * 3 + 1] + a.colors[tri.i2 * 3 + 1]) / 3;
+    const vertexB = (a.colors[tri.i0 * 3 + 2] + a.colors[tri.i1 * 3 + 2] + a.colors[tri.i2 * 3 + 2]) / 3;
+    const slot = a.materialIndices?.[tri.i0] ?? a.materialIndices?.[tri.i1] ?? a.materialIndices?.[tri.i2];
+    const material = slot === undefined ? undefined : a.materials?.[slot];
+    const materialColor = material?.baseColor;
+    const useMaterialFallback = !!materialColor &&
+      vertexR < 0.015 && vertexG < 0.015 && vertexB < 0.015 &&
+      (materialColor[0] > 0.03 || materialColor[1] > 0.03 || materialColor[2] > 0.03);
+    const r = Math.round((useMaterialFallback ? materialColor![0] : vertexR) * 255);
+    const g = Math.round((useMaterialFallback ? materialColor![1] : vertexG) * 255);
+    const b = Math.round((useMaterialFallback ? materialColor![2] : vertexB) * 255);
     // Barycentric fill over the triangle's pixel bounding box.
     const minPx = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
     const maxPx = Math.min(size - 1, Math.ceil(Math.max(x0, x1, x2)));
