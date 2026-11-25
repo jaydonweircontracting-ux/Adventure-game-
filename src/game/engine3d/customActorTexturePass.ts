@@ -45,6 +45,25 @@ export class CustomActorTexturePass {
   private readonly opacity: WebGLUniformLocation;
   private readonly alphaMode: WebGLUniformLocation;
   private readonly textures = new Map<string, { texture: WebGLTexture; ready: boolean }>();
+  // Older locally saved FBX uploads may predate the importer's up-axis
+  // correction. Detect their dominant vertical axis once and correct them
+  // at draw time too, so users do not have to upload the pack again.
+  private readonly uprightAxis = new Map<string, number>();
+  private verticalAxis(asset: CustomAsset): number {
+    const cached = this.uprightAxis.get(asset.id);
+    if (cached !== undefined) return cached;
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < asset.positions.length; i += 3) {
+      for (let axis = 0; axis < 3; axis++) {
+        min[axis] = Math.min(min[axis], asset.positions[i + axis]);
+        max[axis] = Math.max(max[axis], asset.positions[i + axis]);
+      }
+    }
+    const extents = max.map((value, axis) => value - min[axis]);
+    const axis = extents.indexOf(Math.max(...extents));
+    this.uprightAxis.set(asset.id, axis);
+    return axis;
+  }
 
   constructor(gl: WebGLRenderingContext) {
     this.gl = gl;
@@ -139,7 +158,10 @@ export class CustomActorTexturePass {
           const index = asset.indices[i + corner];
           if (index < 0 || index >= vertexCount) continue;
           const p = index * 3, uv = index * 2, q = index * 3;
-          const x = posePositions[p], y = posePositions[p + 1], z = posePositions[p + 2];
+          let x = posePositions[p], y = posePositions[p + 1], z = posePositions[p + 2];
+          const upAxis = this.verticalAxis(asset);
+          if (upAxis === 2) { const oldY = y; y = z; z = -oldY; }
+          else if (upAxis === 0) { const oldX = x; x = y; y = oldX; }
           const wx = actor.x + x * c + z * sn, wz = actor.z - x * sn + z * c;
           const sourceUv: [number, number] = [uvData?.[uv] ?? 0, uvData?.[uv + 1] ?? 0];
           const mappedUv = slot?.transform ? transformTextureUv(sourceUv, slot.transform) : sourceUv;

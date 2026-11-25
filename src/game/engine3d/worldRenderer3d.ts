@@ -1109,15 +1109,24 @@ export class WorldRenderer {
     drawn++;
     };
     const nowMs=performance.now();
-    // Uploaded medieval FBX people become real actor meshes once they are in
-    // the shared asset library. Prefer the better-export variants; keep the
-    // royalty models out of the ordinary resident pool. Until a pack is
-    // imported, the established procedural figures remain the fallback.
-    const fbxPeople=customAssetsRef.current.filter(a=>a.format==='fbx'&&(/people_unity|unral_better_export/i.test(a.sourceFile||'')||/^(peasant|city_dwellers|rich_citizzens|rich_citizens|king|queen)/i.test(a.name)));
-    const preferredPeople=fbxPeople.filter(a=>/unral_better_export/i.test(a.sourceFile||''));
-    const peoplePool=(preferredPeople.length?preferredPeople:fbxPeople).filter(a=>!/king|queen/i.test((a.sourceFile||'')+' '+a.name));
-    const playerPeople=peoplePool.find(a=>/peasant_1/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
+    // BUILD 1122: the imported medieval people pack is the primary human
+    // renderer. Match the individual FBX entry by its model name OR ZIP
+    // source path (some ZIP import paths retain the pack folder while
+    // others retain only the FBX filename). Prefer the Unreal export when
+    // both export variants were imported; never classify unrelated FBX
+    // buildings/props as people.
+    const personAssetPattern=/(peasant|city[ _-]*dwellers?|rich[ _-]*cit[i]?z[sz]ens?|king|queen|villager|medieval[ _-]*people)/i;
+    const fbxPeople=customAssetsRef.current.filter(a=>
+      a.format==='fbx'&&personAssetPattern.test((a.sourceFile||'')+' '+a.name)
+    );
+    const preferredPeople=fbxPeople.filter(a=>/(unreal|unral|better[ _-]*export)/i.test(a.sourceFile||''));
+    const peoplePool=(preferredPeople.length?preferredPeople:fbxPeople)
+      .filter(a=>!/\b(king|queen)\b/i.test((a.sourceFile||'')+' '+a.name));
+    // Use the peasant as the player's default body; deterministic name
+    // selection gives residents and travelers a stable variety.
+    const playerPeople=peoplePool.find(a=>/peasant[ _-]*1\b/i.test((a.sourceFile||'')+' '+a.name))||peoplePool[0];
     const personForNpc=(name:string)=>peoplePool.length?peoplePool[(Array.from(name).reduce((n,c)=>((n*33+c.charCodeAt(0))>>>0),5381))%peoplePool.length]:undefined;
+    const useImportedPeople=peoplePool.length>0;
     for(const npc of npcActorsRef.current){
     if(npc.looted||!npc.alive)continue;
     const slot=slotByName.get(npc.name);if(slot===undefined)continue;
@@ -1131,7 +1140,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    if(!personForNpc(npc.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!useImportedPeople)emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child',st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     // BUILD 1000: transient figures (travelers + adventurers) ride
     // the same glide/yaw/phase/slot machinery as residents: logical
@@ -1161,7 +1170,7 @@ export class WorldRenderer {
     // Imported people replace the procedural transient figure too.
     // Keep the slot empty for this actor; the textured actor pass below
     // draws the selected FBX at the same interpolated pose.
-    if(!personForNpc(t.name)){
+    if(!useImportedPeople){
       emitVillager(pre,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,tBaseY);
       emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(t.name),false,st.x,st.y,pre,tBaseY);
     }
@@ -1187,7 +1196,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    if(!personForNpc(f.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!useImportedPeople)emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(f.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     // BUILD 1101 (0x24, Phase 4.3): the founding party rides the same
     // glide/yaw/phase/slot machinery as the founders: logical tiles
@@ -1210,7 +1219,7 @@ export class WorldRenderer {
     if(moved){yaw=turnYawToward(st.yaw,Math.atan2(step.pos.x-st.x,step.pos.y-st.y),FIGURE_TURN_RATE*dtNpc);}
     const phase=moved?phaseForDistance(st.phase,step.dist):easePhaseToNeutral(st.phase,dtNpc*1000);
     st.x=step.pos.x;st.y=step.pos.y;st.yaw=yaw;st.phase=phase;
-    if(!personForNpc(m.name))emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(m.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
+    if(!useImportedPeople)emitFigureSlot(slot,st.x+.5,st.y+.5,yaw,phase,villagerSpecFor(m.name),false,st.x,st.y,undefined,surfaceElevation(effTerrainDraw,st.x+.5,st.y+.5));
     }
     }
     // BUILD 1013: wild animals ride the same glide/yaw/phase/slot
