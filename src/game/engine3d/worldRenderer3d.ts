@@ -18,7 +18,7 @@
 // (isAreaSelectDragging / isAreaMoveDragging).
 
 import { type IsoWorld, type HutRect } from '../iso/isoWorld';
-import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, NPC_SPEED, type VillagerSpec } from './villagers';
+import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, type VillagerSpec } from './villagers';
 import { advanceRenderPos, needsRenderSnap, turnYawToward, easePhaseToNeutral, phaseForDistance, figureSlotLayout, poseKeyEquals, FIGURE_TURN_RATE, type FigurePoseKey } from './npcMotion';
 import { SKY_TOP, SKY_HORIZON, FIRST_PERSON_EYE, ZOOM_MIN, VIEW_FAR_PLANE } from './townLook';
 import { applyZoomDelta } from './firstPerson';
@@ -1324,11 +1324,6 @@ export class WorldRenderer {
         instances.push({
           asset: playerPeople, x: player.x + .5, z: player.y + .5,
           yaw: playerModelPose.yaw, baseY: playerBaseY, phase: playerModelPose.phase,
-          // Player movement is much faster than the NPC glide speed. The
-          // same distance-based phase therefore cycles too quickly on the
-          // player and reads as a waddle. Match the NPC gait cadence while
-          // retaining the player's faster world movement.
-          phaseScale: NPC_SPEED / WALK_SPEED,
         });
       }
       this.customTexturePass.draw(instances, mat, nightFactor, skyGrad.warm);

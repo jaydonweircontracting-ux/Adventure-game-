@@ -8,8 +8,6 @@ export interface TexturedActorInstance {
   yaw: number;
   baseY: number;
   phase: number;
-  /** Scale distance-derived phase for actors whose movement speed differs from NPC gait. */
-  phaseScale?: number;
 }
 
 type Batch = { vertices: number[]; textureUri: string | null; cutoff: number; alphaMode: 'OPAQUE' | 'MASK' | 'BLEND'; opacity: number };
@@ -47,12 +45,12 @@ export class CustomActorTexturePass {
   private readonly opacity: WebGLUniformLocation;
   private readonly alphaMode: WebGLUniformLocation;
   private readonly textures = new Map<string, { texture: WebGLTexture; ready: boolean }>();
-  // Imported assets are normalized to Y-up by finishAsset(). Keep this
-  // renderer-side contract explicit: inferring up from the longest extent
-  // fails for T-posed people because their arm span can exceed their height.
+  // Older locally saved FBX uploads may predate the importer's up-axis
+  // correction. Detect their dominant vertical axis once and correct them
+  // at draw time too, so users do not have to upload the pack again.
   private readonly uprightAxis = new Map<string, number>();
   private readonly verticalFloor = new Map<string, number>();
-  private readonly armPose = new Map<string, { height: number; shoulder: number; spread: number; spreadAxis: number }>();
+  private readonly armPose = new Map<string, { height: number; shoulder: number; maxX: number }>();
   private bounds(asset: CustomAsset) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < asset.positions.length; i += 3) {
@@ -66,14 +64,12 @@ export class CustomActorTexturePass {
   private verticalAxis(asset: CustomAsset): number {
     const cached = this.uprightAxis.get(asset.id);
     if (cached !== undefined) return cached;
-    // Every importer funnels through finishAsset(), which normalizes
-    // geometry to Y-up and places the feet at the minimum Y. Do not infer
-    // the up axis from the longest extent: a T-pose can make arm span
-    // wider than character height, causing an already-upright model to be
-    // rotated onto its side (the source of the face-down pose).
-    const axis = 1;
+    const extents = this.bounds(asset).extents;
+    const axis = extents.indexOf(Math.max(...extents));
     this.uprightAxis.set(asset.id, axis);
-    this.verticalFloor.set(asset.id, this.bounds(asset).min[1]);
+    // The source-space coordinate that becomes Y after the up-axis rotation.
+    const sourceVerticalAxis = axis === 2 ? 2 : axis === 0 ? 0 : 1;
+    this.verticalFloor.set(asset.id, this.bounds(asset).min[sourceVerticalAxis]);
     return axis;
   }
   private floorOffset(asset: CustomAsset): number {
@@ -85,31 +81,22 @@ export class CustomActorTexturePass {
     if (cached) return cached;
     const b = this.bounds(asset), axis = this.verticalAxis(asset);
     const height = b.extents[axis];
-    // After the up-axis conversion, the arms may extend along either X
-    // or Z depending on the FBX author's forward-axis convention. Detect
-    // the wider horizontal axis instead of assuming every rig is X-wide.
+    // Standard humanoid T-pose arms extend along local X after conversion to Y-up.
     const horizontalAxis = axis === 0 ? 1 : 0;
-    const depthAxis = axis === 2 ? 1 : 2;
-    const spreadAxis = b.extents[horizontalAxis] >= b.extents[depthAxis] ? 0 : 2;
-    const spread = Math.max(b.extents[horizontalAxis], b.extents[depthAxis]);
-    const pose = { height, shoulder: spread * 0.16, spread, spreadAxis };
+    const maxX = b.extents[horizontalAxis];
+    const pose = { height, shoulder: maxX * 0.16, maxX };
     this.armPose.set(asset.id, pose);
     return pose;
   }
   private hangArms(asset: CustomAsset, x: number, y: number, z: number): [number, number, number] {
     const pose = this.armPoseFor(asset);
-    if (pose.height <= 0 || pose.spread < pose.height * 0.28) return [x, y, z];
-    const horizontal = pose.spreadAxis === 0 ? x : z;
-    if (y < pose.height * 0.48 || y > pose.height * 0.94 || Math.abs(horizontal) <= pose.shoulder) return [x, y, z];
-    const side = horizontal < 0 ? -1 : 1;
-    const pivot = side * pose.shoulder, pivotY = pose.height * 0.78;
-    // Bring a T-pose arm almost vertical while preserving the shoulder
-    // joint; apply the same signed rotation on either side.
-    const angle = side > 0 ? -1.48 : 1.48;
-    const dh = horizontal - pivot, dy = y - pivotY, c = Math.cos(angle), sn = Math.sin(angle);
-    const nextH = pivot + dh * c - dy * sn;
-    const nextY = pivotY + dh * sn + dy * c;
-    return pose.spreadAxis === 0 ? [nextH, nextY, z] : [x, nextY, nextH];
+    if (pose.height <= 0 || pose.maxX < pose.height * 0.28) return [x, y, z];
+    if (y < pose.height * 0.48 || y > pose.height * 0.94 || Math.abs(x) <= pose.shoulder) return [x, y, z];
+    const side = x < 0 ? -1 : 1;
+    const pivotX = side * pose.shoulder, pivotY = pose.height * 0.78;
+    const angle = side > 0 ? -1.12 : 1.12;
+    const dx = x - pivotX, dy = y - pivotY, c = Math.cos(angle), sn = Math.sin(angle);
+    return [pivotX + dx * c - dy * sn, pivotY + dx * sn + dy * c, z];
   }
 
   constructor(gl: WebGLRenderingContext) {
@@ -183,8 +170,7 @@ export class CustomActorTexturePass {
       const asset = actor.asset;
       const c = Math.cos(actor.yaw), sn = Math.sin(actor.yaw);
       const frames = asset.animationFrames;
-      const scaledPhase = actor.phase * (actor.phaseScale ?? 1);
-      const cycle = ((scaledPhase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      const cycle = ((actor.phase % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
       // Blend between baked walk frames instead of snapping to one frame.
       // Discrete frame selection made imported people visibly pop at each
       // stride boundary, especially on a phone at variable frame rates.
