@@ -76,6 +76,16 @@ export class CustomActorTexturePass {
     this.verticalAxis(asset);
     return this.verticalFloor.get(asset.id) ?? 0;
   }
+  private floorOffset(asset: CustomAsset): number {
+    const axis = this.verticalAxis(asset);
+    let minY = Infinity;
+    for (let i = 0; i < asset.positions.length; i += 3) {
+      const x = asset.positions[i], y = asset.positions[i + 1], z = asset.positions[i + 2];
+      const uprightY = axis === 2 ? z : axis === 0 ? x : y;
+      minY = Math.min(minY, uprightY);
+    }
+    return Number.isFinite(minY) ? minY : 0;
+  }
   private armPoseFor(asset: CustomAsset) {
     const cached = this.armPose.get(asset.id);
     if (cached) return cached;
@@ -174,6 +184,10 @@ export class CustomActorTexturePass {
       const frame = frames?.length ? frames[Math.min(frames.length - 1, Math.floor(cycle / (Math.PI * 2) * frames.length))] : undefined;
       const posePositions = frame ?? asset.positions;
       const vertexCount = posePositions.length / 3;
+      // Align the lowest point of this specific imported model with the
+      // terrain. This works for saved uploads whose FBX origin is not at
+      // the feet, instead of applying a guessed global lift.
+      const floorY = this.floorOffset(asset);
       const limit = Math.min(asset.indices.length, 90000);
       for (let i = 0; i + 2 < limit; i += 3) {
         const vi = asset.indices[i];
