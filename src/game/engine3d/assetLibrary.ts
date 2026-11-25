@@ -348,14 +348,19 @@ const ISO_COS = 0.8660254037844386; // cos(30°)
 export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | null {
   if (!canPreviewAsset(a)) return null;
   const n = a.positions.length / 3;
-  // Project every vertex once: sx = (x - z) * cos30, sy = (x + z)/2 - y.
+  // FBX packs commonly author character forward along +X, while the
+  // Adventure preview camera expects +Z. Turn FBX previews a quarter-turn
+  // around their vertical axis; leave GLB/GLTF/OBJ orientation untouched.
+  const rotateFbxPreview = a.format === 'fbx';
   const px = new Float64Array(n);
   const py = new Float64Array(n);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < n; i++) {
     const x = a.positions[i * 3], y = a.positions[i * 3 + 1], z = a.positions[i * 3 + 2];
-    const sx = (x - z) * ISO_COS;
-    const sy = (x + z) * 0.5 - y;
+    const viewX = rotateFbxPreview ? z : x;
+    const viewZ = rotateFbxPreview ? -x : z;
+    const sx = (viewX - viewZ) * ISO_COS;
+    const sy = (viewX + viewZ) * 0.5 - y;
     px[i] = sx; py[i] = sy;
     if (sx < minX) minX = sx;
     if (sx > maxX) maxX = sx;
@@ -373,8 +378,11 @@ export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | nu
   const tris: Array<{ i0: number; i1: number; i2: number; depth: number }> = [];
   for (let t = 0; t + 2 < a.indices.length; t += 3) {
     const i0 = a.indices[t], i1 = a.indices[t + 1], i2 = a.indices[t + 2];
-    const depth =
-      (a.positions[i0 * 3] + a.positions[i0 * 3 + 2] + a.positions[i1 * 3] + a.positions[i1 * 3 + 2] + a.positions[i2 * 3] + a.positions[i2 * 3 + 2]) / 3;
+    const viewDepth = (i: number) => {
+      const x = a.positions[i * 3], z = a.positions[i * 3 + 2];
+      return rotateFbxPreview ? z - x : x + z;
+    };
+    const depth = (viewDepth(i0) + viewDepth(i1) + viewDepth(i2)) / 3;
     tris.push({ i0, i1, i2, depth });
   }
   tris.sort((p, q) => p.depth - q.depth);
