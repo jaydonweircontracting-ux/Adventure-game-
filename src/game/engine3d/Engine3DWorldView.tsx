@@ -1579,12 +1579,28 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // shows a change that did not stick.
   const saveAssets=async()=>{
     if(assetsSaving||customAssetsLoading)return;
-    const store=assetStoreRef.current;
-    if(!store||!assetStoreReadyRef.current){setMessage('Model storage is unavailable in this browser. Keep this game open; uploads cannot be confirmed as saved across reloads.');return;}
     setAssetsSaving(true);
     try{
+      // Uploads first enter the review queue. Save must finish that
+      // step too; otherwise the button sees an empty library and
+      // tells the player "no models yet" even though models were parsed.
+      const waiting=[...pendingImportsRef.current];
+      if(waiting.length>0){
+        await commitPendingAssets(waiting);
+        if(overwritePromptRef.current){
+          setMessage('A model name already exists. Choose Keep both or Replace to finish saving your uploaded models.');
+          return;
+        }
+        if(pendingImportsRef.current.length>0){
+          setMessage('Some uploads could not be added. Check the import report, then retry Save; successful models remain saved.');
+          return;
+        }
+      }
+      const store=assetStoreRef.current;
+      if(!store||!assetStoreReadyRef.current){setMessage('Model storage is unavailable in this browser. Keep this game open; uploads cannot be confirmed as saved across reloads.');return;}
       await runLibraryOp(async()=>{
         const snapshot=[...customAssetsRef.current];
+        if(snapshot.length===0){setMessage('No models have finished importing yet. Upload a model and wait for it to appear in the review list.');return;}
         for(const asset of snapshot)await store.put(asset);
         const verified=await store.loadAll();
         const byId=new Map(verified.map(asset=>[asset.id,asset]));
