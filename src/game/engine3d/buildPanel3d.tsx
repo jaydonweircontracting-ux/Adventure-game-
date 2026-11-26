@@ -9,6 +9,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { doorsFacePaths, treesOffPaths, lanternsAlongRoads, fencesAroundProperty, alignArea, enhanceArea, adjustSpacing } from './layoutHelpers';
 import { isHouseKind, rotateFace, type PaletteKind, type Rotation } from './placements';
 import { type BridgeStyle } from './paths';
+import { type StudioTool, type StudioPreview } from './worldStudio';
 import { captureChunk, uniquifyName, type ChunkTemplate } from './templates';
 import { selectionCount, selectionCounts, excludeItem, selectionItems, selectionItemLabel, type AreaSelection } from './areaSelect';
 import { type CustomAsset, type GltfDependency } from './customAssets';
@@ -86,6 +87,12 @@ export interface BuildPanelProps {
   // picker row below) — the view's bridgeStyle state, mirrored here
   // like placementRot.
   bridgeStyle: BridgeStyle;
+  // BUILD 1133 (0x34): World Studio — the armed editing tool, the
+  // river-draw width, and the live preview (view-owned, like
+  // bridgeStyle above).
+  studioTool: StudioTool | null;
+  studioWidth: 1 | 2 | 3;
+  studioPreview: StudioPreview | null;
   saveSelection: SaveSelection;
   chunkName: string;
   buildIx: BuildingInteractions;
@@ -122,6 +129,12 @@ export interface BuildPanelProps {
   // BUILD 1132 (0x33): the bridge-style setter (view-owned, mirrors
   // setPlacementRotBoth).
   setBridgeStyleBoth: (s: BridgeStyle) => void;
+  // BUILD 1133 (0x34): the World Studio setters + panel actions
+  // (view-owned, mirror setBridgeStyleBoth).
+  setStudioToolBoth: (t: StudioTool | null) => void;
+  setStudioWidthBoth: (w: 1 | 2 | 3) => void;
+  onStudioApply: () => void;
+  onStudioCancel: () => void;
   setHandoffCheckedBoth: (ids: string[]) => void;
   setLibraryAssetCategory: (asset: CustomAsset, category: string) => void;
   setLibraryAssetTags: (asset: CustomAsset, input: string) => void;
@@ -155,7 +168,7 @@ export interface BuildPanelProps {
 }
 
 export function BuildPanel(props: BuildPanelProps) {
-  const { buildOpen, palette, customSelection, removeMode, moveMode, saveAreaMode, pasteName, areaSelectMode, areaSelection, areaMoveArmed, areaDuplicateArmed, areaDeleteArmed, catalogCategory, customAssets, customAssetsLoading, customAssetsWarning, assetsSaving, saveAssets, importHubOpen, importProgress, importReport, pendingImports, overwritePrompt, renamingId, renameDraft, librarySearch, librarySort, libraryCategoryFilter, libraryFormatFilter, handoffChecked, templates, placedCount, placementRot, bridgeStyle, saveSelection, chunkName, buildIx, catalogSections, kindMeta, setBuildOpen, setPalette, setCustomSelection, setRemoveMode, setMoveMode, setSaveAreaMode, setPasteName, setAreaSelectMode, setAreaSelection, setAreaMoveArmed, setAreaDuplicateArmed, setAreaDeleteArmed, setCatalogCategory, setImportHubOpen, setReport, setPending, setOverwrite, setRenameDraft, setRenamingId, setLibrarySearch, setLibrarySort, setLibraryCategoryFilter, setLibraryFormatFilter, setChunkName, setSaveSelection, setTemplates, setMessage, setPlacementRotBoth, setBridgeStyleBoth, setHandoffCheckedBoth, setLibraryAssetCategory, setLibraryAssetTags, panelSwipeRef, buildRef, placePreviewRef, placeHoverRef, placePreviewFnRef, areaSelectPreviewRef, areaSelectPreviewLabelRef, pendingImportsRef, pendingDepsRef, overwritePromptRef, handoffCheckedRef, handoffSummaryRef, customAssetsRef, stateRef, handleImportFiles, commitPendingAssets, discardPendingAsset, updatePendingAsset, exportAssetPack, exportHandoff, copyHandoffSummary, shareHandoff, handoffSummaryFor, armCustomAsset, deleteCustomAsset, renameLibraryAsset, resolveOverwritePrompt } = props;
+  const { buildOpen, palette, customSelection, removeMode, moveMode, saveAreaMode, pasteName, areaSelectMode, areaSelection, areaMoveArmed, areaDuplicateArmed, areaDeleteArmed, catalogCategory, customAssets, customAssetsLoading, customAssetsWarning, assetsSaving, saveAssets, importHubOpen, importProgress, importReport, pendingImports, overwritePrompt, renamingId, renameDraft, librarySearch, librarySort, libraryCategoryFilter, libraryFormatFilter, handoffChecked, templates, placedCount, placementRot, bridgeStyle, studioTool, studioWidth, studioPreview, saveSelection, chunkName, buildIx, catalogSections, kindMeta, setBuildOpen, setPalette, setCustomSelection, setRemoveMode, setMoveMode, setSaveAreaMode, setPasteName, setAreaSelectMode, setAreaSelection, setAreaMoveArmed, setAreaDuplicateArmed, setAreaDeleteArmed, setCatalogCategory, setImportHubOpen, setReport, setPending, setOverwrite, setRenameDraft, setRenamingId, setLibrarySearch, setLibrarySort, setLibraryCategoryFilter, setLibraryFormatFilter, setChunkName, setSaveSelection, setTemplates, setMessage, setPlacementRotBoth, setBridgeStyleBoth, setStudioToolBoth, setStudioWidthBoth, onStudioApply, onStudioCancel, setHandoffCheckedBoth, setLibraryAssetCategory, setLibraryAssetTags, panelSwipeRef, buildRef, placePreviewRef, placeHoverRef, placePreviewFnRef, areaSelectPreviewRef, areaSelectPreviewLabelRef, pendingImportsRef, pendingDepsRef, overwritePromptRef, handoffCheckedRef, handoffSummaryRef, customAssetsRef, stateRef, handleImportFiles, commitPendingAssets, discardPendingAsset, updatePendingAsset, exportAssetPack, exportHandoff, copyHandoffSummary, shareHandoff, handoffSummaryFor, armCustomAsset, deleteCustomAsset, renameLibraryAsset, resolveOverwritePrompt } = props;
   return (
     <>
     {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',overflowX:'hidden',WebkitOverflowScrolling:'touch',touchAction:'pan-y',overscrollBehavior:'contain',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}
@@ -175,7 +188,7 @@ export function BuildPanel(props: BuildPanelProps) {
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setImportHubOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);setBridgeStyleBoth('wooden');buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;buildIx.setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setImportHubOpen(false);setPalette(null);setCustomSelection(null);setRemoveMode(false);setMoveMode(false);setSaveAreaMode(false);setPasteName(null);setSaveSelection(null);setAreaSelectMode(false);setAreaSelection(null);setAreaMoveArmed(false);setAreaDuplicateArmed(false);setAreaDeleteArmed(false);setCatalogCategory('all');setPlacementRotBoth(0);setBridgeStyleBoth('wooden');setStudioToolBoth(null);buildRef.current={palette:null,removeMode:false,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:null,areaSelectMode:false,areaMoveArmed:false,areaDuplicateArmed:false};const el=placePreviewRef.current;if(el)el.style.display='none';const ael=areaSelectPreviewRef.current;if(ael)ael.style.display='none';placeHoverRef.current=null;buildIx.setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
       {/* BUILD 1043: Import Hub — the Build panel's front door for
           bringing in outside models. One button opens it; inside are
@@ -497,6 +510,38 @@ export function BuildPanel(props: BuildPanelProps) {
         </div>
         <div style={{fontSize:11,opacity:.75,marginTop:6,lineHeight:1.4}}>Pick the style before you place — a stone deck is wider and heavier-looking than a footbridge, a large road bridge carries the road across a wide river. The deck runs across the river on its own: place the tile on the water and it lines up with the flow.</div>
       </div>}
+      {/* BUILD 1133 (0x34): World Studio — river/bridge/path
+          editing. A tool arms a drag (or tap) on the field; the
+          preview shows green (will change) / red (refused) tiles
+          and a one-line summary; Apply commits as ONE undo entry,
+          Cancel drops the stroke. Arming a studio tool clears the
+          palette/Remove/Move tools, and vice versa. */}
+      <div style={{marginTop:10,padding:10,borderRadius:9,background:'#22392d',border:'1px solid #c4d1bd'}}>
+        <div style={{fontSize:12,fontWeight:700}}>World Studio — rivers, bridges, paths</div>
+        <div style={{fontSize:11,opacity:.75,marginTop:4,lineHeight:1.4}}>Draw a river, widen or narrow one, harden a bank, bridge a river, or pave a path to a bridge. Drag on the ground to draw; the preview shows what will change before anything is applied.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+          {([['river','Draw river'],['widen','Widen river'],['narrow','Narrow river'],['bank','Harden bank'],['bridge','Bridge'],['path','Draw path']] as Array<[StudioTool,string]>).map(([t,label])=>(
+            <button key={t} type="button" data-testid={'build-studio-'+t} onClick={()=>setStudioToolBoth(studioTool===t?null:t)} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:studioTool===t?'#526d42':'#22392d',color:'#fff',fontWeight:studioTool===t?700:500,fontSize:13}}>{label}</button>
+          ))}
+        </div>
+        {studioTool==='river'&&<div style={{marginTop:8}}>
+          <div style={{fontSize:12,fontWeight:700}}>River width: {studioWidth}</div>
+          <div style={{display:'flex',gap:8,marginTop:6}}>
+            {([1,2,3] as const).map(w=>(
+              <button key={w} type="button" data-testid={'build-studio-width-'+w} onClick={()=>setStudioWidthBoth(w)} style={{flex:1,padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:studioWidth===w?'#526d42':'#22392d',color:'#fff',fontWeight:studioWidth===w?700:500,fontSize:13}}>{w===1?'Narrow (1)':w===2?'Wide (2)':'Broad (3)'}</button>
+            ))}
+          </div>
+        </div>}
+        {studioTool==='bridge'&&<div style={{fontSize:11,opacity:.75,marginTop:8,lineHeight:1.4}}>Tap a river tile — the bridge spans the whole run and paves both entrances. Its style comes from the bridge picker above (arm the Wooden Bridge tool to change it). Tap a placed bridge to remove the whole span.</div>}
+        {studioTool==='path'&&<div style={{fontSize:11,opacity:.75,marginTop:8,lineHeight:1.4}}>Drag a path across open ground — when an end comes within reach of a bridge or crossing, the road connects to it on its own.</div>}
+        {studioTool==='bank'&&<div style={{fontSize:11,opacity:.75,marginTop:8,lineHeight:1.4}}>Tap dry land beside river water to harden it with an embankment — the founders prefer to bridge from a hardened bank. Tap an embankment to remove it.</div>}
+        {studioPreview&&studioPreview.tiles.length>0&&<div data-testid="build-studio-preview" style={{marginTop:8,padding:8,borderRadius:8,background:'#172c23',border:'1px solid #7fb069',fontSize:12,lineHeight:1.5}}>{studioPreview.summary}</div>}
+        {studioPreview&&studioPreview.tiles.length===0&&studioPreview.rejected.length>0&&<div data-testid="build-studio-preview" style={{marginTop:8,padding:8,borderRadius:8,background:'#172c23',border:'1px solid #d9a833',fontSize:12,lineHeight:1.5}}>{studioPreview.summary}</div>}
+        {studioPreview&&<div style={{display:'flex',gap:8,marginTop:8}}>
+          <button type="button" data-testid="build-studio-apply" disabled={studioPreview.tiles.length===0} onClick={onStudioApply} style={{flex:1,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:studioPreview.tiles.length===0?'#22392d':'#526d42',color:'#fff',fontWeight:700,fontSize:14,opacity:studioPreview.tiles.length===0?0.6:1}}>Apply</button>
+          <button type="button" data-testid="build-studio-cancel" onClick={onStudioCancel} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Cancel</button>
+        </div>}
+      </div>
       <button type="button" data-testid="build-remove-toggle" onClick={buildIx.toggleRemove} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
       <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setAreaSelectMode(false);setAreaMoveArmed(false);setAreaDuplicateArmed(false);}buildRef.current={...buildRef.current,moveMode:next,areaSelectMode:next?false:buildRef.current.areaSelectMode,areaMoveArmed:next?false:buildRef.current.areaMoveArmed,areaDuplicateArmed:next?false:buildRef.current.areaDuplicateArmed};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       {/* BUILD 996: saved chunks (build templates). Save area arms the

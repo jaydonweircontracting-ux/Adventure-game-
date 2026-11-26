@@ -235,6 +235,27 @@ function isExcluded(ex: Exclusions, x: number, y: number): boolean {
   return false;
 }
 
+/** BUILD 1133 (0x34): why a tile refuses a player-drawn river, or
+ *  null when the tile takes one. The World Studio draw tool shares
+ *  the generator's exclusion set (camp disc, hut margin, mine
+ *  corridor, occupied tiles, farms, deposits) so a hand-drawn river
+ *  can never cut the settlement the generator routes around — the
+ *  same rules, one place. Pure (reads only). The bounds / water
+ *  checks live with the caller (the studio preview reports them
+ *  first, so this answers only the exclusion question). */
+export function riverTileRefusal(world: IsoWorld, x: number, y: number): string | null {
+  const ex = buildExclusions(world);
+  if (Math.hypot(x - FOUNDER_CAMP.x, y - FOUNDER_CAMP.y) < RIVER_CAMP_EXCLUSION) return 'too close to the camp';
+  if (x >= RIVER_MINE_CORRIDOR.x0 && x <= RIVER_MINE_CORRIDOR.x1 && y >= RIVER_MINE_CORRIDOR.y0 && y <= RIVER_MINE_CORRIDOR.y1) return 'the mine road must stay dry';
+  if (ex.occ.has(key(x, y))) return 'something stands here';
+  if (ex.farms.has(key(x, y))) return 'a farm field';
+  if (ex.deposits.has(key(x, y))) return 'a mineral deposit';
+  for (const r of ex.huts) {
+    if (x >= r.x0 - RIVER_HUT_MARGIN && x <= r.x1 + RIVER_HUT_MARGIN && y >= r.y0 - RIVER_HUT_MARGIN && y <= r.y1 + RIVER_HUT_MARGIN) return 'too close to a house';
+  }
+  return null;
+}
+
 /** A minimal binary heap of [key, index] pairs, smallest key
  *  first; ties break by index, so the flood order is fully
  *  deterministic. */

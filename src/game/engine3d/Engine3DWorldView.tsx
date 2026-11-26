@@ -107,6 +107,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // the rest are listed, locked, with the reason why).
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
 import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, fordTiles, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState, type BridgeStyle } from './paths';
+import { previewStudioEdit, applyStudioEdit, type StudioTool, type StudioTile, type StudioPreview } from './worldStudio';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
 // BUILD 1064 (R-1): the unified resource registry — the one
 // authoritative record of what exists, where it is, and where it
@@ -1053,6 +1054,45 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   const [bridgeStyle, setBridgeStyle] = useState<BridgeStyle>('wooden');
   const bridgeStyleRef = useRef<BridgeStyle>('wooden');
   const setBridgeStyleBoth = (s: BridgeStyle) => { bridgeStyleRef.current = s; setBridgeStyle(s); };
+  // BUILD 1133 (0x34): World Studio — river/bridge/path editing.
+  // Same state+ref pattern as bridgeStyle: state for the panel,
+  // refs for the pointer handlers (which close over refs, not
+  // state). The stroke lives in a ref (pointer handlers run outside
+  // React state); the preview is derived from it. The preview divs
+  // are positioned by the effect-local helpers (they need the
+  // renderer, which only exists inside the mount effect) — the
+  // mirror ref below lets the width setter recompute them.
+  const [studioTool, setStudioTool] = useState<StudioTool | null>(null);
+  const studioToolRef = useRef<StudioTool | null>(null);
+  const [studioWidth, setStudioWidth] = useState<1 | 2 | 3>(1);
+  const studioWidthRef = useRef<1 | 2 | 3>(1);
+  const [studioPreview, setStudioPreview] = useState<StudioPreview | null>(null);
+  const studioPreviewRef = useRef<StudioPreview | null>(null);
+  const studioStrokeRef = useRef<StudioTile[]>([]);
+  const studioPreviewDivRef = useRef<HTMLDivElement | null>(null);
+  const studioPreviewFnRef = useRef<(() => void) | null>(null);
+  const setStudioPreviewBoth = (p: StudioPreview | null) => { studioPreviewRef.current = p; setStudioPreview(p); };
+  const clearStudioStroke = () => {
+    studioStrokeRef.current = [];
+    setStudioPreviewBoth(null);
+    const el = studioPreviewDivRef.current;
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  };
+  const setStudioToolBoth = (t: StudioTool | null) => {
+    studioToolRef.current = t; setStudioTool(t);
+    clearStudioStroke();
+    if (t !== null) {
+      // Arming a studio tool clears every other build tool (the
+      // same mutual exclusion the palette buttons enforce).
+      setPalette(null); setCustomSelection(null); setRemoveMode(false); setMoveMode(false);
+      setSaveAreaMode(false); setPasteName(null); setAreaSelectMode(false);
+      setAreaMoveArmed(false); setAreaDuplicateArmed(false);
+      buildRef.current = { palette: null, removeMode: false, moveMode: false, saveAreaMode: false, pasteName: null, customAssetId: null, areaSelectMode: false, areaMoveArmed: false, areaDuplicateArmed: false };
+      const el = placePreviewRef.current; if (el) el.style.display = 'none';
+      placeHoverRef.current = null;
+    }
+  };
+  const setStudioWidthBoth = (w: 1 | 2 | 3) => { studioWidthRef.current = w; setStudioWidth(w); studioPreviewFnRef.current?.(); };
   // BUILD 996: chunk library. Lazy-loaded from localStorage (key
   // ag-3d-templates-v1, separate from world saves); every change
   // persists via the effect below. templatesRef mirrors it for the
@@ -1794,12 +1834,33 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     setPasteName, setRemoveMode, setMoveMode, setSaveAreaMode,
     setAreaSelectMode, setAreaSelection, setAreaMoveArmed,
     setAreaDuplicateArmed, setAreaDeleteArmed, setWalkSuspended,
-    removeMode, palette, customSelection, areaSelectMode, moveMode,
+    onClearStudio: () => setStudioToolBoth(null),
+    removeMode, palette, customSelection, studioTool, areaSelectMode, moveMode,
     saveAreaMode, pasteName, buildOpen, areaSelection, insideHut,
     position, customAssets,
     saveKey: SAVE_KEY,
   };
   const buildIx = createBuildingInteractions(buildCtx);
+  // BUILD 1133: World Studio Apply/Cancel (panel buttons). Apply
+  // runs the real apply on the current stroke, commits, and pushes
+  // ONE undo entry; the tool stays armed so another stroke can
+  // follow. Cancel drops the stroke and its preview.
+  const studioApply = () => {
+    const tool = studioToolRef.current;
+    if (!tool) return;
+    const world = stateRef.current.world;
+    const { playerTile, npcTiles } = buildIx.areaActorTiles();
+    const res = applyStudioEdit(world, tool, studioStrokeRef.current, { playerTile, npcTiles, paths: pathsRef.current, bridgeStyle: bridgeStyleRef.current, width: studioWidthRef.current });
+    if (!res.ok) { setMessage(res.message); return; }
+    commitWorld(worldSyncCtx, world);
+    if (res.undo) buildIx.pushHistory(res.undo);
+    clearStudioStroke();
+    setMessage(res.message);
+  };
+  const studioCancel = () => {
+    clearStudioStroke();
+    setMessage('World Studio stroke cleared — nothing changed');
+  };
   const nearDoorHut = buildIx.nearDoorHut();
   // BUILD 1111 (0x2E): the nearest placed crafting station in E-key
   // reach (the same 1-tile rule as the E-key branch) — the Use
@@ -2332,6 +2393,76 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       placeHoverRef.current={x:clientX,y:clientY};
     };
     placePreviewFnRef.current=showPlacementPreview;
+    // BUILD 1133: World Studio drag — a stroke paints the preview
+    // (green = will change, red = refused, dashed = the path
+    // connector) and Apply in the panel commits it as ONE undo
+    // entry. The stroke stays a preview until Apply/Cancel; a pinch
+    // cancels the stroke outright. The divs are re-projected on
+    // every orbit move (positionStudioPreviewDivs), so they track
+    // the camera like the area rectangle does.
+    let studioDragging=false;
+    const studioOpts=()=>{const {playerTile,npcTiles}=buildIx.areaActorTiles();return {playerTile,npcTiles,paths:pathsRef.current,bridgeStyle:bridgeStyleRef.current,width:studioWidthRef.current};};
+    const renderStudioPreviewDivs=()=>{
+      const container=studioPreviewDivRef.current;if(!container)return;
+      const preview=studioPreviewRef.current;
+      if(!preview){container.style.display='none';container.innerHTML='';return;}
+      const tiles: Array<{x:number;y:number;kind:'ok'|'bad'|'link'}> = [
+        ...preview.tiles.map(t=>({x:t.x,y:t.y,kind:'ok' as const})),
+        ...preview.rejected.map(t=>({x:t.x,y:t.y,kind:'bad' as const})),
+        ...(preview.connector??[]).map(t=>({x:t.x,y:t.y,kind:'link' as const})),
+      ];
+      container.innerHTML='';
+      for(const t of tiles){
+        const proj=renderer.projectTileCenter(t.x,t.y);if(!proj)continue;
+        const d=document.createElement('div');
+        d.dataset.tx=String(t.x);d.dataset.ty=String(t.y);
+        d.style.cssText='position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:8px;pointer-events:none;'+(t.kind==='ok'?'border:3px solid #4fc85a;background:rgba(80,200,90,.30);':t.kind==='link'?'border:3px dashed #7fb069;background:rgba(127,176,105,.25);':'border:3px solid #e04a3e;background:rgba(220,60,50,.30);');
+        d.style.left=proj.cx+'px';d.style.top=proj.cy+'px';
+        container.appendChild(d);
+      }
+      container.style.display=tiles.length>0?'block':'none';
+    };
+    const positionStudioPreviewDivs=()=>{
+      const container=studioPreviewDivRef.current;if(!container||container.style.display==='none')return;
+      for(const child of Array.from(container.children) as HTMLDivElement[]){
+        const tx=Number(child.dataset.tx),ty=Number(child.dataset.ty);
+        const proj=renderer.projectTileCenter(tx,ty);
+        if(!proj){child.style.display='none';continue;}
+        child.style.display='block';child.style.left=proj.cx+'px';child.style.top=proj.cy+'px';
+      }
+    };
+    const hideStudioPreviewDivs=()=>{const c=studioPreviewDivRef.current;if(c){c.style.display='none';c.innerHTML='';}};
+    const recomputeStudioPreview=()=>{
+      const tool=studioToolRef.current;
+      if(!tool){setStudioPreviewBoth(null);hideStudioPreviewDivs();return;}
+      const preview=previewStudioEdit(stateRef.current.world,tool,studioStrokeRef.current,studioOpts());
+      setStudioPreviewBoth(preview);
+      renderStudioPreviewDivs();
+    };
+    studioPreviewFnRef.current=recomputeStudioPreview;
+    const studioAddToStroke=(clientX:number,clientY:number)=>{
+      const tool=studioToolRef.current;if(!tool)return;
+      const destination=renderer.pickGround(clientX,clientY);if(!destination)return;
+      const tx=Math.round(destination.x),ty=Math.round(destination.y);
+      const stroke=studioStrokeRef.current;
+      const last=stroke[stroke.length-1];
+      if(last&&last.x===tx&&last.y===ty)return;
+      if(last){
+        // Bresenham gap-fill: a fast drag must not leave holes in
+        // the river/path (the same continuity the remove stroke
+        // gets from per-tile painting).
+        let x0=last.x,y0=last.y;const dx=Math.abs(tx-x0),dy=Math.abs(ty-y0);const sx=x0<tx?1:-1,sy=y0<ty?1:-1;let err=dx-dy;
+        while(!(x0===tx&&y0===ty)){
+          const e2=2*err;
+          if(e2>-dy){err-=dy;x0+=sx;}
+          if(e2<dx){err+=dx;y0+=sy;}
+          if(x0===tx&&y0===ty)break;
+          stroke.push({x:x0,y:y0});
+        }
+      }
+      stroke.push({x:tx,y:ty});
+      recomputeStudioPreview();
+    };
     const finalizeSaveSelection=(clientX:number,clientY:number,drag:{start:{x:number;y:number}})=>{
       const destination=renderer.pickGround(clientX,clientY);
       if(!destination){setMessage('Drag on the ground to select an area');return;}
@@ -2482,9 +2613,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       markWorldDirty(worldSyncCtx);
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;renderer.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(renderer.pointers.size===1){renderer.drag=true;renderer.gestureMoved=false;renderer.gestureStartX=e.clientX;renderer.gestureStartY=e.clientY;renderer.lx=e.clientX;renderer.ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const fx=Math.round(dest.x),fy=Math.round(dest.y);const areaSel=areaSelectionRef.current;const insideSel=!!(areaSel&&fx>=areaSel.rect.x0&&fx<=areaSel.rect.x1&&fy>=areaSel.rect.y0&&fy<=areaSel.rect.y1);if(areaSel&&(buildRef.current.areaMoveArmed||insideSel)){areaMoveDragging={start:{x:fx,y:fy},sel:areaSel};showAreaMovePreview(e.clientX,e.clientY);}else if(buildRef.current.areaSelectMode&&!buildRef.current.areaDuplicateArmed&&!buildRef.current.areaMoveArmed){areaSelectDragging={start:{x:fx,y:fy}};showAreaSelectPreview(areaSelectDragging.start,e.clientX,e.clientY);}}}if(!removeDragging&&!moveDragging&&!areaMoveDragging&&!areaSelectDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{renderer.drag=false;renderer.gestureMoved=true;renderer.pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;renderer.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(renderer.pointers.size===1){renderer.drag=true;renderer.gestureMoved=false;renderer.gestureStartX=e.clientX;renderer.gestureStartY=e.clientY;renderer.lx=e.clientX;renderer.ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!buildRef.current.palette&&!buildRef.current.customAssetId&&!buildRef.current.pasteName&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={kind:'placed',item:found};}else{const hut=hutAt(w,fx,fy);if(hut){moveDragging={kind:'house',hut};}else if(w.trees.some(t=>t.tx===fx&&t.ty===fy)||w.crates.some(c=>c.tx===fx&&c.ty===fy)){moveDragging={kind:'tree',x:fx,y:fy};}else if(terrainAt(w,fx,fy)==='dirt'){moveDragging={kind:'path',x:fx,y:fy};}}if(moveDragging)showMovePreview(e.clientX,e.clientY);}}if(!removeDragging&&!moveDragging&&studioToolRef.current&&!walkRef.current&&!insideHutRef.current){studioDragging=true;studioAddToStroke(e.clientX,e.clientY);}if(!removeDragging&&!moveDragging&&!studioDragging&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){const fx=Math.round(dest.x),fy=Math.round(dest.y);const areaSel=areaSelectionRef.current;const insideSel=!!(areaSel&&fx>=areaSel.rect.x0&&fx<=areaSel.rect.x1&&fy>=areaSel.rect.y0&&fy<=areaSel.rect.y1);if(areaSel&&(buildRef.current.areaMoveArmed||insideSel)){areaMoveDragging={start:{x:fx,y:fy},sel:areaSel};showAreaMovePreview(e.clientX,e.clientY);}else if(buildRef.current.areaSelectMode&&!buildRef.current.areaDuplicateArmed&&!buildRef.current.areaMoveArmed){areaSelectDragging={start:{x:fx,y:fy}};showAreaSelectPreview(areaSelectDragging.start,e.clientX,e.clientY);}}}if(!removeDragging&&!moveDragging&&!studioDragging&&!areaMoveDragging&&!areaSelectDragging&&buildRef.current.saveAreaMode&&!walkRef.current&&!insideHutRef.current){const dest=renderer.pickGround(e.clientX,e.clientY);if(dest){saveDragging={start:{x:Math.round(dest.x),y:Math.round(dest.y)}};showSavePreview(saveDragging.start,e.clientX,e.clientY);}} }else{renderer.drag=false;renderer.gestureMoved=true;renderer.pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}if(studioDragging){studioDragging=false;studioStrokeRef.current=[];setStudioPreviewBoth(null);hideStudioPreviewDivs();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...renderer.pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!renderer.pointers.has(e.pointerId))return;renderer.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(renderer.pointers.size>=2){const distance=pointerDistance();if(renderer.pinchDistance>0&&distance>0)renderer.applyZoom((renderer.pinchDistance-distance)*.025);renderer.pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}return;}
+    const move=(e:PointerEvent)=>{if(!renderer.pointers.has(e.pointerId))return;renderer.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(renderer.pointers.size>=2){const distance=pointerDistance();if(renderer.pinchDistance>0&&distance>0)renderer.applyZoom((renderer.pinchDistance-distance)*.025);renderer.pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}if(saveDragging){saveDragging=null;hideSavePreview();}if(areaMoveDragging){areaMoveDragging=null;hideAreaSelectPreview();}if(areaSelectDragging){areaSelectDragging=null;hideAreaSelectPreview();}if(studioDragging){studioDragging=false;studioStrokeRef.current=[];setStudioPreviewBoth(null);hideStudioPreviewDivs();}return;}
       if(moveDragging){
         if(Math.hypot(e.clientX-renderer.gestureStartX,e.clientY-renderer.gestureStartY)>7)renderer.gestureMoved=true;
         showMovePreview(e.clientX,e.clientY);
@@ -2518,6 +2649,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         showAreaMovePreview(e.clientX,e.clientY);
         return;
       }
+      if(studioDragging){
+        if(Math.hypot(e.clientX-renderer.gestureStartX,e.clientY-renderer.gestureStartY)>7)renderer.gestureMoved=true;
+        studioAddToStroke(e.clientX,e.clientY);
+        return;
+      }
       if(buildRef.current.areaDuplicateArmed&&areaSelectionRef.current){
         showAreaDuplicatePreview(e.clientX,e.clientY);
         return;
@@ -2525,6 +2661,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       if(!renderer.drag)return;
       if(Math.hypot(e.clientX-renderer.gestureStartX,e.clientY-renderer.gestureStartY)>7)renderer.gestureMoved=true;
       if(!renderer.gestureMoved)return;
+      positionStudioPreviewDivs();
       // Drag right must turn the view right in both orbit and first-person.
       // The camera's forward vector is (-sin(yaw), -cos(yaw)); adding
       // yaw here made a rightward drag rotate the view left.
@@ -2543,6 +2680,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       const wasSaveDrag=saveDragging;saveDragging=null;hideSavePreview();
       const wasAreaMoveDrag=areaMoveDragging;areaMoveDragging=null;
       const wasAreaSelectDrag=areaSelectDragging;areaSelectDragging=null;
+      const wasStudioDrag=studioDragging;studioDragging=false;
       if(wasMoveDrag){
         if(renderer.gestureMoved)finalizeMove(e.clientX,e.clientY,wasMoveDrag);
         else setMessage('Drag an item to move it');
@@ -2561,6 +2699,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // instead of walking or placing — the naming row in the panel
       // does the actual save. A tap selects its single tile.
       else if(wasSaveDrag){finalizeSaveSelection(e.clientX,e.clientY,wasSaveDrag);}
+      else if(wasStudioDrag){/* the stroke stays a preview until Apply/Cancel */}
       else if(wasTap){
         const build=buildRef.current;
         // BUILD 1037: a tap the area-select branches consume must not
@@ -2568,6 +2707,10 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         // logic below. A toggle tap outside the rect leaves it false
         // so the tap walks normally.
         let areaTapConsumed=false;
+        // BUILD 1133: a studio tap paints the stroke (down already
+        // added the tile; this is the retry when down missed it) and
+        // never walks or places.
+        if(studioToolRef.current&&!walkRef.current&&!insideHutRef.current){areaTapConsumed=true;studioAddToStroke(e.clientX,e.clientY);}
         // BUILD 1037: while Duplicate is armed, a tap places the copy
         // with its corner on the tapped tile (the paste pattern) and
         // the selection MOVES to the copy. It beats every tool below.
@@ -2788,7 +2931,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // BUILD 1036: right-click cancels placement (same as Escape) —
     // the browser menu is suppressed on the canvas so the gesture
     // stays in the game.
-    const cancelOnContextMenu=(e:MouseEvent)=>{e.preventDefault();if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName){buildIx.cancelPlacement();setMessage('Placement cancelled');}};
+    const cancelOnContextMenu=(e:MouseEvent)=>{e.preventDefault();if(buildRef.current.palette||buildRef.current.customAssetId||buildRef.current.pasteName||studioToolRef.current){buildIx.cancelPlacement();setMessage('Placement cancelled');}};
     canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointermove',hover);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',controls.wheel,{passive:false});canvas.addEventListener('contextmenu',cancelOnContextMenu);
 
     renderer.bind({
@@ -2921,6 +3064,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // the armed placement selection + rotation, and the same
       // rotate the R key / rotation buttons perform.
       getPlacement:()=>({palette:buildRef.current.palette,customAssetId:buildRef.current.customAssetId,rot:placementRotRef.current,bridgeStyle:bridgeStyleRef.current,moveMode:buildRef.current.moveMode}),
+      // BUILD 1133 test hooks: World Studio (probes only — the
+      // preview is pure, the apply runs the real commit path:
+      // applyStudioEdit + commitWorld + one history entry).
+      studioPreview:(tool:StudioTool,tiles:Array<{x:number;y:number}>)=>{const w=stateRef.current.world;const {playerTile,npcTiles}=buildIx.areaActorTiles();return previewStudioEdit(w,tool,tiles,{playerTile,npcTiles,paths:pathsRef.current,bridgeStyle:bridgeStyleRef.current,width:studioWidthRef.current});},
+      studioApply:(tool:StudioTool,tiles:Array<{x:number;y:number}>)=>{const w=stateRef.current.world;const {playerTile,npcTiles}=buildIx.areaActorTiles();const res=applyStudioEdit(w,tool,tiles,{playerTile,npcTiles,paths:pathsRef.current,bridgeStyle:bridgeStyleRef.current,width:studioWidthRef.current});if(!res.ok)return res;commitWorld(worldSyncCtx,w);if(res.undo)buildIx.pushHistory(res.undo);clearStudioStroke();setMessage(res.message);return res;},
+      studioGetRivers:()=>JSON.parse(JSON.stringify(stateRef.current.world.rivers??[])),
+      getStudioPreview:()=>studioPreviewRef.current?JSON.parse(JSON.stringify(studioPreviewRef.current)):null,
+      setStudioTool:(t:StudioTool|null)=>{setStudioToolBoth(t);return studioToolRef.current;},
+      getStudioTool:()=>studioToolRef.current,
       rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette&&!buildRef.current.customAssetId)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
       // BUILD 1037 test hooks (probes only — no gameplay effect): the
       // live area selection, the armed tool, and a direct way to set
@@ -3526,10 +3678,16 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         Positioned by direct DOM writes from the hover listener
         (never React state per pointermove); pointerEvents none so it
         never eats a tap. */}
+    {/* BUILD 1133: World Studio stroke preview — one div per
+        tile, built by direct DOM writes from the drag handlers
+        (never React state per pointermove); pointerEvents none so
+        it never eats a tap. Green = will change, red = refused,
+        dashed = the path connector to a bridge. */}
+    <div ref={studioPreviewDivRef} data-testid="build-studio-preview" style={{display:'none',position:'absolute',inset:0,zIndex:5,pointerEvents:'none'}}></div>
     <div ref={placePreviewRef} data-testid="build-place-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px solid #4fc85a',borderRadius:6,background:'rgba(80,200,90,.28)',boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
       <span ref={placePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#fff',fontSize:12,fontWeight:700}}></span>
     </div>
-    <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} assetsSaving={assetsSaving} saveAssets={saveAssets} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} bridgeStyle={bridgeStyle} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setBridgeStyleBoth={setBridgeStyleBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
+    <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} assetsSaving={assetsSaving} saveAssets={saveAssets} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} bridgeStyle={bridgeStyle} studioTool={studioTool} studioWidth={studioWidth} studioPreview={studioPreview} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={(v)=>{setPalette(v);if(v!==null)setStudioToolBoth(null);}} setCustomSelection={(v)=>{setCustomSelection(v);if(v!==null)setStudioToolBoth(null);}} setRemoveMode={setRemoveMode} setMoveMode={(v)=>{setMoveMode(v);if(v)setStudioToolBoth(null);}} setSaveAreaMode={(v)=>{setSaveAreaMode(v);if(v)setStudioToolBoth(null);}} setPasteName={(v)=>{setPasteName(v);if(v!==null)setStudioToolBoth(null);}} setAreaSelectMode={(v)=>{setAreaSelectMode(v);if(v)setStudioToolBoth(null);}} setAreaSelection={setAreaSelection} setAreaMoveArmed={(v)=>{setAreaMoveArmed(v);if(v)setStudioToolBoth(null);}} setAreaDuplicateArmed={(v)=>{setAreaDuplicateArmed(v);if(v)setStudioToolBoth(null);}} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setBridgeStyleBoth={setBridgeStyleBoth} setStudioToolBoth={setStudioToolBoth} setStudioWidthBoth={setStudioWidthBoth} onStudioApply={studioApply} onStudioCancel={studioCancel} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={(id)=>{if(id!==null)setStudioToolBoth(null);armCustomAsset(id);}} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
     <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} recipes={HAND_RECIPES.map((recipe)=>({recipe,canCraft:canCraftHand(recipe,craftHeld)}))} onCraft={handleCraftHand} onClose={()=>setInventoryOpen(false)} />
     {openStation&&<StationPanel open station={openStation} recipes={stationRecipesFor(openStation).map((recipe)=>{const held:Record<string,number>={};for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);return {recipe,unlocked:isRecipeUnlocked(recipe,discovered),canCraft:canCraftStation(recipe,held)};})} onCraft={(id)=>handleStationCraft(openStation,id)} onClose={()=>setOpenStation(null)} />}
     {!hideUi && <Hotbar layout={invLayout} selected={hotbarSelected} onSelect={handleHotbarSelect} onUse={handleHotbarUse} />}

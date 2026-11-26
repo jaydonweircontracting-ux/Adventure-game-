@@ -21,7 +21,7 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PathKind, type PlacedItem } from '../iso/isoWorld';
-import { isShallowTile, riverAt } from './rivers';
+import { isShallowTile, riverAt, type River } from './rivers';
 import type { BridgeStyle } from './paths';
 import { ensurePlacementId } from './entityIds';
 import { isStationPaletteKind, paletteKindForStation, stationOfPaletteKind, type StationId } from './craftingStations';
@@ -468,7 +468,18 @@ export type UndoEntry =
    *  apply in reverse on undo, forward on redo, exactly like a
    *  stroke. `label` is the user-facing name ('Moved area',
    *  'Rotated area'). */
-  | { kind: 'group'; entries: UndoEntry[]; label: string };
+  | { kind: 'group'; entries: UndoEntry[]; label: string }
+  /** BUILD 1133 (0x34): World Studio river edits. `add` carries the
+   *  whole river (deep copy) so undo removes it and redo restores
+   *  it exactly; `widen`/`narrow` carry per-tile width changes
+   *  (riverId + before/after + the width tiles added/removed).
+   *  The data is self-contained — placements.ts never imports
+   *  worldStudio.ts (worldStudio imports placements). */
+  | { kind: 'studioRiver'; mode: 'add'; riverId: string; river: River }
+  | { kind: 'studioRiver'; mode: 'widen' | 'narrow'; changes: Array<{ x: number; y: number; riverId: string; widthBefore: number; widthAfter: number; added?: Array<{ x: number; y: number }>; removed?: Array<{ x: number; y: number }> }> }
+  /** BUILD 1133 (0x34): a bridge re-paved a pre-existing entrance
+   *  path to stone — restore its old grade (undefined = no grade). */
+  | { kind: 'unpathkind'; x: number; y: number; pathKind: string | undefined };
 
 /** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
  *  each tile of a stroke, in order, with the SAME precedence,
@@ -519,6 +530,54 @@ export function removeAlongStroke(w: IsoWorld, tiles: Array<{ x: number; y: numb
  *  removed-set cleanup, terrain restore) and idempotent: re-adding
  *  content that is already present is skipped, so a stale entry cannot
  *  duplicate anything. Returns the user-facing message. */
+/** BUILD 1133: world.rivers as the v2 River type (same cast
+ *  rivers.ts uses — the IsoWorld inline type predates v2 fields). */
+function studioRiversOf(w: IsoWorld): River[] {
+  return (w.rivers ?? []) as unknown as River[];
+}
+
+function studioRiverById(w: IsoWorld, id: string): River | null {
+  return studioRiversOf(w).find((r) => r.id === id) ?? null;
+}
+
+/** True when any river tile (centreline or width) still sits on
+ *  (x, y) — checked before clearing a water terrain entry. */
+function studioRiverTileAt(w: IsoWorld, x: number, y: number): boolean {
+  for (const r of studioRiversOf(w)) {
+    if (r.tiles.some((t) => t.x === x && t.y === y)) return true;
+    if ((r.widthTiles ?? []).some((t) => t.x === x && t.y === y)) return true;
+  }
+  return false;
+}
+
+/** Remove a studio river + clear its water terrain where no other
+ *  river claims the tile. */
+function removeStudioRiver(w: IsoWorld, riverId: string): void {
+  const rivers = studioRiversOf(w);
+  const idx = rivers.findIndex((r) => r.id === riverId);
+  if (idx < 0) return;
+  const [river] = rivers.splice(idx, 1);
+  if (w.terrain) {
+    for (const t of [...river.tiles, ...(river.widthTiles ?? [])]) {
+      if (!studioRiverTileAt(w, t.x, t.y) && w.terrain[terrainKey(t.x, t.y)] === 'water') delete w.terrain[terrainKey(t.x, t.y)];
+    }
+  }
+}
+
+/** Re-add a studio river (deep copy from the undo entry) + stamp
+ *  its water terrain. Idempotent: a river with the same id already
+ *  present is left alone. */
+function restoreStudioRiver(w: IsoWorld, river: River): void {
+  if (studioRiverById(w, river.id)) return;
+  const copy: River = JSON.parse(JSON.stringify(river)) as River;
+  if (!w.rivers) w.rivers = [];
+  (w.rivers as unknown as River[]).push(copy);
+  if (!w.terrain) w.terrain = {};
+  for (const t of [...copy.tiles, ...(copy.widthTiles ?? [])]) {
+    w.terrain[terrainKey(t.x, t.y)] = 'water';
+  }
+}
+
 export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
   switch (entry.kind) {
     case 'stroke': {
@@ -708,6 +767,46 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       const n = entry.items.length;
       return 'Undid paste (' + n + (n === 1 ? ' item' : ' items') + ')';
     }
+    case 'studioRiver': {
+      if (entry.mode === 'add') {
+        removeStudioRiver(w, entry.riverId);
+        return 'Undid the drawn river';
+      }
+      // widen/narrow: restore each tile's width + take the added
+      // width tiles off / put the removed ones back.
+      for (const c of entry.changes) {
+        const river = studioRiverById(w, c.riverId);
+        if (!river) continue;
+        const centre = river.tiles.find((t) => t.x === c.x && t.y === c.y);
+        if (!centre) continue;
+        if (entry.mode === 'widen') {
+          for (const a of c.added ?? []) {
+            river.widthTiles = (river.widthTiles ?? []).filter((t) => !(t.x === a.x && t.y === a.y));
+            if (w.terrain && w.terrain[terrainKey(a.x, a.y)] === 'water' && !studioRiverTileAt(w, a.x, a.y)) delete w.terrain[terrainKey(a.x, a.y)];
+          }
+        } else {
+          if (!river.widthTiles) river.widthTiles = [];
+          for (const r of c.removed ?? []) {
+            if (!river.widthTiles.some((t) => t.x === r.x && t.y === r.y)) {
+              river.widthTiles.push({ x: r.x, y: r.y, dx: centre.dx, dy: centre.dy, shallow: true });
+            }
+            if (!w.terrain) w.terrain = {};
+            w.terrain[terrainKey(r.x, r.y)] = 'water';
+          }
+        }
+        if (c.widthBefore <= 1) delete centre.width;
+        else centre.width = c.widthBefore;
+      }
+      return 'Undid the river ' + (entry.mode === 'widen' ? 'widening' : 'narrowing');
+    }
+    case 'unpathkind': {
+      const item = placementsOf(w).find((p) => p.kind === 'path' && p.x0 === entry.x && p.y0 === entry.y);
+      if (item) {
+        if (entry.pathKind === undefined) delete item.pathKind;
+        else item.pathKind = entry.pathKind as PlacedItem['pathKind'];
+      }
+      return 'Restored the path grade';
+    }
   }
 }
 
@@ -880,6 +979,41 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       }
       const n = entry.items.length;
       return 'Re-pasted ' + n + (n === 1 ? ' item' : ' items');
+    }
+    case 'studioRiver': {
+      if (entry.mode === 'add') {
+        restoreStudioRiver(w, entry.river);
+        return 'Re-drew the river';
+      }
+      for (const c of entry.changes) {
+        const river = studioRiverById(w, c.riverId);
+        if (!river) continue;
+        const centre = river.tiles.find((t) => t.x === c.x && t.y === c.y);
+        if (!centre) continue;
+        if (entry.mode === 'widen') {
+          if (!river.widthTiles) river.widthTiles = [];
+          for (const a of c.added ?? []) {
+            if (!river.widthTiles.some((t) => t.x === a.x && t.y === a.y)) {
+              river.widthTiles.push({ x: a.x, y: a.y, dx: centre.dx, dy: centre.dy, shallow: true });
+            }
+            if (!w.terrain) w.terrain = {};
+            w.terrain[terrainKey(a.x, a.y)] = 'water';
+          }
+        } else {
+          for (const r of c.removed ?? []) {
+            river.widthTiles = (river.widthTiles ?? []).filter((t) => !(t.x === r.x && t.y === r.y));
+            if (w.terrain && w.terrain[terrainKey(r.x, r.y)] === 'water' && !studioRiverTileAt(w, r.x, r.y)) delete w.terrain[terrainKey(r.x, r.y)];
+          }
+        }
+        if (c.widthAfter <= 1) delete centre.width;
+        else centre.width = c.widthAfter;
+      }
+      return 'Redid the river ' + (entry.mode === 'widen' ? 'widening' : 'narrowing');
+    }
+    case 'unpathkind': {
+      const item = placementsOf(w).find((p) => p.kind === 'path' && p.x0 === entry.x && p.y0 === entry.y);
+      if (item) item.pathKind = 'stone';
+      return 'Re-paved the path';
     }
   }
 }

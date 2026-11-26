@@ -17533,6 +17533,302 @@ console.log('Testing river infrastructure — docks, stepping stones, embankment
 
 
 
+console.log('Testing World Studio — river/bridge/path editing tools (BUILD 1133, 0x34)...');
+{
+  const W1133 = await import('../src/game/iso/isoWorld.js');
+  const P1133 = await import('../src/game/engine3d/placements.js');
+  const R1133 = await import('../src/game/engine3d/rivers.js');
+  const PA1133 = await import('../src/game/engine3d/paths.js');
+  const SS1133 = await import('../src/game/engine3d/settlementSim.js');
+  const FC1133 = await import('../src/game/engine3d/foodChain.js');
+  const F1133 = await import('../src/game/engine3d/founders.js');
+  const ST1133 = await import('../src/game/engine3d/worldStudio.js');
+  const CAMP1133 = { x: 124, y: 120 };
+  const NO_NPC1133: Array<{ x: number; y: number }> = [];
+  const opts1133 = (extra: any = {}) => ({ playerTile: CAMP1133, npcTiles: NO_NPC1133, paths: PA1133.freshPathState(), ...extra });
+  const patchWorld1133 = (): any => {
+    const w: any = W1133.defaultWorld();
+    w.trees = (w.trees ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx >= 100 && t.tx <= 145 && t.ty >= 135 && t.ty <= 178));
+    w.rocks = (w.rocks ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx >= 100 && t.tx <= 145 && t.ty >= 135 && t.ty <= 178));
+    w.mineralDeposits = (w.mineralDeposits ?? []).filter((d: { x: number; y: number }) =>
+      !(d.x >= 100 && d.x <= 145 && d.y >= 135 && d.y <= 178));
+    return w;
+  };
+  // First row in [yMin, yMax] whose 3-row band over [x0, x1] is all
+  // dry and unrefused (a generated river may cross the patch).
+  // y >= 150 keeps every tile 30+ from the camp (exclusion 25).
+  const dryRow1133 = (w: any, yMin: number, yMax: number, x0: number, x1: number): number => {
+    for (let y = yMin; y <= yMax; y++) {
+      let ok = true;
+      for (let yy = y - 1; yy <= y + 1 && ok; yy++) {
+        for (let x = x0; x <= x1; x++) {
+          if (W1133.terrainAt(w, x, yy) === 'water' || R1133.riverTileRefusal(w, x, yy) !== null) { ok = false; break; }
+        }
+      }
+      if (ok) return y;
+    }
+    return -1;
+  };
+  const snap1133 = (w: any): string => {
+    const rivers = [...(w.rivers ?? [])].sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+    const terrain = Object.keys(w.terrain ?? {}).sort().map((k) => k + '=' + w.terrain[k]);
+    const placements = [...(w.placements ?? [])].map((p: any) => JSON.stringify(p)).sort();
+    const removedWater = [...(w.removedWater ?? [])].sort();
+    return JSON.stringify({ rivers, terrain, placements, removedWater });
+  };
+  const riverById1133 = (w: any, id: string): any => (w.rivers ?? []).find((r: any) => r.id === id);
+  const sameTile1133 = (a: any, b: any): boolean => a.x === b.x && a.y === b.y;
+
+  // --- River draw: preview is pure, the apply stamps a real river. ---
+  const wStudio1133 = patchWorld1133();
+  const rowA1133 = dryRow1133(wStudio1133, 150, 162, 118, 131);
+  assert(rowA1133 > 0, 'M1133: a dry studio row exists in the patch (setup)');
+  const rowB1133 = rowA1133 > 0 ? dryRow1133(wStudio1133, rowA1133 + 3, 175, 118, 131) : -1;
+  assert(rowB1133 > 0, 'M1133: a second dry studio row exists >=3 below the first (setup)');
+  const stroke1_1133 = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rowA1133 }));
+  {
+    const before = JSON.stringify(wStudio1133);
+    const pv: any = ST1133.previewStudioEdit(wStudio1133, 'river', stroke1_1133, opts1133({ width: 1 }));
+    assert(pv.tiles.length === 8, 'M1133: the river preview lists 8 tiles');
+    assert(pv.rejected.length === 0, 'M1133: the river preview rejects nothing');
+    assert((pv.centreline ?? []).length === 8, 'M1133: the preview centreline has 8 tiles');
+    assert((pv.centreline ?? []).slice(0, 7).every((t: any) => t.dx === 1 && t.dy === 0), 'M1133: the centreline flow follows the stroke east');
+    assert(pv.width === 1 && pv.reachesWater === false, 'M1133: the preview is width 1 and does not reach water');
+    assert(pv.mouth !== undefined && sameTile1133(pv.mouth, stroke1_1133[7]), 'M1133: the mouth is the last stroke tile on dry land');
+    assert(JSON.stringify(wStudio1133) === before, 'M1133: the river preview mutates nothing');
+    const res: any = ST1133.applyStudioEdit(wStudio1133, 'river', stroke1_1133, opts1133({ width: 1 }));
+    assert(res.ok === true, 'M1133: the river apply succeeds');
+    assert(res.undo !== null && res.undo.kind === 'studioRiver', 'M1133: the river apply returns one studioRiver undo entry');
+    assert(riverById1133(wStudio1133, 'river:studio-1') !== undefined, 'M1133: river:studio-1 is on world.rivers');
+    assert(stroke1_1133.every((t) => W1133.terrainAt(wStudio1133, t.x, t.y) === 'water'), 'M1133: all 8 stroke tiles read as water');
+    assert(stroke1_1133.every((t) => R1133.riverAt(wStudio1133, t.x, t.y) !== null), 'M1133: riverAt finds every stroke tile');
+    assert(stroke1_1133.every((t) => R1133.riverWidthAt(wStudio1133, t.x, t.y) === 1), 'M1133: the drawn river is width 1');
+    assert(stroke1_1133.every((t) => R1133.isShallowTile(wStudio1133, t.x, t.y) === true), 'M1133: the drawn centreline is shallow');
+    const foundTile = R1133.riverAt(wStudio1133, stroke1_1133[0].x, stroke1_1133[0].y);
+    assert(foundTile !== null && R1133.examineRiver(foundTile).indexOf('River') === 0, 'M1133: Examine reads the drawn river');
+  }
+  // River add undo/redo on a fresh world.
+  {
+    const wU = patchWorld1133();
+    const rA = dryRow1133(wU, 150, 162, 118, 131);
+    const st = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rA }));
+    const beforeU = snap1133(wU);
+    const resU: any = ST1133.applyStudioEdit(wU, 'river', st, opts1133({ width: 1 }));
+    assert(resU.ok === true, 'M1133: the undo-test river applies (setup)');
+    const afterU = snap1133(wU);
+    P1133.applyUndo(wU, resU.undo);
+    assert(snap1133(wU) === beforeU, 'M1133: undo of a river add restores the world exactly');
+    P1133.applyRedo(wU, resU.undo);
+    assert(snap1133(wU) === afterU, 'M1133: redo of a river add restores the river exactly');
+  }
+  // --- Width-3 draw. ---
+  const stroke2_1133 = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rowB1133 }));
+  {
+    const pv: any = ST1133.previewStudioEdit(wStudio1133, 'river', stroke2_1133, opts1133({ width: 3 }));
+    assert(pv.tiles.length === 24, 'M1133: the width-3 preview lists 24 tiles (8 centreline + 16 width)');
+    assert((pv.widthTiles ?? []).length === 16, 'M1133: the width-3 preview has 16 width tiles');
+    assert(pv.rejected.length === 0, 'M1133: the width-3 preview rejects nothing');
+    const res: any = ST1133.applyStudioEdit(wStudio1133, 'river', stroke2_1133, opts1133({ width: 3 }));
+    assert(res.ok === true, 'M1133: the width-3 river applies');
+    const river2 = riverById1133(wStudio1133, 'river:studio-2');
+    assert(river2 !== undefined && (river2.tiles ?? []).every((t: any) => t.width === 3), 'M1133: river:studio-2 centreline tiles carry width 3');
+    assert((river2.widthTiles ?? []).length === 16, 'M1133: river:studio-2 carries 16 width tiles');
+    assert(stroke2_1133.every((t) => R1133.riverWidthAt(wStudio1133, t.x, t.y) === 3), 'M1133: the width-3 centreline reads as width 3');
+    assert((river2.widthTiles ?? []).every((t: any) => W1133.terrainAt(wStudio1133, t.x, t.y) === 'water'), 'M1133: every width tile reads as water');
+  }
+  // --- Widen/narrow (+ diagonal flow: the side tile is Manhattan 2 away). ---
+  {
+    const pvW: any = ST1133.previewStudioEdit(wStudio1133, 'widen', stroke1_1133, opts1133());
+    assert(pvW.riverId === 'river:studio-1', 'M1133: the widen preview names river:studio-1');
+    assert(pvW.tiles.length === 16, 'M1133: the widen preview lists 16 tiles (8 centreline + 8 added)');
+    const resW: any = ST1133.applyStudioEdit(wStudio1133, 'widen', stroke1_1133, opts1133());
+    assert(resW.ok === true, 'M1133: the widen applies');
+    assert(R1133.riverWidthAt(wStudio1133, stroke1_1133[0].x, stroke1_1133[0].y) === 2, 'M1133: river 1 is width 2 after widening');
+    const widened = riverById1133(wStudio1133, 'river:studio-1');
+    assert((widened.widthTiles ?? []).length === 8, 'M1133: river 1 carries 8 width tiles after widening');
+    const widthTile0 = widened.widthTiles[0];
+    P1133.applyUndo(wStudio1133, resW.undo);
+    assert(R1133.riverWidthAt(wStudio1133, stroke1_1133[0].x, stroke1_1133[0].y) === 1, 'M1133: undo of a widen returns river 1 to width 1');
+    P1133.applyRedo(wStudio1133, resW.undo);
+    assert(R1133.riverWidthAt(wStudio1133, stroke1_1133[0].x, stroke1_1133[0].y) === 2, 'M1133: redo of a widen returns river 1 to width 2');
+    const resN: any = ST1133.applyStudioEdit(wStudio1133, 'narrow', stroke1_1133, opts1133());
+    assert(resN.ok === true, 'M1133: the narrow applies');
+    assert(R1133.riverWidthAt(wStudio1133, stroke1_1133[0].x, stroke1_1133[0].y) === 1, 'M1133: river 1 is width 1 after narrowing');
+    assert(W1133.terrainAt(wStudio1133, widthTile0.x, widthTile0.y) !== 'water', 'M1133: a narrowed width tile is dry land again');
+  }
+  {
+    const wD = patchWorld1133();
+    let start: { x: number; y: number } | null = null;
+    outerD1133: for (let y0 = 150; y0 <= 168; y0++) {
+      for (let x0 = 100; x0 <= 130; x0++) {
+        let ok = true;
+        for (let i = 0; i < 5; i++) {
+          const cands = [{ x: x0 + i, y: y0 + i }, { x: x0 + i + 1, y: y0 + i - 1 }, { x: x0 + i - 1, y: y0 + i + 1 }];
+          for (const c of cands) {
+            if (W1133.terrainAt(wD, c.x, c.y) === 'water' || R1133.riverTileRefusal(wD, c.x, c.y) !== null) { ok = false; break; }
+          }
+          if (!ok) break;
+        }
+        if (ok) { start = { x: x0, y: y0 }; break outerD1133; }
+      }
+    }
+    assert(start !== null, 'M1133: a clear diagonal run exists (setup)');
+    if (start) {
+      const sD = [0, 1, 2, 3, 4].map((i) => ({ x: start.x + i, y: start.y + i }));
+      const rD: any = ST1133.applyStudioEdit(wD, 'river', sD, opts1133({ width: 1 }));
+      assert(rD.ok === true, 'M1133: the diagonal river applies');
+      const wRes: any = ST1133.applyStudioEdit(wD, 'widen', sD, opts1133());
+      assert(wRes.ok === true && R1133.riverWidthAt(wD, sD[0].x, sD[0].y) === 2, 'M1133: the diagonal river widens to 2');
+      const dRiver = riverById1133(wD, 'river:studio-1');
+      assert((dRiver.widthTiles ?? []).length === 5, 'M1133: the diagonal widen adds 5 width tiles');
+      const dWidth = dRiver.widthTiles[0];
+      const nRes: any = ST1133.applyStudioEdit(wD, 'narrow', sD, opts1133());
+      assert(nRes.ok === true && R1133.riverWidthAt(wD, sD[0].x, sD[0].y) === 1, 'M1133: the diagonal river narrows back to 1');
+      assert(W1133.terrainAt(wD, dWidth.x, dWidth.y) !== 'water', 'M1133: the diagonal width tile is dry after narrowing');
+    }
+  }
+  // --- Bank: harden then remove. ---
+  {
+    const bankTile = { x: stroke1_1133[0].x, y: rowA1133 - 1 };
+    const pv: any = ST1133.previewStudioEdit(wStudio1133, 'bank', [bankTile], opts1133());
+    assert(pv.bank !== undefined && pv.bank.action === 'harden', 'M1133: the bank preview offers harden on a river bank');
+    const res: any = ST1133.applyStudioEdit(wStudio1133, 'bank', [bankTile], opts1133());
+    assert(res.ok === true, 'M1133: the bank harden applies');
+    assert(P1133.isPlacedEmbankment(wStudio1133, bankTile.x, bankTile.y) === true, 'M1133: the bank tile reads as an embankment');
+    const pv2: any = ST1133.previewStudioEdit(wStudio1133, 'bank', [bankTile], opts1133());
+    assert(pv2.bank !== undefined && pv2.bank.action === 'remove', 'M1133: the bank preview offers remove on a hardened bank');
+    const res2: any = ST1133.applyStudioEdit(wStudio1133, 'bank', [bankTile], opts1133());
+    assert(res2.ok === true && P1133.isPlacedEmbankment(wStudio1133, bankTile.x, bankTile.y) === false, 'M1133: the bank remove applies');
+    assert(P1133.validatePlacement(wStudio1133, 'embankment', stroke1_1133[0].x, rowA1133, CAMP1133, NO_NPC1133).ok === false, 'M1133: a bank harden still refuses a water tile');
+  }
+  // --- Bridge: place on the drawn river; remove on a separate world. ---
+  const bridgeTile1133 = { x: stroke1_1133[3].x, y: rowA1133 };
+  {
+    const pv: any = ST1133.previewStudioEdit(wStudio1133, 'bridge', [bridgeTile1133], opts1133());
+    assert(pv.bridge !== undefined && pv.bridge.action === 'place', 'M1133: the bridge preview offers place on the drawn river');
+    assert(pv.bridge !== undefined && pv.bridge.span.length === 1, 'M1133: the bridge span is 1 tile over the 1-wide river');
+    assert(pv.bridge !== undefined && pv.bridge.axis === 'y', 'M1133: E/W flow -> deck axis y');
+    assert(pv.rejected.length === 0, 'M1133: the bridge preview rejects nothing');
+    const res: any = ST1133.applyStudioEdit(wStudio1133, 'bridge', [bridgeTile1133], opts1133());
+    assert(res.ok === true, 'M1133: the bridge applies');
+    assert(P1133.isPlacedBridge(wStudio1133, bridgeTile1133.x, bridgeTile1133.y) === true, 'M1133: the bridge reads as placed');
+    assert(P1133.walkableWithPlacements(wStudio1133, wStudio1133.crates, bridgeTile1133.x, bridgeTile1133.y) === true, 'M1133: the bridge deck is walkable');
+    assert(PA1133.isPathTile(wStudio1133, bridgeTile1133.x, bridgeTile1133.y - 1) === true, 'M1133: the north approach is paved');
+    assert(PA1133.isPathTile(wStudio1133, bridgeTile1133.x, bridgeTile1133.y + 1) === true, 'M1133: the south approach is paved');
+    assert(P1133.validatePlacement(wStudio1133, 'bridge', stroke1_1133[0].x, rowA1133 - 1, CAMP1133, NO_NPC1133).ok === false, 'M1133: a bridge still refuses dry land');
+  }
+  {
+    const wBR = patchWorld1133();
+    const rA = dryRow1133(wBR, 150, 162, 118, 131);
+    const st = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rA }));
+    ST1133.applyStudioEdit(wBR, 'river', st, opts1133({ width: 1 }));
+    const bt = { x: st[3].x, y: rA };
+    const placed: any = ST1133.applyStudioEdit(wBR, 'bridge', [bt], opts1133());
+    assert(placed.ok === true && P1133.isPlacedBridge(wBR, bt.x, bt.y) === true, 'M1133: the remove-test bridge places (setup)');
+    const pv: any = ST1133.previewStudioEdit(wBR, 'bridge', [bt], opts1133());
+    assert(pv.bridge !== undefined && pv.bridge.action === 'remove', 'M1133: the bridge preview offers remove on a placed bridge');
+    const res: any = ST1133.applyStudioEdit(wBR, 'bridge', [bt], opts1133());
+    assert(res.ok === true && P1133.isPlacedBridge(wBR, bt.x, bt.y) === false, 'M1133: the bridge remove applies');
+    assert(P1133.walkableWithPlacements(wBR, wBR.crates, bt.x, bt.y) === false, 'M1133: the river blocks again after the bridge is removed');
+  }
+  // --- Path + auto-connect to the bridge (drawn east of it: the
+  // bridge approach road runs west to the dirt road). ---
+  const connectorTiles1133 = [{ x: 126, y: rowA1133 - 1 }, { x: 125, y: rowA1133 - 1 }, { x: 124, y: rowA1133 - 1 }];
+  const pathStroke1133 = [131, 130, 129, 128, 127].map((x) => ({ x, y: rowA1133 - 1 }));
+  {
+    const before = snap1133(wStudio1133);
+    const pv: any = ST1133.previewStudioEdit(wStudio1133, 'path', pathStroke1133, opts1133());
+    assert(pv.tiles.length === 5, 'M1133: the path preview lists 5 stroke tiles');
+    assert(pv.rejected.length === 0, 'M1133: the path preview rejects nothing');
+    assert((pv.connector ?? []).length === 3 && connectorTiles1133.every((c) => (pv.connector ?? []).some((t: any) => sameTile1133(t, c))), 'M1133: the preview connector is the 3 gap tiles to the bridge bank');
+    const res: any = ST1133.applyStudioEdit(wStudio1133, 'path', pathStroke1133, opts1133());
+    assert(res.ok === true, 'M1133: the path applies');
+    assert(connectorTiles1133.every((c) => res.connected.some((t: any) => sameTile1133(t, c))), 'M1133: the apply stamps the connector tiles');
+    assert(pathStroke1133.every((t) => PA1133.isPathTile(wStudio1133, t.x, t.y) === true), 'M1133: every stroke tile is a path after apply');
+    assert(connectorTiles1133.every((c) => PA1133.isPathTile(wStudio1133, c.x, c.y) === true), 'M1133: every connector tile is a path after apply');
+    const after = snap1133(wStudio1133);
+    P1133.applyUndo(wStudio1133, res.undo);
+    assert(snap1133(wStudio1133) === before, 'M1133: undo of a path apply restores the world exactly');
+    P1133.applyRedo(wStudio1133, res.undo);
+    assert(snap1133(wStudio1133) === after, 'M1133: redo of a path apply restores the path exactly');
+  }
+  // --- Preview purity: every tool, on a fresh world with a river. ---
+  {
+    const wP = patchWorld1133();
+    const rA = dryRow1133(wP, 150, 162, 118, 131);
+    const st = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rA }));
+    ST1133.applyStudioEdit(wP, 'river', st, opts1133({ width: 1 }));
+    const tools: Array<[string, Array<{ x: number; y: number }>, any]> = [
+      ['river', [120, 121, 122].map((x) => ({ x, y: rA + 5 })), { width: 1 }],
+      ['widen', st, {}],
+      ['narrow', st, {}],
+      ['bank', [{ x: st[0].x, y: rA - 1 }], {}],
+      ['bridge', [{ x: st[3].x, y: rA }], {}],
+      ['path', [117, 118, 119].map((x) => ({ x, y: rA - 1 })), {}],
+    ];
+    for (const [tool, tiles, extra] of tools) {
+      const before = JSON.stringify(wP);
+      ST1133.previewStudioEdit(wP, tool as any, tiles, opts1133(extra));
+      assert(JSON.stringify(wP) === before, 'M1133: the ' + tool + ' preview mutates nothing');
+    }
+    const pvN: any = ST1133.previewStudioEdit(wStudio1133, 'narrow', stroke2_1133, opts1133());
+    assert(pvN.tiles.length === 16, 'M1133: the narrow preview on river 2 lists 16 tiles (8 centreline + 8 removed)');
+  }
+  // --- Bridge place undo/redo round-trips the deck + approaches. ---
+  {
+    const wBU = patchWorld1133();
+    const rA = dryRow1133(wBU, 150, 162, 118, 131);
+    const st = [120, 121, 122, 123, 124, 125, 126, 127].map((x) => ({ x, y: rA }));
+    ST1133.applyStudioEdit(wBU, 'river', st, opts1133({ width: 1 }));
+    const bt = { x: st[3].x, y: rA };
+    const beforeB = snap1133(wBU);
+    const resB: any = ST1133.applyStudioEdit(wBU, 'bridge', [bt], opts1133());
+    assert(resB.ok === true, 'M1133: the undo-test bridge applies (setup)');
+    const afterB = snap1133(wBU);
+    P1133.applyUndo(wBU, resB.undo);
+    assert(snap1133(wBU) === beforeB, 'M1133: undo of a bridge place restores the world exactly');
+    assert(P1133.isPlacedBridge(wBU, bt.x, bt.y) === false, 'M1133: the bridge is gone after undo');
+    assert(PA1133.isPathTile(wBU, bt.x, bt.y - 1) === false, 'M1133: the north approach is gone after undo');
+    P1133.applyRedo(wBU, resB.undo);
+    assert(snap1133(wBU) === afterB, 'M1133: redo of a bridge place restores the bridge exactly');
+    assert(P1133.isPlacedBridge(wBU, bt.x, bt.y) === true, 'M1133: the bridge is back after redo');
+  }
+  // --- Persistence: saveWorld/loadWorld round-trips the studio edits. ---
+  // (The 1056 localStorage stand-in is still in place.)
+  {
+    W1133.saveWorld(wStudio1133);
+    const loaded: any = W1133.loadWorld();
+    assert(loaded !== null && loaded !== undefined, 'M1133: loadWorld returns a world (setup)');
+    assert(riverById1133(loaded, 'river:studio-1') !== undefined, 'M1133: the studio river survives reload');
+    assert(riverById1133(loaded, 'river:studio-2') !== undefined && R1133.riverWidthAt(loaded, stroke2_1133[0].x, stroke2_1133[0].y) === 3, 'M1133: the width-3 studio river survives reload at width 3');
+    assert(stroke1_1133.every((t) => W1133.terrainAt(loaded, t.x, t.y) === 'water'), 'M1133: the studio river tiles are water after reload');
+    assert(stroke1_1133.every((t) => R1133.riverAt(loaded, t.x, t.y) !== null), 'M1133: riverAt finds the studio river after reload');
+    assert(P1133.isPlacedBridge(loaded, bridgeTile1133.x, bridgeTile1133.y) === true, 'M1133: the studio bridge survives reload');
+    assert(pathStroke1133.every((t) => PA1133.isPathTile(loaded, t.x, t.y) === true), 'M1133: the studio path survives reload');
+    assert(connectorTiles1133.every((c) => PA1133.isPathTile(loaded, c.x, c.y) === true), 'M1133: the connector tiles survive reload');
+  }
+  // --- 24h M1069 IDENTICAL to the 1126 base (nothing is auto-stamped,
+  // so the fresh-world sim is structurally identical). ---
+  const world24_1133: any = W1133.defaultWorld();
+  const sim24_1133: any = SS1133.createSettlementSim(world24_1133);
+  SS1133.advanceSettlement(sim24_1133, 1600);
+  const L24_1133 = sim24_1133.ledger;
+  assert(L24_1133.ticks === 1600, 'M1133: 24h ticks 1600');
+  assert(L24_1133.woodChopped === 52 && L24_1133.woodDelivered === 46 && L24_1133.woodSpent === 24, 'M1133: 24h wood 52/46/24 (M1069 1126 base — 1133 changes nothing in the diag)');
+  assert(L24_1133.grainHarvested === 54 && L24_1133.grainDelivered === 54, 'M1133: 24h grain 54/54 (M1069 1126 base)');
+  assert(L24_1133.mealsBaked === 26 && L24_1133.mealsEaten === 13, 'M1133: 24h meals 26/13 (M1069 1126 base)');
+  assert(L24_1133.flourMilled === 54 && L24_1133.flourBaked === 52, 'M1133: 24h flour 54/52 (M1069 1126 base)');
+  assert(L24_1133.jobsCompleted.chop === 26 && L24_1133.jobsCompleted.build === 4 && L24_1133.jobsCompleted.deliver === 50 && L24_1133.jobsCompleted.harvest === 27, 'M1133: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 1126 base)');
+  assert(L24_1133.hutsCompleted === 2 && L24_1133.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1133: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1133.starvedTicks === 0 && Math.round(L24_1133.minHealth) === 100, 'M1133: nobody starves in 24h');
+  assert(sim24_1133.founders.length === 7, 'M1133: the population is 7 after 24h');
+  assert(F1133.campWoodInRegistry(sim24_1133.registry) === 10 && F1133.campFoodInRegistry(sim24_1133.registry) === 13 && SS1133.settlementGrain(sim24_1133) === 0 && FC1133.foodChainFlourInRegistry(sim24_1133.registry) === 2, 'M1133: final wood/food/grain/flour 10/13/0/2 (M1069 1126 base)');
+  console.log('M1133: World Studio verified (river draw/width/widen/narrow/bank/bridge/path + connector, preview purity, undo/redo, persistence, 24h identical)');
+}
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

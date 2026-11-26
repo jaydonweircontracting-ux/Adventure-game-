@@ -843,7 +843,10 @@ export function placeBridgeSpan(
     if (low) removeExactPlacement(world, low);
   }
   for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
-  for (const item of pathItems) addPlacement(world, item);
+  // BUILD 1133 (0x34): do NOT addPlacement(pathItems) again —
+  // stampPathTile already added each approach path once. A second
+  // add duplicated every approach path in world.placements, so a
+  // bridge-place undo removed one copy and left a ghost road behind.
   // BUILD 1128 (0x31): an entrance that is already a worn path keeps
   // its tile but is paved stone — the bridge's front door reads as
   // paved even when founders wore the path there first.

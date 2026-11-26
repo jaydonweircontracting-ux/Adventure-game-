@@ -28,6 +28,7 @@ import { selectArea, areaCentreTile, rotateRect, rotateArea, deleteArea, type Ar
 import { type LayoutResult } from './layoutHelpers';
 import { HOUSE_VARIANTS } from './townLook';
 import type { CustomAsset } from './customAssets';
+import type { StudioTool } from './worldStudio';
 
 export interface BuildingContext {
   // Refs (mutable world / UI state the module reads and writes).
@@ -65,10 +66,18 @@ export interface BuildingContext {
   setAreaDuplicateArmed: (v: boolean) => void;
   setAreaDeleteArmed: (v: boolean) => void;
   setWalkSuspended: (v: boolean) => void;
+  // BUILD 1133: disarm the World Studio tool (the view's
+  // setStudioToolBoth) — toggles and cancel call it so a studio
+  // tool never stays armed beside another build tool.
+  onClearStudio: () => void;
   // State values, captured per render.
   removeMode: boolean;
   palette: PaletteKind | null;
   customSelection: string | null;
+  // BUILD 1133: the armed World Studio tool (view state, captured
+  // per render like palette) — the minimized strip and Walk label
+  // treat it as an armed build tool.
+  studioTool: StudioTool | null;
   areaSelectMode: boolean;
   moveMode: boolean;
   saveAreaMode: boolean;
@@ -136,6 +145,7 @@ export function createBuildingInteractions(ctx: BuildingContext): BuildingIntera
 // right-click after "Move + pick an asset" returns to dragging
 // items instead of dropping the whole tool.
 export function cancelPlacement(ctx: BuildingContext): void {
+  ctx.onClearStudio();
   ctx.setPalette(null); ctx.setCustomSelection(null); ctx.setPasteName(null);
   ctx.buildRef.current = { ...ctx.buildRef.current, palette: null, customAssetId: null, pasteName: null };
   const el = ctx.placePreviewRef.current; if (el) el.style.display = 'none';
@@ -167,6 +177,7 @@ export function placementLabel(ctx: BuildingContext, item: PlacedItem): string {
   return item.kind==='custom'?(ctx.customAssetsRef.current.find(a=>a.id===item.assetId)?.name??'Custom model'):item.kind==='house'&&item.variant?(HOUSE_VARIANTS[item.variant]?.label??'House'):({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass',rock:'Rock',water:'Water',wall:'Wall',lantern:'Lantern',bush:'Bush',ore:'Ore Deposit',bridge:'Wooden Bridge',ford:'Ford',dock:'Dock','stepping-stone':'Stepping Stone',embankment:'Embankment',farm:'Farm Land',fence:'Fence'} as Record<string,string>)[item.kind]??item.kind;
 }
 export function walkToolLabel(ctx: BuildingContext): string {
+  if(ctx.studioTool)return ({river:'Draw river',widen:'Widen river',narrow:'Narrow river',bank:'Harden bank',bridge:'Bridge',path:'Draw path'} as Record<string,string>)[ctx.studioTool];
   const t=toolLabel(ctx.palette,ctx.removeMode,ctx.moveMode,ctx.saveAreaMode,ctx.pasteName,ctx.areaSelectMode);if(t)return t;if(ctx.customSelection){const a=ctx.customAssets.find(x=>x.id===ctx.customSelection);return a?a.name:'Custom';}return '';
 }
 
@@ -176,6 +187,7 @@ export function walkToolLabel(ctx: BuildingContext): string {
 // verbatim: turning Remove on clears any palette/custom choice and
 // Move/Save/Paste; turning it off keeps the palette it displaced.
 export function toggleRemove(ctx: BuildingContext): void {
+  ctx.onClearStudio();
   const next=!ctx.removeMode;ctx.setRemoveMode(next);if(next){ctx.setPalette(null);ctx.setCustomSelection(null);}ctx.setMoveMode(false);ctx.setSaveAreaMode(false);ctx.setPasteName(null);ctx.buildRef.current={palette:next?null:ctx.palette,removeMode:next,moveMode:false,saveAreaMode:false,pasteName:null,customAssetId:next?null:ctx.buildRef.current.customAssetId,areaSelectMode:ctx.buildRef.current.areaSelectMode,areaMoveArmed:ctx.buildRef.current.areaMoveArmed,areaDuplicateArmed:ctx.buildRef.current.areaDuplicateArmed};
 }
 
@@ -186,6 +198,7 @@ export function toggleRemove(ctx: BuildingContext): void {
 // it. Move/Duplicate arms are dropped with the tool (they refer to
 // the drag, not the selection).
 export function toggleAreaSelect(ctx: BuildingContext): void {
+  ctx.onClearStudio();
   const next=!ctx.areaSelectMode;ctx.setAreaSelectMode(next);if(next){ctx.setPalette(null);ctx.setCustomSelection(null);ctx.setRemoveMode(false);ctx.setMoveMode(false);ctx.setSaveAreaMode(false);ctx.setPasteName(null);}ctx.setAreaMoveArmed(false);ctx.setAreaDuplicateArmed(false);ctx.setAreaDeleteArmed(false);ctx.buildRef.current={palette:next?null:ctx.palette,removeMode:next?false:ctx.removeMode,moveMode:next?false:ctx.moveMode,saveAreaMode:next?false:ctx.saveAreaMode,pasteName:next?null:ctx.pasteName,customAssetId:next?null:ctx.buildRef.current.customAssetId,areaSelectMode:next,areaMoveArmed:false,areaDuplicateArmed:false};
 }
 export function setAreaMoveArmedBoth(ctx: BuildingContext, v: boolean): void {
@@ -250,7 +263,7 @@ export function runLayoutHelper(ctx: BuildingContext, fn: (w: IsoWorld, s: AreaS
 // the minimized handle reopen the panel; a full close (×) clears
 // the tools, so nothing reopens until Build is tapped again.
 export function isBuildMinimized(ctx: BuildingContext): boolean {
-  return !ctx.buildOpen&&!!(ctx.palette||ctx.customSelection||ctx.removeMode||ctx.moveMode||ctx.saveAreaMode||ctx.pasteName||ctx.areaSelectMode||ctx.areaSelection);
+  return !ctx.buildOpen&&!!(ctx.palette||ctx.customSelection||ctx.removeMode||ctx.moveMode||ctx.saveAreaMode||ctx.pasteName||ctx.areaSelectMode||ctx.studioTool||ctx.areaSelection);
 }
 export function setInside(ctx: BuildingContext, h: HutRect | null): void {
   ctx.insideHutRef.current=h;ctx.setInsideHut(h);
