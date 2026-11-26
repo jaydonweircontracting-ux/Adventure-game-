@@ -48,7 +48,7 @@ import {
   type ResourceRegistry, type RegistryKind,
 } from './resourceRegistry';
 import {
-  placedHutRects, placedFarmTiles, walkableWithPlacements, undoRedoKeyForEvent,
+  placedHutRects, placedFarmTiles, walkableWithPlacements, undoRedoKeyForEvent, infraExamineNear,
   type Rotation, type PaletteKind,
 } from './placements';
 import { absMinutes, farmStageAt, harvestFarmTile } from './farm';
@@ -742,6 +742,12 @@ export function action(ctx: PlayerControlsContext, e: KeyboardEvent): void {
       else setMessage('Mined '+mined+' '+deposit.mineral+' · '+remaining+' remaining'+brokeNote);
       return;
     }
+    // BUILD 1132 (0x33): a placed crossing or bank structure answers
+    // E first — a bridge/ford/dock/stone sits ON a river tile, so
+    // without this the river text would win and the player could
+    // never examine the thing they built.
+    const infra=infraExamineNear(world,Math.round(p.x),Math.round(p.y));
+    if(infra){setMessage(infra);return}
     // BUILD 1082 (1.3): a river answers E with its Examine text
     // (which way it flows) — the river is water, so it blocks
     // like water, and the player stands beside it, within the

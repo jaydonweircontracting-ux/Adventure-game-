@@ -17396,6 +17396,143 @@ console.log('Testing navigation — water as obstacle, bridge crossings for NPCs
 
 
 
+console.log('Testing river infrastructure — docks, stepping stones, embankments, bridge styles (BUILD 1132, 0x33)...');
+{
+  const W1132 = await import('../src/game/iso/isoWorld.js');
+  const T31132 = await import('../src/game/engine3d/townsfolk3d.js');
+  const F1132 = await import('../src/game/engine3d/founders.js');
+  const P1132 = await import('../src/game/engine3d/placements.js');
+  const PP1132 = await import('../src/game/engine3d/playerPath.js');
+  const R1132 = await import('../src/game/engine3d/rivers.js');
+  const PA1132 = await import('../src/game/engine3d/paths.js');
+  const SS1132 = await import('../src/game/engine3d/settlementSim.js');
+  const FC1132 = await import('../src/game/engine3d/foodChain.js');
+  const CAMP1132 = { x: 124, y: 120 };
+  const bandWorld1132 = (): any => {
+    const w: any = W1132.defaultWorld();
+    w.trees = (w.trees ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+    w.rocks = (w.rocks ?? []).filter((t: { tx: number; ty: number }) =>
+      !(t.tx === 130 || (t.tx >= 124 && t.tx <= 136 && t.ty >= 116 && t.ty <= 124)));
+    w.mineralDeposits = (w.mineralDeposits ?? []).filter((d: { x: number; y: number }) => d.x !== 130);
+    if (!w.terrain) w.terrain = {};
+    for (let y = 0; y < w.h; y++) w.terrain[W1132.terrainKey(130, y)] = 'water';
+    return w;
+  };
+  const place1132 = (w: any, kind: string, x: number, y: number, opts: any = {}): any => {
+    const r: any = P1132.validatePlacement(w, kind as any, x, y, CAMP1132, [], 0, opts);
+    if (!r.ok) return null;
+    P1132.addPlacement(w, r.item);
+    return r.item;
+  };
+  // --- Dock: places beside land, walks, carries a founder across. ---
+  const wDock1132 = bandWorld1132();
+  const dockSpot1132: any = P1132.firstValidTileFor(wDock1132, 'dock', CAMP1132, []);
+  assert(dockSpot1132 !== null, 'M1132: a dock spot exists');
+  assert(dockSpot1132 !== null && place1132(wDock1132, 'dock', dockSpot1132.x, dockSpot1132.y) !== null, 'M1132: the dock places through validatePlacement');
+  assert(dockSpot1132 !== null && P1132.isPlacedDock(wDock1132, dockSpot1132.x, dockSpot1132.y) === true, 'M1132: the dock reads as placed');
+  assert(dockSpot1132 !== null && P1132.walkableWithPlacements(wDock1132, wDock1132.crates, dockSpot1132.x, dockSpot1132.y) === true, 'M1132: a dock tile is walkable');
+  assert(P1132.validatePlacement(wDock1132, 'dock', 129, 120, CAMP1132, []).ok === false, 'M1132: a dock refuses dry land');
+  const wFounder1132 = bandWorld1132();
+  assert(place1132(wFounder1132, 'dock', 130, 120) !== null, 'M1132: a dock places on the band at (130,120)');
+  let pos1132 = { x: 126, y: 120 };
+  let path1132 = F1132.emptyFounderPath();
+  let crossed1132 = false;
+  for (let i = 0; i < 60; i++) {
+    const r = F1132.stepFounderMove(wFounder1132, pos1132, { x: 134, y: 120 }, path1132, () => false);
+    pos1132 = r.pos; path1132 = r.path;
+    if (pos1132.x === 130 && pos1132.y === 120) crossed1132 = true;
+    if (r.arrived) break;
+  }
+  assert(crossed1132 === true && pos1132.x === 134 && pos1132.y === 120, 'M1132: the founder crosses the band on the dock and arrives');
+  // --- Stepping stone: a crossing for NPCs and the player; the deck removes it. ---
+  const wStone1132 = bandWorld1132();
+  assert(T31132.planPathNpc(wStone1132, { x: 126, y: 120 }, { x: 134, y: 120 }) === null, 'M1132: no route across the band with no crossing');
+  assert(place1132(wStone1132, 'stepping-stone', 130, 120) !== null, 'M1132: the stepping stone places');
+  assert(P1132.isPlacedSteppingStone(wStone1132, 130, 120) === true, 'M1132: the stone reads as placed');
+  assert(P1132.walkableWithPlacements(wStone1132, wStone1132.crates, 130, 120) === true && PP1132.playerWalkable(wStone1132, 130, 120) === true, 'M1132: a stone tile is walkable for NPCs and the player');
+  const viaStone1132 = T31132.planPathNpc(wStone1132, { x: 126, y: 120 }, { x: 134, y: 120 });
+  assert(viaStone1132 !== null && viaStone1132.some((t: { x: number; y: number }) => t.x === 130 && t.y === 120), 'M1132: a route exists via the stone and steps on it');
+  assert(P1132.validatePlacement(wStone1132, 'stepping-stone', 129, 120, CAMP1132, []).ok === false, 'M1132: a stone refuses dry land');
+  const site1132: any = PA1132.freshBridgeSite(130, 120, { x: 129, y: 120 }, [{ x: 130, y: 120 }], 'wooden', 'x', { x: 129, y: 120 });
+  assert(PA1132.placeBridgeSpan(wStone1132, site1132, CAMP1132, []).ok === true, 'M1132: placeBridgeSpan succeeds over the stone');
+  assert(P1132.isPlacedSteppingStone(wStone1132, 130, 120) === false && P1132.isPlacedBridge(wStone1132, 130, 120) === true, 'M1132: the stone is gone under the deck');
+  // --- Embankment: a bank tile beside water; the crossing bonus is exactly +15. ---
+  const wEmb1132: any = W1132.defaultWorld();
+  SS1132.createSettlementSim(wEmb1132);
+  const embSpot1132: any = P1132.firstValidTileFor(wEmb1132, 'embankment', CAMP1132, []);
+  assert(embSpot1132 !== null, 'M1132: an embankment spot exists on the real rivers');
+  assert(embSpot1132 !== null && place1132(wEmb1132, 'embankment', embSpot1132.x, embSpot1132.y) !== null, 'M1132: the embankment places');
+  assert(embSpot1132 !== null && P1132.isPlacedEmbankment(wEmb1132, embSpot1132.x, embSpot1132.y) === true, 'M1132: the embankment reads as placed');
+  const riverTile1132: any = R1132.allRiverTiles(wEmb1132)[0];
+  assert(riverTile1132 !== undefined && P1132.validatePlacement(wEmb1132, 'embankment', riverTile1132.x, riverTile1132.y, CAMP1132, []).ok === false, 'M1132: an embankment refuses a water tile');
+  assert(PA1132.EMBANKMENT_CROSSING_BONUS === 15, 'M1132: EMBANKMENT_CROSSING_BONUS is 15');
+  let bonus1132 = false;
+  for (const entry of PA1132.listCrossings(wEmb1132)) {
+    if (bonus1132) break;
+    const run = entry.run;
+    for (const bank of [run.bankA, run.bankB]) {
+      if (bonus1132) break;
+      if (P1132.isPlacedEmbankment(wEmb1132, bank.x, bank.y)) continue;
+      const before: any = PA1132.scoreCrossing(wEmb1132, run);
+      if (before === null) continue;
+      if (place1132(wEmb1132, 'embankment', bank.x, bank.y) === null) continue;
+      const after: any = PA1132.scoreCrossing(wEmb1132, run);
+      assert(after !== null && after - before === 15, 'M1132: embanking a bank gains exactly +15');
+      bonus1132 = true;
+    }
+  }
+  assert(bonus1132 === true, 'M1132: the +15 bonus was demonstrated on a real crossing');
+  // --- Bridge styles: all six stamp, axis follows the river flow. ---
+  const wStyle1132 = bandWorld1132();
+  const styles1132 = ['wooden', 'stone', 'footbridge', 'large-road', 'narrow-stream', 'wide-river'];
+  const waterTiles1132: Array<{ x: number; y: number }> = [];
+  outerStyle1132: for (let y = 0; y < wStyle1132.h; y++) for (let x = 0; x < wStyle1132.w; x++) {
+    if (W1132.terrainAt(wStyle1132, x, y) !== 'water') continue;
+    waterTiles1132.push({ x, y });
+    if (waterTiles1132.length >= 6) break outerStyle1132;
+  }
+  styles1132.forEach((style, i) => {
+    const t = waterTiles1132[i];
+    const r: any = P1132.validatePlacement(wStyle1132, 'bridge', t.x, t.y, CAMP1132, [], 0, { bridgeStyle: style as any });
+    assert(r.ok === true && r.item.bridgeStyle === style, 'M1132: a ' + style + ' bridge stamps its style');
+  });
+  const riverTiles1132: any[] = R1132.allRiverTiles(wEmb1132);
+  const ns1132 = riverTiles1132.find((t: any) => t.dy !== 0);
+  const ew1132 = riverTiles1132.find((t: any) => t.dx !== 0 && t.dy === 0);
+  assert(ns1132 !== undefined && ew1132 !== undefined, 'M1132: N/S and E/W river tiles exist (setup)');
+  if (ns1132) {
+    const r: any = P1132.validatePlacement(wEmb1132, 'bridge', ns1132.x, ns1132.y, CAMP1132, [], 0, { bridgeStyle: 'stone' });
+    assert(r.ok === true && r.item.bridgeAxis === 'x', 'M1132: N/S flow -> deck axis x');
+  }
+  if (ew1132) {
+    const r: any = P1132.validatePlacement(wEmb1132, 'bridge', ew1132.x, ew1132.y, CAMP1132, [], 0, { bridgeStyle: 'wooden' });
+    assert(r.ok === true && r.item.bridgeAxis === 'y', 'M1132: E/W flow -> deck axis y');
+  }
+  // --- Examine: the dock, the embankment, and the bridge over the river. ---
+  assert(dockSpot1132 !== null && (P1132.infraExamineNear(wDock1132, dockSpot1132.x, dockSpot1132.y) ?? '').indexOf('Dock') === 0, 'M1132: Examine beside a dock says Dock');
+  assert(embSpot1132 !== null && (P1132.infraExamineNear(wEmb1132, embSpot1132.x, embSpot1132.y) ?? '').indexOf('Embankment') === 0, 'M1132: Examine beside an embankment says Embankment');
+  // --- 24h M1069 IDENTICAL to the 1126 base (nothing is auto-stamped,
+  // so the fresh-world sim is structurally identical). ---
+  const world24_1132: any = W1132.defaultWorld();
+  const sim24_1132: any = SS1132.createSettlementSim(world24_1132);
+  SS1132.advanceSettlement(sim24_1132, 1600);
+  const L24_1132 = sim24_1132.ledger;
+  assert(L24_1132.ticks === 1600, 'M1132: 24h ticks 1600');
+  assert(L24_1132.woodChopped === 52 && L24_1132.woodDelivered === 46 && L24_1132.woodSpent === 24, 'M1132: 24h wood 52/46/24 (M1069 1126 base — 1132 changes nothing in the diag)');
+  assert(L24_1132.grainHarvested === 54 && L24_1132.grainDelivered === 54, 'M1132: 24h grain 54/54 (M1069 1126 base)');
+  assert(L24_1132.mealsBaked === 26 && L24_1132.mealsEaten === 13, 'M1132: 24h meals 26/13 (M1069 1126 base)');
+  assert(L24_1132.flourMilled === 54 && L24_1132.flourBaked === 52, 'M1132: 24h flour 54/52 (M1069 1126 base)');
+  assert(L24_1132.jobsCompleted.chop === 26 && L24_1132.jobsCompleted.build === 4 && L24_1132.jobsCompleted.deliver === 50 && L24_1132.jobsCompleted.harvest === 27, 'M1132: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 1126 base)');
+  assert(L24_1132.hutsCompleted === 2 && L24_1132.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1132: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1132.starvedTicks === 0 && Math.round(L24_1132.minHealth) === 100, 'M1132: nobody starves in 24h');
+  assert(sim24_1132.founders.length === 7, 'M1132: the population is 7 after 24h');
+  assert(F1132.campWoodInRegistry(sim24_1132.registry) === 10 && F1132.campFoodInRegistry(sim24_1132.registry) === 13 && SS1132.settlementGrain(sim24_1132) === 0 && FC1132.foodChainFlourInRegistry(sim24_1132.registry) === 2, 'M1132: final wood/food/grain/flour 10/13/0/2 (M1069 1126 base)');
+  console.log('M1132: river infrastructure verified (dock/stone/embankment placement + crossing, bridge styles + axis, Examine, 24h identical)');
+}
+
+
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

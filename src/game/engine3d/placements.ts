@@ -21,14 +21,15 @@
 // so a gate would let him place nothing (future economy decision).
 
 import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type MovedHut, type PathKind, type PlacedItem } from '../iso/isoWorld';
-import { isShallowTile } from './rivers';
+import { isShallowTile, riverAt } from './rivers';
+import type { BridgeStyle } from './paths';
 import { ensurePlacementId } from './entityIds';
 import { isStationPaletteKind, paletteKindForStation, stationOfPaletteKind, type StationId } from './craftingStations';
 import { isGardenFenceTile } from './gardens';
 import { HOUSE_VARIANTS, type HouseVariantId } from './townLook';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass' | 'rock' | 'water' | 'wall'
-  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'ford' | 'farm' | 'fence' | 'well'
+  | 'lantern' | 'bush' | 'ore' | 'bridge' | 'ford' | 'dock' | 'stepping-stone' | 'embankment' | 'farm' | 'fence' | 'well'
   | 'house-cottage' | 'house-tall' | 'house-shop' | 'house-grand'
   | 'house-inn' | 'house-smith' | 'house-store' | 'house-windmill' | 'house-mine'
   | 'station-workbench' | 'station-blacksmith' | 'station-furnace' | 'station-advanced-forge' | 'station-apothecary';
@@ -960,7 +961,12 @@ function placedBlock(w: IsoWorld, x: number, y: number): string | null {
     // caller gates on terrain first, and a ford tile is water, so
     // houses/stalls still refuse it; a ford still cannot be
     // stamped over a bridge (the bridge is not skipped).
-    if (p.kind === 'path' || p.kind === 'ford') continue;
+    // BUILD 1132 (0x33): a stepping stone and a dock are the same
+    // kind of low water crossing — a bridge deck goes over them
+    // (the deck is the upgrade), so the founder's placeBridgeSpan
+    // (which validates every span tile through validatePlacement)
+    // never strands on a stone or a pier the player laid.
+    if (p.kind === 'path' || p.kind === 'ford' || p.kind === 'stepping-stone' || p.kind === 'dock') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return 'something you already placed';
   }
   return null;
@@ -968,6 +974,46 @@ function placedBlock(w: IsoWorld, x: number, y: number): string | null {
 
 function isWaypointTile(w: IsoWorld, x: number, y: number): boolean {
   return w.npcSpawns.some((s) => s.waypoints.some((wp) => wp.tx === x && wp.ty === y));
+}
+
+/** BUILD 1132 (0x33): the deck direction for a player-placed bridge
+ *  tile. A river tile flows along its course, so the deck runs across
+ *  it: flow north/south → deck east/west (axis 'x'), flow east/west →
+ *  deck north/south (axis 'y'). Ocean/pond water has no river, so a
+ *  neighbouring bridge tile decides (a run above/below reads 'y'),
+ *  else 'x' — the legacy default. */
+function bridgeAxisAt(w: IsoWorld, tx: number, ty: number): 'x' | 'y' {
+  const river = riverAt(w, tx, ty);
+  if (river) return river.tile.dy !== 0 ? 'x' : 'y';
+  if (placementsOf(w).some((p) => p.kind === 'bridge' && p.x0 === tx && (p.y0 === ty - 1 || p.y0 === ty + 1))) return 'y';
+  return 'x';
+}
+
+/** BUILD 1132 (0x33): true when one of the four neighbours is dry
+ *  land (generated terrain other than water, in bounds) — the bank
+ *  a dock or an embankment serves. */
+function isBankAdjacent(w: IsoWorld, tx: number, ty: number): boolean {
+  // A water tile beside dry land — the bank a dock serves. (A tile
+  // with any in-bounds non-water neighbour. The embankment needs the
+  // opposite — a land tile beside water — see isWaterAdjacent.)
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const nx = tx + dx, ny = ty + dy;
+    if (nx < 0 || ny < 0 || nx >= w.w || ny >= w.h) continue;
+    if (terrainAt(w, nx, ny) !== 'water') return true;
+  }
+  return false;
+}
+
+/** BUILD 1132 (0x33): a land tile beside water — the bank an
+ *  embankment hardens. The opposite of isBankAdjacent above: this
+ *  one looks for a water neighbour, that one for a land neighbour. */
+function isWaterAdjacent(w: IsoWorld, tx: number, ty: number): boolean {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const nx = tx + dx, ny = ty + dy;
+    if (nx < 0 || ny < 0 || nx >= w.w || ny >= w.h) continue;
+    if (terrainAt(w, nx, ny) === 'water') return true;
+  }
+  return false;
 }
 
 /** BUILD 997: shared blocking-rect checks, so a custom upload's
@@ -1060,6 +1106,7 @@ export function validatePlacement(
   playerTile: { x: number; y: number },
   npcTiles: Array<{ x: number; y: number }>,
   rot: Rotation = 0,
+  opts: { bridgeStyle?: BridgeStyle } = {},
 ): PlaceResult {
   // BUILD 997: custom items never validate here — their footprint
   // comes from the uploaded mesh, not from a fixed kind shape, so
@@ -1088,7 +1135,13 @@ export function validatePlacement(
     if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
     if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
     if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
-    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+    // BUILD 1132 (0x33): the picked style rides on the item (absent =
+    // 'wooden' on old saves) and the deck direction is auto-detected
+    // from the river flow, so a hand-placed bridge spans its river
+    // instead of defaulting to east/west. placeBridgeSpan overrides
+    // both fields with the site's style/axis, so founder bridges are
+    // unaffected.
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty, bridgeStyle: opts.bridgeStyle ?? 'wooden', bridgeAxis: bridgeAxisAt(w, tx, ty) } };
   }
   // BUILD 1128 (0x31): a ford is a wadeable shallow crossing — a
   // 'ford' placement on SHALLOW generated water only (isShallowTile:
@@ -1105,6 +1158,60 @@ export function validatePlacement(
     if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
     if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
     if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+  }
+  // BUILD 1132 (0x33): a dock is a wooden pier stub over the water —
+  // one walkable tile on generated water beside dry land (the bank it
+  // serves). It validates only on generated water, never on placed
+  // water, and never where another crossing already stands. Like a
+  // bridge it wins before the terrain check in walkableWithPlacements.
+  if (kind === 'dock') {
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return { ok: false, reason: 'outside the map' };
+    if (placementsOf(w).some((p) => p.kind === 'water' && p.x0 === tx && p.y0 === ty)) return { ok: false, reason: 'remove the placed water first' };
+    if (terrainAt(w, tx, ty) !== 'water') return { ok: false, reason: 'a dock goes over water beside the bank' };
+    if (!isBankAdjacent(w, tx, ty)) return { ok: false, reason: 'a dock needs dry land beside it' };
+    if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
+    if (isPlacedDock(w, tx, ty) || isPlacedFord(w, tx, ty) || isPlacedSteppingStone(w, tx, ty)) return { ok: false, reason: 'a crossing already stands here' };
+    if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
+    if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
+    if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+  }
+  // BUILD 1132 (0x33): a stepping stone is one hop rock on generated
+  // water — any depth (a stone pokes out of deep water too), walkable
+  // like a bridge (isPlacedSteppingStone in walkableWithPlacements).
+  // A bridge deck goes over it (the deck is the upgrade); a ford or
+  // a dock already standing here refuses it, so one tile never stacks
+  // two crossings.
+  if (kind === 'stepping-stone') {
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return { ok: false, reason: 'outside the map' };
+    if (placementsOf(w).some((p) => p.kind === 'water' && p.x0 === tx && p.y0 === ty)) return { ok: false, reason: 'remove the placed water first' };
+    if (terrainAt(w, tx, ty) !== 'water') return { ok: false, reason: 'a stepping stone goes in the water' };
+    if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
+    if (isPlacedSteppingStone(w, tx, ty) || isPlacedFord(w, tx, ty) || isPlacedDock(w, tx, ty)) return { ok: false, reason: 'a crossing already stands here' };
+    if (tx === playerTile.x && ty === playerTile.y) return { ok: false, reason: 'where you are standing' };
+    if (npcTiles.some((n) => n.x === tx && n.y === ty)) return { ok: false, reason: 'where someone is standing' };
+    if (isWaypointTile(w, tx, ty)) return { ok: false, reason: 'an NPC walking route' };
+    return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
+  }
+  // BUILD 1132 (0x33): an embankment is a reinforced river bank — a
+  // raised stone-edged slab on a LAND tile beside the water. It is
+  // walkable ground (a bank promenade), so it never blocks movement
+  // and needs none of the player/NPC/waypoint refusals a blocking
+  // item does; it refuses generated dirt/sand (roads and the square),
+  // generated blocks (trees, rocks, deposits, houses), and anything
+  // already placed. Its mechanical role is in paths.ts: a bridge
+  // crossing whose bank is embanked scores higher, so the founders
+  // prefer to bridge where the player hardened the bank.
+  if (kind === 'embankment') {
+    if (tx < 0 || ty < 0 || tx >= w.w || ty >= w.h) return { ok: false, reason: 'outside the map' };
+    if (terrainAt(w, tx, ty) === 'water') return { ok: false, reason: 'an embankment goes on the bank, not in the water' };
+    if (terrainAt(w, tx, ty) === 'dirt') return { ok: false, reason: 'a path or road' };
+    if (terrainAt(w, tx, ty) === 'sand') return { ok: false, reason: 'the town square' };
+    if (!isWaterAdjacent(w, tx, ty)) return { ok: false, reason: 'an embankment needs water beside it' };
+    const gen = generatedBlock(w, tx, ty);
+    if (gen) return { ok: false, reason: gen };
+    if (placedBlock(w, tx, ty)) return { ok: false, reason: 'something you already placed' };
     return { ok: true, item: { kind, x0: tx, y0: ty, x1: tx, y1: ty } };
   }
   const tiles: Array<{ x: number; y: number }> = [];
@@ -1648,14 +1755,39 @@ export function isPlacedFord(w: IsoWorld, x: number, y: number): boolean {
   return placementsOf(w).some((p) => p.kind === 'ford' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
 }
 
+/** BUILD 1132 (0x33): a dock tile is a wooden pier over the water —
+ *  the third placed kind that makes a water tile walkable. Like a
+ *  bridge, it wins before the terrain check in
+ *  walkableWithPlacements below. */
+export function isPlacedDock(w: IsoWorld, x: number, y: number): boolean {
+  return placementsOf(w).some((p) => p.kind === 'dock' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
+/** BUILD 1132 (0x33): a stepping-stone tile is a hop rock in the
+ *  water — the fourth placed kind that makes a water tile walkable.
+ *  Like a bridge, it wins before the terrain check in
+ *  walkableWithPlacements below. */
+export function isPlacedSteppingStone(w: IsoWorld, x: number, y: number): boolean {
+  return placementsOf(w).some((p) => p.kind === 'stepping-stone' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
+/** BUILD 1132 (0x33): an embankment tile is a reinforced river bank
+ *  (land, so it needs no walkability win — it only needs the
+ *  isPlacedBlocking skip below, like a path). */
+export function isPlacedEmbankment(w: IsoWorld, x: number, y: number): boolean {
+  return placementsOf(w).some((p) => p.kind === 'embankment' && x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1);
+}
+
 /** True when a placed house/stall/tree blocks the tile. Placed paths,
- *  grass, bushes, farm land, and bridges never block — a bush is
- *  walk-through decor (like grass), farm land is walk-through tilled
- *  soil (BUILD 1041), a bridge is walkable ground over water (like
- *  a path). */
+ *  grass, bushes, farm land, bridges, fords, docks, stepping stones,
+ *  and embankments never block — a bush is walk-through decor (like
+ *  grass), farm land is walk-through tilled soil (BUILD 1041), a
+ *  bridge is walkable ground over water (like a path), and a dock, a
+ *  stepping stone, and an embankment are walkable crossings/banks
+ *  (BUILD 1132). */
 export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
   for (const p of placementsOf(w)) {
-    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'farm' || p.kind === 'bridge' || p.kind === 'ford') continue;
+    if (p.kind === 'path' || p.kind === 'grass' || p.kind === 'bush' || p.kind === 'farm' || p.kind === 'bridge' || p.kind === 'ford' || p.kind === 'dock' || p.kind === 'stepping-stone' || p.kind === 'embankment') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return true;
   }
   return false;
@@ -1671,6 +1803,11 @@ export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
 export function walkableWithPlacements(w: IsoWorld, crates: IsoWorld['crates'], x: number, y: number): boolean {
   if (isPlacedBridge(w, x, y)) return true;
   if (isPlacedFord(w, x, y)) return true;
+  // BUILD 1132 (0x33): a dock and a stepping stone are walkable water
+  // tiles too — the same win-before-terrain rule as a bridge/ford, so
+  // the player, the NPCs, and the pathfinder all cross them.
+  if (isPlacedDock(w, x, y)) return true;
+  if (isPlacedSteppingStone(w, x, y)) return true;
   // BUILD 1050: a generated garden's fence blocks like a placed
   // fence — one shared check, so the player, the NPCs, and the
   // pathfinder all walk around the same gardens.
@@ -1800,6 +1937,74 @@ export function placedBridgeTiles(w: IsoWorld): Array<{ tx: number; ty: number; 
   return placementsOf(w)
     .filter((p) => p.kind === 'bridge')
     .map((p) => ({ tx: p.x0, ty: p.y0, style: p.bridgeStyle ?? 'wooden', axis: p.bridgeAxis ?? 'x' }));
+}
+
+/** Placed dock tiles (BUILD 1132). Single tiles, like placed bridges
+ *  — a dock sits ON water beside the bank and makes it walkable. */
+export function placedDockTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'dock')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed stepping-stone tiles (BUILD 1132). Single tiles, like
+ *  placed bridges — a stone sits IN the water and makes it walkable. */
+export function placedSteppingStoneTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'stepping-stone')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** Placed embankment tiles (BUILD 1132). Single tiles, like placed
+ *  paths — an embankment sits on a bank tile beside the water and
+ *  stays walkable. */
+export function placedEmbankmentTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'embankment')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
+}
+
+/** BUILD 1132 (0x33): the first tile (row-major scan) where `kind`
+ *  validates — the probe hook's spot finder (findInfraSpot) and the
+ *  asserts share it, so the probe places on exactly the tiles the
+ *  rules allow. Null when no tile in the world takes the kind. */
+export function firstValidTileFor(
+  w: IsoWorld,
+  kind: PaletteKind,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+  opts: { bridgeStyle?: BridgeStyle } = {},
+): { x: number; y: number } | null {
+  for (let y = 0; y < w.h; y++) for (let x = 0; x < w.w; x++) {
+    if (validatePlacement(w, kind, x, y, playerTile, npcTiles, 0, opts).ok) return { x, y };
+  }
+  return null;
+}
+
+/** BUILD 1132 (0x33): the E-key Examine text for a placed river
+ *  crossing or bank structure within `reach` tiles of (x, y) — the
+ *  player stands beside it (the shared 1-tile reach). A bridge wins
+ *  over a ford/stone underneath it (the deck is what you stand on);
+ *  otherwise the first infra placement in world order wins. Null
+ *  when nothing is near — the caller falls through to the river text. */
+export function infraExamineNear(w: IsoWorld, x: number, y: number, reach = 1): string | null {
+  const near = placementsOf(w).filter((p) =>
+    (p.kind === 'bridge' || p.kind === 'ford' || p.kind === 'dock' || p.kind === 'stepping-stone' || p.kind === 'embankment') &&
+    Math.abs(p.x0 - x) <= reach && Math.abs(p.y0 - y) <= reach);
+  if (near.length === 0) return null;
+  const pick = near.find((p) => p.kind === 'bridge') ?? near[0];
+  switch (pick.kind) {
+    case 'bridge': {
+      const style = pick.bridgeStyle ?? 'wooden';
+      const label = style === 'wooden' ? 'Wooden bridge' : style === 'stone' ? 'Stone bridge' : style === 'footbridge' ? 'Footbridge' : style === 'large-road' ? 'Large road bridge' : style === 'narrow-stream' ? 'Narrow stream bridge' : 'Wide river bridge';
+      return `${label} — a deck over the water`;
+    }
+    case 'ford': return 'Ford — wade across the shallows';
+    case 'dock': return 'Dock — a wooden pier over the water';
+    case 'stepping-stone': return 'Stepping stone — hop across the water';
+    case 'embankment': return 'Embankment — a reinforced river bank';
+    default: return null;
+  }
 }
 
 /** Placed farm-land tiles (BUILD 1041). Single tiles, like placed

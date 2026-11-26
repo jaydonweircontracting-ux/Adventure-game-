@@ -31,6 +31,7 @@ import { FARM_SOIL, FARM_FURROW } from './farm';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedStationRects, placedRockTiles, placedWallTiles,
   placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles,
+  placedDockTiles, placedSteppingStoneTiles, placedEmbankmentTiles,
   placedFarmKeyInts, placedFenceTiles, seedRectForHut, removeAt, tileKeyInt,
 } from './placements';
 import { gardenFencesFor, gardenPlantsFor } from './gardens';
@@ -1425,6 +1426,34 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         houseBox(x1,br.ty+.5,.07,.1,.98,bwy,railColor);
       }
     }
+  }
+  // BUILD 1132 (0x33): placed docks — a wooden pier platform over the
+  // water beside the bank: a plank deck just above the water surface
+  // with four corner posts, so a dock reads as a pier, not a bridge.
+  for (const dk of placedDockTiles(world)) {
+    const dwy = renderSurfaceElevation(dk.tx + .5, dk.ty + .5) + .06;
+    const deck: Vec3 = [.55, .4, .22];
+    quad([dk.tx + .03, dwy, dk.ty + .03], [dk.tx + .97, dwy, dk.ty + .03], [dk.tx + .97, dwy, dk.ty + .97], [dk.tx + .03, dwy, dk.ty + .97], deck);
+    for (const [px, pz] of [[.08, .08], [.92, .08], [.08, .92], [.92, .92]] as const) {
+      houseBox(dk.tx + px, dk.ty + pz, .07, .2, .07, dwy, LANTERN_TIMBER);
+    }
+  }
+  // BUILD 1132 (0x33): placed stepping stones — one low grey stone
+  // disc poking out of the water per tile, sized by the tile hash so
+  // a run of stones reads as separate rocks, not a paved deck.
+  for (const st of placedSteppingStoneTiles(world)) {
+    const swy = renderSurfaceElevation(st.tx + .5, st.ty + .5) + .02;
+    const s = .6 + hash2(st.tx * 1.7 + 3, st.ty * 2.3 + 5) * .2;
+    const shade = .42 + hash2(st.tx * 3.3 + 7, st.ty * 1.9 + 11) * .1;
+    houseBox(st.tx + .5, st.ty + .5, s, .09, s, swy, [shade, shade + .02, shade + .03]);
+  }
+  // BUILD 1132 (0x33): placed embankments — a raised stone-edged bank
+  // slab on the land beside the water: a stone base with a packed-earth
+  // top, so a hardened bank reads as built ground, not bare grass.
+  for (const em of placedEmbankmentTiles(world)) {
+    const ely = renderSurfaceElevation(em.tx + .5, em.ty + .5);
+    houseBox(em.tx + .5, em.ty + .5, .96, .12, .96, ely, [.48, .5, .52]);
+    quad([em.tx + .08, ely + .125, em.ty + .08], [em.tx + .92, ely + .125, em.ty + .08], [em.tx + .92, ely + .125, em.ty + .92], [em.tx + .08, ely + .125, em.ty + .92], [.6, .48, .32]);
   }
   // BUILD 1114: river surface detail — restrained current ribbons and
   // brighter downstream markers make generated rivers read as flowing

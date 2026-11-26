@@ -61,7 +61,7 @@
  * asserts import it directly.
  */
 import { terrainAt, inBounds, type IsoWorld, type PathKind, type PlacedItem } from '../iso/isoWorld';
-import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement, isPlacedFord, removeExactPlacement } from './placements';
+import { walkableWithPlacements, placementsOf, addPlacement, validatePlacement, isPlacedFord, isPlacedDock, isPlacedSteppingStone, isPlacedEmbankment, removeExactPlacement } from './placements';
 import { riverAt, riverNear, riverWidthAt, allRoadCrossings, isShallowTile, type River } from './rivers';
 import { CAMP_STORE_ID, storeQty, withdrawFrom, type ResourceRegistry } from './resourceRegistry';
 import { STOREHOUSE_STORE_ID } from './storehouse';
@@ -108,6 +108,13 @@ export const BRIDGE_START_DAY = 3;
 export const BRIDGE_WORK_STEPS = 2;
 export const BRIDGE_WOOD_PER_STEP = 2;
 export const BRIDGE_COST_WOOD = BRIDGE_WORK_STEPS * BRIDGE_WOOD_PER_STEP;
+/** BUILD 1132 (0x33): a bridge crossing whose bank the player
+ *  hardened with an embankment scores higher — the founders prefer
+ *  to bridge where the bank is already built up. Sized below the
+ *  road-alignment bonus (25) so a hardened bank never outranks a
+ *  road crossing, and above the per-tile distance cost (0.25/tile)
+ *  so it breaks near-ties in favour of the embanked bank. */
+export const EMBANKMENT_CROSSING_BONUS = 15;
 
 /** One bridge site's progress (saved in the founders save, v10 —
  *  the same shape as one hut SiteState, wood only). */
@@ -453,6 +460,9 @@ export function fordableSpanFor(
     if (scoreCrossing(world, run) === null) continue;
     if (bridgeSpanAlreadyClaimed(world, bridges as BridgeSite[], run.tiles)) continue;
     if (run.tiles.some((t) => isPlacedFord(world, t.x, t.y))) continue;
+    // BUILD 1132 (0x33): a run the player already stones across
+    // needs no ford stamped over it — the stones are the crossing.
+    if (run.tiles.some((t) => isPlacedSteppingStone(world, t.x, t.y))) continue;
     const nearBank = Math.abs(run.bankA.x - x) + Math.abs(run.bankA.y - y) <= Math.abs(run.bankB.x - x) + Math.abs(run.bankB.y - y) ? run.bankA : run.bankB;
     const farBank = nearBank === run.bankA ? run.bankB : run.bankA;
     return { tiles: run.tiles, nearBank, farBank };
@@ -474,6 +484,9 @@ export function stampFord(
   const stamped: Array<{ x: number; y: number }> = [];
   for (const tile of ford.tiles) {
     if (isPlacedFord(world, tile.x, tile.y)) continue;
+    // BUILD 1132 (0x33): never stamp a ford over a stepping stone —
+    // the stone is already the crossing on that tile.
+    if (isPlacedSteppingStone(world, tile.x, tile.y)) continue;
     const result = validatePlacement(world, 'ford', tile.x, tile.y, { x: 0, y: 0 }, [], 0);
     if (result.ok) {
       addPlacement(world, result.item);
@@ -518,7 +531,7 @@ export function extendPathToCrossing(
     for (const t of bridgeSiteSpan(site)) bridgeTargets.add(trafficKey(t.x, t.y));
   }
   for (const p of placementsOf(world)) {
-    if (p.kind === 'bridge' || p.kind === 'ford') {
+    if (p.kind === 'bridge' || p.kind === 'ford' || p.kind === 'dock' || p.kind === 'stepping-stone') {
       for (let x = p.x0; x <= p.x1; x++) for (let y = p.y0; y <= p.y1; y++) bridgeTargets.add(trafficKey(x, y));
     }
   }
@@ -821,9 +834,13 @@ export function placeBridgeSpan(
   // stack two crossings on one tile. The ford no longer blocks
   // the span (placedBlock skips it); remove it here so the deck
   // is the only crossing on the tile.
+  // BUILD 1132 (0x33): the same for a stepping stone or a dock
+  // under the deck — both are low water crossings the deck upgrades,
+  // and both are skipped by placedBlock, so without this removal the
+  // deck would stack on top of them.
   for (const tile of span) {
-    const ford = placementsOf(world).find((p) => p.kind === 'ford' && tile.x >= p.x0 && tile.x <= p.x1 && tile.y >= p.y0 && tile.y <= p.y1);
-    if (ford) removeExactPlacement(world, ford);
+    const low = placementsOf(world).find((p) => (p.kind === 'ford' || p.kind === 'stepping-stone' || p.kind === 'dock') && tile.x >= p.x0 && tile.x <= p.x1 && tile.y >= p.y0 && tile.y <= p.y1);
+    if (low) removeExactPlacement(world, low);
   }
   for (const item of items) addPlacement(world, { ...item, bridgeStyle: site.style ?? 'wooden', bridgeAxis: site.axis ?? 'x' });
   for (const item of pathItems) addPlacement(world, item);
@@ -1079,10 +1096,15 @@ export function scoreCrossing(world: IsoWorld, run: CrossingRun): number | null 
   const order = run.river.order ?? 1;
   const aligned =
     bankContinuesRoad(world, run.bankA.x, run.bankA.y) || bankContinuesRoad(world, run.bankB.x, run.bankB.y) ? 25 : 0;
+  // BUILD 1132 (0x33): an embanked bank is a hardened approach — the
+  // founders prefer it. A fresh world has no player embankments, so
+  // the sim's crossing scores are untouched.
+  const embanked =
+    isPlacedEmbankment(world, run.bankA.x, run.bankA.y) || isPlacedEmbankment(world, run.bankB.x, run.bankB.y) ? EMBANKMENT_CROSSING_BONUS : 0;
   const distA = Math.abs(run.bankA.x - FOUNDER_CAMP.x) + Math.abs(run.bankA.y - FOUNDER_CAMP.y);
   const distB = Math.abs(run.bankB.x - FOUNDER_CAMP.x) + Math.abs(run.bankB.y - FOUNDER_CAMP.y);
   const dist = Math.round(0.25 * Math.min(distA, distB));
-  return 100 - 20 * (span - 1) - 10 * (order - 1) + aligned - dist;
+  return 100 - 20 * (span - 1) - 10 * (order - 1) + aligned + embanked - dist;
 }
 
 /**

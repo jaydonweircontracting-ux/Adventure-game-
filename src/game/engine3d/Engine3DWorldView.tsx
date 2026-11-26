@@ -30,7 +30,7 @@ import { createFoundingSim, existingRectsForFounding, type FoundingState } from 
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedStationRects, placedRockTiles, placedWallTiles,
   placedLanternTiles, placedBushTiles, placedOreTiles, placedBridgeTiles, placedFarmTiles, placedFarmKeyInts, placedFenceTiles,
-  validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree,
+  validatePlacement, movePlacement, moveGeneratedHut, moveGeneratedPath, moveGeneratedTree, firstValidTileFor,
   seedRectForHut, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, isHouseKind, rotateFace, placementRectFor, tileKeyInt,
   type PaletteKind, type UndoEntry, type BuildHistory, type Rotation,
@@ -106,7 +106,7 @@ import { HUT_CENTRE, HUT_RECT, HUT_DOOR, HUT_APPROACH, HUT_SITES, HUT_KIND, HUT_
 // Build menu lists it (entries with a palette kind arm that tool;
 // the rest are listed, locked, with the reason why).
 import { STOREHOUSE_APPROACH, STOREHOUSE_CENTRE, STOREHOUSE_DOOR, STOREHOUSE_RECT, STOREHOUSE_HUT_SITE, STOREHOUSE_KIND, STOREHOUSE_SITE_ID, STOREHOUSE_STORE_ID, STOREHOUSE_CAPACITY_WOOD, STOREHOUSE_CAPACITY_STONE, STOREHOUSE_CAPACITY_ORE, STOREHOUSE_CAPACITY_COAL, STOREHOUSE_CAPACITY_INGOT, STOREHOUSE_CAPACITY_TOOL, STOREHOUSE_CAPACITY_TIMBER, STOREHOUSE_CAPACITY_FURNITURE, STOREHOUSE_WORK_STEPS, freshStorehouse, reconcileStorehouse, seedStorehouseStore, storehouseWoodInRegistry, storehouseStoneInRegistry, storehouseOreInRegistry, storehouseWoolInRegistry, storehouseLeatherInRegistry, storehousePlacementExists, storehousePlacementId, storehouseLabel, type StorehouseState } from './storehouse';
-import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, fordTiles, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState } from './paths';
+import { bridgeAxisForCrossing, bridgeSpanForCrossing, bridgeStyleForCrossing, finishBridge, fordTiles, freshBridgeSite, freshPathState, pathTiles, placeBridgeSpan, reconcileBridges, scoreBridgeCrossing, wellTile, type PathState, type BridgeStyle } from './paths';
 import { freshMineState, validateMineState, mineSummaryText, type MineState } from './mines';
 // BUILD 1064 (R-1): the unified resource registry — the one
 // authoritative record of what exists, where it is, and where it
@@ -1046,6 +1046,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // hovered tile immediately after a rotation.
   const placePreviewFnRef = useRef<((x: number, y: number) => void) | null>(null);
   const setPlacementRotBoth = (r: Rotation) => { placementRotRef.current = r; setPlacementRot(r); };
+  // BUILD 1132 (0x33): the bridge style picker — which of the six
+  // founder bridge styles a hand-placed bridge uses. Same pattern as
+  // placementRot: state for the panel, a ref for the pointer handlers,
+  // persists across asset switches, resets when the panel closes (×).
+  const [bridgeStyle, setBridgeStyle] = useState<BridgeStyle>('wooden');
+  const bridgeStyleRef = useRef<BridgeStyle>('wooden');
+  const setBridgeStyleBoth = (s: BridgeStyle) => { bridgeStyleRef.current = s; setBridgeStyle(s); };
   // BUILD 996: chunk library. Lazy-loaded from localStorage (key
   // ag-3d-templates-v1, separate from world saves); every change
   // persists via the effect below. templatesRef mirrors it for the
@@ -1671,10 +1678,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
   // Infrastructure). Mapping, stated plainly: Houses = the four house
   // designs; Shops = the three commercial buildings + the market
   // stall; Buildings = the two landmark structures with interiors
-  // (windmill, mine); Decorations = lantern + wall + fence; Roads = path +
-  // wooden bridge (the thing you walk on); Nature = tree, bush,
-  // grass, rock, water; Infrastructure = the ore deposit (the
-  // resource node — wells join it when they are built). A kind lives
+  // (windmill, mine); Decorations = lantern + wall + fence; Roads =
+  // path + the river crossings (bridge, ford, dock, stepping stone);
+  // Nature = tree, bush, grass, rock, water; Infrastructure = the ore
+  // deposit (the resource node — wells join it when they are built)
+  // + the embankment (a reinforced river bank). A kind lives
   // in exactly one section, so the counts above are the whole palette.
   const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
     {id:'buildings',label:'Buildings',kinds:['house-windmill','house-mine']},
@@ -1688,11 +1696,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     {id:'houses',label:'Houses',kinds:['house-cottage','house-tall','house-shop','house-grand']},
     {id:'shops',label:'Shops',kinds:['house-inn','house-smith','house-store','stall']},
     {id:'decorations',label:'Decorations',kinds:['lantern','wall','fence']},
-    {id:'roads',label:'Roads',kinds:['path','bridge']},
+    {id:'roads',label:'Roads',kinds:['path','bridge','ford','dock','stepping-stone']},
     // BUILD 1041: farm land joins Nature (it is tilled ground, like
     // the grass and the bush — a field, not a building).
     {id:'nature',label:'Nature',kinds:['tree','bush','grass','rock','water','farm']},
-    {id:'infrastructure',label:'Infrastructure',kinds:['ore']},
+    {id:'infrastructure',label:'Infrastructure',kinds:['ore','embankment']},
   ];
   const KIND_META:Record<PaletteKind,{label:string;swatch:string}>={
     path:{label:'Pathway',swatch:'linear-gradient(135deg,#bd914f 0 50%,#61615c 50% 100%)'},
@@ -1730,10 +1738,15 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     ore:{label:'Ore Deposit',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#d9a833 50% 100%)'},
     bridge:{label:'Wooden Bridge',swatch:'linear-gradient(135deg,#8f6a38 0 50%,#6b4a2b 50% 100%)'},
     // BUILD 1128 (0x31): a ford is a wadeable shallow crossing — sand
-    // shallows, so the swatch is sand over water blue. It is stamped
-    // by the path system (extendPathToCrossing), not offered in the
-    // catalog sections above.
+    // shallows, so the swatch is sand over water blue. BUILD 1132
+    // (0x33): the ford joins the Roads catalog (it was stamped by the
+    // path system only), with the dock (pier planks over water blue),
+    // the stepping stone (stone grey over water blue), and the
+    // embankment (stone grey over earth brown) beside it.
     ford:{label:'Ford',swatch:'linear-gradient(135deg,#c2a878 0 50%,#2a5aaa 50% 100%)'},
+    dock:{label:'Dock',swatch:'linear-gradient(135deg,#8f6a38 0 50%,#2a5aaa 50% 100%)'},
+    'stepping-stone':{label:'Stepping Stone',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#2a5aaa 50% 100%)'},
+    embankment:{label:'Embankment',swatch:'linear-gradient(135deg,#8a8d8a 0 50%,#6b4a2b 50% 100%)'},
     // BUILD 1041 swatch: farm land tilled brown / ready wheat gold.
     farm:{label:'Farm Land',swatch:'linear-gradient(135deg,#593d24 0 50%,#d9a833 50% 100%)'},
     // BUILD 1042 swatch: fence timber browns (posts + rails).
@@ -2294,7 +2307,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       }else{
         const palette=build.palette;
         if(!palette){el.style.display='none';return;}
-        const res=validatePlacement(world,palette,tx,ty,playerTile,npcTiles,rot);
+        const res=validatePlacement(world,palette,tx,ty,playerTile,npcTiles,rot,{bridgeStyle:bridgeStyleRef.current});
         ok=res.ok;
         // The rect the asset would occupy (the validated item when it
         // fits, the would-be footprint when it does not — so the red
@@ -2697,7 +2710,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               // BUILD 1036: place with the current rotation — the
               // asset stays armed afterwards, so another tap places
               // another copy without re-selecting the menu.
-              const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,placementRotRef.current);
+              const result=validatePlacement(world,build.palette,tx,ty,playerTile,npcTiles,placementRotRef.current,{bridgeStyle:bridgeStyleRef.current});
               if(!result.ok){setMessage('Cannot place here: '+result.reason);}
               // BUILD 1041: a fresh farm tile is planted NOW (the
               // growth clock starts at placement); move/undo carry
@@ -2812,7 +2825,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // the placed item, or null when the tile refuses. The probe
       // uses it to prove a placed item gets a stable id at creation
       // and keeps it across a reload.
-      placeTestItem:(kind:PaletteKind,tx:number,ty:number)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0);if(!result.ok)return null;addPlacement(w,result.item);commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(result.item));},
+      placeTestItem:(kind:PaletteKind,tx:number,ty:number,style?:BridgeStyle)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];const result=validatePlacement(w,kind,tx,ty,playerTile,npcTiles,0,style?{bridgeStyle:style}:{});if(!result.ok)return null;addPlacement(w,result.item);commitWorld(worldSyncCtx,w);return JSON.parse(JSON.stringify(result.item));},
+      // BUILD 1132 test hook (probes only — no gameplay effect): the
+      // first tile where `kind` validates through the real placement
+      // rules, or null when no tile in the world takes it. The probe
+      // uses it to find a legal dock / stepping-stone / embankment /
+      // ford tile instead of guessing coordinates.
+      findInfraSpot:(kind:PaletteKind)=>{const w=stateRef.current.world;const player=stateRef.current.position;const playerTile={x:Math.round(player.x),y:Math.round(player.y)};const npcTiles=[...npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)})),...transientActorsRef.current.map(t=>({x:Math.round(t.x),y:Math.round(t.y)}))];return firstValidTileFor(w,kind,playerTile,npcTiles);},
       // BUILD 1124 bridge integration probe: in testmode only, create a
       // short, isolated two-tile river crossing in unused wilderness,
       // stamp both bank paths and the real multi-tile bridge placements,
@@ -2901,7 +2920,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // BUILD 1036 test hooks (probes only — no gameplay effect):
       // the armed placement selection + rotation, and the same
       // rotate the R key / rotation buttons perform.
-      getPlacement:()=>({palette:buildRef.current.palette,customAssetId:buildRef.current.customAssetId,rot:placementRotRef.current,moveMode:buildRef.current.moveMode}),
+      getPlacement:()=>({palette:buildRef.current.palette,customAssetId:buildRef.current.customAssetId,rot:placementRotRef.current,bridgeStyle:bridgeStyleRef.current,moveMode:buildRef.current.moveMode}),
       rotatePlacement:(dir:1|-1)=>{if(!buildRef.current.palette&&!buildRef.current.customAssetId)return placementRotRef.current;const next=(((placementRotRef.current+(dir===1?1:3))%4) as Rotation);setPlacementRotBoth(next);const h=placeHoverRef.current;if(h)placePreviewFnRef.current?.(h.x,h.y);return next;},
       // BUILD 1037 test hooks (probes only — no gameplay effect): the
       // live area selection, the armed tool, and a direct way to set
@@ -3510,7 +3529,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     <div ref={placePreviewRef} data-testid="build-place-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',border:'3px solid #4fc85a',borderRadius:6,background:'rgba(80,200,90,.28)',boxShadow:'0 0 0 2px rgba(0,0,0,.35)'}}>
       <span ref={placePreviewLabelRef} style={{position:'absolute',left:'50%',bottom:'100%',transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',marginBottom:4,borderRadius:8,background:'rgba(0,0,0,.75)',color:'#fff',fontSize:12,fontWeight:700}}></span>
     </div>
-    <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} assetsSaving={assetsSaving} saveAssets={saveAssets} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
+    <BuildPanel buildOpen={buildOpen} palette={palette} customSelection={customSelection} removeMode={removeMode} moveMode={moveMode} saveAreaMode={saveAreaMode} pasteName={pasteName} areaSelectMode={areaSelectMode} areaSelection={areaSelection} areaMoveArmed={areaMoveArmed} areaDuplicateArmed={areaDuplicateArmed} areaDeleteArmed={areaDeleteArmed} catalogCategory={catalogCategory} customAssets={customAssets} customAssetsLoading={customAssetsLoading} customAssetsWarning={customAssetsWarning} assetsSaving={assetsSaving} saveAssets={saveAssets} importHubOpen={importHubOpen} importProgress={importProgress} importReport={importReport} pendingImports={pendingImports} overwritePrompt={overwritePrompt} renamingId={renamingId} renameDraft={renameDraft} librarySearch={librarySearch} librarySort={librarySort} libraryCategoryFilter={libraryCategoryFilter} libraryFormatFilter={libraryFormatFilter} handoffChecked={handoffChecked} templates={templates} placedCount={placedCount} placementRot={placementRot} bridgeStyle={bridgeStyle} saveSelection={saveSelection} chunkName={chunkName} buildIx={buildIx} catalogSections={CATALOG_SECTIONS} kindMeta={KIND_META} setBuildOpen={setBuildOpen} setPalette={setPalette} setCustomSelection={setCustomSelection} setRemoveMode={setRemoveMode} setMoveMode={setMoveMode} setSaveAreaMode={setSaveAreaMode} setPasteName={setPasteName} setAreaSelectMode={setAreaSelectMode} setAreaSelection={setAreaSelection} setAreaMoveArmed={setAreaMoveArmed} setAreaDuplicateArmed={setAreaDuplicateArmed} setAreaDeleteArmed={setAreaDeleteArmed} setCatalogCategory={setCatalogCategory} setImportHubOpen={setImportHubOpen} setReport={setReport} setPending={setPending} setOverwrite={setOverwrite} setRenameDraft={setRenameDraft} setRenamingId={setRenamingId} setLibrarySearch={setLibrarySearch} setLibrarySort={setLibrarySort} setLibraryCategoryFilter={setLibraryCategoryFilter} setLibraryFormatFilter={setLibraryFormatFilter} setChunkName={setChunkName} setSaveSelection={setSaveSelection} setTemplates={setTemplates} setMessage={setMessage} setPlacementRotBoth={setPlacementRotBoth} setBridgeStyleBoth={setBridgeStyleBoth} setHandoffCheckedBoth={setHandoffCheckedBoth} setLibraryAssetCategory={setLibraryAssetCategory} setLibraryAssetTags={setLibraryAssetTags} panelSwipeRef={panelSwipeRef} buildRef={buildRef} placePreviewRef={placePreviewRef} placeHoverRef={placeHoverRef} placePreviewFnRef={placePreviewFnRef} areaSelectPreviewRef={areaSelectPreviewRef} areaSelectPreviewLabelRef={areaSelectPreviewLabelRef} pendingImportsRef={pendingImportsRef} pendingDepsRef={pendingDepsRef} overwritePromptRef={overwritePromptRef} handoffCheckedRef={handoffCheckedRef} handoffSummaryRef={handoffSummaryRef} customAssetsRef={customAssetsRef} stateRef={stateRef} handleImportFiles={handleImportFiles} commitPendingAssets={commitPendingAssets} discardPendingAsset={discardPendingAsset} updatePendingAsset={updatePendingAsset} exportAssetPack={exportAssetPack} exportHandoff={exportHandoff} copyHandoffSummary={copyHandoffSummary} shareHandoff={shareHandoff} handoffSummaryFor={handoffSummaryFor} armCustomAsset={armCustomAsset} deleteCustomAsset={deleteCustomAsset} renameLibraryAsset={renameLibraryAsset} resolveOverwritePrompt={resolveOverwritePrompt} />
     <InventoryPanel open={inventoryOpen} layout={invLayout} onMove={handleInvMove} onSplit={handleInvSplit} onEquip={handleInvEquip} onUnequip={handleInvUnequip} recipes={HAND_RECIPES.map((recipe)=>({recipe,canCraft:canCraftHand(recipe,craftHeld)}))} onCraft={handleCraftHand} onClose={()=>setInventoryOpen(false)} />
     {openStation&&<StationPanel open station={openStation} recipes={stationRecipesFor(openStation).map((recipe)=>{const held:Record<string,number>={};for(const m of recipe.materials)held[m.kind]=playerHeldQty(m.kind);return {recipe,unlocked:isRecipeUnlocked(recipe,discovered),canCraft:canCraftStation(recipe,held)};})} onCraft={(id)=>handleStationCraft(openStation,id)} onClose={()=>setOpenStation(null)} />}
     {!hideUi && <Hotbar layout={invLayout} selected={hotbarSelected} onSelect={handleHotbarSelect} onUse={handleHotbarUse} />}
