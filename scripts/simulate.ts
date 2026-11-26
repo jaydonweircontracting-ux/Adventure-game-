@@ -17382,15 +17382,15 @@ console.log('Testing navigation — water as obstacle, bridge crossings for NPCs
   SS1131.advanceSettlement(sim24_1131, 1600);
   const L24_1131 = sim24_1131.ledger;
   assert(L24_1131.ticks === 1600, 'M1131: 24h ticks 1600');
-  assert(L24_1131.woodChopped === 54 && L24_1131.woodDelivered === 50 && L24_1131.woodSpent === 24, 'M1131: 24h wood 54/50/24 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1131.grainHarvested === 56 && L24_1131.grainDelivered === 56, 'M1131: 24h grain 56/56 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1131.mealsBaked === 26 && L24_1131.mealsEaten === 13, 'M1131: 24h meals 26/13 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1131.flourMilled === 56 && L24_1131.flourBaked === 52, 'M1131: 24h flour 56/52 (M1069 re-pinned to BUILD 1112 — river v2)');
-  assert(L24_1131.jobsCompleted.chop === 27 && L24_1131.jobsCompleted.build === 4 && L24_1131.jobsCompleted.deliver === 53 && L24_1131.jobsCompleted.harvest === 28, 'M1131: 24h jobs chop/build/deliver/harvest 27/4/53/28 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(L24_1131.woodChopped === 52 && L24_1131.woodDelivered === 46 && L24_1131.woodSpent === 24, 'M1131: 24h wood 52/46/24 (M1069 re-pinned to the 1126 base — 1131 changes nothing in the diag, verified vs pristine 5a6470d5)');
+  assert(L24_1131.grainHarvested === 54 && L24_1131.grainDelivered === 54, 'M1131: 24h grain 54/54 (M1069 re-pinned to the 1126 base)');
+  assert(L24_1131.mealsBaked === 26 && L24_1131.mealsEaten === 13, 'M1131: 24h meals 26/13 (M1069 re-pinned to the 1126 base)');
+  assert(L24_1131.flourMilled === 54 && L24_1131.flourBaked === 52, 'M1131: 24h flour 54/52 (M1069 re-pinned to the 1126 base)');
+  assert(L24_1131.jobsCompleted.chop === 26 && L24_1131.jobsCompleted.build === 4 && L24_1131.jobsCompleted.deliver === 50 && L24_1131.jobsCompleted.harvest === 27, 'M1131: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 re-pinned to the 1126 base)');
   assert(L24_1131.hutsCompleted === 2 && L24_1131.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1131: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
   assert(L24_1131.starvedTicks === 0 && Math.round(L24_1131.minHealth) === 100, 'M1131: nobody starves in 24h');
   assert(sim24_1131.founders.length === 7, 'M1131: the population is 7 after 24h');
-  assert(F1131.campWoodInRegistry(sim24_1131.registry) === 14 && F1131.campFoodInRegistry(sim24_1131.registry) === 13 && SS1131.settlementGrain(sim24_1131) === 0 && FC1131.foodChainFlourInRegistry(sim24_1131.registry) === 4, 'M1131: final wood/food/grain/flour 14/13/0/4 (M1069 re-pinned to BUILD 1112 — river v2)');
+  assert(F1131.campWoodInRegistry(sim24_1131.registry) === 10 && F1131.campFoodInRegistry(sim24_1131.registry) === 13 && SS1131.settlementGrain(sim24_1131) === 0 && FC1131.foodChainFlourInRegistry(sim24_1131.registry) === 2, 'M1131: final wood/food/grain/flour 10/13/0/2 (M1069 re-pinned to the 1126 base)');
   console.log('M1131: navigation verified (bridge/ford routing, founder wait + cross, player deep-water block, animal crossings, chop claim reachability, 24h identical)');
 }
 
