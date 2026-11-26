@@ -810,3 +810,141 @@ export function allRoadCrossings(world: IsoWorld): Array<{ river: River; x: numb
   }
   return out;
 }
+
+/** BUILD 1134 (0x35): river visuals — depth, waterfalls, rapids.
+ *
+ * Pure visual derivation from the river map — no terrain, walkability,
+ * save or generation changes. Depth is a 0..1 value per river tile
+ * from the river's own data (Strahler order, width, shallow flag,
+ * downstream position), so a stream reads pale and shallow, a main
+ * river reads deep blue, and every channel deepens toward its mouth.
+ * Waterfalls and rapids come from the FILLED elevation profile
+ * (filledElevationsFor): the filled surface never rises downstream,
+ * so its drops are the river's real descent. The authored world is
+ * gentle (max single-tile filled drop 0.0475, measured on the default
+ * world), so the thresholds are relative, not cliff-scale: a rapids
+ * tile drops >= 0.04 in one tile; a waterfall is the steepest 3-tile
+ * window of a river dropping >= 0.12 (one site per river, at the
+ * window's middle tile). On the default world that is 3 waterfalls
+ * (rivers 34/35/37, south-west) and 23 rapids tiles — pinned by the
+ * M1134 asserts. Old saves and studio rivers (no order/width) read
+ * as mid-depth; width shoulders are always the shallowest.
+ *
+ * riverVisuals is cached per world object (WeakMap) behind a cheap
+ * fingerprint (river count + tile counts + a coordinate hash), so the
+ * flow-field computation runs once per world, not once per render
+ * rebuild — the same pattern wildTerrain's riverValleyCache uses.
+ * A World Studio edit changes the fingerprint (new river, changed
+ * widths), so the visuals follow edits. */
+export const RIVER_RAPIDS_DROP = 0.04;
+export const RIVER_WATERFALL_DROP3 = 0.12;
+
+/** One river tile's visual depth, 0 (palest shallow) to 1 (deepest). */
+export interface RiverDepthTile { x: number; y: number; depth: number; }
+
+/** One waterfall or rapids site: the tile, the flow direction
+ *  (dx/dy toward downstream), and the filled-elevation drop that
+ *  qualified it (single-tile drop for rapids, 3-tile drop for a
+ *  waterfall). */
+export interface RiverGradientFeature {
+  kind: 'waterfall' | 'rapids';
+  riverId: string;
+  x: number; y: number;
+  dx: number; dy: number;
+  drop: number;
+}
+
+export interface RiverVisuals {
+  depths: RiverDepthTile[];
+  waterfalls: RiverGradientFeature[];
+  rapids: RiverGradientFeature[];
+}
+
+function depthBaseForOrder(order: number | undefined): number {
+  if (order === undefined) return 0.5;
+  if (order <= 1) return 0.35;
+  if (order === 2) return 0.6;
+  if (order === 3) return 0.8;
+  return 0.9;
+}
+
+const visualsCache = new WeakMap<IsoWorld, { fp: string; visuals: RiverVisuals }>();
+
+function visualsFingerprint(rivers: River[]): string {
+  let h = 0;
+  for (const r of rivers) {
+    h = (h * 31 + r.tiles.length) | 0;
+    for (const t of r.tiles) h = (h * 31 + t.x * 7 + t.y) | 0;
+    for (const t of r.widthTiles ?? []) h = (h * 31 + t.x * 7 + t.y + 1) | 0;
+  }
+  return rivers.length + ':' + h;
+}
+
+export function riverVisuals(world: IsoWorld): RiverVisuals {
+  const rivers = riversOf(world);
+  const fp = visualsFingerprint(rivers);
+  const cached = visualsCache.get(world);
+  if (cached && cached.fp === fp) return cached.visuals;
+  // Depth: order sets the base, a shallow flag caps it, and the
+  // channel deepens toward its mouth; width shoulders are the
+  // shallowest water in the river.
+  const depthByKey = new Map<string, number>();
+  for (const r of rivers) {
+    const base = depthBaseForOrder(r.order);
+    const len = r.tiles.length;
+    r.tiles.forEach((t, i) => {
+      let d = base;
+      if (t.shallow) d = Math.min(d, 0.35);
+      d += 0.15 * (len > 1 ? i / (len - 1) : 0);
+      depthByKey.set(key(t.x, t.y), Math.max(0, Math.min(1, d)));
+    });
+    for (const t of r.widthTiles ?? []) {
+      if (!depthByKey.has(key(t.x, t.y))) depthByKey.set(key(t.x, t.y), 0.15);
+    }
+  }
+  const depths: RiverDepthTile[] = [];
+  const seenDepth = new Set<string>();
+  for (const r of rivers) {
+    for (const t of [...r.tiles, ...(r.widthTiles ?? [])]) {
+      const k = key(t.x, t.y);
+      if (seenDepth.has(k)) continue;
+      seenDepth.add(k);
+      const d = depthByKey.get(k);
+      if (d !== undefined) depths.push({ x: t.x, y: t.y, depth: d });
+    }
+  }
+  // Gradient features from the filled profile (one flow-field
+  // computation for the whole world).
+  const elevs = filledElevationsFor(world, rivers);
+  const waterfalls: RiverGradientFeature[] = [];
+  const rapids: RiverGradientFeature[] = [];
+  for (let ri = 0; ri < rivers.length; ri++) {
+    const r = rivers[ri];
+    const e = elevs[ri];
+    // One waterfall per river: the steepest 3-tile window, at its
+    // middle tile. Overlapping windows would stack falls on one run.
+    let best = -1, bestI = -1;
+    for (let i = 0; i + 3 < e.length; i++) {
+      const d3 = e[i] - e[i + 3];
+      if (d3 > best) { best = d3; bestI = i; }
+    }
+    const fallTiles = new Set<number>();
+    if (best >= RIVER_WATERFALL_DROP3 && bestI >= 0) {
+      const mid = bestI + 1;
+      const t = r.tiles[mid];
+      waterfalls.push({ kind: 'waterfall', riverId: r.id, x: t.x, y: t.y, dx: t.dx, dy: t.dy, drop: best });
+      fallTiles.add(bestI); fallTiles.add(bestI + 1); fallTiles.add(bestI + 2);
+    }
+    for (let i = 0; i + 1 < e.length; i++) {
+      if (fallTiles.has(i)) continue;
+      const d = e[i] - e[i + 1];
+      if (d >= RIVER_RAPIDS_DROP) {
+        const t = r.tiles[i];
+        rapids.push({ kind: 'rapids', riverId: r.id, x: t.x, y: t.y, dx: t.dx, dy: t.dy, drop: d });
+      }
+    }
+  }
+  const visuals: RiverVisuals = { depths, waterfalls, rapids };
+  visualsCache.set(world, { fp, visuals });
+  return visuals;
+}

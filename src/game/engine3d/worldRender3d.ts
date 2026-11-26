@@ -34,6 +34,7 @@ import {
   placedDockTiles, placedSteppingStoneTiles, placedEmbankmentTiles,
   placedFarmKeyInts, placedFenceTiles, seedRectForHut, removeAt, tileKeyInt,
 } from './placements';
+import { riverVisuals } from './rivers';
 import { gardenFencesFor, gardenPlantsFor } from './gardens';
 import { type LandmarkKind } from './settlements';
 import { emitNaturalGrass, emitPlacedGrass, blockedTiles } from './grassTufts';
@@ -227,20 +228,16 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     if(inBounds(world,Math.floor(x),Math.floor(z))) return h;
     return Math.round(h*2)*0.5;
   };
-  // BUILD 1119: remember the generated river depth class while building
-  // the ground mesh. Centreline water can be deep or shallow; width
-  // shoulders are always shallow. This gives the channel a readable
-  // turquoise-to-blue cross-section without changing terrain or saves.
+  // BUILD 1134 (0x35): continuous river depth + gradient features, from
+  // rivers.ts (cached per world — one flow-field computation per world,
+  // not per rebuild). Replaces the BUILD 1119 binary shallow/deep class:
+  // depth now varies 0..1 along every channel (order, width, shallow
+  // flag, downstream position), so a stream reads pale, a main river
+  // reads deep blue, and each channel deepens toward its mouth.
+  const riverVisuals1134 = riverVisuals(world);
   const riverDepthByTile = new Map<number, number>();
   const riverTileKey = (x:number,y:number):number => (x+2048)*4096+(y+2048);
-  const riverCourses = (world.rivers ?? []) as unknown as Array<{
-    tiles?: Array<{x:number;y:number;shallow?:boolean}>;
-    widthTiles?: Array<{x:number;y:number}>;
-  }>;
-  for (const river of riverCourses) {
-    for (const tile of river.tiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), tile.shallow ? 1 : 0);
-    for (const tile of river.widthTiles ?? []) riverDepthByTile.set(riverTileKey(tile.x,tile.y), 1);
-  }
+  for (const d of riverVisuals1134.depths) riverDepthByTile.set(riverTileKey(d.x,d.y), d.depth);
   // BUILD 1034: the ground corners are shared between adjacent cells,
   // so the surface is computed once per corner per rebuild (a Map
   // keyed by the integer corner coords) instead of 4x per cell. Without
@@ -286,8 +283,11 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // share corner heights exactly — no cracks, no floating tiles.
     const terrain=renderTerrain(effTerrain,x,y);
     const riverDepth = terrain === 'water' ? riverDepthByTile.get(riverTileKey(x,y)) : undefined;
-    const c: Vec3 = riverDepth === 1 ? [0.16,0.48,0.59]
-      : riverDepth === 0 ? [0.07,0.25,0.43]
+    // BUILD 1134 (0x35): continuous depth colour — lerp the 1119
+    // shallow/deep endpoints by the tile's depth, so the channel
+    // grades pale-to-deep instead of stepping between two blues.
+    const c: Vec3 = riverDepth !== undefined
+      ? [0.16 + (0.07 - 0.16) * riverDepth, 0.48 + (0.25 - 0.48) * riverDepth, 0.59 + (0.43 - 0.59) * riverDepth]
       : (COLORS[terrain]||COLORS.grass);
     // BUILD 1009: tint evaluated PER CORNER from the continuous 1009
     // field (see townLook groundTintDelta). Adjacent tiles share corner
@@ -1485,6 +1485,88 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         tri([cx+ux*.34,wy+.002,cz+uz*.34],
           [cx-ux*.13+px*.2,wy+.002,cz-uz*.13+pz*.2],
           [cx-ux*.13-px*.2,wy+.002,cz-uz*.13-pz*.2],RIVER_FOAM);
+      }
+    }
+  }
+  // BUILD 1134 (0x35): river visuals — foam bank edges, waterfalls,
+  // rapids. Display only: no terrain, collision, pathfinding or save
+  // changes. Bank transitions stay in the river mesh (BUILD 1117: a
+  // whole tile of sand beside shoulder water read as alternating
+  // blue/tan squares) — a thin foam strip hugs the water side of each
+  // water-land edge instead of reclassifying the bank tile. Waterfall
+  // and rapids sites come from riverVisuals (filled-elevation drops);
+  // the cascade sheet's height scales with the real 3-tile drop, so a
+  // fall reads as a fall without inventing a cliff the terrain lacks.
+  {
+    const FOAM_EDGE: Vec3 = [0.72, 0.84, 0.87];
+    const FALL_WHITE: Vec3 = [0.88, 0.93, 0.94];
+    const RAPID_FOAM: Vec3 = [0.78, 0.9, 0.9];
+    // Foam edge strips: one thin strip inside each river water tile
+    // along every edge that faces land. The strip rides the surface
+    // sampled at its own centre (+0.02) so it follows the shoreline
+    // slope instead of floating over it or sinking into it.
+    const edgeStrip = (x: number, y: number, edge: 'n' | 's' | 'e' | 'w'): void => {
+      const cx = edge === 'e' ? x + 0.93 : edge === 'w' ? x + 0.07 : x + 0.5;
+      const cz = edge === 's' ? y + 0.93 : edge === 'n' ? y + 0.07 : y + 0.5;
+      const sy = renderSurfaceElevation(cx, cz) + 0.02;
+      if (edge === 'n') quad([x + 0.03, sy, y + 0.03], [x + 0.97, sy, y + 0.03], [x + 0.97, sy, y + 0.15], [x + 0.03, sy, y + 0.15], FOAM_EDGE);
+      else if (edge === 's') quad([x + 0.03, sy, y + 0.85], [x + 0.97, sy, y + 0.85], [x + 0.97, sy, y + 0.97], [x + 0.03, sy, y + 0.97], FOAM_EDGE);
+      else if (edge === 'w') quad([x + 0.03, sy, y + 0.03], [x + 0.15, sy, y + 0.03], [x + 0.15, sy, y + 0.97], [x + 0.03, sy, y + 0.97], FOAM_EDGE);
+      else quad([x + 0.85, sy, y + 0.03], [x + 0.97, sy, y + 0.03], [x + 0.97, sy, y + 0.97], [x + 0.85, sy, y + 0.97], FOAM_EDGE);
+    };
+    for (const d of riverVisuals1134.depths) {
+      if (effTerrain(d.x, d.y) !== 'water') continue;
+      if (effTerrain(d.x, d.y - 1) !== 'water') edgeStrip(d.x, d.y, 'n');
+      if (effTerrain(d.x, d.y + 1) !== 'water') edgeStrip(d.x, d.y, 's');
+      if (effTerrain(d.x - 1, d.y) !== 'water') edgeStrip(d.x, d.y, 'w');
+      if (effTerrain(d.x + 1, d.y) !== 'water') edgeStrip(d.x, d.y, 'e');
+    }
+    // Rapids: two short white streaks aligned to the current, offset
+    // either side of the centreline, on the steep tiles.
+    for (const f of riverVisuals1134.rapids) {
+      if (effTerrain(f.x, f.y) !== 'water') continue;
+      const wy = renderSurfaceElevation(f.x + 0.5, f.y + 0.5) + 0.067;
+      const dl = Math.hypot(f.dx, f.dy) || 1, ux = f.dx / dl, uz = f.dy / dl;
+      const px = -uz, pz = ux;
+      const cx = f.x + 0.5, cz = f.y + 0.5;
+      for (const side of [1, -1] as const) {
+        const ox = px * side * 0.2, oz = pz * side * 0.2;
+        const len = 0.3 + hash2(f.x * 3.7 + side, f.y * 2.9) * 0.12;
+        const ax = cx + ox - ux * len * 0.5, az = cz + oz - uz * len * 0.5;
+        const bx = cx + ox + ux * len * 0.5, bz = cz + oz + uz * len * 0.5;
+        const half = 0.02;
+        quad([ax + px * half, wy, az + pz * half], [bx + px * half, wy, bz + pz * half],
+          [bx - px * half, wy, bz - pz * half], [ax - px * half, wy, az - pz * half], RAPID_FOAM);
+      }
+    }
+    // Waterfalls: a white cascade sheet across the downstream edge
+    // of the site tile, a foam pool on the tile just downstream, and
+    // denser foam streaks on the site tile itself.
+    for (const f of riverVisuals1134.waterfalls) {
+      if (effTerrain(f.x, f.y) !== 'water') continue;
+      const wy = renderSurfaceElevation(f.x + 0.5, f.y + 0.5);
+      const dl = Math.hypot(f.dx, f.dy) || 1, ux = f.dx / dl, uz = f.dy / dl;
+      const px = -uz, pz = ux;
+      const cx = f.x + 0.5, cz = f.y + 0.5;
+      const h = Math.max(0.3, Math.min(0.9, f.drop * 4));
+      // Sheet across the downstream edge (perpendicular to flow).
+      const ex = cx + ux * 0.5, ez = cz + uz * 0.5;
+      const hx = px * 0.42, hz = pz * 0.42;
+      quad([ex - hx, wy + 0.03, ez - hz], [ex + hx, wy + 0.03, ez + hz],
+        [ex + hx, wy + 0.03 + h, ez + hz], [ex - hx, wy + 0.03 + h, ez - hz], FALL_WHITE);
+      // Foam pool on the tile just downstream.
+      const qx = f.x + f.dx + 0.5, qz = f.y + f.dy + 0.5;
+      const py = renderSurfaceElevation(qx, qz) + 0.07;
+      quad([qx - 0.4, py, qz - 0.4], [qx + 0.4, py, qz - 0.4], [qx + 0.4, py, qz + 0.4], [qx - 0.4, py, qz + 0.4], FALL_WHITE);
+      // Denser streaks on the site tile.
+      const sy = wy + 0.068;
+      for (const side of [1, -1] as const) {
+        const ox = px * side * 0.22, oz = pz * side * 0.22;
+        const ax = cx + ox - ux * 0.18, az = cz + oz - uz * 0.18;
+        const bx = cx + ox + ux * 0.18, bz = cz + oz + uz * 0.18;
+        const half = 0.025;
+        quad([ax + px * half, sy, az + pz * half], [bx + px * half, sy, bz + pz * half],
+          [bx - px * half, sy, bz - pz * half], [ax - px * half, sy, az - pz * half], RAPID_FOAM);
       }
     }
   }

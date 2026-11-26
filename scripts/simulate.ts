@@ -17828,6 +17828,115 @@ console.log('Testing World Studio — river/bridge/path editing tools (BUILD 113
   console.log('M1133: World Studio verified (river draw/width/widen/narrow/bank/bridge/path + connector, preview purity, undo/redo, persistence, 24h identical)');
 }
 
+console.log('Testing river visuals — depth variation, waterfalls, rapids, foam bank edges (BUILD 1134, 0x35)...');
+{
+  const W1134 = await import('../src/game/iso/isoWorld.js');
+  const R1134 = await import('../src/game/engine3d/rivers.js');
+  const SS1134 = await import('../src/game/engine3d/settlementSim.js');
+  const F1134 = await import('../src/game/engine3d/founders.js');
+  const FC1134 = await import('../src/game/engine3d/foodChain.js');
+  const MM1134 = await import('../src/game/engine3d/minimap3d.js');
+  const WR1134 = await import('../src/game/engine3d/worldRender3d.js');
+  const WT1134 = await import('../src/game/engine3d/wildTerrain.js');
+  const world1134: any = W1134.defaultWorld();
+  const sim1134: any = SS1134.createSettlementSim(world1134);
+  const w1134: any = sim1134.world;
+  const rivers1134: any[] = w1134.rivers ?? [];
+  const visuals1134: any = R1134.riverVisuals(w1134);
+  const depthOf1134 = new Map<string, number>();
+  for (const d of visuals1134.depths) depthOf1134.set(d.x + ',' + d.y, d.depth);
+  // Depth: one 0..1 value per river tile, from the river's own data.
+  const centreline1134 = rivers1134.reduce((n: number, r: any) => n + r.tiles.length, 0);
+  const widthTiles1134 = rivers1134.reduce((n: number, r: any) => n + (r.widthTiles ?? []).length, 0);
+  assert(rivers1134.length === 39, 'M1134: 39 rivers on the default world');
+  assert(visuals1134.depths.length === centreline1134 + widthTiles1134, 'M1134: one depth per river tile');
+  assert(visuals1134.depths.every((d: any) => d.depth >= 0 && d.depth <= 1), 'M1134: every depth in [0,1]');
+  let widthOk1134 = true;
+  for (const r of rivers1134) for (const t of r.widthTiles ?? []) if (depthOf1134.get(t.x + ',' + t.y) !== 0.15) widthOk1134 = false;
+  assert(widthOk1134, 'M1134: every width shoulder reads 0.15 (shallowest)');
+  assert(Math.max(...visuals1134.depths.map((d: any) => d.depth)) === 1, 'M1134: maximum depth is 1 (order-4 mouth)');
+  const meanDepth1134 = (order: number): number => {
+    const ds: number[] = [];
+    for (const r of rivers1134) if (r.order === order) for (const t of r.tiles) ds.push(depthOf1134.get(t.x + ',' + t.y) as number);
+    return ds.reduce((a: number, b: number) => a + b, 0) / ds.length;
+  };
+  assert(meanDepth1134(3) > meanDepth1134(1) + 0.2, 'M1134: order-3 water averages deeper than order-1');
+  let deepening1134 = true;
+  for (const r of rivers1134) {
+    if (r.tiles.length < 5) continue;
+    const first = depthOf1134.get(r.tiles[0].x + ',' + r.tiles[0].y) as number;
+    const last = depthOf1134.get(r.tiles[r.tiles.length - 1].x + ',' + r.tiles[r.tiles.length - 1].y) as number;
+    if (!(last > first)) deepening1134 = false;
+  }
+  assert(deepening1134, 'M1134: every channel deepens toward its mouth');
+  assert(R1134.riverVisuals(w1134) === visuals1134, 'M1134: riverVisuals is cached per world');
+  // Waterfalls: exactly 3, at the measured steepest runs.
+  assert(visuals1134.waterfalls.length === 3, 'M1134: exactly 3 waterfalls');
+  const fallKeys1134 = new Set(visuals1134.waterfalls.map((f: any) => f.x + ',' + f.y));
+  assert(fallKeys1134.has('17,173') && fallKeys1134.has('20,177') && fallKeys1134.has('22,179'), 'M1134: waterfalls at 17,173 / 20,177 / 22,179');
+  assert(visuals1134.waterfalls.every((f: any) => W1134.terrainAt(w1134, f.x, f.y) === 'water'), 'M1134: every waterfall sits on real water');
+  assert(visuals1134.waterfalls.every((f: any) => f.drop >= 0.12), 'M1134: every waterfall drops >= 0.12 over 3 tiles');
+  // Rapids: exactly 23 steep tiles, disjoint from the falls.
+  assert(visuals1134.rapids.length === 23, 'M1134: exactly 23 rapids tiles');
+  assert(visuals1134.rapids.every((f: any) => f.drop >= 0.04), 'M1134: every rapids tile drops >= 0.04 in one tile');
+  assert(visuals1134.rapids.every((f: any) => W1134.terrainAt(w1134, f.x, f.y) === 'water'), 'M1134: every rapids tile is real water');
+  const rapidKeys1134 = new Set(visuals1134.rapids.map((f: any) => f.x + ',' + f.y));
+  assert(visuals1134.waterfalls.every((f: any) => !rapidKeys1134.has(f.x + ',' + f.y)), 'M1134: no waterfall tile is also a rapids tile');
+  // Minimap water colour is untouched (M1053/M1054 pin).
+  assert(MM1134.terrainColor3d('water') === '#2a5aaa', 'M1134: minimap water is still #2a5aaa');
+  // Renderer proof: the overlay pass emits the waterfall pool, the
+  // cascade sheet and a rapids streak near the river:34 fall. Heights
+  // come from surfaceElevation, as the renderer samples them — the
+  // valley floor here sits near -1.4, never at y=0.
+  const verts1134 = WR1134.buildWorldVertices(w1134, { x: 19, y: 175 });
+  const eff1134 = WT1134.effTerrainFor(w1134);
+  const near1134 = (x: number, z: number, y: number, r: number, g: number, b: number, tol: number): boolean => {
+    for (let i = 0; i + 5 < verts1134.length; i += 6) {
+      if (Math.abs(verts1134[i] - x) > tol || Math.abs(verts1134[i + 1] - y) > tol || Math.abs(verts1134[i + 2] - z) > tol) continue;
+      if (Math.abs(verts1134[i + 3] - r) < 0.005 && Math.abs(verts1134[i + 4] - g) < 0.005 && Math.abs(verts1134[i + 5] - b) < 0.005) return true;
+    }
+    return false;
+  };
+  const fall1134 = visuals1134.waterfalls.find((f: any) => f.x === 17 && f.y === 173);
+  assert(fall1134 !== undefined, 'M1134: the river:34 waterfall exists for the render probe (setup)');
+  if (fall1134) {
+    const pcx1134 = fall1134.x + fall1134.dx + 0.5, pcz1134 = fall1134.y + fall1134.dy + 0.5;
+    assert(near1134(pcx1134, pcz1134, WT1134.surfaceElevation(eff1134, pcx1134, pcz1134) + 0.07, 0.88, 0.93, 0.94, 0.45), 'M1134: the waterfall foam pool renders at the downstream tile');
+    const dl1134 = Math.hypot(fall1134.dx, fall1134.dy), ux1134 = fall1134.dx / dl1134, uz1134 = fall1134.dy / dl1134;
+    const ex1134 = fall1134.x + 0.5 + ux1134 * 0.5, ez1134 = fall1134.y + 0.5 + uz1134 * 0.5;
+    const wy1134 = WT1134.surfaceElevation(eff1134, fall1134.x + 0.5, fall1134.y + 0.5);
+    let sheet1134 = false;
+    for (let i = 0; i + 5 < verts1134.length; i += 6) {
+      if (Math.abs(verts1134[i] - ex1134) < 0.45 && Math.abs(verts1134[i + 2] - ez1134) < 0.45 && verts1134[i + 1] > wy1134 + 0.3 && verts1134[i + 1] < wy1134 + 0.95
+        && Math.abs(verts1134[i + 3] - 0.88) < 0.005 && Math.abs(verts1134[i + 4] - 0.93) < 0.005 && Math.abs(verts1134[i + 5] - 0.94) < 0.005) { sheet1134 = true; break; }
+    }
+    assert(sheet1134, 'M1134: the waterfall cascade sheet rises above the water');
+  }
+  const rap1134 = visuals1134.rapids[0];
+  assert(rap1134 !== undefined, 'M1134: a rapids tile exists for the render probe (setup)');
+  if (rap1134) {
+    assert(near1134(rap1134.x + 0.5, rap1134.y + 0.5, WT1134.surfaceElevation(eff1134, rap1134.x + 0.5, rap1134.y + 0.5) + 0.067, 0.78, 0.9, 0.9, 0.4), 'M1134: a rapids foam streak renders on the steep tile');
+  }
+  // --- 24h M1069 IDENTICAL to the 1126 base (visuals only — the sim
+  // never calls riverVisuals, so the fresh-world sim is structurally
+  // identical). ---
+  const world24_1134: any = W1134.defaultWorld();
+  const sim24_1134: any = SS1134.createSettlementSim(world24_1134);
+  SS1134.advanceSettlement(sim24_1134, 1600);
+  const L24_1134 = sim24_1134.ledger;
+  assert(L24_1134.ticks === 1600, 'M1134: 24h ticks 1600');
+  assert(L24_1134.woodChopped === 52 && L24_1134.woodDelivered === 46 && L24_1134.woodSpent === 24, 'M1134: 24h wood 52/46/24 (M1069 1126 base — 1134 changes nothing in the diag)');
+  assert(L24_1134.grainHarvested === 54 && L24_1134.grainDelivered === 54, 'M1134: 24h grain 54/54 (M1069 1126 base)');
+  assert(L24_1134.mealsBaked === 26 && L24_1134.mealsEaten === 13, 'M1134: 24h meals 26/13 (M1069 1126 base)');
+  assert(L24_1134.flourMilled === 54 && L24_1134.flourBaked === 52, 'M1134: 24h flour 54/52 (M1069 1126 base)');
+  assert(L24_1134.jobsCompleted.chop === 26 && L24_1134.jobsCompleted.build === 4 && L24_1134.jobsCompleted.deliver === 50 && L24_1134.jobsCompleted.harvest === 27, 'M1134: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 1126 base)');
+  assert(L24_1134.hutsCompleted === 2 && L24_1134.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1134: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1134.starvedTicks === 0 && Math.round(L24_1134.minHealth) === 100, 'M1134: nobody starves in 24h');
+  assert(sim24_1134.founders.length === 7, 'M1134: the population is 7 after 24h');
+  assert(F1134.campWoodInRegistry(sim24_1134.registry) === 10 && F1134.campFoodInRegistry(sim24_1134.registry) === 13 && SS1134.settlementGrain(sim24_1134) === 0 && FC1134.foodChainFlourInRegistry(sim24_1134.registry) === 2, 'M1134: final wood/food/grain/flour 10/13/0/2 (M1069 1126 base)');
+  console.log('M1134: river visuals verified (continuous depth, 3 waterfalls, 23 rapids, foam bank edges, renderer proof, minimap pin, 24h identical)');
+}
+
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
