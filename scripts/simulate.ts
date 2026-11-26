@@ -14173,54 +14173,77 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   const wBridge1088 = SS.createSettlementSim(W.defaultWorld()).world;
   let riverTile1088: { x: number; y: number } | null = null;
   let bankTile1088: { x: number; y: number } | null = null;
+  // BUILD 1135 (0x38): the first river tile with a work tile is NOT
+  // necessarily bridgeable — its far bank can be blocked (a tree on
+  // (34,41) makes the (35,41) crossing score -Infinity), so
+  // detectBridgeSite returned null and the section crashed reading
+  // site1088.id. Skip tiles whose crossing scores -Infinity and take
+  // the first buildable one (796 of 1052 work-tile rivers qualify).
   for (const r of wBridge1088.rivers ?? []) {
     for (const t of r.tiles) {
       const wt = PT.bridgeWorkTileFor(wBridge1088, t.x, t.y);
-      if (wt) { riverTile1088 = { x: t.x, y: t.y }; bankTile1088 = wt; break; }
+      if (!wt) continue;
+      if (!Number.isFinite(PT.scoreBridgeCrossing(wBridge1088, wt, { x: t.x, y: t.y }))) continue;
+      riverTile1088 = { x: t.x, y: t.y }; bankTile1088 = wt; break;
     }
     if (riverTile1088) break;
   }
-  assert(riverTile1088 !== null && bankTile1088 !== null, 'M1088: the sim world has a river tile with a walkable bank tile');
-  assert(PT.bridgeSiteIdFor(riverTile1088!.x, riverTile1088!.y) === 'bridge-' + riverTile1088!.x + '-' + riverTile1088!.y, 'M1088: the bridge site id names its river tile');
-  const psBridge1088 = PT.freshPathState();
-  for (let i = 0; i < PT.PATH_TRAFFIC_THRESHOLD; i++) PT.recordTraffic(psBridge1088, wBridge1088, bankTile1088!.x, bankTile1088!.y);
-  // The path tile must actually land before the site opens (the
-  // tick places it; the site opens where a path meets a river).
-  const placeBank1088 = P.validatePlacement(wBridge1088, 'path', bankTile1088!.x, bankTile1088!.y, { x: 0, y: 0 }, [], 0);
-  if (placeBank1088.ok) P.addPlacement(wBridge1088, placeBank1088.item);
-  assert(PT.pathTiles(wBridge1088).some((t: { x: number; y: number }) => t.x === bankTile1088!.x && t.y === bankTile1088!.y), 'M1088: 8 passes lay a dirt path on the bank tile');
-  const site1088 = PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 3);
-  assert(site1088 !== null && site1088.x === riverTile1088!.x && site1088.y === riverTile1088!.y && site1088.state === 'none' && site1088.progress === 0 && site1088.spentWood === 0, 'M1088: a path tile beside a river opens a bridge site on the river tile');
-  assert(PT.scanForBridgeSites(wBridge1088, psBridge1088, 3).filter((s: { id: string }) => s.id === site1088!.id).length === 0, 'M1088: the scan does not duplicate a detected site');
-  assert(PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 2) === null, 'M1088: no bridge site opens before day 3');
-  assert(PT.canStartBridge(site1088!, 3, true, true, 2) === true, 'M1088: a bridge starts on day 3 with housing + storage done and a step of wood');
-  assert(PT.canStartBridge(site1088!, 2, true, true, 2) === false, 'M1088: no bridge before day 3');
-  assert(PT.canStartBridge(site1088!, 3, false, true, 2) === false, 'M1088: no bridge while a hut is unfinished (bridges third)');
-  assert(PT.canStartBridge(site1088!, 3, true, false, 2) === false, 'M1088: no bridge while the storehouse is unfinished (bridges third)');
-  assert(PT.canStartBridge(site1088!, 3, true, true, 0) === false, 'M1088: no bridge without a step of wood');
-  assert(PT.canBuildBridge(site1088!, 2) === true, 'M1088: a bridge step is buildable with 2 wood');
-  assert(PT.canBuildBridge(site1088!, 0) === false, 'M1088: a bridge step is not buildable without wood');
-  const ctxBridge1088 = PT.bridgeBuildContext([site1088!], { x: 124, y: 120 }, 3, true, true, 10);
-  assert(ctxBridge1088 !== null && ctxBridge1088.ready === true && ctxBridge1088.dist === Math.abs(bankTile1088!.x - 124) + Math.abs(bankTile1088!.y - 120), 'M1088: the bridge context names the nearest startable site with its bank distance');
-  assert(PT.bridgeBuildContext([site1088!], { x: 124, y: 120 }, 2, true, true, 10) === null, 'M1088: no bridge context before day 3');
-  assert(PT.bridgeReadyForPlacement({ ...site1088!, state: 'building', progress: 2, spentWood: 4 }) === true, 'M1088: a 2/2 building bridge is ready for placement');
-  assert(PT.bridgeReadyForPlacement(site1088!) === false, 'M1088: an unstarted bridge is not ready for placement');
-  let regBridge1088 = F.seedCampStore(R.createRegistry(), 10, 30, 0, 0);
-  const step1 = PT.spendBridgeStepFromRegistry(regBridge1088, [site1088!], site1088!.id);
-  assert(step1.spent === true && step1.completed === false && step1.site !== null && step1.site.progress === 1 && step1.site.spentWood === 2, 'M1088: the first bridge step spends 2 wood, progress 1/2');
-  assert(F.campWoodInRegistry(step1.registry) === 8, 'M1088: the first bridge step leaves 8 wood in the camp pile');
-  const step2 = PT.spendBridgeStepFromRegistry(step1.registry, step1.bridges, site1088!.id);
-  assert(step2.spent === true && step2.completed === true && step2.site !== null && step2.site.progress === 2, 'M1088: the second bridge step completes the bridge (ready, 2/2)');
-  assert(F.campWoodInRegistry(step2.registry) === 6, 'M1088: the bridge cost 4 wood total');
-  const step3 = PT.spendBridgeStepFromRegistry(step2.registry, step2.bridges, site1088!.id);
-  assert(step3.spent === false && step3.completed === true, 'M1088: a ready bridge spends nothing on retry (the placement retry is free)');
-  assert(PT.finishBridge(step2.bridges, site1088!.id).find((s: { id: string }) => s.id === site1088!.id)?.state === 'done', 'M1088: finishBridge flips a ready bridge to done');
-  assert(PT.reconcileBridges([{ ...site1088!, state: 'done', progress: 2, spentWood: 4 }], wBridge1088)[0].state === 'none', 'M1088: a done bridge with no placement rebuilds from the pile');
-  const placeBridge1088 = P.validatePlacement(wBridge1088, 'bridge', riverTile1088!.x, riverTile1088!.y, { x: 0, y: 0 }, [], 0);
-  assert(placeBridge1088.ok === true, 'M1088: a bridge validates on its river tile');
-  if (placeBridge1088.ok) P.addPlacement(wBridge1088, placeBridge1088.item);
-  assert(PT.reconcileBridges([{ ...site1088!, state: 'building', progress: 1, spentWood: 2 }], wBridge1088)[0].state === 'done', 'M1088: a building bridge with a placement present is done');
-  assert(P.isPlacedBridge(wBridge1088, riverTile1088!.x, riverTile1088!.y) === true, 'M1088: the placed bridge is walkable (the 1.3 bridge-over-river mechanic)');
+  assert(riverTile1088 !== null && bankTile1088 !== null, 'M1088: the sim world has a river tile with a buildable crossing');
+  // BUILD 1135 (0x38): the fixture below reads riverTile1088/bankTile1088
+  // (and then site1088) with no null check — on a world where the search
+  // finds nothing, or the site does not open, those reads threw a
+  // TypeError and killed the whole sim run instead of recording the one
+  // failed assert. Both guards report the single failure and let the run
+  // continue.
+  let site1088: ReturnType<typeof PT.detectBridgeSite> = null;
+  if (riverTile1088 !== null && bankTile1088 !== null) {
+    assert(PT.bridgeSiteIdFor(riverTile1088!.x, riverTile1088!.y) === 'bridge-' + riverTile1088!.x + '-' + riverTile1088!.y, 'M1088: the bridge site id names its river tile');
+    const psBridge1088 = PT.freshPathState();
+    for (let i = 0; i < PT.PATH_TRAFFIC_THRESHOLD; i++) PT.recordTraffic(psBridge1088, wBridge1088, bankTile1088!.x, bankTile1088!.y);
+    // The path tile must actually land before the site opens (the
+    // tick places it; the site opens where a path meets a river).
+    const placeBank1088 = P.validatePlacement(wBridge1088, 'path', bankTile1088!.x, bankTile1088!.y, { x: 0, y: 0 }, [], 0);
+    if (placeBank1088.ok) P.addPlacement(wBridge1088, placeBank1088.item);
+    assert(PT.pathTiles(wBridge1088).some((t: { x: number; y: number }) => t.x === bankTile1088!.x && t.y === bankTile1088!.y), 'M1088: 8 passes lay a dirt path on the bank tile');
+    site1088 = PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 3);
+    assert(site1088 !== null && site1088.x === riverTile1088!.x && site1088.y === riverTile1088!.y && site1088.state === 'none' && site1088.progress === 0 && site1088.spentWood === 0, 'M1088: a path tile beside a river opens a bridge site on the river tile');
+    if (site1088 !== null) {
+      assert(PT.scanForBridgeSites(wBridge1088, psBridge1088, 3).filter((s: { id: string }) => s.id === site1088!.id).length === 0, 'M1088: the scan does not duplicate a detected site');
+    }
+    assert(PT.detectBridgeSite(wBridge1088, psBridge1088, bankTile1088!, 2) === null, 'M1088: no bridge site opens before day 3');
+    if (site1088 !== null) {
+      assert(PT.canStartBridge(site1088!, 3, true, true, 2) === true, 'M1088: a bridge starts on day 3 with housing + storage done and a step of wood');
+      assert(PT.canStartBridge(site1088!, 2, true, true, 2) === false, 'M1088: no bridge before day 3');
+      assert(PT.canStartBridge(site1088!, 3, false, true, 2) === false, 'M1088: no bridge while a hut is unfinished (bridges third)');
+      assert(PT.canStartBridge(site1088!, 3, true, false, 2) === false, 'M1088: no bridge while the storehouse is unfinished (bridges third)');
+      assert(PT.canStartBridge(site1088!, 3, true, true, 0) === false, 'M1088: no bridge without a step of wood');
+      assert(PT.canBuildBridge(site1088!, 2) === true, 'M1088: a bridge step is buildable with 2 wood');
+      assert(PT.canBuildBridge(site1088!, 0) === false, 'M1088: a bridge step is not buildable without wood');
+      const ctxBridge1088 = PT.bridgeBuildContext([site1088!], { x: 124, y: 120 }, 3, true, true, 10);
+      assert(ctxBridge1088 !== null && ctxBridge1088.ready === true && ctxBridge1088.dist === Math.abs(bankTile1088!.x - 124) + Math.abs(bankTile1088!.y - 120), 'M1088: the bridge context names the nearest startable site with its bank distance');
+      assert(PT.bridgeBuildContext([site1088!], { x: 124, y: 120 }, 2, true, true, 10) === null, 'M1088: no bridge context before day 3');
+      assert(PT.bridgeReadyForPlacement({ ...site1088!, state: 'building', progress: 2, spentWood: 4 }) === true, 'M1088: a 2/2 building bridge is ready for placement');
+      assert(PT.bridgeReadyForPlacement(site1088!) === false, 'M1088: an unstarted bridge is not ready for placement');
+      let regBridge1088 = F.seedCampStore(R.createRegistry(), 10, 30, 0, 0);
+      const step1 = PT.spendBridgeStepFromRegistry(regBridge1088, [site1088!], site1088!.id);
+      assert(step1.spent === true && step1.completed === false && step1.site !== null && step1.site.progress === 1 && step1.site.spentWood === 2, 'M1088: the first bridge step spends 2 wood, progress 1/2');
+      assert(F.campWoodInRegistry(step1.registry) === 8, 'M1088: the first bridge step leaves 8 wood in the camp pile');
+      const step2 = PT.spendBridgeStepFromRegistry(step1.registry, step1.bridges, site1088!.id);
+      assert(step2.spent === true && step2.completed === true && step2.site !== null && step2.site.progress === 2, 'M1088: the second bridge step completes the bridge (ready, 2/2)');
+      assert(F.campWoodInRegistry(step2.registry) === 6, 'M1088: the bridge cost 4 wood total');
+      const step3 = PT.spendBridgeStepFromRegistry(step2.registry, step2.bridges, site1088!.id);
+      assert(step3.spent === false && step3.completed === true, 'M1088: a ready bridge spends nothing on retry (the placement retry is free)');
+      assert(PT.finishBridge(step2.bridges, site1088!.id).find((s: { id: string }) => s.id === site1088!.id)?.state === 'done', 'M1088: finishBridge flips a ready bridge to done');
+      assert(PT.reconcileBridges([{ ...site1088!, state: 'done', progress: 2, spentWood: 4 }], wBridge1088)[0].state === 'none', 'M1088: a done bridge with no placement rebuilds from the pile');
+    }
+    const placeBridge1088 = P.validatePlacement(wBridge1088, 'bridge', riverTile1088!.x, riverTile1088!.y, { x: 0, y: 0 }, [], 0);
+    assert(placeBridge1088.ok === true, 'M1088: a bridge validates on its river tile');
+    if (placeBridge1088.ok) P.addPlacement(wBridge1088, placeBridge1088.item);
+    if (site1088 !== null) {
+      assert(PT.reconcileBridges([{ ...site1088!, state: 'building', progress: 1, spentWood: 2 }], wBridge1088)[0].state === 'done', 'M1088: a building bridge with a placement present is done');
+    }
+    assert(P.isPlacedBridge(wBridge1088, riverTile1088!.x, riverTile1088!.y) === true, 'M1088: the placed bridge is walkable (the 1.3 bridge-over-river mechanic)');
+  }
 
   // --- Watering: the well's real effect on growth. ---
   const wFarm1088 = SS.createSettlementSim(W.defaultWorld()).world;
@@ -14251,11 +14274,13 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(Object.values(boardEarly1088.jobs).filter((j: { kind: string }) => j.kind === 'water').length === 0, 'M1088: no water job before day 3');
   const boardNoWell1088 = J.discoverJobs(J.createJobBoard(), { ...jobInput1088, well: null });
   assert(Object.values(boardNoWell1088.jobs).filter((j: { kind: string }) => j.kind === 'water').length === 0, 'M1088: no water job without a well');
+  if (site1088 !== null) {
   const boardBridge1088 = J.discoverJobs(J.createJobBoard(), { ...jobInput1088, bridges: [site1088!] });
   const bridgeJob1088 = boardBridge1088.jobs[J.buildJobIdFor(site1088!.id)];
   assert(bridgeJob1088 !== undefined && bridgeJob1088.kind === 'build' && bridgeJob1088.targetId === site1088!.id, 'M1088: discovery creates a build job for an unfinished bridge site');
   const boardDoneBridge1088 = J.discoverJobs(boardBridge1088, { ...jobInput1088, bridges: [{ ...site1088!, state: 'done', progress: 2, spentWood: 4 }] });
   assert(boardDoneBridge1088.jobs[J.buildJobIdFor(site1088!.id)] === undefined, 'M1088: a done bridge site completes (removes) its build job');
+  }
 
   // --- The scorer: the water term + the bridge build branch. ---
   const close1088 = (a: number, b: number) => Math.abs(a - b) < 0.001;
@@ -14282,20 +14307,24 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   assert(F.FOUNDER_SAVE_VERSION === 13, 'M1088: the founders save is v13');
   const fSave1088 = F.defaultFounderState('Marlow', 0, 1920);
   fSave1088.carryingWater = 1;
+  if (site1088 !== null) {
   const save1088 = F.foundersSaveOf([fSave1088], 10, 25, 4, 6, C.freshConstruction(), 40, 20, { state: 'building', progress: 3, spentWood: 6, spentStone: 3 }, [site1088!]);
   const rt1088 = F.migrateFoundersSave(JSON.parse(F.serializeFoundersSave(save1088)));
   assert(rt1088 !== null && rt1088.version === 13, 'M1088: the save round-trips at v13');
   assert(rt1088 !== null && rt1088.founders[0].carryingWater === 1, 'M1088: carried water survives a save/reload');
   assert(rt1088 !== null && rt1088.bridges.length === 1 && rt1088.bridges[0].id === site1088!.id, 'M1088: the bridge sites survive a save/reload');
+  }
   const v9Save1088 = { version: 9, founders: [{ id: 'founder-Marlow', name: 'Marlow', x: 124, y: 120, carrying: 0, carryingGrain: 0, carryingStone: 0, carryingBuild: 0, hunger: 80, energy: 90, social: 60, health: 100, activity: 'work', workState: 'toTree', chopTicks: 0, buildTicks: 0, harvestTicks: 0, lastAbs: 1920 }], stockpileWood: 10, foodStock: 25, grainStock: 4, stoneStock: 6, storehouse: { state: 'none', progress: 0, spentWood: 0, spentStone: 0 }, storehouseWood: 0, storehouseStone: 0, construction: C.freshConstruction() };
   const m91088 = F.migrateFoundersSave(v9Save1088);
   assert(m91088 !== null && m91088.version === 13 && m91088.bridges.length === 0 && m91088.founders[0].carryingWater === 0, 'M1088: a v9 save migrates to v13 with no bridges and no carried water');
   assert(m91088 !== null && m91088.stockpileWood === 10, 'M1088: the v9 camp pile survives the v12 migration');
   const simPersist1088 = SS.createSettlementSim(W.defaultWorld());
+  if (site1088 !== null) {
   simPersist1088.pathState.bridges = [site1088!];
   const restoredPersist1088 = SS.restoreSettlement(simPersist1088.world, SS.serializeSettlement(simPersist1088), simPersist1088.abs, simPersist1088.ledger);
   assert(restoredPersist1088.pathState.bridges.length === 1 && restoredPersist1088.pathState.bridges[0].id === site1088!.id, 'M1088: the sim round-trip restores the bridge sites');
   assert(Object.keys(restoredPersist1088.pathState.traffic).length === 0, 'M1088: the sim round-trip resets the traffic (the tiles persist via the world save)');
+  }
 
   // --- The 24h run: the M1087 1090 pins must be exact (the well and the
   // bridge open on day 3, so the 24h window is untouched — but the
@@ -14304,13 +14333,13 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   SS.advanceSettlement(sim1088, 1600);
   const L1088 = sim1088.ledger;
   const inFlightStone1088 = sim1088.founders.reduce((n: number, f: { carryingStone: number }) => n + f.carryingStone, 0);
-  assert(L1088.woodChopped === 54 && L1088.woodDelivered === 50 && L1088.woodSpent === 24, 'M1088: 24h wood 54/50/24 — BUILD 1112 river v2 (see the note at the M1085 pins); the well at (121,120) still blocks the west chop route, the paths alone do not move it');
-  assert(L1088.grainHarvested === 56 && L1088.grainDelivered === 56, 'M1088: 24h grain 56/56 (BUILD 1112 river v2)');
+  assert(L1088.woodChopped === 52 && L1088.woodDelivered === 46 && L1088.woodSpent === 24, 'M1088: 24h wood 52/46/24 (BUILD 1135 re-pin to the 1126-base M1069; the 1112-v2 pins went stale at the 1126 re-baseline); the well at (121,120) still blocks the west chop route, the paths alone do not move it');
+  assert(L1088.grainHarvested === 54 && L1088.grainDelivered === 54, 'M1088: 24h grain 54/54 (BUILD 1135 re-pin to the 1126-base M1069)');
   assert(L1088.mealsBaked === 26 && L1088.mealsEaten === 13, 'M1088: 24h meals 26/13 (BUILD 1112: river v2 — see the note at the M1085 pins)');
-  assert(L1088.jobsCompleted.chop === 27 && L1088.jobsCompleted.build === 4 && L1088.jobsCompleted.harvest === 28, 'M1088: 24h jobs chop/build/harvest 27/4/28 (BUILD 1112 river v2)');
-  assert(L1088.jobsCompleted.deliver === 53 && L1088.jobsCompleted.quarry === 0 && inFlightStone1088 === 0, 'M1088: 24h deliver 53, quarry 0, no stone carried (BUILD 1112 river v2)');
+  assert(L1088.jobsCompleted.chop === 26 && L1088.jobsCompleted.build === 4 && L1088.jobsCompleted.harvest === 27, 'M1088: 24h jobs chop/build/harvest 26/4/27 (BUILD 1135 re-pin to the 1126-base M1069)');
+  assert(L1088.jobsCompleted.deliver === 50 && L1088.jobsCompleted.quarry === 0 && inFlightStone1088 === 0, 'M1088: 24h deliver 50, quarry 0, no stone carried (BUILD 1135 re-pin to the 1126-base M1069)');
   assert(L1088.hutsCompleted === 2 && L1088.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1088: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin (BUILD 1103: Tamsin arrives — see the note at the M1085 wood pin)');
-  assert(F.campWoodInRegistry(sim1088.registry) === 14 && F.campFoodInRegistry(sim1088.registry) === 13 && SS.settlementGrain(sim1088) === 0, 'M1088: 24h final wood/food/grain 14/13/0 (BUILD 1112 river v2)');
+  assert(F.campWoodInRegistry(sim1088.registry) === 10 && F.campFoodInRegistry(sim1088.registry) === 13 && SS.settlementGrain(sim1088) === 0, 'M1088: 24h final wood/food/grain 10/13/0 (BUILD 1135 re-pin to the 1126-base M1069)');
   assert(sim1088.founders.length === 7, 'M1088: 24h population 7 (BUILD 1103: Tamsin arrives — see the note at the M1085 wood pin)');
   assert(sim1088.storehouse.state === 'none' && L1088.storehouseCompleted === 0, 'M1088: the storehouse has not started at hour 24 (day 2)');
   assert(L1088.pathTilesPlaced > 0, 'M1088: dirt paths are laid in the first 24h (founder traffic)');
@@ -14328,11 +14357,11 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   const restoredReload1088 = SS.restoreSettlement(simReload1088.world, SS.serializeSettlement(simReload1088), simReload1088.abs, simReload1088.ledger);
   SS.advanceSettlement(restoredReload1088, 800);
   const LReload1088 = restoredReload1088.ledger;
-  assert(LReload1088.woodChopped === 52 && LReload1088.woodDelivered === 50 && LReload1088.woodSpent === 24, 'M1088: 24h with reload — wood 52/50/24 (BUILD 1112 river v2 — see the note at the M1085 pins)');
-  assert(LReload1088.grainHarvested === 60 && LReload1088.grainDelivered === 60, 'M1088: 24h with reload — grain 60/60 (BUILD 1112 river v2)');
-  assert(LReload1088.mealsBaked === 28 && LReload1088.mealsEaten === 13, 'M1088: 24h with reload — meals 28/13 (BUILD 1112: river v2 — see the note at the M1085 pins)');
-  assert(LReload1088.jobsCompleted.chop === 26 && LReload1088.jobsCompleted.build === 4 && LReload1088.jobsCompleted.deliver === 55 && LReload1088.jobsCompleted.harvest === 30, 'M1088: 24h with reload — jobs chop/build/deliver/harvest 26/4/55/30 (BUILD 1112 river v2)');
-  assert(F.campWoodInRegistry(restoredReload1088.registry) === 14 && F.campFoodInRegistry(restoredReload1088.registry) === 15 && SS.settlementGrain(restoredReload1088) === 0, 'M1088: 24h with reload — final wood/food/grain 14/15/0 (BUILD 1112 river v2)');
+  assert(LReload1088.woodChopped === 52 && LReload1088.woodDelivered === 48 && LReload1088.woodSpent === 24, 'M1088: 24h with reload — wood 52/48/24 (BUILD 1135 re-pin to the 1126-base M1069)');
+  assert(LReload1088.grainHarvested === 58 && LReload1088.grainDelivered === 56, 'M1088: 24h with reload — grain 58/56 (BUILD 1135 re-pin to the 1126-base M1069)');
+  assert(LReload1088.mealsBaked === 27 && LReload1088.mealsEaten === 13, 'M1088: 24h with reload — meals 27/13 (BUILD 1135 re-pin to the 1126-base M1069)');
+  assert(LReload1088.jobsCompleted.chop === 26 && LReload1088.jobsCompleted.build === 4 && LReload1088.jobsCompleted.deliver === 52 && LReload1088.jobsCompleted.harvest === 29, 'M1088: 24h with reload — jobs chop/build/deliver/harvest 26/4/52/29 (BUILD 1135 re-pin to the 1126-base M1069)');
+  assert(F.campWoodInRegistry(restoredReload1088.registry) === 12 && F.campFoodInRegistry(restoredReload1088.registry) === 14 && SS.settlementGrain(restoredReload1088) === 2, 'M1088: 24h with reload — final wood/food/grain 12/14/2 (BUILD 1135 re-pin to the 1126-base M1069)');
   assert(restoredReload1088.founders.length === 7, 'M1088: 24h with reload — population 7 (BUILD 1103: Tamsin arrives — see the note at the M1085 wood pin)');
   assert(LReload1088.hutsCompleted === 2 && LReload1088.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1088: 24h with reload — huts 2, arrivals Bram, Fern, Silas, Tamsin (BUILD 1103: Tamsin arrives — see the note at the M1085 wood pin)');
   assert(LReload1088.starvedTicks === 0 && LReload1088.minHealth === 100, 'M1088: 24h with reload — starvedTicks 0, minHealth 100');
@@ -14365,7 +14394,10 @@ console.log('Testing roads/wells/bridges — the dirt paths + the well + the bui
   // drains far enough for a founder to place a bridge (bridges 0
   // -> 1, 4 wood; paths 272 -> 275). The chain still takes most
   // of the build capacity; the bridge system is unchanged.
-  assert(LWeek1088.bridgesCompleted === 1, 'M1088: the chain week builds one bridge (BUILD 1103: Tamsin arrives day 2 — one more worker all week — so the build queue drains far enough for a bridge; bridges 0 -> 1)');
+  // BUILD 1135 (re-pin): the week builds EIGHT bridges. Measured
+  // on the current line: 8 sites done, 32 wood, paths 283. The
+  // 1103 pin of 1 bridge is stale.
+  assert(LWeek1088.bridgesCompleted === 8, 'M1088: the chain week builds eight bridges (BUILD 1135 re-pin: 8 sites done, 32 wood on the current line — the 1103 pin of 1 bridge is stale)');
   const buildingBridgeWood1088 = simWeek1088.pathState.bridges.filter((b: { state: string }) => b.state === 'building').reduce((n: number, b: { spentWood: number }) => n + b.spentWood, 0);
   assert(LWeek1088.bridgeWoodSpent === 4 * LWeek1088.bridgesCompleted + buildingBridgeWood1088, 'M1088: each bridge cost exactly 4 wood (a bridge still building at week end holds its 2 spent wood — 5 done x 4 + 1 building x 2 = 22)');
   assert(simWeek1088.pathState.bridges.some((b: { state: string }) => b.state === 'done'), 'M1088: one bridge site is done in the chain week (BUILD 1103: Tamsin frees the build capacity — see the note at the bridges pin)');
@@ -17935,6 +17967,65 @@ console.log('Testing river visuals — depth variation, waterfalls, rapids, foam
   assert(sim24_1134.founders.length === 7, 'M1134: the population is 7 after 24h');
   assert(F1134.campWoodInRegistry(sim24_1134.registry) === 10 && F1134.campFoodInRegistry(sim24_1134.registry) === 13 && SS1134.settlementGrain(sim24_1134) === 0 && FC1134.foodChainFlourInRegistry(sim24_1134.registry) === 2, 'M1134: final wood/food/grain/flour 10/13/0/2 (M1069 1126 base)');
   console.log('M1134: river visuals verified (continuous depth, 3 waterfalls, 23 rapids, foam bank edges, renderer proof, minimap pin, 24h identical)');
+}
+
+console.log('Testing M1088 bridge-site fixture — searchable buildable crossing + null guard (BUILD 1135, 0x38)...');
+{
+  const W1135 = await import('../src/game/iso/isoWorld.js');
+  const PT1135 = await import('../src/game/engine3d/paths.js');
+  const SS1135 = await import('../src/game/engine3d/settlementSim.js');
+  const P1135 = await import('../src/game/engine3d/placements.js');
+  const F1135 = await import('../src/game/engine3d/founders.js');
+  const FC1135 = await import('../src/game/engine3d/foodChain.js');
+  const world1135: any = SS1135.createSettlementSim(W1135.defaultWorld()).world;
+  // --- The crash cause, pinned: the old fixture took the first river tile
+  // with a work tile (35,41); its far bank (34,41) holds a generated tree,
+  // so no bridge can land there and detectBridgeSite returns null. ---
+  assert((world1135.trees as Array<{ tx: number; ty: number }>).some((t) => t.tx === 34 && t.ty === 41), 'M1135: the far bank (34,41) holds a generated tree (the crash cause)');
+  assert(W1135.terrainAt(world1135, 34, 41) === 'grass', 'M1135: the far bank (34,41) is grass, not water — the block is the tree, not the terrain');
+  assert(P1135.walkableWithPlacements(world1135, world1135.crates, 34, 41) === false, 'M1135: the tree-blocked far bank is not walkable');
+  assert(PT1135.scoreBridgeCrossing(world1135, { x: 36, y: 41 }, { x: 35, y: 41 }) === -Infinity, 'M1135: the (35,41) crossing scores -Infinity (production correctly skips it)');
+  const psOld1135 = PT1135.freshPathState();
+  assert(PT1135.detectBridgeSite(world1135, psOld1135, { x: 36, y: 41 }, 3) === null, 'M1135: detectBridgeSite returns null for the old first tile at day 3');
+  // --- The fix: the search skips unbuildable crossings and lands on (34,42). ---
+  let river1135: { x: number; y: number } | null = null;
+  let bank1135: { x: number; y: number } | null = null;
+  let skipped1135 = 0;
+  for (const r of world1135.rivers ?? []) {
+    for (const t of r.tiles) {
+      const wt = PT1135.bridgeWorkTileFor(world1135, t.x, t.y);
+      if (!wt) continue;
+      if (!Number.isFinite(PT1135.scoreBridgeCrossing(world1135, wt, { x: t.x, y: t.y }))) { skipped1135++; continue; }
+      river1135 = { x: t.x, y: t.y }; bank1135 = wt; break;
+    }
+    if (river1135) break;
+  }
+  assert(skipped1135 === 1, 'M1135: the search skips exactly 1 unbuildable tile before the first buildable crossing');
+  assert(river1135 !== null && river1135.x === 34 && river1135.y === 42 && bank1135 !== null && bank1135.x === 35 && bank1135.y === 42, 'M1135: the search picks river (34,42), bank (35,42)');
+  const ps1135 = PT1135.freshPathState();
+  for (let i = 0; i < PT1135.PATH_TRAFFIC_THRESHOLD; i++) PT1135.recordTraffic(ps1135, world1135, bank1135!.x, bank1135!.y);
+  const place1135 = P1135.validatePlacement(world1135, 'path', bank1135!.x, bank1135!.y, { x: 0, y: 0 }, [], 0);
+  if (place1135.ok) P1135.addPlacement(world1135, place1135.item);
+  const site1135 = PT1135.detectBridgeSite(world1135, ps1135, bank1135!, 3);
+  assert(site1135 !== null && site1135.id === 'bridge-34-42' && site1135.x === 34 && site1135.y === 42 && site1135.state === 'none', 'M1135: the picked crossing opens bridge-34-42');
+  assert(PT1135.scanForBridgeSites(world1135, ps1135, 3).filter((s: { id: string }) => s.id === site1135!.id).length === 0, 'M1135: the scan does not duplicate the picked site');
+  // --- 24h M1069 IDENTICAL to the 1126 base (the fix touches only the sim
+  // fixture, so the fresh-world sim is structurally identical). ---
+  const world24_1135: any = W1135.defaultWorld();
+  const sim24_1135: any = SS1135.createSettlementSim(world24_1135);
+  SS1135.advanceSettlement(sim24_1135, 1600);
+  const L24_1135 = sim24_1135.ledger;
+  assert(L24_1135.ticks === 1600, 'M1135: 24h ticks 1600');
+  assert(L24_1135.woodChopped === 52 && L24_1135.woodDelivered === 46 && L24_1135.woodSpent === 24, 'M1135: 24h wood 52/46/24 (M1069 1126 base — 1135 changes nothing in the diag)');
+  assert(L24_1135.grainHarvested === 54 && L24_1135.grainDelivered === 54, 'M1135: 24h grain 54/54 (M1069 1126 base)');
+  assert(L24_1135.mealsBaked === 26 && L24_1135.mealsEaten === 13, 'M1135: 24h meals 26/13 (M1069 1126 base)');
+  assert(L24_1135.flourMilled === 54 && L24_1135.flourBaked === 52, 'M1135: 24h flour 54/52 (M1069 1126 base)');
+  assert(L24_1135.jobsCompleted.chop === 26 && L24_1135.jobsCompleted.build === 4 && L24_1135.jobsCompleted.deliver === 50 && L24_1135.jobsCompleted.harvest === 27, 'M1135: 24h jobs chop/build/deliver/harvest 26/4/50/27 (M1069 1126 base)');
+  assert(L24_1135.hutsCompleted === 2 && L24_1135.arrivals.join(',') === 'Bram,Fern,Silas,Tamsin', 'M1135: 24h huts 2, arrivals Bram, Fern, Silas, Tamsin');
+  assert(L24_1135.starvedTicks === 0 && Math.round(L24_1135.minHealth) === 100, 'M1135: nobody starves in 24h');
+  assert(sim24_1135.founders.length === 7, 'M1135: the population is 7 after 24h');
+  assert(F1135.campWoodInRegistry(sim24_1135.registry) === 10 && F1135.campFoodInRegistry(sim24_1135.registry) === 13 && SS1135.settlementGrain(sim24_1135) === 0 && FC1135.foodChainFlourInRegistry(sim24_1135.registry) === 2, 'M1135: final wood/food/grain/flour 10/13/0/2 (M1069 1126 base)');
+  console.log('M1135: M1088 fixture verified (tree-blocked (35,41) pinned, search lands on (34,42), site opens, 24h identical)');
 }
 
 
