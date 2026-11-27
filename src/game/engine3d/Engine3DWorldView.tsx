@@ -2966,7 +2966,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
         const w=stateRef.current.world;
         let best:any=null;
         for(const river of w.rivers??[]){
-          for(let i=1;i<river.tiles.length-1;i++){
+          const start=Math.max(2,Math.floor(river.tiles.length*.25));
+          const end=Math.min(river.tiles.length-2,Math.ceil(river.tiles.length*.75));
+          for(let i=start;i<end;i++){
             const t=river.tiles[i];
             if(terrainAt(w,t.x,t.y)!=='water')continue;
             const waterNeighbors=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]]
@@ -2978,7 +2980,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
               const bx=t.x+dx,by=t.y+dy;
               if(terrainAt(w,bx,by)==='water')continue;
               if(!walkableWithPlacements(w,w.crates,bx,by))continue;
-              const score=waterNeighbors*100+bend*20+Math.min(100,river.tiles.length)*.1;
+              const score=bend*200+waterNeighbors*20+Math.min(100,river.tiles.length)*.1;
               if(!best||score>best.score)best={score,riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:ndx,dy:ndy},length:river.tiles.length,waterNeighbors,bend};
             }
           }

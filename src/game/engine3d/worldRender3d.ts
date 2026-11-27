@@ -1492,13 +1492,13 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const FALL_WHITE: Vec3 = [0.88, 0.93, 0.94];
     const RAPID_FOAM: Vec3 = [0.78, 0.9, 0.9];
     // Foam edge strips: one thin strip inside each river water tile
-    // along every edge that faces land. The strip rides the surface
-    // sampled at its own centre (+0.02) so it follows the shoreline
-    // slope instead of floating over it or sinking into it.
+    // along every edge that faces land. Keep foam on the same level
+    // water surface (+0.02); sampling the sloped bank here raised the
+    // foam into the same triangular wedges as the old water mesh.
     const edgeStrip = (x: number, y: number, edge: 'n' | 's' | 'e' | 'w'): void => {
       const cx = edge === 'e' ? x + 0.93 : edge === 'w' ? x + 0.07 : x + 0.5;
       const cz = edge === 's' ? y + 0.93 : edge === 'n' ? y + 0.07 : y + 0.5;
-      const sy = renderSurfaceElevation(cx, cz) + 0.02;
+      const sy = waterSurfaceY('foam', renderSurfaceElevation(cx, cz)) + 0.02;
       if (edge === 'n') quad([x + 0.03, sy, y + 0.03], [x + 0.97, sy, y + 0.03], [x + 0.97, sy, y + 0.15], [x + 0.03, sy, y + 0.15], FOAM_EDGE);
       else if (edge === 's') quad([x + 0.03, sy, y + 0.85], [x + 0.97, sy, y + 0.85], [x + 0.97, sy, y + 0.97], [x + 0.03, sy, y + 0.97], FOAM_EDGE);
       else if (edge === 'w') quad([x + 0.03, sy, y + 0.03], [x + 0.15, sy, y + 0.03], [x + 0.15, sy, y + 0.97], [x + 0.03, sy, y + 0.97], FOAM_EDGE);
