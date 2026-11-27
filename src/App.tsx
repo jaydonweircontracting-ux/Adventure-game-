@@ -197,7 +197,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '1135';
+const BUILD_NUMBER = '1137';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -214,6 +214,7 @@ const BUILD_NOTES: Record<string, string> = {
   '1133': 'World Studio is here, in the Build menu: draw your own rivers, widen or narrow the ones already there, harden a river bank, bridge a river, or draw a path that connects itself to the nearest bridge. Drag on the ground to draw — the preview shows what will change in green and red — then tap Apply. Everything else works exactly as before.',
   '1134': 'Rivers now look like rivers: streams run pale and shallow, deep water runs dark blue and deepens toward the mouth, foam edges the banks, and where the land falls away the water runs white over rapids and waterfalls — three falls in the south-west wilds. Everything else works exactly as before.',
   '1135': 'Under the hood: the game’s own self-checks now find a bridge crossing they can actually build instead of stopping on a river bend blocked by a tree, so the full simulation runs through again. Nothing in the world you play has changed. Everything else works exactly as before.',
+  '1137': 'Camera controls are simpler: horizontal drag turns the view left or right, vertical drag no longer tilts the camera, and the first-person arrow keys move the player instead of starting a tap-to-walk journey. Everything else works exactly as before.',
   '985': '3D mode has natural stylized grass now: tufts of grass grow on grass tiles across the world, and the Build panel has a free Grass item you can place anywhere, even on paths, that never blocks movement and saves with your other placements. The grass has no wind sway yet, since that needs renderer animation. Grass art by StayAtHomeDev (2023, MIT).',
   '986': 'The brown cubes in 3D mode are trees now: crates, market props and generated stalls all grow as proper trees instead of brown blocks. Gathering wood still works the same — interact beside one and you collect 1 wood. Stalls you placed yourself with the Build panel stay as market counters.',
   '987': 'The Build panel now has a minimize button that keeps your selected tool while you work, and Remove mode can now take down roads and houses that were already in the world, not just things you placed. Removed roads and houses stay gone after reload. Placed stalls stay as market counters.',
