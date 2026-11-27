@@ -2958,6 +2958,35 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       setStreetView:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
       getFirstPerson:()=>firstPersonRef.current,
       getZoom:()=>renderer.zoom,
+      setZoom:(v:number)=>{renderer.zoom=v},
+      setPitch:(v:number)=>{renderer.pitch=v},
+      // BUILD 1136 visual probe: prefer a wide, curved segment of a
+      // generated winding river and a walkable bank beside it.
+      findRiverViewSpot:()=>{
+        const w=stateRef.current.world;
+        let best:any=null;
+        for(const river of w.rivers??[]){
+          const start=Math.max(2,Math.floor(river.tiles.length*.25));
+          const end=Math.min(river.tiles.length-2,Math.ceil(river.tiles.length*.75));
+          for(let i=start;i<end;i++){
+            const t=river.tiles[i];
+            if(terrainAt(w,t.x,t.y)!=='water')continue;
+            const waterNeighbors=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]]
+              .filter(([dx,dy])=>terrainAt(w,t.x+dx,t.y+dy)==='water').length;
+            const prev=river.tiles[i-1],next=river.tiles[i+1];
+            const pdx=t.x-prev.x,pdy=t.y-prev.y,ndx=next.x-t.x,ndy=next.y-t.y;
+            const bend=Math.abs(pdx*ndy-pdy*ndx);
+            for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]] as const){
+              const bx=t.x+dx,by=t.y+dy;
+              if(terrainAt(w,bx,by)==='water')continue;
+              if(!walkableWithPlacements(w,w.crates,bx,by))continue;
+              const score=bend*200+waterNeighbors*20+Math.min(100,river.tiles.length)*.1;
+              if(!best||score>best.score)best={score,riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:ndx,dy:ndy},length:river.tiles.length,waterNeighbors,bend};
+            }
+          }
+        }
+        return best?{riverId:best.riverId,tile:best.tile,bank:best.bank,flow:best.flow,length:best.length,waterNeighbors:best.waterNeighbors,bend:best.bend}:null;
+      },
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});markWorldDirty(worldSyncCtx)},
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
