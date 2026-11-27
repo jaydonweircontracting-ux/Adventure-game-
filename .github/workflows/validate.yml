@@ -141,6 +141,8 @@ jobs:
         run: node tests/real-game/movement.mjs
       - name: Phone-size generated bridge traversal probe
         run: node tests/real-game/bridge-crossing.mjs
+      - name: Phone-size generated winding-river screenshot probe
+        run: node tests/real-game/natural-river-screenshot.mjs
       - name: Upload real-game screenshots for visual review
         if: always()
         uses: actions/upload-artifact@v4
@@ -150,6 +152,7 @@ jobs:
             tests/real-game/smoke-screenshot.png
             tests/real-game/movement-screenshot.png
             tests/real-game/bridge-crossing-screenshot.png
+            tests/real-game/natural-river-screenshot.png
           if-no-files-found: warn
 
   performance:
