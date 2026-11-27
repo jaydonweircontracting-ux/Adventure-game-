@@ -2963,14 +2963,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // generated winding river so CI can capture the real 3D channel.
       findRiverViewSpot:()=>{
         const w=stateRef.current.world;
-        const rivers=[...(w.rivers??[])].sort((a,b)=>(b.tiles.length+(b.widthTiles?.length??0))-(a.tiles.length+(a.widthTiles?.length??0)));
+        const rivers=[...(w.rivers??[])].sort((a,b)=>b.tiles.length-a.tiles.length);
         for(const river of rivers){
           for(const t of river.tiles){
             for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]] as const){
               const bx=t.x+dx,by=t.y+dy;
               if(terrainAt(w,bx,by)==='water')continue;
               if(!walkableWithPlacements(w,w.crates,bx,by))continue;
-              return {riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:t.dx,dy:t.dy},length:river.tiles.length,widthTiles:river.widthTiles?.length??0};
+              return {riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:t.dx,dy:t.dy},length:river.tiles.length};
             }
           }
         }

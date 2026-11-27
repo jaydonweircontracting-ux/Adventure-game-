@@ -42,7 +42,7 @@ try {
   await page.screenshot({ path: 'tests/real-game/natural-river-screenshot.png' });
 
   if (pageErrors.length) throw new Error('Browser errors: ' + pageErrors.join(' | '));
-  console.log(`Natural river screenshot captured: ${spot.riverId}, ${spot.length} centreline tiles, ${spot.widthTiles} width tiles, bank ${spot.bank.x},${spot.bank.y}`);
+  console.log(`Natural river screenshot captured: ${spot.riverId}, ${spot.length} centreline tiles, bank ${spot.bank.x},${spot.bank.y}`);
 } finally {
   await browser.close();
 }
