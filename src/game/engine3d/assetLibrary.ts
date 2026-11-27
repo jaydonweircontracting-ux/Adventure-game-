@@ -348,14 +348,19 @@ const ISO_COS = 0.8660254037844386; // cos(30°)
 export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | null {
   if (!canPreviewAsset(a)) return null;
   const n = a.positions.length / 3;
-  // Project every vertex once: sx = (x - z) * cos30, sy = (x + z)/2 - y.
+  // FBX packs commonly author character forward along +X, while the
+  // Adventure preview camera expects +Z. Turn FBX previews a quarter-turn
+  // around their vertical axis; leave GLB/GLTF/OBJ orientation untouched.
+  const rotateFbxPreview = a.format === 'fbx';
   const px = new Float64Array(n);
   const py = new Float64Array(n);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < n; i++) {
     const x = a.positions[i * 3], y = a.positions[i * 3 + 1], z = a.positions[i * 3 + 2];
-    const sx = (x - z) * ISO_COS;
-    const sy = (x + z) * 0.5 - y;
+    const viewX = rotateFbxPreview ? z : x;
+    const viewZ = rotateFbxPreview ? -x : z;
+    const sx = (viewX - viewZ) * ISO_COS;
+    const sy = (viewX + viewZ) * 0.5 - y;
     px[i] = sx; py[i] = sy;
     if (sx < minX) minX = sx;
     if (sx > maxX) maxX = sx;
@@ -373,8 +378,11 @@ export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | nu
   const tris: Array<{ i0: number; i1: number; i2: number; depth: number }> = [];
   for (let t = 0; t + 2 < a.indices.length; t += 3) {
     const i0 = a.indices[t], i1 = a.indices[t + 1], i2 = a.indices[t + 2];
-    const depth =
-      (a.positions[i0 * 3] + a.positions[i0 * 3 + 2] + a.positions[i1 * 3] + a.positions[i1 * 3 + 2] + a.positions[i2 * 3] + a.positions[i2 * 3 + 2]) / 3;
+    const viewDepth = (i: number) => {
+      const x = a.positions[i * 3], z = a.positions[i * 3 + 2];
+      return rotateFbxPreview ? z - x : x + z;
+    };
+    const depth = (viewDepth(i0) + viewDepth(i1) + viewDepth(i2)) / 3;
     tris.push({ i0, i1, i2, depth });
   }
   tris.sort((p, q) => p.depth - q.depth);
@@ -383,9 +391,23 @@ export function renderAssetPreview(a: CustomAsset, size = 96): AssetPreview | nu
     const x0 = px[tri.i0] * scale + offX, y0 = py[tri.i0] * scale + offY;
     const x1 = px[tri.i1] * scale + offX, y1 = py[tri.i1] * scale + offY;
     const x2 = px[tri.i2] * scale + offX, y2 = py[tri.i2] * scale + offY;
-    const r = Math.round(((a.colors[tri.i0 * 3] + a.colors[tri.i1 * 3] + a.colors[tri.i2 * 3]) / 3) * 255);
-    const g = Math.round(((a.colors[tri.i0 * 3 + 1] + a.colors[tri.i1 * 3 + 1] + a.colors[tri.i2 * 3 + 1]) / 3) * 255);
-    const b = Math.round(((a.colors[tri.i0 * 3 + 2] + a.colors[tri.i1 * 3 + 2] + a.colors[tri.i2 * 3 + 2]) / 3) * 255);
+    // FBX imports retain a material table + per-vertex material slots.
+    // The world renderer can use those slots, but the original thumbnail
+    // path only sampled vertex colours. Some FBX exports carry an all-black
+    // vertex-colour attribute even when their assigned material is coloured;
+    // use that triangle's material colour as a safe fallback in that case.
+    const vertexR = (a.colors[tri.i0 * 3] + a.colors[tri.i1 * 3] + a.colors[tri.i2 * 3]) / 3;
+    const vertexG = (a.colors[tri.i0 * 3 + 1] + a.colors[tri.i1 * 3 + 1] + a.colors[tri.i2 * 3 + 1]) / 3;
+    const vertexB = (a.colors[tri.i0 * 3 + 2] + a.colors[tri.i1 * 3 + 2] + a.colors[tri.i2 * 3 + 2]) / 3;
+    const slot = a.materialIndices?.[tri.i0] ?? a.materialIndices?.[tri.i1] ?? a.materialIndices?.[tri.i2];
+    const material = slot === undefined ? undefined : a.materials?.[slot];
+    const materialColor = material?.baseColor;
+    const useMaterialFallback = !!materialColor &&
+      vertexR < 0.015 && vertexG < 0.015 && vertexB < 0.015 &&
+      (materialColor[0] > 0.03 || materialColor[1] > 0.03 || materialColor[2] > 0.03);
+    const r = Math.round((useMaterialFallback ? materialColor![0] : vertexR) * 255);
+    const g = Math.round((useMaterialFallback ? materialColor![1] : vertexG) * 255);
+    const b = Math.round((useMaterialFallback ? materialColor![2] : vertexB) * 255);
     // Barycentric fill over the triangle's pixel bounding box.
     const minPx = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
     const maxPx = Math.min(size - 1, Math.ceil(Math.max(x0, x1, x2)));
