@@ -67,6 +67,16 @@ const COLORS: Record<string, Vec3> = {
   foam: [0.72, 0.84, 0.87],
 };
 
+/** Water and foam are level surfaces; only land follows the blended heightfield. */
+export function isWaterSurfaceTerrain(terrain: string): boolean {
+  return terrain === 'water' || terrain === 'foam';
+}
+
+/** Keep near water level and far-ring water at the ring's own vertical offset. */
+export function waterSurfaceY(terrain: string, sampledY: number, ringOffset = 0): number {
+  return (isWaterSurfaceTerrain(terrain) ? 0 : sampledY) + ringOffset;
+}
+
 // BUILD 988 distance fog: ground-plane range (tiles from the player)
 // over which world geometry fades to the horizon colour. BUILD 1005:
 // fog pushed out to the 240-tile view edge (Minecraft-style render
@@ -295,9 +305,14 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // reads as rolling variation, not a checkerboard, and the window
     // edge is invisible because the band cells beyond it sample the
     // same field at their own corners.
-    const colAt=(cx:number,cy:number):Vec3=>{const t=tintAt(terrain,cx,cy);return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];};
-    const yAt=(cx:number,cy:number):number=>surfAt(cx,cy);
-    if (!inBounds(world, x, y) && terrain !== 'water') {
+    const waterSurface = isWaterSurfaceTerrain(terrain);
+    const colAt=(cx:number,cy:number):Vec3=>{
+      if(waterSurface)return c;
+      const t=tintAt(terrain,cx,cy);
+      return [c[0]+t[0],c[1]+t[1],c[2]+t[2]];
+    };
+    const yAt=(cx:number,cy:number):number=>waterSurfaceY(terrain,surfAt(cx,cy));
+    if (!inBounds(world, x, y) && !waterSurface) {
       // BUILD 1116: outside the authored map, render each land tile as a
       // quantized voxel cap and expose only the sides facing lower tiles.
       // The same deterministic elevation sampler drives props, picking
@@ -504,7 +519,7 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     // The corner heights always use effTerrain (the real water/land),
     // never the display terrain — the land blend is about water.
     const quadCellMixed=(x0:number,x1:number,y0:number,y1:number,y:number,tf:(x:number,y:number)=>string)=>{
-      const yAt=(cx:number,cy:number):number=>surfAt(cx,cy)+y;
+      const yAt=(cx:number,cy:number,terrain:string):number=>waterSurfaceY(terrain,surfAt(cx,cy),y);
       const mixed=cellIsMixed(x0,x1,y0,y1,tf,world.w,world.h);
       if(!mixed){
         const sx=x0+Math.floor((x1+1-x0)/2), sy=y0+Math.floor((y1+1-y0)/2);
@@ -515,8 +530,12 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
         // gradient of the same field the window samples directly, so
         // the cell edges vanish. Adjacent cells share corner positions
         // and therefore colours exactly — no seams at any ring edge.
-        const colAt=(cx:number,cy:number):Vec3=>{const t=tintAt(bt,cx,cy);return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];};
-        quadV([x0,yAt(x0,y0),y0],colAt(x0,y0),[x1+1,yAt(x1+1,y0),y0],colAt(x1+1,y0),[x1+1,yAt(x1+1,y1+1),y1+1],colAt(x1+1,y1+1),[x0,yAt(x0,y1+1),y1+1],colAt(x0,y1+1));
+        const colAt=(cx:number,cy:number):Vec3=>{
+          if(isWaterSurfaceTerrain(bt))return bc;
+          const t=tintAt(bt,cx,cy);
+          return [bc[0]+t[0],bc[1]+t[1],bc[2]+t[2]];
+        };
+        quadV([x0,yAt(x0,y0,bt),y0],colAt(x0,y0),[x1+1,yAt(x1+1,y0,bt),y0],colAt(x1+1,y0),[x1+1,yAt(x1+1,y1+1,bt),y1+1],colAt(x1+1,y1+1),[x0,yAt(x0,y1+1,bt),y1+1],colAt(x0,y1+1));
         return;
       }
       for(let yy=y0;yy<=y1;yy++){
@@ -530,8 +549,12 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
             // varies smoothly along its length instead of stepping
             // once per run.
             const bc=COLORS[runT]||COLORS.grass;
-            const colAt=(cx:number,cy:number):Vec3=>{const tt=tintAt(runT,cx,cy);return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];};
-            quadV([runStart,yAt(runStart,yy),yy],colAt(runStart,yy),[xx,yAt(xx,yy),yy],colAt(xx,yy),[xx,yAt(xx,yy+1),yy+1],colAt(xx,yy+1),[runStart,yAt(runStart,yy+1),yy+1],colAt(runStart,yy+1));
+            const colAt=(cx:number,cy:number):Vec3=>{
+              if(isWaterSurfaceTerrain(runT))return bc;
+              const tt=tintAt(runT,cx,cy);
+              return [bc[0]+tt[0],bc[1]+tt[1],bc[2]+tt[2]];
+            };
+            quadV([runStart,yAt(runStart,yy,runT),yy],colAt(runStart,yy),[xx,yAt(xx,yy,runT),yy],colAt(xx,yy),[xx,yAt(xx,yy+1,runT),yy+1],colAt(xx,yy+1),[runStart,yAt(runStart,yy+1,runT),yy+1],colAt(runStart,yy+1));
             runStart=xx; runT=t!;
           }
         }
@@ -1454,39 +1477,6 @@ export function* buildWorldVerticesGen(world: IsoWorld, center: Position, entere
     const ely = renderSurfaceElevation(em.tx + .5, em.ty + .5);
     houseBox(em.tx + .5, em.ty + .5, .96, .12, .96, ely, [.48, .5, .52]);
     quad([em.tx + .08, ely + .125, em.ty + .08], [em.tx + .92, ely + .125, em.ty + .08], [em.tx + .92, ely + .125, em.ty + .92], [em.tx + .08, ely + .125, em.ty + .92], [.6, .48, .32]);
-  }
-  // BUILD 1114: river surface detail — restrained current ribbons and
-  // brighter downstream markers make generated rivers read as flowing
-  // channels rather than flat ocean-blue ground tiles. Details are
-  // deterministic, sparse, and visual-only: no terrain, collision,
-  // pathfinding, or save data changes. Keep them just above the water
-  // surface so the ground quad cannot z-fight them.
-  const RIVER_GLINT:Vec3=[.34,.68,.76];
-  const RIVER_FOAM:Vec3=[.66,.86,.86];
-  for(const rv of world.rivers ?? []){
-    for(let i=0;i<rv.tiles.length;i+=2){
-      const t=rv.tiles[i];
-      if(effTerrain(t.x,t.y)!=='water')continue;
-      const wy=renderSurfaceElevation(t.x+.5,t.y+.5)+.065;
-      const dl=Math.hypot(t.dx,t.dy)||1, ux=t.dx/dl, uz=t.dy/dl;
-      const px=-uz, pz=ux;
-      const cx=t.x+.5, cz=t.y+.5;
-      // A short, narrow highlight ribbon aligned to the current.
-      // Alternate sides and lengths to avoid a repeated dotted pattern.
-      const side=(i%4===0?1:-1), length=(i%6===0?.34:.24);
-      const sx=cx+px*side*.17, sz=cz+pz*side*.17;
-      const ax=sx-ux*length*.5, az=sz-uz*length*.5;
-      const bx=sx+ux*length*.5, bz=sz+uz*length*.5;
-      const half=.018;
-      quad([ax+px*half,wy,az+pz*half],[bx+px*half,wy,bz+pz*half],
-        [bx-px*half,wy,bz-pz*half],[ax-px*half,wy,az-pz*half],RIVER_GLINT);
-      // Every fourth centreline tile gets a small downstream chevron.
-      if(i%4===0){
-        tri([cx+ux*.34,wy+.002,cz+uz*.34],
-          [cx-ux*.13+px*.2,wy+.002,cz-uz*.13+pz*.2],
-          [cx-ux*.13-px*.2,wy+.002,cz-uz*.13-pz*.2],RIVER_FOAM);
-      }
-    }
   }
   // BUILD 1134 (0x35): river visuals — foam bank edges, waterfalls,
   // rapids. Display only: no terrain, collision, pathfinding or save
