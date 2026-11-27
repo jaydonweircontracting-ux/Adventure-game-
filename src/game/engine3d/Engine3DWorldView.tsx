@@ -2959,22 +2959,31 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       getFirstPerson:()=>firstPersonRef.current,
       getZoom:()=>renderer.zoom,
       setZoom:(v:number)=>{renderer.zoom=v},
-      // BUILD 1136 visual probe: find a walkable bank beside the longest
-      // generated winding river so CI can capture the real 3D channel.
+      setPitch:(v:number)=>{renderer.pitch=v},
+      // BUILD 1136 visual probe: prefer a wide, curved segment of a
+      // generated winding river and a walkable bank beside it.
       findRiverViewSpot:()=>{
         const w=stateRef.current.world;
-        const rivers=[...(w.rivers??[])].sort((a,b)=>b.tiles.length-a.tiles.length);
-        for(const river of rivers){
-          for(const t of river.tiles){
+        let best:any=null;
+        for(const river of w.rivers??[]){
+          for(let i=1;i<river.tiles.length-1;i++){
+            const t=river.tiles[i];
+            if(terrainAt(w,t.x,t.y)!=='water')continue;
+            const waterNeighbors=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]]
+              .filter(([dx,dy])=>terrainAt(w,t.x+dx,t.y+dy)==='water').length;
+            const prev=river.tiles[i-1],next=river.tiles[i+1];
+            const pdx=t.x-prev.x,pdy=t.y-prev.y,ndx=next.x-t.x,ndy=next.y-t.y;
+            const bend=Math.abs(pdx*ndy-pdy*ndx);
             for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]] as const){
               const bx=t.x+dx,by=t.y+dy;
               if(terrainAt(w,bx,by)==='water')continue;
               if(!walkableWithPlacements(w,w.crates,bx,by))continue;
-              return {riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:t.dx,dy:t.dy},length:river.tiles.length};
+              const score=waterNeighbors*100+bend*20+Math.min(100,river.tiles.length)*.1;
+              if(!best||score>best.score)best={score,riverId:river.id,tile:{x:t.x,y:t.y},bank:{x:bx,y:by},flow:{dx:ndx,dy:ndy},length:river.tiles.length,waterNeighbors,bend};
             }
           }
         }
-        return null;
+        return best?{riverId:best.riverId,tile:best.tile,bank:best.bank,flow:best.flow,length:best.length,waterNeighbors:best.waterNeighbors,bend:best.bend}:null;
       },
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});markWorldDirty(worldSyncCtx)},
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.

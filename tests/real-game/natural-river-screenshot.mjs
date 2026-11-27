@@ -35,14 +35,15 @@ try {
     const test = window.__ag3dTest;
     test.setFirstPerson(false);
     test.setPlayer(bank.x, bank.y);
-    test.setYaw(Math.atan2(-flow.dx, -flow.dy));
-    test.setZoom(8);
+    test.setYaw(Math.atan2(-flow.dx, -flow.dy) + 0.45);
+    test.setPitch(1.05);
+    test.setZoom(13);
   }, spot);
   await page.waitForTimeout(1200);
   await page.screenshot({ path: 'tests/real-game/natural-river-screenshot.png' });
 
   if (pageErrors.length) throw new Error('Browser errors: ' + pageErrors.join(' | '));
-  console.log(`Natural river screenshot captured: ${spot.riverId}, ${spot.length} centreline tiles, bank ${spot.bank.x},${spot.bank.y}`);
+  console.log(`Natural river screenshot captured: ${spot.riverId}, ${spot.length} centreline tiles, water neighbours ${spot.waterNeighbors}, bend ${spot.bend}, bank ${spot.bank.x},${spot.bank.y}`);
 } finally {
   await browser.close();
 }
