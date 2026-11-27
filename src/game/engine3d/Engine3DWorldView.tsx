@@ -2666,11 +2666,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
       // The camera's forward vector is (-sin(yaw), -cos(yaw)); adding
       // yaw here made a rightward drag rotate the view left.
       renderer.yaw-=(e.clientX-renderer.lx)*.008;
-      // BUILD 1023: first-person pitch is drag-up = look up. It was
-      // inverted (drag up looked down: +dy raised lookPitch, and
-      // lookPitch+ is gaze-up). Orbit keeps its existing sign below.
-      if(firstPersonRef.current)renderer.lookPitch=Math.max(FP_PITCH_MIN,Math.min(FP_PITCH_MAX,renderer.lookPitch-(e.clientY-renderer.ly)*.006));
-      else renderer.pitch=Math.max(.22,Math.min(1.25,renderer.pitch+(e.clientY-renderer.ly)*.006));
+      // BUILD 1137: vertical drag no longer changes camera pitch in
+      // either first-person or orbit mode. Horizontal drag remains the
+      // only camera-look gesture; arrow keys move the first-person player.
       renderer.lx=e.clientX;renderer.ly=e.clientY;
     };
     const up=(e:PointerEvent)=>{const wasTap=renderer.pointers.size===1&&renderer.drag&&!renderer.gestureMoved&&Math.hypot(e.clientX-renderer.gestureStartX,e.clientY-renderer.gestureStartY)<=10;
@@ -2950,6 +2948,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true, hideUi = fals
     // full zoom; setStreetView stays as a deprecated alias).
     (window as any).__ag3dTest={
       setYaw:(v:number)=>{renderer.yaw=v},
+      getYaw:()=>renderer.yaw,
+      getPitch:()=>renderer.pitch,
       setLookPitch:(v:number)=>{renderer.lookPitch=v},
       // BUILD 1023 probe hook (read-only): first-person look pitch, so
       // probes can measure the drag→pitch direction exactly.
